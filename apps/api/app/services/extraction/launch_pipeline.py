@@ -1144,14 +1144,62 @@ def _shape_lc_financial_payload(payload: Dict[str, Any], *, lc_subtype: str, raw
 
     applicant = shaped.get("applicant")
     beneficiary = shaped.get("beneficiary")
+    issuing_bank = shaped.get("issuing_bank")
+    advising_bank = shaped.get("advising_bank")
     amount = shaped.get("amount")
+    ports = shaped.get("ports") if isinstance(shaped.get("ports"), dict) else {}
     if isinstance(applicant, dict):
+        applicant_address = applicant.get("address") if isinstance(applicant.get("address"), dict) else {}
+        shaped["applicant_country"] = _first(
+            shaped.get("applicant_country"),
+            applicant.get("country"),
+            applicant.get("country_name"),
+            applicant_address.get("country"),
+            applicant_address.get("country_name"),
+        )
         shaped["applicant"] = applicant.get("name") or applicant.get("value")
     if isinstance(beneficiary, dict):
+        beneficiary_address = beneficiary.get("address") if isinstance(beneficiary.get("address"), dict) else {}
+        shaped["beneficiary_country"] = _first(
+            shaped.get("beneficiary_country"),
+            beneficiary.get("country"),
+            beneficiary.get("country_name"),
+            beneficiary_address.get("country"),
+            beneficiary_address.get("country_name"),
+        )
         shaped["beneficiary"] = beneficiary.get("name") or beneficiary.get("value")
+    if isinstance(issuing_bank, dict):
+        issuing_bank_address = issuing_bank.get("address") if isinstance(issuing_bank.get("address"), dict) else {}
+        shaped["issuing_bank_country"] = _first(
+            shaped.get("issuing_bank_country"),
+            issuing_bank.get("country"),
+            issuing_bank.get("country_name"),
+            issuing_bank_address.get("country"),
+            issuing_bank_address.get("country_name"),
+        )
+    if isinstance(advising_bank, dict):
+        advising_bank_address = advising_bank.get("address") if isinstance(advising_bank.get("address"), dict) else {}
+        shaped["advising_bank_country"] = _first(
+            shaped.get("advising_bank_country"),
+            advising_bank.get("country"),
+            advising_bank.get("country_name"),
+            advising_bank_address.get("country"),
+            advising_bank_address.get("country_name"),
+        )
     if isinstance(amount, dict):
         shaped["amount"] = amount.get("value") or amount.get("amount")
         shaped["currency"] = _first(shaped.get("currency"), amount.get("currency"))
+    if ports:
+        shaped["port_of_loading"] = _first(
+            shaped.get("port_of_loading"),
+            ports.get("loading"),
+            ports.get("port_of_loading"),
+        )
+        shaped["port_of_discharge"] = _first(
+            shaped.get("port_of_discharge"),
+            ports.get("discharge"),
+            ports.get("port_of_discharge"),
+        )
 
     shaped["applicant"] = _first(shaped.get("applicant"), _extract_label_value(raw_text, ["applicant", "buyer", "importer"]))
     shaped["beneficiary"] = _first(shaped.get("beneficiary"), _extract_label_value(raw_text, ["beneficiary", "seller", "exporter"]))
@@ -1630,7 +1678,18 @@ def _apply_canonical_normalization(payload: Dict[str, Any]) -> Dict[str, Any]:
             if normalized != original:
                 normalization_meta[field] = {"raw": original, "canonical": normalized}
 
-    for field in ("country_of_origin", "origin_country", "country", "country_name"):
+    for field in (
+        "country_of_origin",
+        "origin_country",
+        "country",
+        "country_name",
+        "applicant_country",
+        "beneficiary_country",
+        "issuing_bank_country",
+        "advising_bank_country",
+        "port_of_loading_country",
+        "port_of_discharge_country",
+    ):
         if field in shaped:
             original = shaped.get(field)
             normalized = _normalize_country_value(original)

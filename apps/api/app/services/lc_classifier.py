@@ -28,6 +28,7 @@ COUNTRY_SYNONYMS = {
 def detect_lc_type(
     lc_data: Optional[Dict[str, Any]],
     shipment_data: Optional[Dict[str, Any]] = None,
+    request_context: Optional[Dict[str, Any]] = None,
 ) -> LCTypeGuess:
     """
     Attempt to detect whether an LC context represents an import or export workflow.
@@ -41,9 +42,21 @@ def detect_lc_type(
 
     lc_context = lc_data or {}
     shipment_context = shipment_data or {}
+    request_hints = request_context or {}
 
     family_signal = detect_lc_family(lc_context)
     lc_family = family_signal.get("family", "unknown")
+    request_user_type = str(
+        request_hints.get("user_type") or request_hints.get("userType") or ""
+    ).strip().lower()
+    request_workflow = str(
+        request_hints.get("workflow_type") or request_hints.get("workflowType") or ""
+    ).strip().lower()
+    company_country = _normalize_country(
+        request_hints.get("company_country") or request_hints.get("companyCountry")
+    )
+    lane_export = request_user_type == "exporter" or request_workflow.startswith("export")
+    lane_import = request_user_type == "importer" or request_workflow.startswith("import")
 
     ports_context = lc_context.get("ports") or {}
     lc_format = (lc_context.get("format") or "").lower()
@@ -72,14 +85,24 @@ def detect_lc_type(
     )
 
     pol_country = (
-        _extract_port_country(shipment_context, "port_of_loading")
-        or _normalize_country(shipment_context.get("port_of_loading_country"))
+        _normalize_country(shipment_context.get("port_of_loading_country"))
+        or _normalize_country(shipment_context.get("port_of_loading_country_name"))
+        or _normalize_country(shipment_context.get("port_of_loading_country_code"))
+        or _normalize_country(lc_context.get("port_of_loading_country"))
+        or _normalize_country(lc_context.get("port_of_loading_country_name"))
+        or _normalize_country(lc_context.get("port_of_loading_country_code"))
+        or _extract_port_country(shipment_context, "port_of_loading")
         or _normalize_country(ports_context.get("loading") or ports_context.get("port_of_loading"))
         or _normalize_country(shipment_context.get("port_of_shipment"))
     )
     pod_country = (
-        _extract_port_country(shipment_context, "port_of_discharge")
-        or _normalize_country(shipment_context.get("port_of_discharge_country"))
+        _normalize_country(shipment_context.get("port_of_discharge_country"))
+        or _normalize_country(shipment_context.get("port_of_discharge_country_name"))
+        or _normalize_country(shipment_context.get("port_of_discharge_country_code"))
+        or _normalize_country(lc_context.get("port_of_discharge_country"))
+        or _normalize_country(lc_context.get("port_of_discharge_country_name"))
+        or _normalize_country(lc_context.get("port_of_discharge_country_code"))
+        or _extract_port_country(shipment_context, "port_of_discharge")
         or _normalize_country(ports_context.get("discharge") or ports_context.get("port_of_discharge"))
         or _normalize_country(shipment_context.get("port_of_destination"))
     )
@@ -242,6 +265,44 @@ def detect_lc_type(
                 "discharge port information."
             ),
             0.55,
+        )
+
+    exporter_context_export = (
+        lane_export
+        and company_country
+        and pol_country
+        and company_country == pol_country
+        and lc_context.get("beneficiary")
+        and (not applicant_country or applicant_country != company_country)
+    )
+    if exporter_context_export:
+        confidence = 0.72 if pod_country else 0.62
+        return _guess(
+            LCType.EXPORT.value,
+            (
+                f"Exporter workflow context aligns with shipment flow: company country {company_country} "
+                f"matches the loading port {pol_country} and the LC names a beneficiary."
+            ),
+            confidence,
+        )
+
+    importer_context_import = (
+        lane_import
+        and company_country
+        and pod_country
+        and company_country == pod_country
+        and lc_context.get("applicant")
+        and (not beneficiary_country or beneficiary_country != company_country)
+    )
+    if importer_context_import:
+        confidence = 0.72 if pol_country else 0.62
+        return _guess(
+            LCType.IMPORT.value,
+            (
+                f"Importer workflow context aligns with shipment flow: company country {company_country} "
+                f"matches the discharge port {pod_country} and the LC names an applicant."
+            ),
+            confidence,
         )
 
     if lc_family == "iso":

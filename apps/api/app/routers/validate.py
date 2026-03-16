@@ -292,6 +292,17 @@ def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _extract_workflow_lc_type(lc_context: Dict[str, Any]) -> Optional[str]:
+    raw_lc_type = (
+        lc_context.get("lc_type")
+        or lc_context.get("form_of_doc_credit")
+        or (lc_context.get("mt700") or {}).get("form_of_doc_credit")
+    )
+    if raw_lc_type is None:
+        return None
+    return normalize_lc_type(str(raw_lc_type).strip().lower())
+
+
 def _extract_intake_only(payload: Dict[str, Any]) -> bool:
     options = payload.get("options") or {}
     candidates = [
@@ -1607,23 +1618,32 @@ async def validate_doc(
             lc_context.get("form_of_doc_credit") or
             (lc_context.get("mt700") or {}).get("form_of_doc_credit")
         )
+        extracted_workflow_lc_type = _extract_workflow_lc_type(lc_context)
         extracted_lc_type_confidence = lc_context.get("lc_type_confidence", 0)
         extracted_lc_type_reason = lc_context.get("lc_type_reason", "")
         
         # If extracted, use it; otherwise fall back to import/export detection
         override_lc_type = _extract_lc_type_override(payload)
         
-        if extracted_lc_type and str(extracted_lc_type).lower() not in ["unknown", "none", ""]:
+        if extracted_workflow_lc_type:
             # Use extracted LC type from document
-            lc_type = str(extracted_lc_type).lower().replace(" ", "_")
-            lc_type_reason = extracted_lc_type_reason or f"Extracted from LC document: {extracted_lc_type}"
+            lc_type = extracted_workflow_lc_type
+            lc_type_reason = extracted_lc_type_reason or f"Extracted workflow from LC document: {extracted_workflow_lc_type}"
             lc_type_confidence = extracted_lc_type_confidence if extracted_lc_type_confidence > 0 else 0.85
             lc_type_source = lc_context.get("lc_type_source", "document_extraction")
             lc_type_guess = {"lc_type": lc_type, "reason": lc_type_reason, "confidence": lc_type_confidence}
             logger.info(f"LC type from document extraction: {lc_type} (confidence={lc_type_confidence})")
         else:
             # Fall back to import/export detection based on country relationships
-            lc_type_guess = detect_lc_type(lc_context, shipment_context)
+            lc_type_guess = detect_lc_type(
+                lc_context,
+                shipment_context,
+                request_context={
+                    "user_type": user_type,
+                    "workflow_type": payload.get("workflow_type") or payload.get("workflowType"),
+                    "company_country": getattr(current_user.company, "country", None) if getattr(current_user, "company", None) else None,
+                },
+            )
             lc_type_source = "auto"
             lc_type = lc_type_guess["lc_type"]
             lc_type_reason = lc_type_guess["reason"]
