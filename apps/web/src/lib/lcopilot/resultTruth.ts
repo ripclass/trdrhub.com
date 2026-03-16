@@ -74,10 +74,17 @@ export const getCanonicalResultTruth = (
   const issues = resultData?.issues ?? [];
   const validationContract = getValidationContract(structuredResult);
   const validationStatus = normalizeValidationStatus(structuredResult?.validation_status);
-  const finalVerdict =
-    normalizeFinalVerdict(structuredResult?.final_verdict ?? validationContract?.final_verdict) ??
-    (validationStatus === 'pass' ? 'pass' : null);
   const submissionEligibility = getCanonicalSubmissionEligibility(structuredResult);
+  const topLevelFinalVerdict = normalizeFinalVerdict(structuredResult?.final_verdict);
+  const contractFinalVerdict = normalizeFinalVerdict(validationContract?.final_verdict);
+  const finalVerdict =
+    topLevelFinalVerdict ??
+    (submissionEligibility?.can_submit === true && contractFinalVerdict === 'review'
+      ? validationStatus === 'pass'
+        ? 'pass'
+        : null
+      : contractFinalVerdict) ??
+    (validationStatus === 'pass' ? 'pass' : null);
   const bankVerdict = getCanonicalBankVerdict(structuredResult);
   const bankVerdictLabel = String(bankVerdict?.verdict ?? '').trim().toUpperCase();
   const canSubmitFromValidation =
