@@ -541,113 +541,6 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
       toast(buildImporterValidationFailureToast(error));
       return;
 
-      // Canonical importer beta path is truthful: do not fabricate demo results on request failure.
-      const isNetworkError =
-        error.type === 'network' ||
-        error.type === 'server' ||
-        error.code === 'ERR_NETWORK' ||
-        error.name === 'AxiosError' ||
-        !error.type;
-      // Importer beta must fail truthfully here and let the user retry.
-      if (isNetworkError) {
-        const errorCode = error?.errorCode || error?.error_code || 'unknown';
-        const description =
-          errorCode !== 'unknown'
-            ? `${error.message || 'Unable to start validation.'} (${errorCode})`
-            : error.message || "Unable to start validation. Please try again.";
-
-        toast({
-          title: "Validation Failed",
-          description,
-          variant: "destructive",
-        });
-        return;
-
-        console.log("API unavailable, preserving truthful importer failure state.");
-
-        const mockJobId = `demo-${processType}-${Date.now()}`;
-
-        toast({
-          title: "Validation Failed",
-          description: "API unavailable. Please retry when the validation service is reachable.",
-        });
-
-        // Mark draft as submitted if we're working with a draft
-        if (currentDraftId) {
-          try {
-            await markDraftSubmitted(currentDraftId);
-            console.log('✅ Draft marked as submitted:', currentDraftId);
-          } catch (error) {
-            console.error('Failed to mark draft as submitted:', error);
-          }
-        }
-
-        if (embedded && onComplete) {
-          setTimeout(() => {
-            onComplete({ jobId: mockJobId, lcNumber, mode: processType });
-          }, 500);
-        } else {
-          navigate(`/lcopilot/import-results/${mockJobId}?mode=${processType}`);
-        }
-        return; // Exit early, don't show error
-      }
-
-      // Handle other specific error types
-      if (error.type === 'rate_limit') {
-        toast({
-          title: "Rate Limit Exceeded",
-          description: error.message || "Too many requests. Please try again later.",
-          variant: "destructive",
-        });
-      } else if (error.type === 'validation') {
-        toast({
-          title: "Validation Failed",
-          description: error.message || "Document validation failed. Please check your files.",
-          variant: "destructive",
-        });
-      } else {
-        const errorCode = error?.errorCode || error?.error_code || 'unknown';
-        const description =
-          errorCode !== 'unknown'
-            ? `${error.message || 'Unable to start validation.'} (${errorCode})`
-            : error.message || "Unable to start validation. Please try again.";
-
-        toast({
-          title: "Validation Failed",
-          description,
-          variant: "destructive",
-        });
-        return;
-
-        // Legacy unreachable fallback kept only until importer upload cleanup is complete.
-        console.log("Unhandled importer upload error.");
-
-        const mockJobId = `demo-${processType}-${Date.now()}`;
-
-        toast({
-          title: "Validation Failed",
-          description: "Processing is unavailable right now. Please retry.",
-        });
-
-        // Mark draft as submitted if we're working with a draft
-        if (currentDraftId) {
-          try {
-            await markDraftSubmitted(currentDraftId);
-            console.log('✅ Draft marked as submitted:', currentDraftId);
-          } catch (error) {
-            console.error('Failed to mark draft as submitted:', error);
-          }
-        }
-
-        if (embedded && onComplete) {
-          setTimeout(() => {
-            onComplete({ jobId: mockJobId, lcNumber, mode: processType });
-          }, 500);
-        } else {
-          navigate(`/lcopilot/import-results/${mockJobId}?mode=${processType}`);
-        }
-        return;
-      }
     } finally {
       setIsProcessing(false);
     }
@@ -839,7 +732,7 @@ export default function ImportLCUpload({ embedded = false, onComplete }: ImportL
                 <div className="text-sm text-muted-foreground">
                   {completedFiles.length > 0 && lcNumber.trim() ? (
                     <span className="text-success">
-                      ✓ Ready to {fileType === "draft" ? "analyze LC risks" : "review supplier documents"}
+                      Ready to {fileType === "draft" ? "analyze LC risks" : "review supplier documents"}
                     </span>
                   ) : (
                     <span>Please upload documents and provide LC number to continue</span>
