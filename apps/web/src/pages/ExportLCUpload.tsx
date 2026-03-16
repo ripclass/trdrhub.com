@@ -272,6 +272,8 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const draftIdFromQuery = searchParams.get("draftId");
+  const templateIdFromQuery = searchParams.get("templateId");
   const initialLcTypeParam = (searchParams.get('lcType') || '').toLowerCase();
   const initialLcTypeOverride: 'auto' | 'export' | 'import' =
     initialLcTypeParam === 'export' || initialLcTypeParam === 'import'
@@ -292,13 +294,12 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
 
   // Load draft if draftId is provided in URL params
   useEffect(() => {
-    const draftId = searchParams.get('draftId');
-    if (draftId) {
+    if (draftIdFromQuery) {
       setIsLoadingDraft(true);
-      setCurrentDraftId(draftId);
+      setCurrentDraftId(draftIdFromQuery);
 
       try {
-        const result = loadDraft(draftId);
+        const result = loadDraft(draftIdFromQuery);
         if (result) {
           const { draft, filesData } = result;
 
@@ -366,11 +367,10 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
         setIsLoadingDraft(false);
       }
     }
-  }, [searchParams, loadDraft, toast]);
+  }, [draftIdFromQuery, loadDraft, toast]);
 
   useEffect(() => {
-    const draftId = searchParams.get("draftId");
-    if (draftId) {
+    if (draftIdFromQuery) {
       return;
     }
 
@@ -389,13 +389,10 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
     if (notesParam && !notes.trim()) {
       setNotes(notesParam);
     }
-  }, [searchParams]);
+  }, [draftIdFromQuery, searchParams, lcNumber, issueDate, notes]);
 
   useEffect(() => {
-    const draftId = searchParams.get("draftId");
-    const templateId = searchParams.get("templateId");
-
-    if (draftId || !templateId) {
+    if (draftIdFromQuery || !templateIdFromQuery) {
       return;
     }
 
@@ -403,24 +400,16 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
 
     const loadTemplatePrefill = async () => {
       try {
-        const response = await smeTemplatesApi.prefill({ template_id: templateId });
+        const response = await smeTemplatesApi.prefill({ template_id: templateIdFromQuery });
         if (!active) {
           return;
         }
 
         const prefill = buildTemplateUploadPrefill(response.fields || {}, response.template_name);
 
-        if (prefill.lcNumber && !lcNumber.trim()) {
-          setLcNumber(prefill.lcNumber);
-        }
-
-        if (prefill.issueDate && !issueDate.trim()) {
-          setIssueDate(prefill.issueDate);
-        }
-
-        if (prefill.notes && !notes.trim()) {
-          setNotes(prefill.notes);
-        }
+        setLcNumber((current) => (prefill.lcNumber && !current.trim() ? prefill.lcNumber : current));
+        setIssueDate((current) => (prefill.issueDate && !current.trim() ? prefill.issueDate : current));
+        setNotes((current) => (prefill.notes && !current.trim() ? prefill.notes : current));
 
         setTemplatePrefillInfo({
           templateName: response.template_name,
@@ -454,7 +443,7 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
     return () => {
       active = false;
     };
-  }, [searchParams, toast]);
+  }, [draftIdFromQuery, templateIdFromQuery, toast]);
 
   // Check if LC number exists when user enters it
   const handleLCNumberChange = async (value: string) => {

@@ -114,6 +114,8 @@ function DashboardContent() {
   const urlJobId = getParam(searchParams, "jobId");
   const urlLc = getParam(searchParams, "lc");
   const urlTab = getParam(searchParams, "tab");
+  const urlTemplateId = getParam(searchParams, "templateId");
+  const urlDraftId = getParam(searchParams, "draftId");
 
   // Active section - can be either ExporterSection or SidebarSection
   const [activeSection, setActiveSection] = useState<AnySection>(() => {
@@ -332,7 +334,11 @@ function DashboardContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ExportLCUpload embedded onComplete={handleUploadComplete} />
+              <ExportLCUpload
+                key={`upload-${urlDraftId ?? "no-draft"}-${urlTemplateId ?? "no-template"}`}
+                embedded
+                onComplete={handleUploadComplete}
+              />
             </CardContent>
           </Card>
         )}

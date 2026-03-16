@@ -122,21 +122,29 @@ async def create_lc_workspace(
         db.add(workspace)
         db.commit()
         db.refresh(workspace)
-        
-        # Audit log
-        audit_service = AuditService(db)
-        audit_context = create_audit_context(request) if request else {}
-        audit_service.log_action(
-            action=AuditAction.CREATE,
-            user=current_user,
-            correlation_id=audit_context.get('correlation_id', ''),
-            resource_type="lc_workspace",
-            resource_id=str(workspace.id),
-            lc_number=workspace_data.lc_number,
-            result=AuditResult.SUCCESS
-        )
-        
-        return LCWorkspaceRead.model_validate(workspace)
+        response = LCWorkspaceRead.model_validate(workspace)
+
+        try:
+            audit_service = AuditService(db)
+            audit_context = create_audit_context(request) if request else {}
+            audit_service.log_action(
+                action="create",
+                user=current_user,
+                correlation_id=audit_context.get('correlation_id', ''),
+                resource_type="lc_workspace",
+                resource_id=str(workspace.id),
+                lc_number=workspace_data.lc_number,
+                result=AuditResult.SUCCESS
+            )
+        except Exception as audit_error:
+            logger.warning(
+                "LC workspace %s created but audit logging failed: %s",
+                workspace.id,
+                audit_error,
+                exc_info=True,
+            )
+
+        return response
     except HTTPException:
         raise
     except Exception as e:

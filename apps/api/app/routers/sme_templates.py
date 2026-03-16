@@ -159,6 +159,73 @@ async def list_templates(
     )
 
 
+@router.post("/prefill", response_model=TemplatePreFillResponse)
+async def prefill_template(
+    request: TemplatePreFillRequest,
+    current_user: User = Depends(require_sme_user),
+    db: Session = Depends(get_db)
+):
+    """Pre-fill template fields with company profile data."""
+    ensure_sme_template_storage(db)
+    template = db.query(SMETemplate).filter(
+        and_(
+            SMETemplate.id == request.template_id,
+            SMETemplate.company_id == current_user.company_id,
+            SMETemplate.deleted_at.is_(None),
+            SMETemplate.is_active == True
+        )
+    ).first()
+
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found"
+        )
+
+    # Load company profile data
+    company = db.query(Company).filter(Company.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found"
+        )
+
+    compliance_info = db.query(CompanyComplianceInfo).filter(
+        CompanyComplianceInfo.company_id == current_user.company_id
+    ).first()
+
+    addresses = db.query(CompanyAddress).filter(
+        and_(
+            CompanyAddress.company_id == current_user.company_id,
+            CompanyAddress.is_active == True,
+            CompanyAddress.deleted_at.is_(None)
+        )
+    ).all()
+
+    consignee_shipper = db.query(DefaultConsigneeShipper).filter(
+        and_(
+            DefaultConsigneeShipper.company_id == current_user.company_id,
+            DefaultConsigneeShipper.is_active == True,
+            DefaultConsigneeShipper.deleted_at.is_(None)
+        )
+    ).all()
+
+    # Substitute variables
+    prefilled_fields = _substitute_template_variables(
+        template.fields,
+        company,
+        compliance_info,
+        addresses,
+        consignee_shipper,
+        request.variables
+    )
+
+    return TemplatePreFillResponse(
+        fields=prefilled_fields,
+        template_name=template.name
+    )
+
+
 @router.get("/{template_id}", response_model=SMETemplateRead)
 async def get_template(
     template_id: UUID,
@@ -226,21 +293,29 @@ async def create_template(
     db.add(template)
     db.commit()
     db.refresh(template)
+    response = SMETemplateRead.model_validate(template)
 
-    # Audit log
-    audit_service = AuditService(db)
-    audit_context = create_audit_context(request) if request else {}
-    audit_service.log_action(
-        action=AuditAction.CREATE,
-        user=current_user,
-        correlation_id=audit_context.get('correlation_id', ''),
-        resource_type="sme_template",
-        resource_id=str(template.id),
-        details={"name": template.name, "type": template.type.value},
-        result=AuditResult.SUCCESS
-    )
+    try:
+        audit_service = AuditService(db)
+        audit_context = create_audit_context(request) if request else {}
+        audit_service.log_action(
+            action="create",
+            user=current_user,
+            correlation_id=audit_context.get('correlation_id', ''),
+            resource_type="sme_template",
+            resource_id=str(template.id),
+            audit_metadata={"name": template.name, "type": template.type.value},
+            result=AuditResult.SUCCESS
+        )
+    except Exception as audit_error:
+        logger.warning(
+            "SME template %s created but audit logging failed: %s",
+            template.id,
+            audit_error,
+            exc_info=True,
+        )
 
-    return SMETemplateRead.model_validate(template)
+    return response
 
 
 @router.put("/{template_id}", response_model=SMETemplateRead)
@@ -374,69 +449,4 @@ async def use_template(
     return SMETemplateRead.model_validate(template)
 
 
-@router.post("/prefill", response_model=TemplatePreFillResponse)
-async def prefill_template(
-    request: TemplatePreFillRequest,
-    current_user: User = Depends(require_sme_user),
-    db: Session = Depends(get_db)
-):
-    """Pre-fill template fields with company profile data."""
-    ensure_sme_template_storage(db)
-    template = db.query(SMETemplate).filter(
-        and_(
-            SMETemplate.id == request.template_id,
-            SMETemplate.company_id == current_user.company_id,
-            SMETemplate.deleted_at.is_(None),
-            SMETemplate.is_active == True
-        )
-    ).first()
-
-    if not template:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Template not found"
-        )
-
-    # Load company profile data
-    company = db.query(Company).filter(Company.id == current_user.company_id).first()
-    if not company:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Company not found"
-        )
-
-    compliance_info = db.query(CompanyComplianceInfo).filter(
-        CompanyComplianceInfo.company_id == current_user.company_id
-    ).first()
-
-    addresses = db.query(CompanyAddress).filter(
-        and_(
-            CompanyAddress.company_id == current_user.company_id,
-            CompanyAddress.is_active == True,
-            CompanyAddress.deleted_at.is_(None)
-        )
-    ).all()
-
-    consignee_shipper = db.query(DefaultConsigneeShipper).filter(
-        and_(
-            DefaultConsigneeShipper.company_id == current_user.company_id,
-            DefaultConsigneeShipper.is_active == True,
-            DefaultConsigneeShipper.deleted_at.is_(None)
-        )
-    ).all()
-
-    # Substitute variables
-    prefilled_fields = _substitute_template_variables(
-        template.fields,
-        company,
-        compliance_info,
-        addresses,
-        consignee_shipper,
-        request.variables
-    )
-
-    return TemplatePreFillResponse(
-        fields=prefilled_fields,
-        template_name=template.name
-    )
 
