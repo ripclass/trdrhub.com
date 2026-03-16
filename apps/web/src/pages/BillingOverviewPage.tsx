@@ -33,7 +33,7 @@ import {
 import { useAuth } from '@/hooks/use-auth';
 
 // Types
-import { InvoiceStatus, type BankContract } from '@/types/billing';
+import { InvoiceStatus, PlanType, normalizePlanType, type BankContract } from '@/types/billing';
 import { billingApi } from '@/api/billing';
 
 export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange?: (tab: string) => void; mode?: 'sme' | 'bank' }) {
@@ -140,13 +140,21 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
     );
   }
 
-  const billingAvailable = Boolean(billingInfo && usageStats);
-  const companyDisplayName = billingInfo?.name || user?.email?.split('@')[0] || 'your company';
+  const normalizedPlan = normalizePlanType(billingInfo?.plan);
+  const normalizedBillingInfo = billingInfo && normalizedPlan
+    ? { ...billingInfo, plan: normalizedPlan }
+    : null;
+  const hasUsageStats = Boolean(usageStats);
+  const canRenderAlertBanner = Boolean(usageStats && normalizedPlan);
+  const companyDisplayName =
+    normalizedBillingInfo?.name || billingInfo?.name || user?.email?.split('@')[0] || 'your company';
   const currentSourceError =
     billingError instanceof Error
       ? billingError.message
       : usageError instanceof Error
         ? usageError.message
+        : billingInfo && !normalizedBillingInfo
+          ? 'billing plan data is incomplete'
         : 'unknown billing error';
 
   return (
@@ -181,10 +189,10 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
       />
 
       {/* Alert Banner */}
-      {billingAvailable ? (
+      {canRenderAlertBanner ? (
         <AlertBanner
           usage={usageStats}
-          plan={billingInfo.plan}
+          plan={normalizedPlan}
           lastInvoiceStatus={getLastInvoiceStatus()}
           onUpgrade={handleUpgradeClick}
           onRetryPayment={() => {
@@ -219,7 +227,7 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
         {/* Left Column - Usage & Activity */}
         <div className="lg:col-span-2 space-y-6">
           {/* Usage Summary Cards */}
-          {billingAvailable ? (
+          {hasUsageStats ? (
             <UsageSummaryGrid
               usage={usageStats}
               lastInvoiceStatus={getLastInvoiceStatus()}
@@ -236,7 +244,7 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
           )}
 
           {/* Recent Usage */}
-          {billingAvailable && <UsageTableCompact maxRows={8} />}
+          {hasUsageStats && <UsageTableCompact maxRows={8} />}
 
           {/* Recent Invoices */}
           {!invoicesLoading && recentInvoices && recentInvoices.invoices.length > 0 && (
@@ -247,17 +255,17 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
         {/* Right Column - Plan & Quota */}
         <div className="space-y-6">
           {/* Quota Meter */}
-          {billingAvailable ? (
+          {canRenderAlertBanner ? (
             <QuotaMeter
               usage={usageStats}
-              plan={billingInfo.plan}
+              plan={normalizedPlan}
             />
           ) : (
             <Card className="border-dashed">
               <CardHeader>
                 <CardTitle className="text-base">Quota meter unavailable</CardTitle>
                 <CardDescription>
-                  Live quota usage appears here once the billing service responds.
+                  Live quota usage appears here once the billing service returns a complete plan assignment for this account.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -266,9 +274,9 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
           {/* Plan/Contract Card */}
           {isBankMode && bankContract ? (
             <ContractCard contract={bankContract} />
-          ) : !isBankMode && billingAvailable ? (
+          ) : !isBankMode && normalizedBillingInfo ? (
             <PlanCard
-              billingInfo={billingInfo}
+              billingInfo={normalizedBillingInfo}
               onUpgrade={handleUpgradeClick}
             />
           ) : !isBankMode ? (
@@ -276,7 +284,7 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
               <CardHeader>
                 <CardTitle className="text-base">Plan details unavailable</CardTitle>
                 <CardDescription>
-                  Live plan and quota details will appear here once the billing service responds.
+                  Live plan details will appear here once the billing service returns a complete plan assignment for this account.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -298,7 +306,7 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
               Open Invoices
             </Button>
 
-            {!isBankMode && billingAvailable && billingInfo.plan !== 'ENTERPRISE' && (
+            {!isBankMode && normalizedPlan && normalizedPlan !== PlanType.ENTERPRISE && (
               <Button
                 onClick={handleUpgradeClick}
                 className="w-full gap-2"
@@ -312,11 +320,11 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
       </div>
 
       {/* Upgrade Modal (SME only) */}
-      {!isBankMode && billingInfo && (
+      {!isBankMode && normalizedBillingInfo && (
         <UpgradeModal
           open={showUpgradeModal}
           onOpenChange={setShowUpgradeModal}
-          currentBillingInfo={billingInfo}
+          currentBillingInfo={normalizedBillingInfo}
           onSuccess={handleUpgradeSuccess}
         />
       )}

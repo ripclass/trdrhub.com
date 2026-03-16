@@ -367,6 +367,27 @@ export function isUnlimitedPlan(plan: PlanType): boolean {
   return PLAN_DEFINITIONS[plan].quota === null;
 }
 
+export function normalizePlanType(plan: PlanType | string | null | undefined): PlanType | null {
+  if (!plan) {
+    return null;
+  }
+
+  const normalized = String(plan).toUpperCase();
+
+  switch (normalized) {
+    case PlanType.FREE:
+      return PlanType.FREE;
+    case PlanType.STARTER:
+      return PlanType.STARTER;
+    case PlanType.PROFESSIONAL:
+      return PlanType.PROFESSIONAL;
+    case PlanType.ENTERPRISE:
+      return PlanType.ENTERPRISE;
+    default:
+      return null;
+  }
+}
+
 export function getInvoiceStatusColor(status: InvoiceStatus): string {
   switch (status) {
     case InvoiceStatus.PAID:

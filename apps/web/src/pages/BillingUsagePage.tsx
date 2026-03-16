@@ -31,7 +31,7 @@ import {
 } from '@/hooks/useBilling';
 
 // Types
-import { formatCurrency } from '@/types/billing';
+import { formatCurrency, normalizePlanType } from '@/types/billing';
 import type { UsageRecordsFilters } from '@/types/billing';
 
 export function BillingUsagePage({ onTabChange, mode = 'sme' }: { onTabChange?: (tab: string) => void; mode?: 'sme' | 'bank' }) {
@@ -60,6 +60,7 @@ export function BillingUsagePage({ onTabChange, mode = 'sme' }: { onTabChange?: 
   const { data: usageRecords } = useUsageRecords(filters);
   const exportMutation = useExportUsageData();
   const refreshBillingData = useRefreshBillingData();
+  const normalizedPlan = normalizePlanType(billingInfo?.plan);
 
   const visibleActionBreakdown = useMemo(() => {
     const records = usageRecords?.records || [];
@@ -232,12 +233,21 @@ export function BillingUsagePage({ onTabChange, mode = 'sme' }: { onTabChange?: 
         </Card>
 
         <div className="space-y-6">
-          {billingInfo && (
+          {normalizedPlan ? (
             <QuotaMeter
               usage={usageStats}
-              plan={billingInfo.plan}
+              plan={normalizedPlan}
               showCost={false}
             />
+          ) : (
+            <Card className="border-dashed">
+              <CardHeader>
+                <CardTitle>Quota meter unavailable</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Live quota usage will appear here once the billing service returns a complete plan assignment for this account.
+              </CardContent>
+            </Card>
           )}
 
           <Card>
