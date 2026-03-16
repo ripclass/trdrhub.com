@@ -337,6 +337,8 @@ function DashboardContent() {
               <ExportLCUpload
                 key={`upload-${urlDraftId ?? "no-draft"}-${urlTemplateId ?? "no-template"}`}
                 embedded
+                draftId={urlDraftId}
+                templateId={urlTemplateId}
                 onComplete={handleUploadComplete}
               />
             </CardContent>

@@ -76,6 +76,11 @@ vi.mock('@/api/sme-templates', () => ({
 }));
 
 describe('ExportLCUpload template handoff', () => {
+  beforeEach(() => {
+    prefillMock.mockReset();
+    toastMock.mockReset();
+  });
+
   it('applies supported template fields from the embedded upload route', async () => {
     prefillMock.mockResolvedValueOnce({
       template_name: 'Standard LC',
@@ -107,5 +112,28 @@ describe('ExportLCUpload template handoff', () => {
         title: 'Template applied',
       }),
     );
+  });
+
+  it('applies template fields when the embedded dashboard passes templateId explicitly', async () => {
+    prefillMock.mockResolvedValueOnce({
+      template_name: 'Embedded Template',
+      fields: {
+        notes: 'Carry this context into the upload.',
+      },
+    });
+
+    render(
+      renderWithProviders(
+        <ExportLCUpload embedded templateId="template-prop-456" />,
+        '/lcopilot/exporter-dashboard?section=upload',
+      ),
+    );
+
+    await waitFor(() => {
+      expect(prefillMock).toHaveBeenCalledWith({ template_id: 'template-prop-456' });
+    });
+
+    expect(await screen.findByText(/Template applied: Embedded Template/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Additional Notes/i)).toHaveValue('Carry this context into the upload.');
   });
 });

@@ -223,10 +223,17 @@ function ValidationProgressIndicator({ fileCount }: { fileCount: number }) {
 
 type ExportLCUploadProps = {
   embedded?: boolean;
+  draftId?: string;
+  templateId?: string;
   onComplete?: (payload: { jobId: string; lcNumber: string }) => void;
 };
 
-export default function ExportLCUpload({ embedded = false, onComplete }: ExportLCUploadProps = {}) {
+export default function ExportLCUpload({
+  embedded = false,
+  draftId,
+  templateId,
+  onComplete,
+}: ExportLCUploadProps = {}) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [lcIntake, setLcIntake] = useState<LCIntakeState>({ status: "idle", file: null });
   const [lcNumber, setLcNumber] = useState("");
@@ -272,8 +279,8 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const draftIdFromQuery = searchParams.get("draftId");
-  const templateIdFromQuery = searchParams.get("templateId");
+  const draftIdFromQuery = draftId ?? searchParams.get("draftId");
+  const templateIdFromQuery = templateId ?? searchParams.get("templateId");
   const initialLcTypeParam = (searchParams.get('lcType') || '').toLowerCase();
   const initialLcTypeOverride: 'auto' | 'export' | 'import' =
     initialLcTypeParam === 'export' || initialLcTypeParam === 'import'
