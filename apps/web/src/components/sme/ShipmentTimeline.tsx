@@ -4,7 +4,6 @@
  */
 import * as React from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import {
   Card,
   CardContent,
@@ -39,7 +38,6 @@ import {
   Plus,
   Bell,
   BellOff,
-  Edit,
   Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -65,44 +63,9 @@ interface ShipmentTimelineProps {
 
 const STORAGE_KEY = "lcopilot_shipment_timelines";
 
-// Mock milestones - replace with API calls
-const mockMilestones: Milestone[] = [
-  {
-    id: "milestone-1",
-    lcNumber: "LC-2024-001",
-    title: "Shipment Date",
-    description: "Latest date of shipment as per LC",
-    dueDate: addDays(new Date(), 5).toISOString(),
-    status: "pending",
-    reminderEnabled: true,
-    reminderDaysBefore: 3,
-  },
-  {
-    id: "milestone-2",
-    lcNumber: "LC-2024-001",
-    title: "Document Presentation",
-    description: "Present documents to bank within 21 days of shipment",
-    dueDate: addDays(new Date(), 26).toISOString(),
-    status: "pending",
-    reminderEnabled: true,
-    reminderDaysBefore: 7,
-  },
-  {
-    id: "milestone-3",
-    lcNumber: "LC-2024-002",
-    title: "LC Expiry",
-    description: "Letter of Credit expires",
-    dueDate: addDays(new Date(), -2).toISOString(),
-    status: "overdue",
-    reminderEnabled: true,
-    reminderDaysBefore: 14,
-  },
-];
-
 export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelineProps) {
   const { toast } = useToast();
-  const { user } = useAuth();
-  const [milestones, setMilestones] = React.useState<Milestone[]>(mockMilestones);
+  const [milestones, setMilestones] = React.useState<Milestone[]>([]);
   const [showAddDialog, setShowAddDialog] = React.useState(false);
   const [editingMilestone, setEditingMilestone] = React.useState<Milestone | null>(null);
   
@@ -113,13 +76,13 @@ export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelin
   const [formReminderEnabled, setFormReminderEnabled] = React.useState(true);
   const [formReminderDays, setFormReminderDays] = React.useState(7);
 
-  // Load milestones from localStorage
+  // Load browser-local milestones only. This beta helper is not account-synced yet.
   React.useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const storedMilestones: Milestone[] = JSON.parse(stored);
-        setMilestones([...mockMilestones, ...storedMilestones]);
+        setMilestones(storedMilestones);
       }
     } catch (error) {
       console.error("Failed to load shipment timelines:", error);
@@ -167,7 +130,7 @@ export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelin
 
     const newMilestone: Milestone = {
       id: `milestone-${Date.now()}`,
-      lcNumber: lcNumber || "LC-XXXX-XXXX",
+      lcNumber: lcNumber || "Manual entry",
       title: formTitle.trim(),
       description: formDescription.trim() || undefined,
       dueDate: new Date(formDueDate).toISOString(),
@@ -178,7 +141,7 @@ export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelin
 
     const updated = [...milestones, newMilestone];
     setMilestones(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.filter((m) => !mockMilestones.find((mock) => mock.id === m.id))));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 
     // Reset form
     setFormTitle("");
@@ -201,7 +164,7 @@ export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelin
         : m
     );
     setMilestones(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.filter((m) => !mockMilestones.find((mock) => mock.id === m.id))));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     
     toast({
       title: "Milestone Completed",
@@ -214,14 +177,14 @@ export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelin
       m.id === id ? { ...m, reminderEnabled: !m.reminderEnabled } : m
     );
     setMilestones(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.filter((m) => !mockMilestones.find((mock) => mock.id === m.id))));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   };
 
   const handleDelete = (id: string) => {
     if (confirm("Delete this milestone?")) {
       const updated = milestones.filter((m) => m.id !== id);
       setMilestones(updated);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.filter((m) => !mockMilestones.find((mock) => mock.id === m.id))));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       
       toast({
         title: "Milestone Deleted",
@@ -263,7 +226,7 @@ export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelin
         <div>
           <h2 className="text-3xl font-bold text-foreground mb-2">Shipment Timeline</h2>
           <p className="text-muted-foreground">
-            Track important milestones and get reminders for your LC shipments.
+            Track shipment milestones on this browser during beta and set manual reminder dates.
           </p>
         </div>
       )}
@@ -274,7 +237,7 @@ export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelin
             <div>
               <CardTitle>Milestones</CardTitle>
               <CardDescription>
-                {filteredMilestones.length} milestone{filteredMilestones.length !== 1 ? 's' : ''} tracked
+                {filteredMilestones.length} browser-saved milestone{filteredMilestones.length !== 1 ? 's' : ''}
               </CardDescription>
             </div>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
@@ -365,12 +328,15 @@ export function ShipmentTimeline({ embedded = false, lcNumber }: ShipmentTimelin
           </div>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
+            Beta note: This timeline is a manual browser-local tracker. It is not synced to your account or derived automatically from live LC milestones yet.
+          </div>
           {filteredMilestones.length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No milestones tracked</p>
+              <p className="text-muted-foreground">No browser-saved milestones yet</p>
               <p className="text-sm text-muted-foreground mt-2">
-                Add milestones to track important dates in your shipment timeline
+                Add milestones to track important dates manually during beta
               </p>
             </div>
           ) : (

@@ -4,7 +4,6 @@
  */
 import * as React from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import {
   Card,
   CardContent,
@@ -64,56 +63,11 @@ interface ContentLibraryProps {
 
 const STORAGE_KEY = "lcopilot_content_library";
 
-// Mock data - replace with API calls
-const mockContent: ContentItem[] = [
-  {
-    id: "desc-1",
-    type: "description",
-    value: "100% Cotton T-Shirts, Made in Bangladesh, HS Code: 6109.10.00",
-    label: "Cotton T-Shirts",
-    usageCount: 15,
-    lastUsed: "2024-01-15",
-    isFavorite: true,
-    tags: ["textiles", "apparel"],
-  },
-  {
-    id: "hs-1",
-    type: "hs_code",
-    value: "6109.10.00",
-    label: "Cotton T-Shirts",
-    usageCount: 12,
-    lastUsed: "2024-01-18",
-    isFavorite: true,
-    tags: ["textiles"],
-  },
-  {
-    id: "port-1",
-    type: "port",
-    value: "Chittagong Port, Bangladesh",
-    label: "Chittagong Port",
-    usageCount: 25,
-    lastUsed: "2024-01-20",
-    isFavorite: true,
-    tags: ["bangladesh"],
-  },
-  {
-    id: "port-2",
-    type: "port",
-    value: "Port of Singapore",
-    label: "Singapore Port",
-    usageCount: 8,
-    lastUsed: "2024-01-10",
-    isFavorite: false,
-    tags: ["singapore"],
-  },
-];
-
 export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryProps) {
   const { toast } = useToast();
-  const { user } = useAuth();
   const [activeTab, setActiveTab] = React.useState<"all" | "descriptions" | "hs_codes" | "ports">("all");
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [content, setContent] = React.useState<ContentItem[]>(mockContent);
+  const [content, setContent] = React.useState<ContentItem[]>([]);
   const [showAddDialog, setShowAddDialog] = React.useState(false);
   
   // Add new content state
@@ -121,13 +75,13 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
   const [newContentValue, setNewContentValue] = React.useState("");
   const [newContentLabel, setNewContentLabel] = React.useState("");
 
-  // Load content from localStorage
+  // Load browser-local content only. This beta helper is not account-synced yet.
   React.useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const storedContent: ContentItem[] = JSON.parse(stored);
-        setContent([...mockContent, ...storedContent]);
+        setContent(storedContent);
       }
     } catch (error) {
       console.error("Failed to load content library:", error);
@@ -186,7 +140,7 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
 
     const updated = [...content, newItem];
     setContent(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.filter((item) => !mockContent.find((m) => m.id === item.id))));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 
     setNewContentValue("");
     setNewContentLabel("");
@@ -203,14 +157,14 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
       item.id === id ? { ...item, isFavorite: !item.isFavorite } : item
     );
     setContent(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.filter((item) => !mockContent.find((m) => m.id === item.id))));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   };
 
   const handleDelete = (id: string) => {
     if (confirm("Delete this content item?")) {
       const updated = content.filter((item) => item.id !== id);
       setContent(updated);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.filter((item) => !mockContent.find((m) => m.id === item.id))));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       toast({
         title: "Content Deleted",
         description: "Content item has been removed from your library.",
@@ -226,7 +180,7 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
         : c
     );
     setContent(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.filter((item) => !mockContent.find((m) => m.id === item.id))));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 
     // Copy to clipboard
     navigator.clipboard.writeText(item.value);
@@ -275,7 +229,7 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
         <div>
           <h2 className="text-3xl font-bold text-foreground mb-2">Content Library</h2>
           <p className="text-muted-foreground">
-            Reuse frequently used descriptions, HS codes, ports, and other content to speed up your workflow.
+            Save frequently used descriptions, HS codes, ports, and other content on this browser during beta.
           </p>
         </div>
       )}
@@ -286,7 +240,7 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
             <div>
               <CardTitle>Your Content Library</CardTitle>
               <CardDescription>
-                {filteredContent.length} item{filteredContent.length !== 1 ? 's' : ''} available
+                {filteredContent.length} item{filteredContent.length !== 1 ? 's' : ''} saved in this browser
               </CardDescription>
             </div>
             <Button onClick={() => setShowAddDialog(true)}>
@@ -296,6 +250,9 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
+            Beta note: Content saved here stays on this browser only for now. It is not synced to your TRDR Hub account or shared across devices.
+          </div>
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -320,9 +277,9 @@ export function ContentLibrary({ embedded = false, onSelect }: ContentLibraryPro
               {filteredContent.length === 0 ? (
                 <div className="text-center py-12">
                   <Library className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No content found</p>
+                  <p className="text-muted-foreground">No browser-saved content yet</p>
                   <p className="text-sm text-muted-foreground mt-2">
-                    {searchQuery ? "Try a different search term" : "Add your first content item to get started"}
+                    {searchQuery ? "Try a different search term" : "Add your first content item to build a local beta library"}
                   </p>
                 </div>
               ) : (

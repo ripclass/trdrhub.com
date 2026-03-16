@@ -607,7 +607,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
           <CardHeader>
             <CardTitle>Your LC Management</CardTitle>
             <CardDescription>
-              Manage your draft uploads and track amended LCs
+              Manage browser-saved upload drafts and track amended LCs from live version data.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -615,7 +615,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="drafts" className="flex items-center gap-2">
                   <Edit3 className="w-4 h-4" />
-                  Drafts ({drafts.length})
+                  Browser Drafts ({drafts.length})
                 </TabsTrigger>
                 <TabsTrigger value="amendments" className="flex items-center gap-2">
                   <GitBranch className="w-4 h-4" />
@@ -624,6 +624,9 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
               </TabsList>
 
               <TabsContent value="drafts" className="mt-6">
+                <div className="mb-4 rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
+                  These drafts are saved in this browser only during beta. Shared account-backed draft tracking lives under LC Workspace.
+                </div>
                 {isLoadingDrafts ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="animate-spin w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full mr-3"></div>
@@ -632,8 +635,8 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                 ) : drafts.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Edit3 className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                    <p>No drafts saved</p>
-                    <p className="text-sm">Save drafts while uploading to resume later</p>
+                    <p>No browser drafts saved</p>
+                    <p className="text-sm">Save a draft while uploading to resume later on this device</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -645,7 +648,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                               {draft.lcNumber || 'Untitled Draft'}
                             </h4>
                             <Badge variant="outline" className="text-xs">
-                              Incomplete
+                              Browser-local beta
                             </Badge>
                           </div>
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -677,6 +680,9 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
               </TabsContent>
 
               <TabsContent value="amendments" className="mt-6">
+                <div className="mb-4 rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Amendment counts are live. Use LC Workspace for deeper follow-up while dashboard version-history routing is still being connected.
+                </div>
                 {isLoadingAmendments ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="animate-spin w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full mr-3"></div>
@@ -711,12 +717,14 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Link to={`/lcopilot/results/latest?lc=${lc.lc_number}`}>
-                            <Button variant="outline" size="sm">
-                              <History className="w-4 h-4 mr-2" />
-                              View History
-                            </Button>
-                          </Link>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onNavigate("workspace")}
+                          >
+                            <History className="w-4 h-4 mr-2" />
+                            Open Workspace
+                          </Button>
                         </div>
                       </div>
                     ))}
@@ -947,6 +955,7 @@ interface SettingsPanelProps {
 }
 
 function SettingsPanel({ toast }: SettingsPanelProps) {
+  const preferencesStorageKey = "lcopilot_exporter_preferences";
   const [emailAlerts, setEmailAlerts] = useState(true);
   const [autoArchiveDrafts, setAutoArchiveDrafts] = useState(false);
   const [digestFrequency, setDigestFrequency] = useState("daily");
@@ -954,15 +963,50 @@ function SettingsPanel({ toast }: SettingsPanelProps) {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("preferences");
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(preferencesStorageKey);
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as {
+        emailAlerts?: boolean;
+        autoArchiveDrafts?: boolean;
+        digestFrequency?: string;
+        defaultView?: AnySection;
+      };
+      setEmailAlerts(parsed.emailAlerts ?? true);
+      setAutoArchiveDrafts(parsed.autoArchiveDrafts ?? false);
+      setDigestFrequency(parsed.digestFrequency ?? "daily");
+      setDefaultView(parsed.defaultView ?? "overview");
+    } catch (error) {
+      console.error("Failed to load exporter browser preferences:", error);
+    }
+  }, []);
+
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
+    try {
+      setSaving(true);
+      localStorage.setItem(
+        preferencesStorageKey,
+        JSON.stringify({
+          emailAlerts,
+          autoArchiveDrafts,
+          digestFrequency,
+          defaultView,
+        }),
+      );
       setSaving(false);
       toast({
         title: "Preferences updated",
-        description: "Your exporter workspace settings were saved successfully.",
+        description: "Your exporter browser preferences were saved on this device.",
       });
-    }, 600);
+    } catch (error) {
+      setSaving(false);
+      toast({
+        title: "Save failed",
+        description: "Could not save browser preferences on this device.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleReset = () => {
@@ -970,6 +1014,7 @@ function SettingsPanel({ toast }: SettingsPanelProps) {
     setAutoArchiveDrafts(false);
     setDigestFrequency("daily");
     setDefaultView("overview");
+    localStorage.removeItem(preferencesStorageKey);
   };
 
   return (
@@ -1048,6 +1093,9 @@ function SettingsPanel({ toast }: SettingsPanelProps) {
                 {saving ? "Saving..." : "Save preferences"}
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Beta note: this tab stores browser preferences only. It does not yet control live email delivery or account-wide automation.
+            </p>
           </TabsContent>
           <TabsContent value="company-profile" className="mt-6">
             <CompanyProfileView embedded />
@@ -1075,8 +1123,8 @@ function HelpPanel() {
           <Button variant="outline" onClick={() => window.open("/lcopilot/support", "_blank")}>
             Support Center
           </Button>
-          <Button variant="outline" onClick={() => window.open("/docs/exporter-runbook", "_blank")}>
-            Exporter Runbook
+          <Button variant="outline" onClick={() => window.open("/lcopilot/support", "_blank")}>
+            Exporter Help
           </Button>
           <Button variant="outline" onClick={() => window.open("mailto:support@trdrhub.com")}>Email Support</Button>
         </div>

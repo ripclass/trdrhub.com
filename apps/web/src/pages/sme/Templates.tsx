@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -40,14 +40,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
+import { 
   FileText,
   Plus,
   Edit3,
   Trash2,
   Copy,
   RefreshCw,
-  CheckCircle2,
   Save,
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -59,52 +58,14 @@ import { smeTemplatesApi, type SMETemplate, type SMETemplateCreate, type SMETemp
 // Use SMETemplate type from API
 type Template = SMETemplate;
 
-// Mock data - replace with API calls
-const mockTemplates: Template[] = [
-  {
-    id: "template-1",
-    name: "Standard LC Template",
-    type: "lc",
-    description: "Standard letter of credit template for regular trade",
-    fields: {
-      beneficiary: "{{company_name}}",
-      amount: "USD {{amount}}",
-      expiry_date: "{{expiry_days}} days from issue",
-      shipment_terms: "FOB",
-    },
-    is_default: true,
-    is_active: true,
-    usage_count: 45,
-    created_at: "2024-01-01T10:00:00Z",
-    updated_at: "2024-01-15T14:30:00Z",
-  },
-  {
-    id: "template-2",
-    name: "Commercial Invoice Template",
-    type: "document",
-    document_type: "commercial_invoice",
-    description: "Pre-filled commercial invoice with common fields",
-    fields: {
-      consignee: "{{default_consignee}}",
-      shipper: "{{company_name}}",
-      incoterms: "FOB",
-      currency: "USD",
-    },
-    is_default: false,
-    is_active: true,
-    usage_count: 23,
-    created_at: "2024-01-05T09:00:00Z",
-    updated_at: "2024-01-10T11:20:00Z",
-  },
-];
-
 export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const runtimeCompanyId = (user as { company_id?: string } | null)?.company_id;
   const [loading, setLoading] = React.useState(false);
   const [templates, setTemplates] = React.useState<Template[]>([]);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<"lc" | "document">("lc");
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
   const [editDialogOpen, setEditDialogOpen] = React.useState(false);
@@ -121,6 +82,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
   const loadTemplates = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const response = await smeTemplatesApi.list({
         type: activeTab,
         active_only: true,
@@ -128,11 +90,11 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
       setTemplates(response.items);
     } catch (error: any) {
       console.error("Failed to load templates:", error);
-      // Fallback to mock data
-      setTemplates(mockTemplates.filter((t) => t.type === activeTab));
+      setTemplates([]);
+      setLoadError(error.response?.data?.detail || "Templates are temporarily unavailable.");
       toast({
-        title: "Warning",
-        description: "Failed to load templates. Using cached data.",
+        title: "Templates Unavailable",
+        description: "Live templates could not be loaded right now.",
         variant: "destructive",
       });
     } finally {
@@ -166,7 +128,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
-    if (!user?.company_id) {
+    if (!runtimeCompanyId) {
       toast({
         title: "Error",
         description: "Company ID not found",
@@ -204,7 +166,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
         };
         const created = await smeTemplatesApi.create({
           ...createData,
-          company_id: user.company_id,
+          company_id: runtimeCompanyId,
           user_id: user.id || "",
         });
         await loadTemplates();
@@ -253,24 +215,15 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
 
   const handleUseTemplate = async (template: Template) => {
     try {
-      // Mark template as used
       await smeTemplatesApi.use(template.id);
-
-      // Pre-fill template fields
-      const prefilled = await smeTemplatesApi.prefill({
-        template_id: template.id,
-      });
-
-      // Navigate to upload page with pre-filled data
-      const prefilledData = encodeURIComponent(JSON.stringify(prefilled.fields));
       if (embedded) {
-        navigate(`/lcopilot/${user?.role === "importer" ? "importer" : "exporter"}-dashboard?section=upload&template=${template.id}&prefill=${prefilledData}`);
+        navigate(`/lcopilot/${user?.role === "importer" ? "importer" : "exporter"}-dashboard?section=upload`);
       } else {
-        navigate(`/${user?.role === "importer" ? "import" : "export"}-lc-upload?template=${template.id}&prefill=${prefilledData}`);
+        navigate(`/${user?.role === "importer" ? "import" : "export"}-lc-upload`);
       }
       toast({
-        title: "Template Applied",
-        description: `Template "${template.name}" has been loaded with pre-filled data.`,
+        title: "Template Opened",
+        description: `Template "${template.name}" was opened for reference. Auto-prefill is not live yet in this beta.`,
       });
     } catch (error: any) {
       toast({
@@ -316,16 +269,17 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            Templates allow you to pre-fill common fields when creating new LC validations or uploading documents.
-            Use variables like <code className="bg-muted px-1 rounded">{"{{company_name}}"}</code> or{" "}
-            <code className="bg-muted px-1 rounded">{"{{default_consignee}}"}</code> to auto-populate from your company profile.
+            Templates store reusable LC and document field suggestions. They are live API-backed records, but one-click upload prefill is not live yet in this beta.
           </p>
           <p>
-            <strong>LC Templates:</strong> Pre-fill LC-specific fields like beneficiary, amount, expiry dates, and shipment terms.
+            <strong>LC Templates:</strong> Save common LC wording, beneficiary details, shipment terms, and recurring field patterns.
           </p>
           <p>
-            <strong>Document Templates:</strong> Pre-fill document-specific fields like consignee, shipper, incoterms, and currency.
+            <strong>Document Templates:</strong> Save recurring document wording, party details, incoterms, and document-specific notes.
           </p>
+          <div className="rounded-lg border border-dashed border-border/70 bg-muted/30 p-3">
+            Beta note: using a template currently opens the upload workflow for manual entry. It does not auto-fill upload fields yet.
+          </div>
         </CardContent>
       </Card>
 
@@ -354,6 +308,16 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
               {loading ? (
                 <div className="flex items-center justify-center py-8 text-muted-foreground">
                   <RefreshCw className="h-5 w-5 animate-spin mr-2" /> Loading templates...
+                </div>
+              ) : loadError ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p>Templates unavailable right now</p>
+                  <p className="text-sm">{loadError}</p>
+                  <Button onClick={() => void loadTemplates()} className="mt-4" variant="outline">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
                 </div>
               ) : filteredTemplates.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -412,7 +376,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
                               className="gap-2"
                             >
                               <FileText className="h-4 w-4" />
-                              Use
+                              Open Upload
                             </Button>
                             <Button
                               variant="ghost"
