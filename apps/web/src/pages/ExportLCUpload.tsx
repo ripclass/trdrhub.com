@@ -20,6 +20,8 @@ import { BlockedUploadModal } from "@/components/validation";
 import { QuotaLimitModal } from "@/components/billing/QuotaLimitModal";
 import { LcopilotQuotaBanner } from "@/components/billing/LcopilotQuotaBanner";
 import { PreparationGuide } from "@/components/exporter/PreparationGuide";
+import { smeTemplatesApi } from "@/api/sme-templates";
+import { buildTemplateUploadPrefill } from "@/lib/exporter/templatePrefill";
 // Shared document types - SINGLE SOURCE OF TRUTH
 import { 
   DOCUMENT_TYPES, 
@@ -92,6 +94,15 @@ interface LCIntakeState {
     help_text?: string;
   };
 }
+
+type RestoredFileData = FileData & {
+  tag?: string;
+  manualDocumentType?: boolean;
+  detectedType?: string;
+  detectedConfidence?: number;
+  isTradeDocument?: boolean;
+  relevanceWarning?: string;
+};
 
 // Generate document type options from SHARED TYPES - SINGLE SOURCE OF TRUTH
 // This ensures frontend and backend always use the same values
@@ -231,6 +242,10 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
   const [versionInfo, setVersionInfo] = useState<{ exists: boolean; nextVersion: string; currentVersions: number } | null>(null);
   const [isCheckingLC, setIsCheckingLC] = useState(false);
   const [showDocTypeErrors, setShowDocTypeErrors] = useState(false);
+  const [templatePrefillInfo, setTemplatePrefillInfo] = useState<{
+    templateName: string;
+    appliedFields: string[];
+  } | null>(null);
   
   // Blocked upload modal state
   const [blockedModal, setBlockedModal] = useState<{
@@ -294,23 +309,25 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
 
           if (filesData.length > 0) {
             // Files available from session storage - restore them
-            const restoredFiles: UploadedFile[] = filesData.map(fileData => {
-              const detection = detectDocumentType(fileData.name);
-              const restoredDocumentType = fileData.documentType || fileData.tag || detection.type;
+            const restoredFiles: UploadedFile[] = filesData.map((fileData) => {
+              const restoredFileData = fileData as RestoredFileData;
+              const detection = detectDocumentType(restoredFileData.name);
+              const restoredDocumentType =
+                restoredFileData.documentType || restoredFileData.tag || detection.type;
               return {
-                id: fileData.id,
+                id: restoredFileData.id,
                 file: new File([], fileData.name), // Placeholder file object
-                name: fileData.name,
-                size: fileData.size,
-                type: fileData.type,
-                status: fileData.status,
-                progress: fileData.progress,
+                name: restoredFileData.name,
+                size: restoredFileData.size,
+                type: restoredFileData.type,
+                status: restoredFileData.status,
+                progress: restoredFileData.progress,
                 documentType: restoredDocumentType,
-                manualDocumentType: !!fileData.manualDocumentType,
-                detectedType: fileData.detectedType || detection.type,
-                detectedConfidence: fileData.detectedConfidence ?? detection.confidence,
-                isTradeDocument: fileData.isTradeDocument ?? detection.isTradeDoc,
-                relevanceWarning: fileData.relevanceWarning ?? detection.warning,
+                manualDocumentType: !!restoredFileData.manualDocumentType,
+                detectedType: restoredFileData.detectedType || detection.type,
+                detectedConfidence: restoredFileData.detectedConfidence ?? detection.confidence,
+                isTradeDocument: restoredFileData.isTradeDocument ?? detection.isTradeDoc,
+                relevanceWarning: restoredFileData.relevanceWarning ?? detection.warning,
               };
             });
 
@@ -350,6 +367,94 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
       }
     }
   }, [searchParams, loadDraft, toast]);
+
+  useEffect(() => {
+    const draftId = searchParams.get("draftId");
+    if (draftId) {
+      return;
+    }
+
+    const lcNumberParam = searchParams.get("lcNumber");
+    const issueDateParam = searchParams.get("issueDate");
+    const notesParam = searchParams.get("notes");
+
+    if (lcNumberParam && !lcNumber.trim()) {
+      setLcNumber(lcNumberParam);
+    }
+
+    if (issueDateParam && !issueDate.trim()) {
+      setIssueDate(issueDateParam);
+    }
+
+    if (notesParam && !notes.trim()) {
+      setNotes(notesParam);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const draftId = searchParams.get("draftId");
+    const templateId = searchParams.get("templateId");
+
+    if (draftId || !templateId) {
+      return;
+    }
+
+    let active = true;
+
+    const loadTemplatePrefill = async () => {
+      try {
+        const response = await smeTemplatesApi.prefill({ template_id: templateId });
+        if (!active) {
+          return;
+        }
+
+        const prefill = buildTemplateUploadPrefill(response.fields || {}, response.template_name);
+
+        if (prefill.lcNumber && !lcNumber.trim()) {
+          setLcNumber(prefill.lcNumber);
+        }
+
+        if (prefill.issueDate && !issueDate.trim()) {
+          setIssueDate(prefill.issueDate);
+        }
+
+        if (prefill.notes && !notes.trim()) {
+          setNotes(prefill.notes);
+        }
+
+        setTemplatePrefillInfo({
+          templateName: response.template_name,
+          appliedFields: prefill.appliedFields,
+        });
+
+        toast({
+          title: "Template applied",
+          description:
+            prefill.appliedFields.length > 0
+              ? `${response.template_name} filled ${prefill.appliedFields.join(", ")}. Review the values before validating.`
+              : `${response.template_name} opened without any supported upload fields to prefill.`,
+        });
+      } catch (error: any) {
+        if (!active) {
+          return;
+        }
+
+        toast({
+          title: "Template prefill unavailable",
+          description:
+            error.response?.data?.detail ||
+            "The upload workflow opened, but this template could not be applied automatically.",
+          variant: "destructive",
+        });
+      }
+    };
+
+    void loadTemplatePrefill();
+
+    return () => {
+      active = false;
+    };
+  }, [searchParams, toast]);
 
   // Check if LC number exists when user enters it
   const handleLCNumberChange = async (value: string) => {
@@ -1067,6 +1172,28 @@ export default function ExportLCUpload({ embedded = false, onComplete }: ExportL
             </div>
           </CardContent>
         </Card>
+
+        {templatePrefillInfo && (
+          <Card className="mb-6 border-blue-200 bg-blue-50">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="bg-blue-100 p-2 rounded-lg">
+                  <Sparkles className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-blue-900 mb-1">
+                    Template applied: {templatePrefillInfo.templateName}
+                  </h4>
+                  <p className="text-sm text-blue-700">
+                    {templatePrefillInfo.appliedFields.length > 0
+                      ? `Applied ${templatePrefillInfo.appliedFields.join(", ")} to this upload form. Review and adjust before validating.`
+                      : "This template did not include any supported upload fields. You can still use it as a manual reference during this beta."}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Re-attach Files Banner - only show if no session files available */}
         {stagedFilesMeta.length > 0 && !hasSessionFiles && (

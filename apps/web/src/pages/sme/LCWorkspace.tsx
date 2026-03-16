@@ -4,12 +4,14 @@
 
 import * as React from "react";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,7 +47,6 @@ import {
   RefreshCw,
   FolderKanban,
 } from "lucide-react";
-import { TeamRoles } from "@/components/sme/TeamRoles";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -107,14 +108,13 @@ type WorkspaceTab = "workspace" | "drafts" | "amendments";
 
 export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("workspace");
   const [workspaces, setWorkspaces] = useState<LCWorkspace[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [amendments, setAmendments] = useState<Amendment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedWorkspace, setSelectedWorkspace] = useState<LCWorkspace | null>(null);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
-  const [showCreateDraft, setShowCreateDraft] = useState(false);
   const [newLCNumber, setNewLCNumber] = useState("");
   const [newClientName, setNewClientName] = useState("");
 
@@ -246,6 +246,37 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
+  const openUploadForLc = (lcNumber?: string, notes?: string) => {
+    const params = new URLSearchParams();
+    if (embedded) {
+      params.set("section", "upload");
+    }
+    if (lcNumber) {
+      params.set("lcNumber", lcNumber);
+    }
+    if (notes) {
+      params.set("notes", notes);
+    }
+
+    navigate(
+      embedded
+        ? `/lcopilot/exporter-dashboard?${params.toString()}`
+        : `/export-lc-upload${params.toString() ? `?${params.toString()}` : ""}`,
+    );
+  };
+
+  const openLatestReview = (sessionId?: string) => {
+    if (!sessionId) {
+      return;
+    }
+
+    navigate(
+      embedded
+        ? `/lcopilot/exporter-dashboard?section=reviews&jobId=${sessionId}`
+        : `/lcopilot/results/${sessionId}`,
+    );
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -346,12 +377,13 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            setSelectedWorkspace(workspace);
-                            setActiveTab("workspace");
-                          }}
+                          onClick={() =>
+                            workspace.latest_validation_session_id
+                              ? openLatestReview(workspace.latest_validation_session_id)
+                              : openUploadForLc(workspace.lc_number)
+                          }
                         >
-                          View Details
+                          {workspace.latest_validation_session_id ? "Open Latest Review" : "Continue Upload"}
                         </Button>
                       </div>
                     </div>
@@ -391,14 +423,42 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
                                 </TableCell>
                                 <TableCell>
                                   {item.status === "missing" && (
-                                    <Button variant="ghost" size="sm">
-                                      <Upload className="h-4 w-4" />
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openUploadForLc(workspace.lc_number)}
+                                    >
+                                      <Upload className="h-4 w-4 mr-2" />
+                                      Upload
                                     </Button>
                                   )}
                                   {item.status === "invalid" && (
-                                    <Button variant="ghost" size="sm">
-                                      <RefreshCw className="h-4 w-4" />
-                                    </Button>
+                                    workspace.latest_validation_session_id ? (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openLatestReview(workspace.latest_validation_session_id)}
+                                      >
+                                        <RefreshCw className="h-4 w-4 mr-2" />
+                                        Review
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openUploadForLc(workspace.lc_number)}
+                                      >
+                                        <RefreshCw className="h-4 w-4 mr-2" />
+                                        Re-upload
+                                      </Button>
+                                    )
+                                  )}
+                                  {item.status !== "missing" && item.status !== "invalid" && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {workspace.latest_validation_session_id
+                                        ? "Tracked in latest review"
+                                        : "Tracked in this workspace"}
+                                    </span>
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -406,19 +466,9 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
                           </TableBody>
                         </Table>
                       </div>
-                      <Accordion type="single" collapsible className="mt-4">
-                        <AccordionItem value="team">
-                          <AccordionTrigger className="text-sm font-medium">
-                            Team Members & Sharing
-                          </AccordionTrigger>
-                          <AccordionContent>
-                            <TeamRoles 
-                              workspaceId={workspace.id} 
-                              currentUserRole="owner" // TODO: Get actual user role from workspace member check
-                            />
-                          </AccordionContent>
-                        </AccordionItem>
-                      </Accordion>
+                      <div className="rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
+                        Team sharing is not enabled in this beta yet. Use this workspace to track checklist progress, then continue document upload or latest review from the actions above.
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -509,11 +559,19 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
                             Promote
                           </Button>
                         )}
-                        <Button variant="outline" size="sm">
-                          <ArrowRight className="h-4 w-4" />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openUploadForLc(draft.lc_number, draft.notes)}
+                        >
+                          <ArrowRight className="h-4 w-4 mr-2" />
+                          Continue in Upload
                         </Button>
                       </div>
                     </div>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Backend draft metadata is preserved here. File attachments still need to be added in the upload workflow during beta.
+                    </p>
                   </CardContent>
                 </Card>
               ))}

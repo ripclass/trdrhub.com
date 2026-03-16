@@ -1,6 +1,6 @@
 // ExporterDashboard - Section-based dashboard with embedded workflows
-import { useEffect, useState, useCallback } from "react";
-import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams, Link } from "react-router-dom";
 import * as React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,8 @@ import { ResultsProvider, useResultsContext } from "@/context/ResultsContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ExporterSidebar } from "@/components/exporter/ExporterSidebar";
 import { useAuth } from "@/hooks/use-auth";
+import { useLcopilotQuota } from "@/hooks/use-lcopilot-quota";
+import { getExporterSessionTruth } from "@/lib/exporter/dashboardTruth";
 import {
   type ExporterSection,
   type SidebarSection,
@@ -65,6 +67,18 @@ import {
 } from "lucide-react";
 
 const DASHBOARD_BASE = "/lcopilot/exporter-dashboard";
+
+function formatTimeAgo(dateString: string) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+
+  if (diffInHours < 1) return "Just now";
+  if (diffInHours < 24) return `${diffInHours}h ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) return `${diffInDays}d ago`;
+  return date.toLocaleDateString();
+}
 
 export default function ExporterDashboard() {
   return (
@@ -340,24 +354,7 @@ function DashboardContent() {
         {activeSection === "analytics" && <ExporterAnalytics embedded />}
 
         {/* Notifications Section */}
-        {activeSection === "notifications" && (
-          <Card className="shadow-soft border-0">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="w-5 h-5" />
-                Notifications
-              </CardTitle>
-              <CardDescription>Stay updated on your LC validations and compliance alerts</CardDescription>
-            </CardHeader>
-            <CardContent className="text-center py-8">
-              <Bell className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
-              <p className="text-muted-foreground">No notifications yet</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                You'll receive notifications when your LCs are validated or require attention.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        {activeSection === "notifications" && <NotificationsPanel />}
 
         {/* Billing Section */}
         {activeSection === "billing" && (
@@ -480,35 +477,34 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
     }
   };
 
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-
-    if (diffInHours < 1) return 'Just now';
-    if (diffInHours < 24) return `${diffInHours}h ago`;
-    const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays < 7) return `${diffInDays}d ago`;
-    return date.toLocaleDateString();
-  };
-
   const companyName = user?.company || user?.name || "Exporter";
+
+  const sessionTruths = useMemo(
+    () =>
+      sessions.map((session) => ({
+        session,
+        truth: getExporterSessionTruth(session),
+      })),
+    [sessions],
+  );
 
   // Calculate real stats from sessions
   const now = new Date();
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const thisMonthSessions = sessions.filter(s => new Date(s.created_at) >= thisMonthStart);
-  const completedSessions = sessions.filter(s => s.status === 'completed');
-  const totalDiscrepancies = sessions.reduce((sum, s) => sum + (s.discrepancies?.length || 0), 0);
-  const totalDocuments = sessions.reduce((sum, s) => sum + (s.documents?.length || 0), 0);
-  
-  // Calculate success rate (sessions with 0 discrepancies)
-  const successfulSessions = completedSessions.filter(s => (s.discrepancies?.length || 0) === 0);
-  const successRate = completedSessions.length > 0 
-    ? Math.round((successfulSessions.length / completedSessions.length) * 100 * 10) / 10
+  const completedSessionTruths = sessionTruths.filter(({ session }) => session.status === 'completed');
+  const readySessionTruths = completedSessionTruths.filter(({ truth }) => truth.canSubmit);
+  const reviewSessionTruths = completedSessionTruths.filter(({ truth }) => truth.state === "review");
+  const blockedSessionTruths = completedSessionTruths.filter(({ truth }) => truth.state === "blocked");
+  const totalIssues = completedSessionTruths.reduce((sum, { truth }) => sum + truth.issueCount, 0);
+  const totalDocuments = sessionTruths.reduce((sum, { truth }) => sum + truth.documentCount, 0);
+
+  const submitReadyRate = completedSessionTruths.length > 0
+    ? Math.round((readySessionTruths.length / completedSessionTruths.length) * 100 * 10) / 10
     : 0;
 
   // Calculate average processing time
+  const completedSessions = completedSessionTruths.map(({ session }) => session);
   const sessionsWithTime = completedSessions.filter(s => s.processing_started_at && s.processing_completed_at);
   const avgProcessingMs = sessionsWithTime.length > 0
     ? sessionsWithTime.reduce((sum, s) => {
@@ -522,9 +518,8 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
     : "N/A";
 
   // Get recent validations (last 5 completed)
-  const recentValidations = [...sessions]
-    .filter(s => s.status === 'completed')
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  const recentValidations = [...completedSessionTruths]
+    .sort((a, b) => new Date(b.session.created_at).getTime() - new Date(a.session.created_at).getTime())
     .slice(0, 5);
 
   return (
@@ -560,9 +555,10 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Success Rate</p>
-                <p className="text-2xl font-bold text-foreground">{successRate}%</p>
-                <Progress value={successRate} className="mt-2 h-2" />
+                <p className="text-sm font-medium text-muted-foreground">Submit-ready Rate</p>
+                <p className="text-2xl font-bold text-foreground">{submitReadyRate}%</p>
+                <Progress value={submitReadyRate} className="mt-2 h-2" />
+                <p className="text-xs text-muted-foreground mt-2">Submit-ready validations</p>
               </div>
               <div className="bg-green-500/10 p-3 rounded-lg">
                 <TrendingUp className="w-6 h-6 text-green-500" />
@@ -590,9 +586,9 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Discrepancies</p>
-                <p className="text-2xl font-bold text-foreground">{totalDiscrepancies}</p>
-                <p className="text-xs text-muted-foreground">{totalDocuments} docs processed</p>
+                <p className="text-sm font-medium text-muted-foreground">Needs Review</p>
+                <p className="text-2xl font-bold text-foreground">{reviewSessionTruths.length + blockedSessionTruths.length}</p>
+                <p className="text-xs text-muted-foreground">{totalIssues} total issues across completed validations</p>
               </div>
               <div className="bg-amber-500/10 p-3 rounded-lg">
                 <AlertTriangle className="w-6 h-6 text-amber-500" />
@@ -771,21 +767,19 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {recentValidations.map((session) => {
-                    const discrepancyCount = session.discrepancies?.length || 0;
-                    const docCount = session.documents?.length || 0;
-                    const hasIssues = discrepancyCount > 0;
-                    const lcNumber = session.extracted_data?.lc_number || session.id.slice(0, 8).toUpperCase();
+                  {recentValidations.map(({ session, truth }) => {
+                    const docCount = truth.documentCount;
+                    const lcNumber = truth.lcNumber;
                     
                     return (
                       <div key={session.id} className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-gray-200/50">
                         <div className="flex items-center gap-4">
                           <div className="flex-shrink-0">
-                            {!hasIssues ? (
+                            {truth.overallStatus === "success" ? (
                               <div className="bg-green-500/10 p-2 rounded-lg">
                                 <CheckCircle className="w-5 h-5 text-green-500" />
                               </div>
-                            ) : discrepancyCount > 2 ? (
+                            ) : truth.overallStatus === "error" ? (
                               <div className="bg-red-500/10 p-2 rounded-lg">
                                 <XCircle className="w-5 h-5 text-red-500" />
                               </div>
@@ -806,13 +800,16 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-right">
-                            <StatusBadge status={
-                              !hasIssues ? "success" : 
-                              discrepancyCount > 2 ? "error" : "warning"
-                            }>
-                              {discrepancyCount === 0 ? "No issues" : 
-                               discrepancyCount === 1 ? "1 issue" : `${discrepancyCount} issues`}
+                            <StatusBadge status={truth.overallStatus}>
+                              {truth.statusLabel}
                             </StatusBadge>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {truth.issueCount === 0
+                                ? "No issues recorded"
+                                : truth.issueCount === 1
+                                ? "1 issue recorded"
+                                : `${truth.issueCount} issues recorded`}
+                            </p>
                           </div>
                           <Link to={`/lcopilot/exporter-dashboard?section=reviews&jobId=${session.id}`}>
                             <Button variant="outline" size="sm">
@@ -848,12 +845,16 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                   <span className="font-medium">{totalDocuments}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Total Discrepancies</span>
-                  <span className="font-medium">{totalDiscrepancies}</span>
+                  <span className="text-sm text-muted-foreground">Submit-ready</span>
+                  <span className="font-medium">{readySessionTruths.length}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Completed</span>
-                  <span className="font-medium">{completedSessions.length}</span>
+                  <span className="text-sm text-muted-foreground">Needs review</span>
+                  <span className="font-medium">{reviewSessionTruths.length + blockedSessionTruths.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Blocked</span>
+                  <span className="font-medium">{blockedSessionTruths.length}</span>
                 </div>
               </div>
             </CardContent>
@@ -872,26 +873,42 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                 <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
               ) : (
                 <div className="space-y-3">
-                  {recentValidations.slice(0, 3).map((session) => {
-                    const discrepancyCount = session.discrepancies?.length || 0;
-                    const lcNumber = session.extracted_data?.lc_number || session.id.slice(0, 8);
+                  {recentValidations.slice(0, 3).map(({ session, truth }) => {
+                    const lcNumber = truth.lcNumber;
+                    const activityTitle =
+                      truth.state === "blocked"
+                        ? "Validation blocked"
+                        : truth.statusLabel === "Ready with cautions"
+                        ? "Ready with cautions"
+                        : truth.canSubmit
+                        ? "Ready for submission"
+                        : truth.statusLabel === "Completed"
+                        ? "Validation completed"
+                        : "Review needed";
                     return (
                       <div key={session.id} className="p-3 rounded-lg border border-gray-200/50">
                         <div className="flex items-start gap-3">
                           <div className={`p-1 rounded-full ${
-                            discrepancyCount === 0 ? "bg-green-500/10" :
-                            discrepancyCount > 2 ? "bg-red-500/10" : "bg-amber-500/10"
+                            truth.overallStatus === "success" ? "bg-green-500/10" :
+                            truth.overallStatus === "error" ? "bg-red-500/10" : "bg-amber-500/10"
                           }`}>
                             <div className={`w-2 h-2 rounded-full ${
-                              discrepancyCount === 0 ? "bg-green-500" :
-                              discrepancyCount > 2 ? "bg-red-500" : "bg-amber-500"
+                              truth.overallStatus === "success" ? "bg-green-500" :
+                              truth.overallStatus === "error" ? "bg-red-500" : "bg-amber-500"
                             }`} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <h4 className="font-medium text-sm text-foreground">
-                              {discrepancyCount === 0 ? "Validation Passed" : `${discrepancyCount} Issues Found`}
+                              {activityTitle}
                             </h4>
                             <p className="text-xs text-muted-foreground mt-1">LC-{lcNumber}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {truth.issueCount === 0
+                                ? "No issues recorded"
+                                : truth.issueCount === 1
+                                ? "1 issue recorded"
+                                : `${truth.issueCount} issues recorded`}
+                            </p>
                             <p className="text-xs text-muted-foreground mt-1">{formatTimeAgo(session.created_at)}</p>
                           </div>
                         </div>
@@ -912,7 +929,10 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
 
 function NotificationsCard({ notifications }: { notifications: Notification[] }) {
   const [localNotifications, setLocalNotifications] = React.useState(notifications);
-  const navigate = useNavigate();
+
+  useEffect(() => {
+    setLocalNotifications(notifications);
+  }, [notifications]);
 
   const handleMarkAsRead = (id: string | number) => {
     setLocalNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
@@ -943,6 +963,152 @@ function NotificationsCard({ notifications }: { notifications: Notification[] })
           onMarkAllAsRead={handleMarkAllAsRead}
           showHeader={false}
         />
+      </CardContent>
+    </Card>
+  );
+}
+
+function NotificationsPanel() {
+  const { getAllAmendedLCs } = useVersions();
+  const quotaState = useLcopilotQuota();
+  const [sessions, setSessions] = useState<ValidationSession[]>([]);
+  const [amendedLCs, setAmendedLCs] = useState<Array<{ lc_number: string; versions: number; latest_version: string; last_updated: string }>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSignals = async () => {
+      setIsLoading(true);
+      try {
+        const [sessionData, amendmentData] = await Promise.all([
+          getUserSessions().catch(() => []),
+          getAllAmendedLCs().catch(() => []),
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setSessions(sessionData || []);
+        setAmendedLCs(amendmentData || []);
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadSignals();
+
+    return () => {
+      active = false;
+    };
+  }, [getAllAmendedLCs]);
+
+  const notifications = useMemo<Notification[]>(() => {
+    const items: Notification[] = [];
+
+    if (quotaState.status === "ready" && quotaState.quota) {
+      if (quotaState.isExhausted) {
+        items.push({
+          id: "quota-exhausted",
+          title: quotaState.headline,
+          message: quotaState.detail,
+          type: "error",
+          timestamp: "Current billing cycle",
+          link: "/lcopilot/exporter-dashboard?section=billing",
+          badge: "Quota",
+        });
+      } else if (
+        quotaState.quota.remaining !== null &&
+        quotaState.quota.remaining <= 2
+      ) {
+        items.push({
+          id: "quota-low",
+          title: "Validation allowance running low",
+          message: quotaState.detail,
+          type: "warning",
+          timestamp: "Current billing cycle",
+          link: "/lcopilot/exporter-dashboard?section=billing-usage",
+          badge: `${quotaState.quota.remaining} left`,
+        });
+      }
+    }
+
+    const recentSessions = [...sessions]
+      .filter((session) => session.status === "completed")
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 5);
+
+    recentSessions.forEach((session) => {
+      const truth = getExporterSessionTruth(session);
+      const lcLabel = `LC-${truth.lcNumber}`;
+      const type =
+        truth.overallStatus === "error"
+          ? "error"
+          : truth.overallStatus === "warning"
+          ? "warning"
+          : "success";
+      const title =
+        truth.state === "blocked"
+          ? `${lcLabel} blocked`
+          : truth.statusLabel === "Ready with cautions"
+          ? `${lcLabel} ready with cautions`
+          : truth.statusLabel === "Completed"
+          ? `${lcLabel} completed`
+          : truth.canSubmit
+          ? `${lcLabel} ready for submission`
+          : `${lcLabel} needs review`;
+      const message =
+        truth.issueCount > 0
+          ? `${truth.issueCount} issue${truth.issueCount === 1 ? "" : "s"} recorded in the latest validation.`
+          : "Latest validation completed without recorded issues.";
+
+      items.push({
+        id: session.id,
+        title,
+        message,
+        type,
+        timestamp: formatTimeAgo(session.created_at),
+        link: `/lcopilot/exporter-dashboard?section=reviews&jobId=${session.id}`,
+        badge: truth.statusLabel,
+      });
+    });
+
+    amendedLCs.slice(0, 2).forEach((amendment) => {
+      items.push({
+        id: `amendment-${amendment.lc_number}`,
+        title: `LC-${amendment.lc_number} has version history`,
+        message: `${amendment.versions} versions recorded. Continue follow-up from LC Workspace.`,
+        type: "info",
+        timestamp: formatTimeAgo(amendment.last_updated),
+        link: "/lcopilot/exporter-dashboard?section=workspace",
+        badge: `${amendment.versions} versions`,
+      });
+    });
+
+    return items.slice(0, 8);
+  }, [amendedLCs, quotaState, sessions]);
+
+  return (
+    <Card className="shadow-soft border-0">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bell className="w-5 h-5" />
+          Notifications
+        </CardTitle>
+        <CardDescription>Live validation, amendment, and quota signals for your exporter workflow.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full mr-3"></div>
+            <span className="text-muted-foreground">Loading notifications...</span>
+          </div>
+        ) : (
+          <NotificationList notifications={notifications} showHeader={false} />
+        )}
       </CardContent>
     </Card>
   );

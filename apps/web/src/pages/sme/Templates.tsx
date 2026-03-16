@@ -216,14 +216,17 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
   const handleUseTemplate = async (template: Template) => {
     try {
       await smeTemplatesApi.use(template.id);
+      const uploadUrl = embedded
+        ? `/lcopilot/${user?.role === "importer" ? "importer" : "exporter"}-dashboard?section=upload&templateId=${encodeURIComponent(template.id)}`
+        : `/${user?.role === "importer" ? "import" : "export"}-lc-upload?templateId=${encodeURIComponent(template.id)}`;
       if (embedded) {
-        navigate(`/lcopilot/${user?.role === "importer" ? "importer" : "exporter"}-dashboard?section=upload`);
+        navigate(uploadUrl);
       } else {
-        navigate(`/${user?.role === "importer" ? "import" : "export"}-lc-upload`);
+        navigate(uploadUrl);
       }
       toast({
         title: "Template Opened",
-        description: `Template "${template.name}" was opened for reference. Auto-prefill is not live yet in this beta.`,
+        description: `Template "${template.name}" will prefill supported upload fields and notes. Document upload remains manual in this beta.`,
       });
     } catch (error: any) {
       toast({
@@ -269,7 +272,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            Templates store reusable LC and document field suggestions. They are live API-backed records, but one-click upload prefill is not live yet in this beta.
+            Templates store reusable LC and document field suggestions. They are live API-backed records and can now prefill supported upload metadata plus template notes.
           </p>
           <p>
             <strong>LC Templates:</strong> Save common LC wording, beneficiary details, shipment terms, and recurring field patterns.
@@ -278,7 +281,7 @@ export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
             <strong>Document Templates:</strong> Save recurring document wording, party details, incoterms, and document-specific notes.
           </p>
           <div className="rounded-lg border border-dashed border-border/70 bg-muted/30 p-3">
-            Beta note: using a template currently opens the upload workflow for manual entry. It does not auto-fill upload fields yet.
+            Beta note: using a template applies supported LC metadata and template context notes in the upload workflow. Document selection and final review stay manual.
           </div>
         </CardContent>
       </Card>
