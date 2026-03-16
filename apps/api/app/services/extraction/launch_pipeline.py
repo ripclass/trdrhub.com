@@ -18,7 +18,10 @@ from app.services.extraction.ai_first_extractor import (
     extract_lc_ai_first,
     extract_packing_list_ai_first,
 )
-from app.services.extraction.iso20022_lc_extractor import extract_iso20022_with_ai_fallback
+from app.services.extraction.iso20022_lc_extractor import (
+    detect_iso20022_schema,
+    extract_iso20022_with_ai_fallback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1722,9 +1725,8 @@ def _extract_amount_value(text: str, labels: List[str]) -> Optional[str]:
 def detect_lc_format(raw_lc_text: Optional[str]) -> str:
     if not raw_lc_text:
         return "mt700"
-    snippet = raw_lc_text.strip()
-    lowered = snippet[:1200].lower()
-    if "<?xml" in lowered or "documentarycreditnotification" in lowered or "tsmt" in lowered or "mx" in lowered:
+    schema_type, _ = detect_iso20022_schema(raw_lc_text)
+    if schema_type:
         return "iso20022"
     return "mt700"
 

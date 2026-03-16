@@ -50,7 +50,14 @@ ISO20022_LC_SCHEMAS = {
     
     # Generic Trade Instrument (common in simplified implementations)
     "TradInstr": "generic",
-    "Document": "wrapper",
+}
+
+DOCUMENTARY_CREDIT_SCHEMAS = {"tsin.001", "tsin.002", "tsmt.014", "tsmt.015", "tsmt.016"}
+UNDERTAKING_SCHEMAS = {"tsrv.001", "tsrv.003"}
+
+ISO_FORM_CODE_TO_LC_TYPE = {
+    "IRVC": "irrevocable",
+    "RVOC": "revocable",
 }
 
 
@@ -128,6 +135,8 @@ def extract_iso20022_lc_enhanced(xml_text: str) -> Dict[str, Any]:
         # Generic/fallback extraction
         _extract_generic_trade_instrument(root, lc_context)
     
+    _populate_iso_lc_type(root, lc_context)
+
     # Calculate extraction confidence
     lc_context["_extraction_confidence"] = _calculate_iso20022_confidence(lc_context)
     lc_context["_extraction_method"] = "iso20022_structured"
@@ -302,6 +311,96 @@ def _extract_generic_trade_instrument(root: ET.Element, context: Dict[str, Any])
     terms = _find_descendant(trad_instr, "TermsAndCond")
     if terms:
         _extract_terms(terms, context)
+
+
+def _populate_iso_lc_type(root: ET.Element, context: Dict[str, Any]) -> None:
+    """Assign a truthful lc_type for ISO LCs when the schema or fields make it explicit."""
+    schema_type = str(context.get("schema") or "").strip().lower()
+    detection_confidence = float(context.get("_detection_confidence") or 0.0)
+
+    lc_type: Optional[str] = None
+    reason: Optional[str] = None
+
+    if schema_type in UNDERTAKING_SCHEMAS:
+        lc_type = "standby"
+        reason = f"ISO 20022 undertaking schema detected ({schema_type})."
+    else:
+        raw_type = _extract_iso_lc_type_signal(root)
+        normalized = _normalize_iso_lc_type(raw_type)
+        if normalized:
+            lc_type = normalized
+            reason = f"ISO 20022 documentary credit type extracted from XML field: {raw_type}."
+        elif schema_type in DOCUMENTARY_CREDIT_SCHEMAS:
+            lc_type = "documentary"
+            reason = f"ISO 20022 documentary credit schema detected ({schema_type})."
+
+    if not lc_type:
+        return
+
+    context["lc_type"] = lc_type
+    context["lc_type_reason"] = reason
+    context["lc_type_confidence"] = round(max(detection_confidence, 0.8), 2)
+    context["lc_type_source"] = "iso20022_schema"
+
+
+def _extract_iso_lc_type_signal(root: ET.Element) -> Optional[str]:
+    """Extract the strongest LC-type signal from ISO XML."""
+    type_node = _find_descendant(root, "DocCdtTp") or _find_descendant(root, "DocCrdtTp")
+    if type_node is not None:
+        explicit = _get_text(type_node, "Prtry") or _get_text(type_node, "Cd")
+        if explicit:
+            return explicit
+
+    form_node = _find_descendant(root, "DocCdtFrm") or _find_descendant(root, "DocCrdtFrm")
+    if form_node is not None:
+        form_code = _get_text(form_node, "Cd")
+        if form_code:
+            return form_code
+
+    availability_node = _find_descendant(root, "AvlblBy")
+    if availability_node is not None:
+        availability_code = _get_text(availability_node, "Cd")
+        if availability_code:
+            return availability_code
+
+    payment_node = _find_descendant(root, "PmtTerms")
+    if payment_node is not None:
+        payment_code = _get_text(payment_node, "Cd")
+        if payment_code:
+            return payment_code
+
+    return None
+
+
+def _normalize_iso_lc_type(value: Optional[str]) -> Optional[str]:
+    """Normalize ISO XML type/form codes into LCopilot's existing LC labels."""
+    if not value:
+        return None
+
+    raw = str(value).strip()
+    upper = raw.upper()
+    lowered = raw.lower()
+
+    if upper in ISO_FORM_CODE_TO_LC_TYPE:
+        return ISO_FORM_CODE_TO_LC_TYPE[upper]
+    if upper == "SIGU" or "sight" in lowered:
+        return "sight"
+    if upper == "DEFR" or "deferred" in lowered:
+        return "deferred"
+    if upper in {"ACCP", "USAN"} or "usance" in lowered or "acceptance" in lowered:
+        return "usance"
+    if "standby" in lowered or "sblc" in lowered or "undertaking" in lowered:
+        return "standby"
+    if "transferable" in lowered or "transfer" in lowered:
+        return "transferable"
+    if "irrevocable" in lowered:
+        return "irrevocable"
+    if "revocable" in lowered:
+        return "revocable"
+    if "documentary" in lowered or "doc credit" in lowered or "doccrdt" in lowered or "doccdt" in lowered:
+        return "documentary"
+
+    return None
 
 
 # =====================================================================

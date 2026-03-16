@@ -137,6 +137,7 @@ from app.services.extraction.ai_first_extractor import (
     extract_inspection_ai_first,
 )
 from app.services.extraction.launch_pipeline import get_launch_extraction_pipeline
+from app.services.extraction.iso20022_lc_extractor import detect_iso20022_schema
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
@@ -5083,11 +5084,8 @@ def detect_lc_format(raw_lc_text: Optional[str]) -> str:
     if not raw_lc_text:
         return "mt700"
 
-    snippet = raw_lc_text.strip()
-    lowered = snippet.lower()
-    if "<document" in lowered and "xmlns" in lowered:
-        return "iso20022"
-    if snippet.startswith("<?xml") and "<Document" in snippet:
+    schema_type, _ = detect_iso20022_schema(raw_lc_text)
+    if schema_type:
         return "iso20022"
     return "mt700"
 

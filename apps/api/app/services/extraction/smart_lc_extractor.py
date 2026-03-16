@@ -14,15 +14,10 @@ Usage:
 """
 
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
-from .iso20022_parser import (
-    ISO20022Parser,
-    ISO20022ParseResult,
-    is_iso20022_document,
-    parse_iso20022_lc,
-)
+from .iso20022_lc_extractor import detect_iso20022_schema, extract_iso20022_with_ai_fallback
 from .ai_first_extractor import extract_lc_ai_first
 from .lc_extractor import extract_lc_structured
 
@@ -72,14 +67,13 @@ def detect_lc_format(content: str, filename: Optional[str] = None) -> str:
     if filename:
         filename_lower = filename.lower()
         if filename_lower.endswith(".xml"):
-            # Verify it's actually ISO20022
-            if is_iso20022_document(content):
+            if detect_iso20022_schema(content)[0]:
                 return "iso20022"
             return "xml_other"
     
     # Check content signatures
     if content_stripped.startswith("<?xml") or content_stripped.startswith("<Document"):
-        if is_iso20022_document(content):
+        if detect_iso20022_schema(content)[0]:
             return "iso20022"
         return "xml_other"
     
@@ -184,23 +178,27 @@ async def extract_lc_smart(
 async def _extract_iso20022(content: str, result: SmartExtractionResult) -> SmartExtractionResult:
     """Extract from ISO20022 XML."""
     try:
-        parse_result = parse_iso20022_lc(content)
-        
-        result.extraction_method = "xml_parse"
-        result.confidence = 1.0 if parse_result.success else 0.0
-        result.extracted_fields = parse_result.extracted_fields
-        result.errors.extend(parse_result.errors)
-        result.warnings.extend(parse_result.warnings)
-        result.success = parse_result.success
-        
+        iso_context = await extract_iso20022_with_ai_fallback(content)
+
+        result.extraction_method = iso_context.get("_extraction_method", "iso20022")
+        result.confidence = float(iso_context.get("_extraction_confidence", 0.0) or 0.0)
+        result.extracted_fields = iso_context
+        result.success = bool(
+            iso_context.get("number")
+            or iso_context.get("lc_number")
+            or iso_context.get("amount")
+            or iso_context.get("beneficiary")
+            or iso_context.get("lc_type")
+        )
+
         result.metadata.update({
-            "iso20022_message_type": parse_result.message_type,
-            "iso20022_version": parse_result.version,
+            "iso20022_message_type": iso_context.get("schema"),
+            "iso20022_version": iso_context.get("schema"),
         })
         
         # Add format badge info
         result.extracted_fields["_source_format"] = "ISO20022"
-        result.extracted_fields["_source_message_type"] = parse_result.message_type
+        result.extracted_fields["_source_message_type"] = iso_context.get("schema")
         
         logger.info(f"ISO20022 extraction: success={result.success}, fields={len(result.extracted_fields)}")
         
