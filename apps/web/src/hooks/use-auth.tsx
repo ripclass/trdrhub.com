@@ -478,6 +478,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!session) throw new Error('Authentication session not established after sign up')
+      const authUserId = data.user?.id || session.user?.id || null
 
       // Create user in backend database with company info
       // CRITICAL: This must succeed for onboarding data to be saved
@@ -486,6 +487,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
         full_name: fullName,
         role,
+      }
+
+      if (authUserId) {
+        registerPayload.auth_user_id = authUserId
       }
       
       // Add company info if provided

@@ -143,13 +143,14 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
                         email_domain = current_user.email.split('@')[1] if '@' in current_user.email else 'company'
                         company_name = current_user.full_name.split()[0] + " Company" if current_user.full_name else f"Company for {email_domain}"
                         
-                        # Create company with default "both" type for users who might be combined
-                        # (We'll let them update it during onboarding if needed)
+                        default_business_type = current_user.role if current_user.role in {"exporter", "importer"} else "both"
+
+                        # Auto-created fallback companies should preserve the user's explicit trade role when possible.
                         company = Company(
                             name=company_name,
                             contact_email=current_user.email,
                             event_metadata={
-                                "business_type": "both",  # Default to "both" for flexibility
+                                "business_type": default_business_type,
                                 "company_size": "sme",  # Default to SME
                                 "auto_created": True  # Flag to indicate this was auto-created
                             }
@@ -384,4 +385,3 @@ async def reset_onboarding(
         "message": "Onboarding reset successfully",
         "onboarding_completed": False
     }
-

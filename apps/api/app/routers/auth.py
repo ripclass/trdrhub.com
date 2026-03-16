@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from ..database import get_db
-from app.models import User, Company
+from app.models import User, Company, PlanType
 from ..schemas import UserRegistration, UserLogin, Token, UserProfile
 from ..schemas.user import UserCreate
 from fastapi.security import HTTPAuthorizationCredentials
@@ -20,6 +20,7 @@ from ..core.security import (
     security,
     JWT_EXPIRATION_HOURS,
 )
+from ..core.pricing import SUBSCRIPTION_PLANS
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -30,6 +31,7 @@ async def register_user(
     db: Session = Depends(get_db)
 ):
     """Register a new user account."""
+    free_plan = SUBSCRIPTION_PLANS.get(PlanType.FREE.value)
 
     # Check if user already exists
     existing_user = db.query(User).filter(
@@ -60,6 +62,8 @@ async def register_user(
             country=user_data.country,
             currency=user_data.currency or "USD",
             payment_gateway=user_data.payment_gateway or "stripe",
+            plan=PlanType.FREE,
+            quota_limit=free_plan.quota_limit if free_plan else 5,
         )
         
         # Store company type and size in event_metadata

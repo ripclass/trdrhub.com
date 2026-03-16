@@ -71,6 +71,24 @@ def _build_provider_configs() -> List[ProviderConfig]:
     return providers
 
 
+def _build_dynamic_provider_from_issuer(issuer: str) -> Optional[ProviderConfig]:
+    """Derive a Supabase JWKS provider directly from a token issuer."""
+
+    normalized_issuer = (issuer or "").rstrip("/")
+    if not normalized_issuer.startswith("https://"):
+        return None
+
+    if ".supabase.co" not in normalized_issuer or not normalized_issuer.endswith("/auth/v1"):
+        return None
+
+    return ProviderConfig(
+        name="supabase-auto",
+        issuer=normalized_issuer,
+        jwks_url=f"{normalized_issuer}/.well-known/jwks.json",
+        audience=settings.SUPABASE_AUDIENCE,
+    )
+
+
 def _resolve_external_user_id(subject: str) -> UUID:
     """Convert external subject claim into UUID for local user table."""
 
@@ -123,7 +141,14 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
         # If sub is not a valid UUID, leave auth_user_id as None
         pass
 
-    user = db.query(User).filter(User.id == user_id).first()
+    user = None
+    if auth_user_id:
+        user = db.query(User).filter(User.auth_user_id == auth_user_id).first()
+    if not user and email:
+        user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = db.query(User).filter(User.id == user_id).first()
+
     if not user:
         try:
             user = User(
@@ -164,7 +189,7 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
         user.email = email
         if full_name:
             user.full_name = full_name
-        if role_value:
+        if role_value and not user.role:
             user.role = role_value
         user.is_active = True
         if auth_user_id and user.auth_user_id != auth_user_id:
@@ -236,6 +261,8 @@ def infer_effective_role(user: User) -> str:
         return "importer"
 
     if company_type == "both":
+        if role == "importer":
+            return "importer"
         if company_size in {"medium", "large"}:
             return "tenant_admin"
         return "exporter"
@@ -266,34 +293,14 @@ async def authenticate_external_token(token: str, db: Session) -> Optional[User]
         logger.debug(f"Failed to decode token (unverified): {str(e)}")
         iss = ""
 
-    # Supabase uses ES256 (ECC) via JWKS, not HS256
-    # Auto-detect Supabase issuer if not configured but JWKS URL is set
-    supabase_issuer = (settings.SUPABASE_ISSUER or "").rstrip("/")
-    if not supabase_issuer and settings.SUPABASE_JWKS_URL and iss and "supabase.co" in iss:
-        supabase_issuer = iss.rstrip("/")
-        logger.info(f"Auto-detected Supabase issuer from token: {supabase_issuer}")
-        # Build provider config with auto-detected issuer
-        if settings.SUPABASE_JWKS_URL:
-            providers = [
-                ProviderConfig(
-                    name="supabase",
-                    issuer=supabase_issuer,
-                    jwks_url=settings.SUPABASE_JWKS_URL,
-                    audience=settings.SUPABASE_AUDIENCE,
-                )
-            ]
-        else:
-            providers = []
-    else:
-        # Build provider configs normally (Supabase uses JWKS with ES256)
-        providers = _build_provider_configs()
-    
+    providers = _build_provider_configs()
+    dynamic_provider = _build_dynamic_provider_from_issuer(iss)
+    if dynamic_provider and not any(provider.issuer == dynamic_provider.issuer for provider in providers):
+        providers = [*providers, dynamic_provider]
+        logger.info(f"Auto-derived Supabase JWKS provider from token issuer: {dynamic_provider.issuer}")
+
     if not providers:
         logger.warning("No external providers configured")
-        if iss and "supabase.co" in iss:
-            logger.warning("Supabase token detected but SUPABASE_ISSUER and SUPABASE_JWKS_URL not configured")
-            logger.warning("Please set SUPABASE_ISSUER=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1")
-            logger.warning("And SUPABASE_JWKS_URL=https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/.well-known/jwks.json")
         return None
 
     # Try JWKS providers (Supabase uses ES256 via JWKS)
