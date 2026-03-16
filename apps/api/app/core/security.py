@@ -29,11 +29,14 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
 
 # Password hashing (supports >72B passwords via pre-hash)
-# Initialize with lazy loading to avoid initialization errors
-# Support both bcrypt_sha256 (new) and bcrypt (legacy) for backward compatibility
-# The bcrypt_sha256 scheme may fail during backend initialization in some environments
-# We'll catch errors during actual hashing and fallback to standard bcrypt
-pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
+# Support bcrypt_sha256 first, then legacy bcrypt, with PBKDF2 as a pure-Python
+# fallback when the runtime bcrypt backend is unhealthy.
+pwd_context = CryptContext(
+    schemes=["bcrypt_sha256", "bcrypt", "pbkdf2_sha256"],
+    deprecated="auto",
+)
+bcrypt_fallback_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pbkdf2_fallback_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # JWT Bearer token scheme
 security = HTTPBearer(auto_error=True)
@@ -125,6 +128,23 @@ def _normalise_role_claim(claims: Dict[str, Any]) -> str:
     return UserRole.EXPORTER.value
 
 
+def _truncate_password_for_bcrypt(password: str, max_bytes: int = 72) -> str:
+    """Safely truncate a password to bcrypt's byte ceiling without splitting UTF-8."""
+
+    normalized = password or ""
+    encoded = normalized.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return normalized
+
+    truncated = encoded[:max_bytes]
+    while truncated:
+        try:
+            return truncated.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            truncated = truncated[:exc.start]
+    return ""
+
+
 def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
     logger = logging.getLogger(__name__)
     user_id = _resolve_external_user_id(str(claims.get("sub")))
@@ -164,7 +184,9 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
                 email=email,
                 full_name=full_name,
                 role=role_value,
-                hashed_password=None,  # external users don't require local password
+                # Live public.users still enforces NOT NULL here, so keep an empty
+                # local password marker for externally authenticated users.
+                hashed_password="",
                 is_active=True,
                 auth_user_id=auth_user_id,
             )
@@ -172,27 +194,9 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
             db.flush()
         except Exception as e:
             error_msg = str(e)
-            if "NOT NULL" in error_msg.upper() and "hashed_password" in error_msg.upper():
-                logger.warning(
-                    f"Database constraint prevents NULL password for user {email}. Using dummy hash as fallback."
-                )
-                db.rollback()
-                dummy_hash = "$2b$12$dummy.hash.that.will.never.match.any.password.ever"
-                user = User(
-                    id=user_id,
-                    email=email,
-                    full_name=full_name,
-                    role=role_value,
-                    hashed_password=dummy_hash,
-                    is_active=True,
-                    auth_user_id=auth_user_id,
-                )
-                db.add(user)
-                db.flush()
-            else:
-                logger.error(f"Failed to create external user {email}: {error_msg}")
-                db.rollback()
-                raise
+            logger.error(f"Failed to create external user {email}: {error_msg}")
+            db.rollback()
+            raise
     else:
         user.email = email
         if full_name:
@@ -368,21 +372,30 @@ def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
     if not password:
         password = ""
-    
-    # For bcrypt_sha256, passlib handles the pre-hashing automatically
-    # Just ensure we don't pass None
+
+    # Prefer bcrypt_sha256 for new hashes, then fall back to plain bcrypt, and
+    # finally a pure-Python PBKDF2 hash if the runtime bcrypt backend is broken.
     try:
         return pwd_context.hash(password)
-    except (ValueError, AttributeError) as e:
-        # If bcrypt_sha256 fails, fallback to standard bcrypt with truncation
-        # This handles cases where passlib backend initialization fails
+    except Exception as primary_error:
+        logging.warning(
+            "Primary password hashing failed: %s",
+            type(primary_error).__name__,
+        )
+        safe_password = _truncate_password_for_bcrypt(password)
         try:
-            from passlib.context import CryptContext
-            fallback_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-            safe_password = password[:72] if len(password.encode('utf-8')) > 72 else password
-            return fallback_context.hash(safe_password)
-        except Exception:
-            raise ValueError(f"Failed to hash password: {e}") from e
+            return bcrypt_fallback_context.hash(safe_password)
+        except Exception as bcrypt_error:
+            logging.warning(
+                "bcrypt fallback hashing failed: %s",
+                type(bcrypt_error).__name__,
+            )
+            try:
+                return pbkdf2_fallback_context.hash(password)
+            except Exception as pbkdf2_error:
+                raise ValueError(
+                    f"Failed to hash password: {primary_error}"
+                ) from pbkdf2_error
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
