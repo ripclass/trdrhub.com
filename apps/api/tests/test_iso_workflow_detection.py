@@ -167,3 +167,54 @@ def test_detect_lc_type_keeps_ambiguous_iso_unknown_without_request_country_hint
 
     assert guess["lc_type"] == "unknown"
 
+
+def test_detect_lc_type_uses_exporter_lane_as_last_resort_when_ports_exist() -> None:
+    detect_lc_type = _load_detect_lc_type()
+
+    guess = detect_lc_type(
+        {
+            "format": "iso20022",
+            "beneficiary": "Beneficiary Co.",
+            "applicant": "Applicant Co.",
+            "port_of_loading_country_name": "Bangladesh",
+            "port_of_discharge_country_name": "United Arab Emirates",
+            "ports": {
+                "loading": "Chattogram Port",
+                "discharge": "Jebel Ali Port",
+            },
+        },
+        None,
+        {
+            "user_type": "exporter",
+            "workflow_type": "export-lc-upload",
+        },
+    )
+
+    assert guess["lc_type"] == "export"
+    assert guess["confidence"] == 0.52
+
+
+def test_detect_lc_type_uses_importer_lane_as_last_resort_when_ports_exist() -> None:
+    detect_lc_type = _load_detect_lc_type()
+
+    guess = detect_lc_type(
+        {
+            "format": "iso20022",
+            "beneficiary": "Seller Co.",
+            "applicant": "Buyer Co.",
+            "port_of_loading_country_name": "China",
+            "port_of_discharge_country_name": "Bangladesh",
+            "ports": {
+                "loading": "Shanghai Port",
+                "discharge": "Chattogram Port",
+            },
+        },
+        None,
+        {
+            "user_type": "importer",
+            "workflow_type": "supplier-document-check",
+        },
+    )
+
+    assert guess["lc_type"] == "import"
+    assert guess["confidence"] == 0.52

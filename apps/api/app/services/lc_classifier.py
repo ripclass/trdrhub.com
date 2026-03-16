@@ -106,6 +106,26 @@ def detect_lc_type(
         or _normalize_country(ports_context.get("discharge") or ports_context.get("port_of_discharge"))
         or _normalize_country(shipment_context.get("port_of_destination"))
     )
+    has_loading_country_signal = any(
+        (
+            shipment_context.get("port_of_loading_country"),
+            shipment_context.get("port_of_loading_country_name"),
+            shipment_context.get("port_of_loading_country_code"),
+            lc_context.get("port_of_loading_country"),
+            lc_context.get("port_of_loading_country_name"),
+            lc_context.get("port_of_loading_country_code"),
+        )
+    )
+    has_discharge_country_signal = any(
+        (
+            shipment_context.get("port_of_discharge_country"),
+            shipment_context.get("port_of_discharge_country_name"),
+            shipment_context.get("port_of_discharge_country_code"),
+            lc_context.get("port_of_discharge_country"),
+            lc_context.get("port_of_discharge_country_name"),
+            lc_context.get("port_of_discharge_country_code"),
+        )
+    )
 
     def _guess(lc_type_value: str, reason_text: str, confidence_value: float) -> LCTypeGuess:
         source = "auto-detected" if lc_family == "unknown" else f"auto-detected:{lc_family}"
@@ -303,6 +323,50 @@ def detect_lc_type(
                 f"matches the discharge port {pod_country} and the LC names an applicant."
             ),
             confidence,
+        )
+
+    lane_only_export = (
+        lane_export
+        and not company_country
+        and lc_context.get("beneficiary")
+        and lc_context.get("applicant")
+        and has_loading_country_signal
+        and has_discharge_country_signal
+        and pol_country
+        and pod_country
+        and pol_country != pod_country
+    )
+    if lane_only_export:
+        return _guess(
+            LCType.EXPORT.value,
+            (
+                "Exporter workflow selected and the LC includes beneficiary/applicant parties with a distinct "
+                "loading-to-discharge shipment flow. Treating this as an export LC unless stronger contrary "
+                "evidence appears."
+            ),
+            0.52,
+        )
+
+    lane_only_import = (
+        lane_import
+        and not company_country
+        and lc_context.get("beneficiary")
+        and lc_context.get("applicant")
+        and has_loading_country_signal
+        and has_discharge_country_signal
+        and pol_country
+        and pod_country
+        and pol_country != pod_country
+    )
+    if lane_only_import:
+        return _guess(
+            LCType.IMPORT.value,
+            (
+                "Importer workflow selected and the LC includes applicant/beneficiary parties with a distinct "
+                "loading-to-discharge shipment flow. Treating this as an import LC unless stronger contrary "
+                "evidence appears."
+            ),
+            0.52,
         )
 
     if lc_family == "iso":
