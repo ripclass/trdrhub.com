@@ -15,7 +15,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
-import { getUserSessions, type ValidationSession } from "@/api/sessions";
+import {
+  getUserSessions,
+  hydrateSessionsWithStructuredResults,
+  type ValidationSession,
+} from "@/api/sessions";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterResults from "./ExporterResults";
 import ExporterAnalytics from "./ExporterAnalytics";
@@ -398,6 +402,7 @@ interface OverviewPanelProps {
 
 function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
   const { toast } = useToast();
+  const { user: authUser, isLoading: isLoadingAuth } = useAuth();
   const { getAllDrafts, removeDraft } = useDrafts();
   const { getAllAmendedLCs } = useVersions();
   
@@ -410,6 +415,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
   // Real validation sessions data
   const [sessions, setSessions] = useState<ValidationSession[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
 
   // Load exporter drafts
   useEffect(() => {
@@ -445,20 +451,53 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
 
   // Load real validation sessions
   useEffect(() => {
+    let active = true;
+
+    if (isLoadingAuth) {
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!authUser) {
+      setSessions([]);
+      setSessionsError(null);
+      setIsLoadingSessions(false);
+      return () => {
+        active = false;
+      };
+    }
+
     const loadSessions = async () => {
       setIsLoadingSessions(true);
+      setSessionsError(null);
       try {
         const data = await getUserSessions();
-        setSessions(data || []);
+        const hydratedSessions = await hydrateSessionsWithStructuredResults(data || [], 8);
+        if (!active) {
+          return;
+        }
+        setSessions(hydratedSessions);
       } catch (error) {
         console.error('Failed to load validation sessions:', error);
+        if (!active) {
+          return;
+        }
         setSessions([]);
+        setSessionsError("Validation history is temporarily unavailable.");
       } finally {
-        setIsLoadingSessions(false);
+        if (active) {
+          setIsLoadingSessions(false);
+        }
       }
     };
-    loadSessions();
-  }, []);
+
+    void loadSessions();
+
+    return () => {
+      active = false;
+    };
+  }, [authUser?.id, isLoadingAuth]);
 
   const handleDeleteDraft = (draftId: string) => {
     try {
@@ -541,8 +580,10 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">This Month</p>
-                <p className="text-2xl font-bold text-foreground">{thisMonthSessions.length}</p>
-                <p className="text-xs text-muted-foreground">{sessions.length} total validations</p>
+                <p className="text-2xl font-bold text-foreground">{sessionsError ? "—" : thisMonthSessions.length}</p>
+                <p className="text-xs text-muted-foreground">
+                  {sessionsError ? sessionsError : `${sessions.length} total validations`}
+                </p>
               </div>
               <div className="bg-emerald-500/10 p-3 rounded-lg">
                 <FileText className="w-6 h-6 text-emerald-600" />
@@ -556,9 +597,11 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Submit-ready Rate</p>
-                <p className="text-2xl font-bold text-foreground">{submitReadyRate}%</p>
-                <Progress value={submitReadyRate} className="mt-2 h-2" />
-                <p className="text-xs text-muted-foreground mt-2">Submit-ready validations</p>
+                <p className="text-2xl font-bold text-foreground">{sessionsError ? "—" : `${submitReadyRate}%`}</p>
+                {!sessionsError && <Progress value={submitReadyRate} className="mt-2 h-2" />}
+                <p className="text-xs text-muted-foreground mt-2">
+                  {sessionsError ? "Retry after your validation history reconnects." : "Submit-ready validations"}
+                </p>
               </div>
               <div className="bg-green-500/10 p-3 rounded-lg">
                 <TrendingUp className="w-6 h-6 text-green-500" />
@@ -572,8 +615,10 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Avg Processing</p>
-                <p className="text-2xl font-bold text-foreground">{avgProcessingTime}</p>
-                <p className="text-xs text-muted-foreground">{completedSessions.length} completed</p>
+                <p className="text-2xl font-bold text-foreground">{sessionsError ? "—" : avgProcessingTime}</p>
+                <p className="text-xs text-muted-foreground">
+                  {sessionsError ? "No processing summary while history is unavailable." : `${completedSessions.length} completed`}
+                </p>
               </div>
               <div className="bg-blue-500/10 p-3 rounded-lg">
                 <Clock className="w-6 h-6 text-blue-500" />
@@ -587,8 +632,12 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Needs Review</p>
-                <p className="text-2xl font-bold text-foreground">{reviewSessionTruths.length + blockedSessionTruths.length}</p>
-                <p className="text-xs text-muted-foreground">{totalIssues} total issues across completed validations</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {sessionsError ? "—" : reviewSessionTruths.length + blockedSessionTruths.length}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {sessionsError ? "Review counts unavailable right now." : `${totalIssues} total issues across completed validations`}
+                </p>
               </div>
               <div className="bg-amber-500/10 p-3 rounded-lg">
                 <AlertTriangle className="w-6 h-6 text-amber-500" />
@@ -751,6 +800,12 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                   <div className="animate-spin w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full mr-3"></div>
                   <span className="text-muted-foreground">Loading validations...</span>
                 </div>
+              ) : sessionsError ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <AlertTriangle className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p>Validation history unavailable</p>
+                  <p className="text-sm">{sessionsError}</p>
+                </div>
               ) : recentValidations.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
@@ -869,7 +924,9 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {recentValidations.length === 0 ? (
+              {sessionsError ? (
+                <p className="text-sm text-muted-foreground text-center py-4">{sessionsError}</p>
+              ) : recentValidations.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
               ) : (
                 <div className="space-y-3">
@@ -969,6 +1026,7 @@ function NotificationsCard({ notifications }: { notifications: Notification[] })
 }
 
 function NotificationsPanel() {
+  const { user: authUser, isLoading: isLoadingAuth } = useAuth();
   const { getAllAmendedLCs } = useVersions();
   const quotaState = useLcopilotQuota();
   const [sessions, setSessions] = useState<ValidationSession[]>([]);
@@ -977,6 +1035,21 @@ function NotificationsPanel() {
 
   useEffect(() => {
     let active = true;
+
+    if (isLoadingAuth) {
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!authUser) {
+      setSessions([]);
+      setAmendedLCs([]);
+      setIsLoading(false);
+      return () => {
+        active = false;
+      };
+    }
 
     const loadSignals = async () => {
       setIsLoading(true);
@@ -990,7 +1063,12 @@ function NotificationsPanel() {
           return;
         }
 
-        setSessions(sessionData || []);
+        const hydratedSessions = await hydrateSessionsWithStructuredResults(sessionData || [], 8);
+        if (!active) {
+          return;
+        }
+
+        setSessions(hydratedSessions);
         setAmendedLCs(amendmentData || []);
       } finally {
         if (active) {
@@ -1004,7 +1082,7 @@ function NotificationsPanel() {
     return () => {
       active = false;
     };
-  }, [getAllAmendedLCs]);
+  }, [authUser?.id, getAllAmendedLCs, isLoadingAuth]);
 
   const notifications = useMemo<Notification[]>(() => {
     const items: Notification[] = [];

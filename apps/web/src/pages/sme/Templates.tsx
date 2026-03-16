@@ -53,6 +53,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useOnboarding } from "@/hooks/use-onboarding";
 import { smeTemplatesApi, type SMETemplate, type SMETemplateCreate, type SMETemplateUpdate } from "@/api/sme-templates";
 
 // Use SMETemplate type from API
@@ -61,8 +62,9 @@ type Template = SMETemplate;
 export function TemplatesView({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { status: onboardingStatus } = useOnboarding();
   const navigate = useNavigate();
-  const runtimeCompanyId = (user as { company_id?: string } | null)?.company_id;
+  const runtimeCompanyId = onboardingStatus?.company_id ?? null;
   const [loading, setLoading] = React.useState(false);
   const [templates, setTemplates] = React.useState<Template[]>([]);
   const [loadError, setLoadError] = React.useState<string | null>(null);

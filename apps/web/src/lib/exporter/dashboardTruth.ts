@@ -91,6 +91,10 @@ export const getSessionDocumentCount = (session: ValidationSession): number => {
     return structuredDocuments.length;
   }
 
+  if (typeof session.total_documents === "number") {
+    return session.total_documents;
+  }
+
   return session.documents?.length || 0;
 };
 
@@ -99,6 +103,10 @@ export const getSessionIssueCount = (session: ValidationSession): number => {
   const structuredIssues = structuredResult?.issues;
   if (Array.isArray(structuredIssues)) {
     return structuredIssues.length;
+  }
+
+  if (typeof session.total_discrepancies === "number") {
+    return session.total_discrepancies;
   }
 
   return session.discrepancies?.length || 0;

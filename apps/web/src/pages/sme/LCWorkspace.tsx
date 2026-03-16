@@ -47,8 +47,7 @@ import {
   RefreshCw,
   FolderKanban,
 } from "lucide-react";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import { api } from "@/api/client";
 
 // Types
 interface DocumentChecklistItem {
@@ -114,6 +113,7 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [amendments, setAmendments] = useState<Amendment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [newLCNumber, setNewLCNumber] = useState("");
   const [newClientName, setNewClientName] = useState("");
@@ -125,39 +125,31 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const token = localStorage.getItem("token");
-      const headers: HeadersInit = {
-        "Content-Type": "application/json",
-      };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-
       if (activeTab === "workspace") {
-        const res = await fetch(`${API_BASE}/api/sme/lc-workspaces`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          setWorkspaces(data.items || []);
-        }
+        const { data } = await api.get("/api/sme/lc-workspaces");
+        setWorkspaces(data.items || []);
       } else if (activeTab === "drafts") {
-        const res = await fetch(`${API_BASE}/api/sme/drafts`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          setDrafts(data.items || []);
-        }
+        const { data } = await api.get("/api/sme/drafts");
+        setDrafts(data.items || []);
       } else if (activeTab === "amendments") {
-        const res = await fetch(`${API_BASE}/api/sme/amendments`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          setAmendments(data.items || []);
-        }
+        const { data } = await api.get("/api/sme/amendments");
+        setAmendments(data.items || []);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to load data:", error);
+      const message =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        "This workspace surface is temporarily unavailable.";
+      setLoadError(message);
+      setWorkspaces([]);
+      setDrafts([]);
+      setAmendments([]);
       toast({
         title: "Error",
-        description: "Failed to load workspace data",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -176,14 +168,7 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
     }
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_BASE}/api/sme/lc-workspaces`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      await api.post("/api/sme/lc-workspaces", {
           lc_number: newLCNumber,
           client_name: newClientName || undefined,
           document_checklist: [
@@ -191,26 +176,23 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
             { document_type: "commercial_invoice", required: true, status: "missing" },
             { document_type: "bill_of_lading", required: true, status: "missing" },
           ],
-        }),
       });
-
-      if (res.ok) {
-        toast({
-          title: "Success",
-          description: "LC Workspace created successfully",
-        });
-        setShowCreateWorkspace(false);
-        setNewLCNumber("");
-        setNewClientName("");
-        loadData();
-      } else {
-        const error = await res.json();
-        throw new Error(error.detail || "Failed to create workspace");
-      }
+      toast({
+        title: "Success",
+        description: "LC Workspace created successfully",
+      });
+      setShowCreateWorkspace(false);
+      setNewLCNumber("");
+      setNewClientName("");
+      void loadData();
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message || "Failed to create workspace",
+        description:
+          error?.response?.data?.detail ||
+          error?.response?.data?.message ||
+          error.message ||
+          "Failed to create workspace",
         variant: "destructive",
       });
     }
@@ -345,6 +327,14 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : loadError ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <FolderKanban className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">LC Workspace unavailable right now</p>
+                <p className="text-sm text-muted-foreground mt-2">{loadError}</p>
+              </CardContent>
+            </Card>
           ) : workspaces.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -482,6 +472,14 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : loadError ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Edit3 className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">Drafts unavailable right now</p>
+                <p className="text-sm text-muted-foreground mt-2">{loadError}</p>
+              </CardContent>
+            </Card>
           ) : drafts.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -530,23 +528,15 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
                             variant="outline"
                             size="sm"
                             onClick={async () => {
-                              try {
-                                const token = localStorage.getItem("token");
-                                const res = await fetch(`${API_BASE}/api/sme/drafts/${draft.id}/promote`, {
-                                  method: "POST",
-                                  headers: {
-                                    "Content-Type": "application/json",
-                                    Authorization: `Bearer ${token}`,
-                                  },
-                                  body: JSON.stringify({ notes: "Promoted to ready for submission" }),
+                            try {
+                                await api.post(`/api/sme/drafts/${draft.id}/promote`, {
+                                  notes: "Promoted to ready for submission",
                                 });
-                                if (res.ok) {
-                                  toast({
-                                    title: "Success",
-                                    description: "Draft promoted successfully",
-                                  });
-                                  loadData();
-                                }
+                                toast({
+                                  title: "Success",
+                                  description: "Draft promoted successfully",
+                                });
+                                void loadData();
                               } catch (error) {
                                 toast({
                                   title: "Error",
@@ -584,6 +574,14 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : loadError ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <GitBranch className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">Amendments unavailable right now</p>
+                <p className="text-sm text-muted-foreground mt-2">{loadError}</p>
+              </CardContent>
+            </Card>
           ) : amendments.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -634,20 +632,11 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
                           size="sm"
                           onClick={async () => {
                             try {
-                              const token = localStorage.getItem("token");
-                              const res = await fetch(`${API_BASE}/api/sme/amendments/${amendment.id}/diff`, {
-                                headers: {
-                                  Authorization: `Bearer ${token}`,
-                                },
+                              const { data: diff } = await api.get(`/api/sme/amendments/${amendment.id}/diff`);
+                              toast({
+                                title: "Diff Loaded",
+                                description: `Found ${diff.summary.added + diff.summary.modified + diff.summary.removed} changes`,
                               });
-                              if (res.ok) {
-                                const diff = await res.json();
-                                // Show diff in a dialog or navigate to diff view
-                                toast({
-                                  title: "Diff Loaded",
-                                  description: `Found ${diff.summary.added + diff.summary.modified + diff.summary.removed} changes`,
-                                });
-                              }
                             } catch (error) {
                               toast({
                                 title: "Error",

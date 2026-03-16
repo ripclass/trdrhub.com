@@ -61,7 +61,7 @@ export const smeTemplatesApi = {
     document_type?: string;
     active_only?: boolean;
   }): Promise<SMETemplateListResponse> {
-    const response = await api.get("/sme/templates", { params });
+    const response = await api.get("/api/sme/templates", { params });
     return response.data;
   },
 
@@ -69,7 +69,7 @@ export const smeTemplatesApi = {
    * Get a specific template
    */
   async get(templateId: string): Promise<SMETemplate> {
-    const response = await api.get(`/sme/templates/${templateId}`);
+    const response = await api.get(`/api/sme/templates/${templateId}`);
     return response.data;
   },
 
@@ -77,7 +77,7 @@ export const smeTemplatesApi = {
    * Create a new template
    */
   async create(data: SMETemplateCreate & { company_id: string; user_id: string }): Promise<SMETemplate> {
-    const response = await api.post("/sme/templates", data);
+    const response = await api.post("/api/sme/templates", data);
     return response.data;
   },
 
@@ -85,7 +85,7 @@ export const smeTemplatesApi = {
    * Update a template
    */
   async update(templateId: string, data: SMETemplateUpdate): Promise<SMETemplate> {
-    const response = await api.put(`/sme/templates/${templateId}`, data);
+    const response = await api.put(`/api/sme/templates/${templateId}`, data);
     return response.data;
   },
 
@@ -93,14 +93,14 @@ export const smeTemplatesApi = {
    * Delete a template
    */
   async delete(templateId: string): Promise<void> {
-    await api.delete(`/sme/templates/${templateId}`);
+    await api.delete(`/api/sme/templates/${templateId}`);
   },
 
   /**
    * Mark a template as used
    */
   async use(templateId: string): Promise<SMETemplate> {
-    const response = await api.post(`/sme/templates/${templateId}/use`);
+    const response = await api.post(`/api/sme/templates/${templateId}/use`);
     return response.data;
   },
 
@@ -108,7 +108,7 @@ export const smeTemplatesApi = {
    * Pre-fill template fields with company profile data
    */
   async prefill(request: TemplatePreFillRequest): Promise<TemplatePreFillResponse> {
-    const response = await api.post("/sme/templates/prefill", request);
+    const response = await api.post("/api/sme/templates/prefill", request);
     return response.data;
   },
 };

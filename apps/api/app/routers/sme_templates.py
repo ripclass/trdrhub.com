@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, inspect
 
 from ..database import get_db
 from ..core.security import get_current_user
@@ -37,6 +37,25 @@ def require_sme_user(current_user: User = Depends(get_current_user)) -> User:
             detail="This endpoint is only available for SME users (exporter/importer)"
         )
     return current_user
+
+
+def ensure_sme_template_storage(db: Session) -> None:
+    bind = db.get_bind()
+    try:
+        inspector = inspect(bind)
+        if not inspector.has_table(SMETemplate.__tablename__):
+            logger.warning("Creating missing SME template table: %s", SMETemplate.__tablename__)
+            SMETemplate.metadata.create_all(
+                bind=bind,
+                tables=[SMETemplate.__table__],
+                checkfirst=True,
+            )
+    except Exception as exc:
+        logger.error("Failed to ensure SME template storage: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Templates are temporarily unavailable while beta storage initializes.",
+        )
 
 
 def _substitute_template_variables(
@@ -117,6 +136,7 @@ async def list_templates(
     db: Session = Depends(get_db)
 ):
     """List templates for the current user's company."""
+    ensure_sme_template_storage(db)
     query = db.query(SMETemplate).filter(
         and_(
             SMETemplate.company_id == current_user.company_id,
@@ -146,6 +166,7 @@ async def get_template(
     db: Session = Depends(get_db)
 ):
     """Get a specific template."""
+    ensure_sme_template_storage(db)
     template = db.query(SMETemplate).filter(
         and_(
             SMETemplate.id == template_id,
@@ -171,6 +192,7 @@ async def create_template(
     request = None
 ):
     """Create a new template."""
+    ensure_sme_template_storage(db)
     # Ensure company_id and user_id match current user
     if template_data.company_id != current_user.company_id:
         raise HTTPException(
@@ -230,6 +252,7 @@ async def update_template(
     request = None
 ):
     """Update a template."""
+    ensure_sme_template_storage(db)
     template = db.query(SMETemplate).filter(
         and_(
             SMETemplate.id == template_id,
@@ -288,6 +311,7 @@ async def delete_template(
     request = None
 ):
     """Delete a template (soft delete)."""
+    ensure_sme_template_storage(db)
     template = db.query(SMETemplate).filter(
         and_(
             SMETemplate.id == template_id,
@@ -327,6 +351,7 @@ async def use_template(
     db: Session = Depends(get_db)
 ):
     """Mark a template as used (increment usage count)."""
+    ensure_sme_template_storage(db)
     template = db.query(SMETemplate).filter(
         and_(
             SMETemplate.id == template_id,
@@ -356,6 +381,7 @@ async def prefill_template(
     db: Session = Depends(get_db)
 ):
     """Pre-fill template fields with company profile data."""
+    ensure_sme_template_storage(db)
     template = db.query(SMETemplate).filter(
         and_(
             SMETemplate.id == request.template_id,

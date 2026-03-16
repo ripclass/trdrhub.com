@@ -103,6 +103,7 @@ class DraftUpdate(BaseModel):
 
 class DraftRead(DraftBase):
     """Schema for reading Draft data."""
+    metadata: Optional[Dict[str, Any]] = Field(default=None, validation_alias="extra_metadata")
     id: UUID
     user_id: UUID
     company_id: Optional[UUID]
@@ -172,6 +173,7 @@ class AmendmentUpdate(BaseModel):
 
 class AmendmentRead(AmendmentBase):
     """Schema for reading Amendment data."""
+    metadata: Optional[Dict[str, Any]] = Field(default=None, validation_alias="extra_metadata")
     id: UUID
     user_id: UUID
     company_id: Optional[UUID]

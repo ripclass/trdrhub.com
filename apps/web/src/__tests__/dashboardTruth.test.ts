@@ -75,4 +75,19 @@ describe('dashboardTruth', () => {
     expect(truth.statusLabel).toBe('Completed');
     expect(truth.canSubmit).toBe(false);
   });
+
+  it('uses session summary counts when list data omits full document arrays', () => {
+    const truth = getExporterSessionTruth(
+      buildSession({
+        documents: undefined,
+        discrepancies: undefined,
+        total_documents: 4,
+        total_discrepancies: 2,
+      }),
+    );
+
+    expect(truth.documentCount).toBe(4);
+    expect(truth.issueCount).toBe(2);
+    expect(truth.state).toBe('review');
+  });
 });

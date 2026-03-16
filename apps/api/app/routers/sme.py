@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, inspect
 
 from ..database import get_db
 from ..core.security import get_current_user
@@ -43,6 +43,37 @@ def require_sme_user(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def ensure_sme_workspace_storage(db: Session) -> None:
+    bind = db.get_bind()
+    try:
+        inspector = inspect(bind)
+        required_tables = [
+            LCWorkspace.__table__,
+            Draft.__table__,
+            Amendment.__table__,
+        ]
+        missing_tables = [
+            table for table in required_tables if not inspector.has_table(table.name)
+        ]
+
+        if missing_tables:
+            logger.warning(
+                "Creating missing SME workspace tables: %s",
+                ", ".join(table.name for table in missing_tables),
+            )
+            LCWorkspace.metadata.create_all(
+                bind=bind,
+                tables=missing_tables,
+                checkfirst=True,
+            )
+    except Exception as exc:
+        logger.error("Failed to ensure SME workspace storage: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LC Workspace is temporarily unavailable while beta storage initializes.",
+        )
+
+
 # ===== LC Workspace Endpoints =====
 
 @router.post("/lc-workspaces", response_model=LCWorkspaceRead, status_code=status.HTTP_201_CREATED)
@@ -53,6 +84,7 @@ async def create_lc_workspace(
     request = None
 ):
     """Create a new LC Workspace."""
+    ensure_sme_workspace_storage(db)
     try:
         # Check if workspace already exists for this LC and user
         existing = db.query(LCWorkspace).filter(
@@ -126,6 +158,7 @@ async def list_lc_workspaces(
     db: Session = Depends(get_db)
 ):
     """List LC Workspaces for the current user."""
+    ensure_sme_workspace_storage(db)
     query = db.query(LCWorkspace).filter(
         and_(
             LCWorkspace.user_id == current_user.id,
@@ -155,6 +188,7 @@ async def get_lc_workspace(
     db: Session = Depends(get_db)
 ):
     """Get a specific LC Workspace."""
+    ensure_sme_workspace_storage(db)
     workspace = db.query(LCWorkspace).filter(
         and_(
             LCWorkspace.id == workspace_id,
@@ -181,6 +215,7 @@ async def update_lc_workspace(
     request = None
 ):
     """Update an LC Workspace."""
+    ensure_sme_workspace_storage(db)
     workspace = db.query(LCWorkspace).filter(
         and_(
             LCWorkspace.id == workspace_id,
@@ -223,6 +258,7 @@ async def create_draft(
     request = None
 ):
     """Create a new Draft."""
+    ensure_sme_workspace_storage(db)
     try:
         draft = Draft(
             lc_number=draft_data.lc_number,
@@ -233,7 +269,7 @@ async def create_draft(
             status=DraftStatus.DRAFT,
             uploaded_docs=[doc.dict() for doc in draft_data.uploaded_docs],
             notes=draft_data.notes,
-            metadata=draft_data.metadata or {}
+            extra_metadata=draft_data.metadata or {}
         )
         
         db.add(draft)
@@ -260,6 +296,7 @@ async def list_drafts(
     db: Session = Depends(get_db)
 ):
     """List Drafts for the current user."""
+    ensure_sme_workspace_storage(db)
     query = db.query(Draft).filter(
         and_(
             Draft.user_id == current_user.id,
@@ -288,6 +325,7 @@ async def get_draft(
     db: Session = Depends(get_db)
 ):
     """Get a specific Draft."""
+    ensure_sme_workspace_storage(db)
     draft = db.query(Draft).filter(
         and_(
             Draft.id == draft_id,
@@ -313,6 +351,7 @@ async def update_draft(
     db: Session = Depends(get_db)
 ):
     """Update a Draft."""
+    ensure_sme_workspace_storage(db)
     draft = db.query(Draft).filter(
         and_(
             Draft.id == draft_id,
@@ -332,6 +371,8 @@ async def update_draft(
     for field, value in update_data.items():
         if field == "uploaded_docs" and value is not None:
             draft.uploaded_docs = [doc if isinstance(doc, dict) else doc.dict() for doc in value]
+        elif field == "metadata" and value is not None:
+            draft.extra_metadata = value
         elif field == "status" and value is not None:
             draft.status = DraftStatus(value)
         elif value is not None:
@@ -351,6 +392,7 @@ async def promote_draft(
     db: Session = Depends(get_db)
 ):
     """Promote a draft to ready-for-submission."""
+    ensure_sme_workspace_storage(db)
     draft = db.query(Draft).filter(
         and_(
             Draft.id == draft_id,
@@ -390,6 +432,7 @@ async def create_amendment(
     db: Session = Depends(get_db)
 ):
     """Create a new Amendment."""
+    ensure_sme_workspace_storage(db)
     try:
         # Find the latest version for this LC
         latest_amendment = db.query(Amendment).filter(
@@ -414,7 +457,7 @@ async def create_amendment(
             changes_diff=amendment_data.changes_diff,
             document_changes=[change.dict() for change in (amendment_data.document_changes or [])],
             notes=amendment_data.notes,
-            metadata=amendment_data.metadata or {}
+            extra_metadata=amendment_data.metadata or {}
         )
         
         db.add(amendment)
@@ -441,6 +484,7 @@ async def list_amendments(
     db: Session = Depends(get_db)
 ):
     """List Amendments for the current user."""
+    ensure_sme_workspace_storage(db)
     query = db.query(Amendment).filter(
         and_(
             Amendment.user_id == current_user.id,
@@ -469,6 +513,7 @@ async def get_amendment(
     db: Session = Depends(get_db)
 ):
     """Get a specific Amendment."""
+    ensure_sme_workspace_storage(db)
     amendment = db.query(Amendment).filter(
         and_(
             Amendment.id == amendment_id,
@@ -493,6 +538,7 @@ async def get_amendment_diff(
     db: Session = Depends(get_db)
 ):
     """Get the diff for an amendment compared to its previous version."""
+    ensure_sme_workspace_storage(db)
     amendment = db.query(Amendment).filter(
         and_(
             Amendment.id == amendment_id,
@@ -536,6 +582,7 @@ async def update_amendment(
     db: Session = Depends(get_db)
 ):
     """Update an Amendment."""
+    ensure_sme_workspace_storage(db)
     amendment = db.query(Amendment).filter(
         and_(
             Amendment.id == amendment_id,
@@ -553,7 +600,9 @@ async def update_amendment(
     # Update fields
     update_data = amendment_data.dict(exclude_unset=True)
     for field, value in update_data.items():
-        if field == "status" and value is not None:
+        if field == "metadata" and value is not None:
+            amendment.extra_metadata = value
+        elif field == "status" and value is not None:
             amendment.status = AmendmentStatus(value)
         elif value is not None:
             setattr(amendment, field, value)

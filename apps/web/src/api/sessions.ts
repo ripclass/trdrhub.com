@@ -47,8 +47,11 @@ export interface ValidationSession {
   validation_results?: Record<string, any>
   created_at: string
   updated_at: string
-  documents: DocumentInfo[]
-  discrepancies: DiscrepancyInfo[]
+  documents?: DocumentInfo[]
+  discrepancies?: DiscrepancyInfo[]
+  total_documents?: number
+  total_discrepancies?: number
+  critical_discrepancies?: number
 }
 
 export interface CrossCheckField {
@@ -97,6 +100,53 @@ export const getValidationSession = async (sessionId: string): Promise<Validatio
 export const getUserSessions = async (): Promise<ValidationSession[]> => {
   const response = await api.get('/sessions')
   return response.data
+}
+
+export const hydrateSessionsWithStructuredResults = async (
+  sessions: ValidationSession[],
+  limit = 5,
+): Promise<ValidationSession[]> => {
+  const completedSessions = sessions
+    .filter(
+      (session) =>
+        session.status === 'completed' &&
+        !session.validation_results?.structured_result &&
+        session.validation_results?.version !== 'structured_result_v1',
+    )
+    .slice(0, limit)
+
+  if (completedSessions.length === 0) {
+    return sessions
+  }
+
+  const hydratedEntries = await Promise.all(
+    completedSessions.map(async (session) => {
+      try {
+        const response = await api.get(`/api/results/${session.id}`)
+        const structuredResult = response.data?.structured_result
+
+        if (!structuredResult) {
+          return [session.id, session] as const
+        }
+
+        return [
+          session.id,
+          {
+            ...session,
+            validation_results: {
+              ...(session.validation_results || {}),
+              structured_result: structuredResult,
+            },
+          },
+        ] as const
+      } catch {
+        return [session.id, session] as const
+      }
+    }),
+  )
+
+  const hydratedById = new Map(hydratedEntries)
+  return sessions.map((session) => hydratedById.get(session.id) ?? session)
 }
 
 export const startSessionProcessing = async (sessionId: string): Promise<void> => {
