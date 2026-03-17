@@ -928,18 +928,26 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     lcClassification?.workflow_orientation ?? "unknown",
   ).toLowerCase();
   const instrumentType = String(lcClassification?.instrument_type ?? "other_or_unknown_undertaking").toLowerCase();
+  const revocability = String(lcClassification?.attributes?.revocability ?? "unknown").toLowerCase();
   // Keep confidence display backward-compatible while workflow/instrument are read from lc_classification.
   const rawConfidence = structuredResult?.lc_type_confidence ?? lcStructuredData?.lc_type_confidence;
   const lcTypeConfidenceValue =
     typeof rawConfidence === "number"
       ? Math.round(rawConfidence * 100)
       : null;
-  const lcTypeLabel = WORKFLOW_LABEL_MAP[workflowOrientation] ?? WORKFLOW_LABEL_MAP.unknown;
+  const workflowLabel = WORKFLOW_LABEL_MAP[workflowOrientation] ?? WORKFLOW_LABEL_MAP.unknown;
   const lcInstrumentLabel =
     INSTRUMENT_LABEL_MAP[instrumentType] ??
     (instrumentType && instrumentType !== "other_or_unknown_undertaking"
       ? normalizeLcEnumLabel(instrumentType)
       : "Unknown");
+  const lcTypeLabel =
+    revocability !== 'unknown' && lcInstrumentLabel !== 'Unknown'
+      ? `${normalizeLcEnumLabel(revocability)} ${lcInstrumentLabel}`
+      : lcInstrumentLabel;
+  const lcTypeCaption = revocability !== 'unknown' || lcInstrumentLabel !== 'Unknown'
+    ? 'LC SEMANTICS'
+    : 'LC TYPE';
 
   // All hooks must be called BEFORE any conditional returns
   const documentStatusMap = useMemo(() => {
@@ -1094,15 +1102,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       .map((doc) => doc?.raw_text || doc?.display_name || doc?.code)
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
     const candidates = [
-      canonicalTexts,
       lcData?.documents_required,
       lcData?.required_documents,
-      lcData?.required_document_types,
       lcPrimaryExtractedFields?.documents_required,
       lcPrimaryExtractedFields?.required_documents,
-      lcPrimaryExtractedFields?.required_document_types,
       lcPrimaryExtractedFields?.documentsRequired,
       lcPrimaryExtractedFields?.requiredDocuments,
+      canonicalTexts,
+      lcData?.required_document_types,
+      lcPrimaryExtractedFields?.required_document_types,
+      lcPrimaryExtractedFields?.requiredDocumentTypes,
     ];
     for (const candidate of candidates) {
       const formatted = formatConditions(candidate);
@@ -1940,6 +1949,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           <SummaryStrip 
             data={resultData ?? null} 
             lcTypeLabel={lcTypeLabel}
+            lcTypeCaption={lcTypeCaption}
             lcTypeConfidence={lcTypeConfidenceValue}
             packGenerated={packGenerated}
             overallStatus={overallStatus}
@@ -1948,8 +1958,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           />
           {lcClassification && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Workflow: {WORKFLOW_LABEL_MAP[workflowOrientation] ?? WORKFLOW_LABEL_MAP.unknown}</Badge>
+              <Badge variant="outline">Workflow: {workflowLabel}</Badge>
               <Badge variant="outline">Instrument: {lcInstrumentLabel}</Badge>
+              {revocability !== 'unknown' && (
+                <Badge variant="outline">Terms: {normalizeLcEnumLabel(revocability)}</Badge>
+              )}
             </div>
           )}
           

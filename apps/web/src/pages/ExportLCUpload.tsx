@@ -225,7 +225,8 @@ export function detectDocumentTypeFromFilename(filename: string): FilenameDetect
 
 export function formatWorkflowBadgeLabel(workflowType?: string): string {
   const normalized = String(workflowType || "").trim().toLowerCase();
-  return `Workflow: ${normalized || "unknown"}`;
+  const humanized = normalized ? normalized.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : 'Unknown';
+  return `${humanized} Workflow`;
 }
 
 export function getQuickBadgeDocumentTypes(
@@ -1364,6 +1365,7 @@ export default function ExportLCUpload({
                 {lcIntake.lcDetection && (
                   <div className="flex flex-wrap gap-2 text-xs">
                     <Badge variant="outline">{formatWorkflowBadgeLabel(lcIntake.lcDetection.lc_type)}</Badge>
+                    <Badge variant="outline">Workflow lane only</Badge>
                     {typeof lcIntake.lcDetection.confidence === 'number' && (
                       <Badge variant="outline">Confidence: {Math.round(lcIntake.lcDetection.confidence * 100)}%</Badge>
                     )}
@@ -1404,15 +1406,23 @@ export default function ExportLCUpload({
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-2">
                   {(lcIntake.requiredDocumentTypes || []).length > 0 ? (
-                    (lcIntake.requiredDocumentTypes || []).map((docType) => {
+                    (lcIntake.requiredDocumentTypes || []).map((docType, index) => {
                       const label = exportDocumentTypes.find((t) => t.value === docType)?.label || docType;
+                      const exactRequirement = String(lcIntake.documentsRequired?.[index] || '').trim();
                       const isFound = completedFiles.some((file) => normalizeDocumentType(file.documentType) === docType || normalizeDocumentType(file.detectedType) === docType);
                       return (
-                        <Badge key={docType} variant={isFound ? "default" : "outline"}>
-                          {label} - {isFound ? "Found" : "Missing"}
-                        </Badge>
+                        <div key={`${docType}-${index}`} className="rounded-lg border border-gray-200/70 bg-background p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={isFound ? "default" : "outline"}>
+                              {label} - {isFound ? "Found" : "Missing"}
+                            </Badge>
+                          </div>
+                          {exactRequirement && exactRequirement.toLowerCase() !== label.toLowerCase() && (
+                            <p className="mt-2 text-xs text-muted-foreground">{exactRequirement}</p>
+                          )}
+                        </div>
                       );
                     })
                   ) : (

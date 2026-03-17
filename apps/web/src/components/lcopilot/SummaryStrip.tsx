@@ -10,6 +10,7 @@ type Props = {
   data: ValidationResults | null;
   lcTypeLabel?: string;
   lcTypeConfidence?: number | null;
+  lcTypeCaption?: string;
   packGenerated?: boolean;
   overallStatus?: 'success' | 'warning' | 'error';
   actualIssuesCount?: number;
@@ -23,6 +24,7 @@ export function SummaryStrip({
   data,
   lcTypeLabel,
   lcTypeConfidence,
+  lcTypeCaption,
   packGenerated,
   overallStatus,
   actualIssuesCount,
@@ -89,7 +91,9 @@ export function SummaryStrip({
             )}
             {lcTypeLabel && (
               <div className="text-center">
-                <p className="text-[10px] uppercase text-muted-foreground tracking-wide">LC TYPE</p>
+                <p className="text-[10px] uppercase text-muted-foreground tracking-wide">
+                  {lcTypeCaption || 'LC TYPE'}
+                </p>
                 <div className="flex items-center gap-1.5 justify-center mt-1">
                   <Badge variant="secondary" className="text-xs">{lcTypeLabel}</Badge>
                   {lcTypeConfidence != null && lcTypeConfidence > 0 && (
