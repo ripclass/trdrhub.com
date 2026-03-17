@@ -29,6 +29,22 @@ export interface DraftData {
   issueDate?: string;
   notes?: string;
   filesMeta?: FileMeta[];
+  lcIntakeSnapshot?: {
+    status: 'idle' | 'uploading' | 'resolved' | 'invalid' | 'ambiguous';
+    fileName?: string;
+    fileSize?: number;
+    type?: string;
+    message?: string;
+    continuationAllowed?: boolean;
+    isLc?: boolean;
+    jobId?: string;
+    lcSummary?: Record<string, any>;
+    lcDetection?: Record<string, any>;
+    requiredDocumentTypes?: string[];
+    documentsRequired?: string[];
+    specialConditions?: string[];
+    detectedDocuments?: Array<{ type: string; filename?: string }>;
+  };
   updatedAt: string;
   sessionId?: string; // to link with session storage
 }
@@ -283,6 +299,7 @@ export const useDrafts = () => {
     notes?: string;
     filesMeta?: FileMeta[];
     filesData?: FileData[]; // Include file data for session storage
+    lcIntakeSnapshot?: DraftData['lcIntakeSnapshot'];
   }): DraftData => {
     try {
       const sessionId = getSessionId();
@@ -300,6 +317,7 @@ export const useDrafts = () => {
           issueDate: data.issueDate,
           notes: data.notes,
           filesMeta: data.filesMeta,
+          lcIntakeSnapshot: data.lcIntakeSnapshot,
         });
       } else {
         // Create new draft
@@ -309,6 +327,7 @@ export const useDrafts = () => {
           issueDate: data.issueDate,
           notes: data.notes,
           filesMeta: data.filesMeta,
+          lcIntakeSnapshot: data.lcIntakeSnapshot,
         });
       }
     } catch (err: any) {

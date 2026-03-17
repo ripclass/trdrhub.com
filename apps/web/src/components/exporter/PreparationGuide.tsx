@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -10,19 +10,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   ChevronDown,
   ChevronUp,
-  FileText,
   CheckCircle,
   AlertTriangle,
   Download,
-  HelpCircle,
-  Ship,
-  FileCheck,
-  Shield,
-  Package,
-  Globe,
   Info,
   Lightbulb,
   BookOpen,
+  ScanLine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -39,13 +33,6 @@ type DocumentChecklist = {
   name: string;
   emoji: string;
   items: ChecklistItem[];
-};
-
-type CountryRequirements = {
-  code: string;
-  name: string;
-  flag: string;
-  requirements: ChecklistItem[];
 };
 
 // Storage key for localStorage
@@ -162,102 +149,23 @@ const COMMON_MISTAKES: ChecklistItem[] = [
   { id: 'err-quality', text: 'Poor scan quality - Illegible = discrepancy' },
 ];
 
-const UPLOAD_TIPS: ChecklistItem[] = [
-  { id: 'tip-pdf', text: 'PDF format preferred (better OCR accuracy)' },
-  { id: 'tip-dpi', text: 'Scan at 300 DPI minimum' },
-  { id: 'tip-legible', text: 'Ensure all text is legible' },
-  { id: 'tip-lc-first', text: 'Upload LC document first (helps system extract requirements)' },
-  { id: 'tip-naming', text: 'Name files clearly: "Commercial_Invoice.pdf" not "scan001.pdf"' },
+const SCAN_QUALITY_TIPS: ChecklistItem[] = [
+  { id: 'scan-pdf', text: 'Use PDF when possible for cleaner OCR and page handling' },
+  { id: 'scan-dpi', text: 'Scan at 300 DPI or higher for readable text and stamps', critical: true },
+  { id: 'scan-sharp', text: 'Make sure text is sharp, straight, and fully visible', critical: true },
+  { id: 'scan-stamps', text: 'Keep signatures, seals, and handwritten marks clearly visible', critical: true },
+  { id: 'scan-pages', text: 'Upload all pages of the document in the correct order', critical: true },
+  { id: 'scan-glare', text: 'Avoid glare, shadows, cropped edges, or tilted phone photos' },
+  { id: 'scan-final', text: 'Upload final signed versions, not drafts or working copies', critical: true },
+  { id: 'scan-name', text: 'Use clear file names like Commercial_Invoice.pdf instead of scan001.pdf' },
 ];
 
-const COUNTRY_REQUIREMENTS: CountryRequirements[] = [
-  {
-    code: 'bd',
-    name: 'Bangladesh',
-    flag: '🇧🇩',
-    requirements: [
-      { id: 'bd-bin', text: 'Exporter BIN (Business Identification Number) - 11 digits', critical: true, tip: 'Format: XXX-XXXX-XXX. Must appear on: Invoice, B/L, Packing List' },
-      { id: 'bd-tin', text: 'Exporter TIN (Tax Identification Number) - 12 digits', critical: true, tip: 'Format: XXXXXXXXXXXX. Must appear on: Invoice, Certificate of Origin' },
-      { id: 'bd-hs', text: 'HS Code - Required on Invoice and Packing List' },
-      { id: 'bd-origin', text: 'Country of Origin - Must be clearly stated' },
-    ],
-  },
-  {
-    code: 'sa',
-    name: 'Saudi Arabia',
-    flag: '🇸🇦',
-    requirements: [
-      { id: 'sa-saber', text: 'SABER Certificate may be required for certain goods', critical: true },
-      { id: 'sa-coo', text: 'Certificate of Origin must be Chamber-certified' },
-      { id: 'sa-arabic', text: 'Arabic translation may be required for some documents' },
-      { id: 'sa-halal', text: 'Halal certificate for food products', tip: 'Must be issued by approved certification body' },
-    ],
-  },
-  {
-    code: 'ae',
-    name: 'UAE',
-    flag: '🇦🇪',
-    requirements: [
-      { id: 'ae-coo', text: 'Certificate of Origin - legalized by Chamber of Commerce' },
-      { id: 'ae-conformity', text: 'Certificate of Conformity for regulated products' },
-      { id: 'ae-halal', text: 'Halal certificate for meat/food products' },
-      { id: 'ae-label', text: 'Arabic labeling requirements for consumer goods' },
-    ],
-  },
-  {
-    code: 'in',
-    name: 'India',
-    flag: '🇮🇳',
-    requirements: [
-      { id: 'in-iec', text: 'IEC (Import Export Code) of Indian importer' },
-      { id: 'in-gstin', text: 'GSTIN number reference' },
-      { id: 'in-bis', text: 'BIS certification for applicable products' },
-      { id: 'in-fssai', text: 'FSSAI license for food products' },
-    ],
-  },
-  {
-    code: 'cn',
-    name: 'China',
-    flag: '🇨🇳',
-    requirements: [
-      { id: 'cn-ccc', text: 'CCC Mark for applicable products', critical: true },
-      { id: 'cn-customs', text: 'Chinese customs registration number' },
-      { id: 'cn-inspection', text: 'CCIC inspection may be required' },
-      { id: 'cn-chinese', text: 'Chinese translations may be required' },
-    ],
-  },
-  {
-    code: 'us',
-    name: 'United States',
-    flag: '🇺🇸',
-    requirements: [
-      { id: 'us-hts', text: 'HTS Code (10-digit) required' },
-      { id: 'us-fda', text: 'FDA registration for food/drug products' },
-      { id: 'us-fcc', text: 'FCC certification for electronics' },
-      { id: 'us-origin', text: 'Country of origin marking required' },
-    ],
-  },
-  {
-    code: 'eu',
-    name: 'European Union',
-    flag: '🇪🇺',
-    requirements: [
-      { id: 'eu-ce', text: 'CE Marking for applicable products', critical: true },
-      { id: 'eu-eori', text: 'EORI number of EU importer' },
-      { id: 'eu-reach', text: 'REACH compliance for chemicals' },
-      { id: 'eu-weee', text: 'WEEE registration for electronics' },
-    ],
-  },
-  {
-    code: 'sg',
-    name: 'Singapore',
-    flag: '🇸🇬',
-    requirements: [
-      { id: 'sg-uen', text: 'UEN (Unique Entity Number) of importer' },
-      { id: 'sg-hsa', text: 'HSA approval for health products' },
-      { id: 'sg-sfa', text: 'SFA license for food products' },
-    ],
-  },
+const UPLOAD_TIPS: ChecklistItem[] = [
+  { id: 'tip-lc-first', text: 'Upload the LC first so the system can detect required supporting documents' },
+  { id: 'tip-any-order', text: 'After the LC is resolved, upload supporting documents in any order' },
+  { id: 'tip-clear-names', text: 'Clear file names help manual review, even when filenames are not mandatory' },
+  { id: 'tip-final-docs', text: 'Prefer final presentation-ready versions over drafts whenever possible' },
+  { id: 'tip-review-missing', text: 'Use the Required Documents section to fill missing items before validation' },
 ];
 
 // PDF Generation (simplified - just opens print dialog)
@@ -286,7 +194,7 @@ const generatePDF = () => {
     <body>
       <h1>📋 LC Document Preparation Checklist</h1>
       <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
-      <p><em>Prepare your documents RIGHT to avoid costly discrepancies. Average discrepancy fee: $50-150 per issue.</em></p>
+      <p><em>Use this checklist to prepare cleaner, more presentation-ready documents before validation.</em></p>
       
       <div class="section">
         <h2>✅ Before You Start</h2>
@@ -329,35 +237,20 @@ const generatePDF = () => {
       </div>
       
       <div class="section">
-        <h2>🌍 Country-Specific Requirements</h2>
-        ${COUNTRY_REQUIREMENTS.slice(0, 4).map(country => `
-          <h3>${country.flag} ${country.name}</h3>
-          <ul class="checklist">
-            ${country.requirements.map(item => `
-              <li>
-                <span class="checkbox"></span>
-                <span class="${item.critical ? 'critical' : ''}">${item.text}</span>
-              </li>
-              ${item.tip ? `<div class="tip">💡 ${item.tip}</div>` : ''}
-            `).join('')}
-          </ul>
-        `).join('')}
-      </div>
-      
-      <div class="section">
-        <h2>📤 Upload Tips</h2>
+        <h2>📷 Scan & Upload Quality</h2>
         <ul class="checklist">
-          ${UPLOAD_TIPS.map(item => `
+          ${SCAN_QUALITY_TIPS.map(item => `
             <li>
               <span class="checkbox"></span>
-              <span>${item.text}</span>
+              <span class="${item.critical ? 'critical' : ''}">${item.text}</span>
             </li>
+            ${item.tip ? `<div class="tip">💡 ${item.tip}</div>` : ''}
           `).join('')}
         </ul>
       </div>
       
       <p style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #718096; font-size: 12px;">
-        Generated by TRDR Hub LCopilot • First-time-right success rate with this guide: 85%+
+        Generated by TRDR Hub LCopilot
       </p>
     </body>
     </html>
@@ -470,7 +363,7 @@ export function PreparationGuide() {
                     )}
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    {isOpen ? 'Checklist to prepare documents before validation' : 'Expand for preparation checklist • First-time-right: 85%+'}
+                    {isOpen ? 'Checklist to prepare cleaner documents before validation' : 'Expand for document checks, scan quality, and common upload mistakes'}
                   </CardDescription>
                 </div>
               </div>
@@ -494,8 +387,8 @@ export function PreparationGuide() {
                 <TabsList className="grid grid-cols-4 h-8">
                   <TabsTrigger value="quick" className="text-xs px-2">Quick Check</TabsTrigger>
                   <TabsTrigger value="documents" className="text-xs px-2">Documents</TabsTrigger>
-                  <TabsTrigger value="countries" className="text-xs px-2">Countries</TabsTrigger>
-                  <TabsTrigger value="tips" className="text-xs px-2">Tips</TabsTrigger>
+                  <TabsTrigger value="scan" className="text-xs px-2">Scan Quality</TabsTrigger>
+                  <TabsTrigger value="tips" className="text-xs px-2">Mistakes</TabsTrigger>
                 </TabsList>
                 <Button variant="outline" size="sm" onClick={generatePDF} className="h-8 text-xs gap-1.5">
                   <Download className="w-3.5 h-3.5" />
@@ -548,35 +441,22 @@ export function PreparationGuide() {
                 </ScrollArea>
               </TabsContent>
 
-              {/* Countries Tab */}
-              <TabsContent value="countries" className="mt-0">
-                <ScrollArea className="h-[300px] pr-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    {COUNTRY_REQUIREMENTS.map(country => (
-                      <Card key={country.code} className="border-dashed">
-                        <CardHeader className="py-2 px-3">
-                          <CardTitle className="text-sm flex items-center gap-2">
-                            <span>{country.flag}</span>
-                            {country.name}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="py-2 px-3 pt-0">
-                          <ul className="space-y-1.5 text-xs">
-                            {country.requirements.map(req => (
-                              <li key={req.id} className="flex items-start gap-1.5">
-                                <span className={cn(
-                                  "mt-1 w-1.5 h-1.5 rounded-full shrink-0",
-                                  req.critical ? "bg-destructive" : "bg-muted-foreground"
-                                )} />
-                                <span className={req.critical ? 'font-medium' : ''}>{req.text}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </CardContent>
-                      </Card>
+              {/* Scan Quality Tab */}
+              <TabsContent value="scan" className="mt-0 space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium flex items-center gap-2 mb-2">
+                    <ScanLine className="w-4 h-4 text-blue-500" />
+                    Scan & Upload Quality
+                  </h4>
+                  <div className="space-y-1 border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-3">
+                    {SCAN_QUALITY_TIPS.map(item => (
+                      <div key={item.id} className="flex items-start gap-2 py-1.5 text-sm">
+                        <span className={item.critical ? 'text-destructive' : 'text-blue-500'}>{item.critical ? '!' : '✓'}</span>
+                        <span className={item.critical ? 'font-medium' : ''}>{item.text}</span>
+                      </div>
                     ))}
                   </div>
-                </ScrollArea>
+                </div>
               </TabsContent>
 
               {/* Tips Tab */}
@@ -601,7 +481,7 @@ export function PreparationGuide() {
                 <div>
                   <h4 className="text-sm font-medium flex items-center gap-2 mb-2">
                     <Info className="w-4 h-4 text-blue-500" />
-                    Upload Tips
+                    Upload Flow Tips
                   </h4>
                   <div className="space-y-1 border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-3">
                     {UPLOAD_TIPS.map(item => (

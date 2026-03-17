@@ -459,6 +459,27 @@ export default function ExportLCUpload({
           setIssueDate(draft.issueDate || '');
           setNotes(draft.notes || '');
 
+          if (draft.lcIntakeSnapshot) {
+            setLcIntake({
+              status: draft.lcIntakeSnapshot.status,
+              file: draft.lcIntakeSnapshot.fileName
+                ? new File([], draft.lcIntakeSnapshot.fileName, {
+                    type: draft.lcIntakeSnapshot.type || 'application/pdf',
+                  })
+                : null,
+              message: draft.lcIntakeSnapshot.message,
+              continuationAllowed: draft.lcIntakeSnapshot.continuationAllowed,
+              isLc: draft.lcIntakeSnapshot.isLc,
+              jobId: draft.lcIntakeSnapshot.jobId,
+              lcSummary: draft.lcIntakeSnapshot.lcSummary,
+              lcDetection: draft.lcIntakeSnapshot.lcDetection as any,
+              requiredDocumentTypes: draft.lcIntakeSnapshot.requiredDocumentTypes || [],
+              documentsRequired: draft.lcIntakeSnapshot.documentsRequired || [],
+              specialConditions: draft.lcIntakeSnapshot.specialConditions || [],
+              detectedDocuments: draft.lcIntakeSnapshot.detectedDocuments || [],
+            });
+          }
+
           if (filesData.length > 0) {
             // Files available from session storage - restore them
             const restoredFiles: UploadedFile[] = filesData.map((fileData) => {
@@ -618,11 +639,12 @@ export default function ExportLCUpload({
 
   const handleSaveDraft = () => {
     const completedFiles = uploadedFiles.filter(f => f.status === "completed");
+    const hasResolvedOrAttachedLc = !!lcIntake.file || lcIntake.status === "resolved" || lcIntake.status === "ambiguous" || lcIntake.status === "invalid";
 
-    if (completedFiles.length === 0 && !lcNumber.trim() && !notes.trim()) {
+    if (completedFiles.length === 0 && !hasResolvedOrAttachedLc && !lcNumber.trim() && !notes.trim()) {
       toast({
         title: "Nothing to Save",
-        description: "Please upload some files or enter form data before saving a draft.",
+        description: "Upload the LC, add supporting files, or enter form data before saving a draft.",
         variant: "destructive",
       });
       return;
@@ -661,6 +683,22 @@ export default function ExportLCUpload({
         notes: notes.trim() || undefined,
         filesMeta,
         filesData, // Save to session storage
+        lcIntakeSnapshot: {
+          status: lcIntake.status,
+          fileName: lcIntake.file?.name,
+          fileSize: lcIntake.file?.size,
+          type: lcIntake.file?.type,
+          message: lcIntake.message,
+          continuationAllowed: lcIntake.continuationAllowed,
+          isLc: lcIntake.isLc,
+          jobId: lcIntake.jobId,
+          lcSummary: lcIntake.lcSummary,
+          lcDetection: lcIntake.lcDetection,
+          requiredDocumentTypes: lcIntake.requiredDocumentTypes,
+          documentsRequired: lcIntake.documentsRequired,
+          specialConditions: lcIntake.specialConditions,
+          detectedDocuments: lcIntake.detectedDocuments,
+        },
       });
 
       setCurrentDraftId(savedDraft.id);
@@ -1282,11 +1320,17 @@ export default function ExportLCUpload({
                   </p>
                 </div>
                 <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
-                  <Button asChild variant="outline" disabled={isLcResolving || isProcessing || !!lcIntake.file}>
-                    <label htmlFor="lc-intake-upload" className="cursor-pointer">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Choose LC File
-                    </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isLcResolving || isProcessing || !!lcIntake.file}
+                    onClick={() => {
+                      const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
+                      input?.click();
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Choose LC File
                   </Button>
                   {lcIntake.file && (
                     <Button variant="ghost" onClick={handleClearLCIntake} disabled={isLcResolving || isProcessing}>
@@ -1639,8 +1683,12 @@ export default function ExportLCUpload({
                 <div className="text-sm text-muted-foreground">
                   {isReadyToProcess ? (
                     <span className="text-success">✓ Ready to validate your export documents</span>
+                  ) : isLCResolved && completedFiles.length === 0 ? (
+                    <span>LC resolved. Upload at least one supporting document to start validation.</span>
+                  ) : isLCResolved ? (
+                    <span>Supporting documents are uploaded. Complete any remaining uploads or review your set before validation.</span>
                   ) : (
-                    <span>Please upload documents and provide LC number to continue</span>
+                    <span>Upload and resolve the LC first to unlock supporting-document validation.</span>
                   )}
                 </div>
                 <div className="flex items-center gap-4">
