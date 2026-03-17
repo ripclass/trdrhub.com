@@ -289,6 +289,8 @@ class PortRegistry:
             return ""
         # Remove common prefixes
         text = re.sub(r'^(port\s+of\s+|porto\s+de\s+|puerto\s+de\s+)', '', text, flags=re.I)
+        # Normalize common suffixes that appear in OCR/PDF extraction.
+        text = re.sub(r'\s+port$', '', text, flags=re.I)
         # Keep only alphanumeric
         return re.sub(r'[^a-z0-9]', '', text.lower())
     
