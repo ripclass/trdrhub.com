@@ -115,6 +115,15 @@ def detect_lc_type(
             lc_context.get("port_of_loading_country_name"),
             lc_context.get("port_of_loading_country_code"),
         )
+    ) or any(
+        _has_explicit_port_country_signal(candidate)
+        for candidate in (
+            shipment_context.get("port_of_loading"),
+            lc_context.get("port_of_loading"),
+            ports_context.get("loading"),
+            ports_context.get("port_of_loading"),
+            shipment_context.get("port_of_shipment"),
+        )
     )
     has_discharge_country_signal = any(
         (
@@ -124,6 +133,15 @@ def detect_lc_type(
             lc_context.get("port_of_discharge_country"),
             lc_context.get("port_of_discharge_country_name"),
             lc_context.get("port_of_discharge_country_code"),
+        )
+    ) or any(
+        _has_explicit_port_country_signal(candidate)
+        for candidate in (
+            shipment_context.get("port_of_discharge"),
+            lc_context.get("port_of_discharge"),
+            ports_context.get("discharge"),
+            ports_context.get("port_of_discharge"),
+            shipment_context.get("port_of_destination"),
         )
     )
 
@@ -439,6 +457,23 @@ def _extract_port_country(shipment: Dict[str, Any], port_key: str) -> Optional[s
         if port_value.get("name"):
             return _normalize_country(port_value.get("name"))
     return _normalize_country(port_value)
+
+
+def _has_explicit_port_country_signal(value: Any) -> bool:
+    if not value:
+        return False
+    if isinstance(value, dict):
+        if any(value.get(key) for key in ("country", "country_name", "countryCode")):
+            return True
+        nested = value.get("name") or value.get("port") or value.get("value")
+        return _has_explicit_port_country_signal(nested)
+
+    text = str(value).strip()
+    if not text:
+        return False
+    if "," not in text and "|" not in text:
+        return False
+    return _normalize_country(text) is not None
 
 
 def _normalize_country(value: Any) -> Optional[str]:
