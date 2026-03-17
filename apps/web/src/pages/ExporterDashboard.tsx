@@ -711,7 +711,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Link to={`/export-lc-upload?draftId=${draft.id}`}>
+                          <Link to={`${DASHBOARD_BASE}?section=upload&draftId=${draft.id}`}>
                             <Button variant="outline" size="sm">
                               <ArrowRight className="w-4 h-4 mr-2" />
                               Resume
