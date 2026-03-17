@@ -52,7 +52,14 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type GuardrailCheckResponse, type CustomsPackManifest } from "@/api/exporter";
 import { useCanonicalJobResult } from "@/hooks/use-lcopilot";
-import type { ValidationResults, IssueCard, AIEnrichmentPayload, ReferenceIssue } from "@/types/lcopilot";
+import type {
+  ValidationResults,
+  IssueCard,
+  AIEnrichmentPayload,
+  ReferenceIssue,
+  LcClassification,
+  LcClassificationRequiredDocument,
+} from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 // LcHeader removed - LC info now shown inline in SummaryStrip
@@ -195,6 +202,30 @@ const buildWarningReasons = ({
 
   return Array.from(new Set(reasons));
 };
+
+const WORKFLOW_LABEL_MAP: Record<string, string> = {
+  import: "Import LC",
+  export: "Export LC",
+  domestic: "Domestic LC",
+  intermediary_or_trader: "Intermediary/Trader LC",
+  unknown: "Unknown",
+};
+
+const INSTRUMENT_LABEL_MAP: Record<string, string> = {
+  documentary_credit: "Documentary Credit",
+  standby_letter_of_credit: "Standby Letter of Credit",
+  demand_guarantee: "Demand Guarantee",
+  counter_undertaking_or_counter_guarantee: "Counter Guarantee",
+  documentary_collection: "Documentary Collection",
+  other_or_unknown_undertaking: "Other/Unknown Undertaking",
+};
+
+const normalizeLcEnumLabel = (value: string): string =>
+  value
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 
 type RequirementChecklistStatus = 'matched' | 'partial' | 'missing';
 type RequirementChecklistReviewState = 'ready' | 'needs_review' | 'blocked' | 'awaiting_document';
@@ -883,31 +914,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     };
   }, [rawAiInsights]);
   const hasIssueCards = issueCards.length > 0;
-  // LC Type can be: export, import, sight, usance, deferred, or unknown
-  // Check both top-level and lc_structured for these values (backend stores in lc_structured)
   const lcStructuredData = structuredResult?.lc_structured as Record<string, any> | null;
-  const rawLcType = structuredResult?.lc_type ?? lcStructuredData?.lc_type ?? "unknown";
-  const lcType = rawLcType.toLowerCase() as string;
-  const lcTypeReason = structuredResult?.lc_type_reason ?? lcStructuredData?.lc_type_reason ?? "LC type detection details unavailable.";
-  // Get confidence from lc_structured (where backend actually stores it)
+  const lcClassification = (lcStructuredData?.lc_classification ?? null) as LcClassification | null;
+  const workflowOrientation = String(
+    lcClassification?.workflow_orientation ?? "unknown",
+  ).toLowerCase();
+  const instrumentType = String(lcClassification?.instrument_type ?? "other_or_unknown_undertaking").toLowerCase();
+  // Keep confidence display backward-compatible while workflow/instrument are read from lc_classification.
   const rawConfidence = structuredResult?.lc_type_confidence ?? lcStructuredData?.lc_type_confidence;
   const lcTypeConfidenceValue =
     typeof rawConfidence === "number"
       ? Math.round(rawConfidence * 100)
       : null;
-  const lcTypeSource = structuredResult?.lc_type_source ?? lcStructuredData?.lc_type_source ?? "auto";
-  const lcTypeLabelMap: Record<string, string> = {
-    export: "Export LC",
-    import: "Import LC",
-    sight: "Sight LC",
-    usance: "Usance LC",
-    deferred: "Deferred Payment LC",
-    transferable: "Transferable LC",
-    standby: "Standby LC",
-    irrevocable: "Irrevocable LC",
-    unknown: "Unknown",
-  };
-  const lcTypeLabel = lcTypeLabelMap[lcType] ?? lcType.charAt(0).toUpperCase() + lcType.slice(1) + " LC";
+  const lcTypeLabel = WORKFLOW_LABEL_MAP[workflowOrientation] ?? WORKFLOW_LABEL_MAP.unknown;
+  const lcInstrumentLabel =
+    INSTRUMENT_LABEL_MAP[instrumentType] ??
+    (instrumentType && instrumentType !== "other_or_unknown_undertaking"
+      ? normalizeLcEnumLabel(instrumentType)
+      : "Unknown");
 
   // All hooks must be called BEFORE any conditional returns
   const documentStatusMap = useMemo(() => {
@@ -1055,11 +1079,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [complianceScore, warningCount],
   );
   const lcRequirementSource = useMemo(() => {
+    const canonicalRequiredDocs = Array.isArray(lcClassification?.required_documents)
+      ? (lcClassification.required_documents as LcClassificationRequiredDocument[])
+      : [];
+    const canonicalTexts = canonicalRequiredDocs
+      .map((doc) => doc?.raw_text || doc?.display_name || doc?.code)
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
     const candidates = [
+      canonicalTexts,
       lcData?.documents_required,
       lcData?.required_documents,
+      lcData?.required_document_types,
       lcPrimaryExtractedFields?.documents_required,
       lcPrimaryExtractedFields?.required_documents,
+      lcPrimaryExtractedFields?.required_document_types,
       lcPrimaryExtractedFields?.documentsRequired,
       lcPrimaryExtractedFields?.requiredDocuments,
     ];
@@ -1070,7 +1103,30 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       }
     }
     return [] as string[];
-  }, [lcData, lcPrimaryExtractedFields]);
+  }, [lcClassification?.required_documents, lcData, lcPrimaryExtractedFields]);
+  const lcRequirementTypes = useMemo(() => {
+    const canonicalRequiredDocs = Array.isArray(lcClassification?.required_documents)
+      ? (lcClassification.required_documents as LcClassificationRequiredDocument[])
+      : [];
+    const canonicalCodes = canonicalRequiredDocs
+      .map((doc) => String(doc?.code || "").trim().toLowerCase())
+      .filter((code) => code.length > 0);
+    const candidates = [
+      canonicalCodes,
+      lcData?.required_document_types,
+      lcData?.requiredDocumentTypes,
+      lcPrimaryExtractedFields?.required_document_types,
+      lcPrimaryExtractedFields?.requiredDocumentTypes,
+    ];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate) && candidate.length > 0) {
+        return candidate
+          .map((item) => String(item || '').trim().toLowerCase())
+          .filter((item) => item.length > 0);
+      }
+    }
+    return [] as string[];
+  }, [lcClassification?.required_documents, lcData, lcPrimaryExtractedFields]);
 
   const performanceInsights = useMemo(
     () => [
@@ -1131,50 +1187,120 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       reviewReasons: (((doc as any).reviewReasons ?? []) as string[]).map((reason) => humanizeIssueReason(reason, String(doc.typeKey || ''))),
     }));
 
-    const requirementRules = [
-      {
-        key: 'commercial_invoice',
-        label: 'Commercial Invoice',
-        matchers: [/\bcommercial invoice\b/i, /\bsigned commercial invoice\b/i],
-        docTypes: ['commercial_invoice'],
-      },
-      {
-        key: 'bill_of_lading',
-        label: 'Ocean Bill of Lading',
-        matchers: [/\bbill of lading\b/i, /\bocean b\/l\b/i, /\bfull set clean on board\b/i],
-        docTypes: ['bill_of_lading'],
-      },
-      {
-        key: 'packing_list',
-        label: 'Packing List',
-        matchers: [/\bpacking list\b/i],
-        docTypes: ['packing_list'],
-      },
-      {
-        key: 'certificate_of_origin',
-        label: 'Certificate of Origin',
-        matchers: [/\bcertificate of origin\b/i, /\bcountry of origin certificate\b/i],
-        docTypes: ['certificate_of_origin'],
-      },
-      {
-        key: 'insurance_certificate',
-        label: 'Insurance Certificate',
-        matchers: [/\binsurance policy\b/i, /\binsurance certificate\b/i, /\bicc \(a\)\b/i, /\bwar\b/i, /\bsrcc\b/i],
-        docTypes: ['insurance_certificate', 'insurance_policy'],
-      },
-      {
-        key: 'beneficiary_certificate',
-        label: 'Beneficiary Certificate',
-        matchers: [/\bbeneficiary certificate\b/i, /\bbeneficiary statement\b/i],
-        docTypes: ['beneficiary_certificate'],
-      },
-    ];
+    const normalizeRequirementCode = (value: unknown): string | null => {
+      const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+      return normalized.length > 0 ? normalized : null;
+    };
 
-    const items = requirementRules
-      .map((rule) => {
-        const requirementText = requiredConditions.find((condition) => rule.matchers.some((matcher) => matcher.test(condition))) || null;
-        if (!requirementText) return null;
-        const matchedDoc = normalizedDocs.find((doc) => rule.docTypes.includes(doc.normalizedType));
+    const typeEquivalents: Record<string, string[]> = {
+      bill_of_lading: ['ocean_bill_of_lading', 'charter_party_bill_of_lading'],
+      ocean_bill_of_lading: ['bill_of_lading', 'charter_party_bill_of_lading'],
+      charter_party_bill_of_lading: ['bill_of_lading', 'ocean_bill_of_lading'],
+      insurance_certificate: ['insurance_policy'],
+      insurance_policy: ['insurance_certificate'],
+      beneficiary_certificate: ['beneficiary_statement'],
+      beneficiary_statement: ['beneficiary_certificate'],
+      courier_or_post_receipt_or_certificate_of_posting: ['courier_receipt', 'post_receipt', 'certificate_of_posting'],
+      courier_receipt: ['courier_or_post_receipt_or_certificate_of_posting'],
+    };
+
+    const buildTypeCandidates = (code: string | null): string[] => {
+      if (!code) return [];
+      const candidates = new Set<string>([code]);
+      const equivalent = typeEquivalents[code] || [];
+      equivalent.forEach((item) => candidates.add(item));
+      for (const [base, aliases] of Object.entries(typeEquivalents)) {
+        if (aliases.includes(code)) {
+          candidates.add(base);
+          aliases.forEach((item) => candidates.add(item));
+        }
+      }
+      return Array.from(candidates);
+    };
+
+    type RequirementRowSeed = {
+      key: string;
+      label: string;
+      requirementText: string;
+      code: string | null;
+      typeCandidates: string[];
+    };
+
+    const requirementSeeds: RequirementRowSeed[] = [];
+    const seenKeys = new Set<string>();
+    const canonicalRequiredDocs = Array.isArray(lcClassification?.required_documents)
+      ? (lcClassification.required_documents as LcClassificationRequiredDocument[])
+      : [];
+
+    const pushRequirementSeed = (seed: RequirementRowSeed): void => {
+      if (seenKeys.has(seed.key)) return;
+      seenKeys.add(seed.key);
+      requirementSeeds.push(seed);
+    };
+
+    canonicalRequiredDocs.forEach((doc, index) => {
+      const code = normalizeRequirementCode(doc?.code);
+      const label =
+        String(doc?.display_name || '').trim() ||
+        (code ? humanizeLabel(code) : `Required Document ${index + 1}`);
+      const requirementText =
+        String(doc?.raw_text || '').trim() ||
+        String(doc?.display_name || '').trim() ||
+        (code ? humanizeLabel(code) : label);
+      const key = code || `required_document_${index + 1}`;
+      pushRequirementSeed({
+        key,
+        label,
+        requirementText,
+        code,
+        typeCandidates: buildTypeCandidates(code),
+      });
+    });
+
+    lcRequirementTypes.forEach((rawType, index) => {
+      const code = normalizeRequirementCode(rawType);
+      if (!code) return;
+      const requirementText = requiredConditions[index] || humanizeLabel(code);
+      pushRequirementSeed({
+        key: code,
+        label: humanizeLabel(code),
+        requirementText,
+        code,
+        typeCandidates: buildTypeCandidates(code),
+      });
+    });
+
+    requiredConditions.forEach((condition, index) => {
+      const conditionText = String(condition || '').trim();
+      if (!conditionText) return;
+      const normalizedCondition = conditionText.toLowerCase();
+      const inferredCode = normalizeRequirementCode(lcRequirementTypes[index] || null);
+      const candidateKeyBase =
+        inferredCode ||
+        normalizedCondition.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48) ||
+        `required_text_${index + 1}`;
+      const key = inferredCode ? candidateKeyBase : `required_text_${candidateKeyBase}`;
+      const label = inferredCode ? humanizeLabel(inferredCode) : `Required Document ${index + 1}`;
+      pushRequirementSeed({
+        key,
+        label,
+        requirementText: conditionText,
+        code: inferredCode,
+        typeCandidates: buildTypeCandidates(inferredCode),
+      });
+    });
+
+    const items = requirementSeeds
+      .map((seed) => {
+        const requirementTextLower = seed.requirementText.toLowerCase();
+        const matchedDoc = normalizedDocs.find((doc) => {
+          if (seed.typeCandidates.includes(doc.normalizedType)) return true;
+          if (!seed.typeCandidates.length) {
+            const normalizedTypeLabel = doc.normalizedType.replace(/_/g, ' ');
+            return requirementTextLower.includes(normalizedTypeLabel) || requirementTextLower.includes(String(doc.name || '').toLowerCase());
+          }
+          return false;
+        });
         const requirementStatus: RequirementChecklistStatus = !matchedDoc
           ? 'missing'
           : (matchedDoc.requirementStatus ??
@@ -1214,13 +1340,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         }
 
         return {
-          key: rule.key,
-          label: rule.label,
+          key: seed.key,
+          label: seed.label,
           requirementStatus,
           reviewState,
           matchedDoc,
           reviewNotes,
-          requirementText,
+          requirementText: seed.requirementText,
         };
       })
       .filter(Boolean) as Array<{
@@ -1234,7 +1360,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       }>;
 
     return items;
-  }, [documents, lcRequirementSource]);
+  }, [documents, lcClassification?.required_documents, lcRequirementSource, lcRequirementTypes]);
   const actionEngine = useMemo(() => {
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
 
@@ -1767,6 +1893,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             actualIssuesCount={issueCards.length}
             complianceScore={complianceScore}
           />
+          {lcClassification && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Workflow: {WORKFLOW_LABEL_MAP[workflowOrientation] ?? WORKFLOW_LABEL_MAP.unknown}</Badge>
+              <Badge variant="outline">Instrument: {lcInstrumentLabel}</Badge>
+            </div>
+          )}
           
           {/* Bank Profile Badge */}
           {structuredResult?.bank_profile && (

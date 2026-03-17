@@ -8,6 +8,19 @@ from .docs_46a_parser import parse_46a_block, extract_46a_text
 from .clauses_47a_parser import parse_47a_block
 from .hs_code_extractor import extract_hs_codes
 from .goods_46a_parser import parse_goods_46a
+try:
+    from .lc_taxonomy import build_lc_classification
+except ImportError:  # pragma: no cover - direct module loading in tests/scripts
+    import importlib.util
+    from pathlib import Path
+
+    _lc_taxonomy_path = Path(__file__).with_name("lc_taxonomy.py")
+    _lc_taxonomy_spec = importlib.util.spec_from_file_location("lc_taxonomy_fallback", _lc_taxonomy_path)
+    if _lc_taxonomy_spec is None or _lc_taxonomy_spec.loader is None:
+        raise
+    _lc_taxonomy_module = importlib.util.module_from_spec(_lc_taxonomy_spec)
+    _lc_taxonomy_spec.loader.exec_module(_lc_taxonomy_module)
+    build_lc_classification = _lc_taxonomy_module.build_lc_classification
 from .swift_mt700_full import parse_mt700_full
 from ..parsers.swift_mt700 import parse_mt700_core  # Keep for fallback
 
@@ -655,6 +668,7 @@ def extract_lc_structured(raw_text: str, llm_field_repair: Optional[Any] = None)
 
     lc_structured: Dict[str, Any] = {
         "number": lc_number,
+        "raw_text": text,
         "amount": {"value": amount_raw, "currency": currency} if amount_raw else None,
         "currency": currency,  # Also expose at top level for easy access
         "applicant": applicant,
@@ -711,27 +725,10 @@ def extract_lc_structured(raw_text: str, llm_field_repair: Optional[Any] = None)
             "raw": mt_full.get("raw", {}),
         }
         lc_structured["mt700_raw"] = mt_full.get("raw", {})
-        # Extract lc_type as string from lc_classification.types array
         lc_classification = mt_fields.get("lc_classification", {})
-        if isinstance(lc_classification, dict) and "types" in lc_classification:
-            types_list = lc_classification.get("types", [])
-            # Filter out "Unknown" if we have other types
-            meaningful_types = [t for t in types_list if t.lower() != "unknown"]
-            if meaningful_types:
-                lc_structured["lc_type"] = meaningful_types[0].lower()  # Use first meaningful type
-                lc_structured["lc_type_confidence"] = 0.85  # High confidence when MT700 parsed
-                lc_structured["lc_type_reason"] = f"Detected {', '.join(meaningful_types)} LC from MT700 payment terms"
-            else:
-                lc_structured["lc_type"] = "unknown"
-                lc_structured["lc_type_confidence"] = 0
-                lc_structured["lc_type_reason"] = "Could not determine LC type from document"
-            lc_structured["lc_classification"] = lc_classification  # Keep original for reference
-            lc_structured["lc_type_source"] = "mt700_parser"
-        else:
-            lc_structured["lc_type"] = lc_classification if isinstance(lc_classification, str) else "unknown"
-            lc_structured["lc_type_confidence"] = 0.5 if lc_classification else 0
-            lc_structured["lc_type_reason"] = "Partial classification available"
-            lc_structured["lc_type_source"] = "fallback"
+        if lc_classification not in (None, "", [], {}):
+            # Keep parser-native classification for diagnostics without overloading legacy lc_type.
+            lc_structured["mt700_parser_classification"] = lc_classification
         
         # Promote commonly-used fields to top-level for compatibility
         if not lc_structured.get("applicant") and mt_fields.get("applicant"):
@@ -741,8 +738,15 @@ def extract_lc_structured(raw_text: str, llm_field_repair: Optional[Any] = None)
         if not lc_structured.get("amount") and credit_amount:
             lc_structured["amount"] = credit_amount
 
+    lc_structured["schema"] = "mt700"
+    lc_structured["message_type"] = "mt700"
+    lc_structured["format"] = "mt700"
+    lc_structured["_source_format"] = "mt700"
+    lc_structured["_source_message_type"] = "mt700"
+
     # Cleanup None keys
     result = {k: v for k, v in lc_structured.items() if v not in (None, [], {})}
+    result["lc_classification"] = build_lc_classification(result)
     
     # Calculate extraction confidence
     result["_extraction_confidence"] = _calculate_rule_based_confidence(result)

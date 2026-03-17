@@ -1,7 +1,8 @@
 import ast
 import importlib.util
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import pytest
 
@@ -166,3 +167,105 @@ def test_coo_parse_completeness_requires_minimum_fields_for_verified():
     )
     assert complete["parse_complete"] is True
     assert complete["required_found"] >= complete["min_required_for_verified"]
+
+
+class _LCType:
+    class _Value:
+        def __init__(self, value: str):
+            self.value = value
+
+    IMPORT = _Value("import")
+    EXPORT = _Value("export")
+    UNKNOWN = _Value("unknown")
+
+
+def _load_validator_continuity_symbols() -> Dict[str, Any]:
+    module_path = Path(__file__).resolve().parents[1] / "app" / "services" / "validator.py"
+    source = module_path.read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+    target_names = {
+        "_get_lc_classification",
+        "_resolve_workflow_lc_type",
+        "_extract_requested_documents",
+        "_normalize_doc_label",
+    }
+    selected_nodes = []
+    for node in parsed.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "DOC_SYNONYMS":
+                    selected_nodes.append(node)
+                    break
+        if isinstance(node, ast.FunctionDef) and node.name in target_names:
+            selected_nodes.append(node)
+    module_ast = ast.Module(body=selected_nodes, type_ignores=[])
+    ast.fix_missing_locations(module_ast)
+    namespace: Dict[str, Any] = {
+        "Any": Any,
+        "Dict": Dict,
+        "Optional": Optional,
+        "Set": Set,
+        "re": re,
+        "LCType": _LCType,
+    }
+    exec(compile(module_ast, str(module_path), "exec"), namespace)
+    return namespace
+
+
+def _load_rule_evaluator_continuity_symbols() -> Dict[str, Any]:
+    module_path = Path(__file__).resolve().parents[1] / "app" / "services" / "rule_evaluator.py"
+    source = module_path.read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+    selected_nodes = [
+        node
+        for node in parsed.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_resolve_workflow_lc_type"
+    ]
+    module_ast = ast.Module(body=selected_nodes, type_ignores=[])
+    ast.fix_missing_locations(module_ast)
+    namespace: Dict[str, Any] = {"Dict": Dict, "Any": Any, "LCType": _LCType}
+    exec(compile(module_ast, str(module_path), "exec"), namespace)
+    return namespace
+
+
+def test_lc_classification_required_documents_are_consumed_by_validator_extractor():
+    ns = _load_validator_continuity_symbols()
+    extract_requested_documents = ns["_extract_requested_documents"]
+    lc_context = {
+        "lc_classification": {
+            "required_documents": [
+                {"code": "charter_party_bill_of_lading"},
+                {"code": "insurance_policy"},
+                {"code": "weight_list"},
+            ]
+        }
+    }
+
+    requested = extract_requested_documents(lc_context, "", {"lc_type": "export"})
+
+    assert "bill_of_lading" in requested
+    assert "insurance_certificate" in requested
+    assert "packing_list" in requested
+
+
+def test_validator_workflow_resolution_prefers_lc_classification_orientation():
+    ns = _load_validator_continuity_symbols()
+    resolve_workflow_lc_type = ns["_resolve_workflow_lc_type"]
+
+    resolved = resolve_workflow_lc_type(
+        {"lc_classification": {"workflow_orientation": "import"}},
+        {"lc_type": "standby"},
+    )
+
+    assert resolved == "import"
+
+
+def test_rule_evaluator_workflow_resolution_prefers_lc_classification_orientation():
+    ns = _load_rule_evaluator_continuity_symbols()
+    resolve_workflow_lc_type = ns["_resolve_workflow_lc_type"]
+
+    resolved = resolve_workflow_lc_type(
+        {"lc_type": "standby", "lc_classification": {"workflow_orientation": "export"}}
+    )
+
+    assert resolved == "export"

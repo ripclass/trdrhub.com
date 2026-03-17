@@ -125,6 +125,64 @@ class BankSubmissionRequest(SubmissionBase):
     swift_format: str = Field(default='MT700', pattern=r'^MT(700|707|720|750)$')
     priority: str = Field(default='normal', pattern=r'^(low|normal|high|urgent)$')
     callback_url: Optional[str] = Field(None, pattern=r'^https?://')
+    lc_classification: Optional[Dict[str, Any]] = None
+    required_documents: Optional[List[Dict[str, Any]]] = None
+
+
+class LcRequiredDocument(BaseModel):
+    code: str
+    display_name: Optional[str] = None
+    category: Optional[str] = None
+    raw_text: Optional[str] = None
+    aliases_matched: List[str] = Field(default_factory=list)
+    originals: Optional[int] = None
+    copies: Optional[int] = None
+    signed: Optional[bool] = None
+    negotiable: Optional[bool] = None
+    issuer: Optional[str] = None
+    exact_wording: Optional[str] = None
+    legalized: Optional[bool] = None
+    transport_mode: Optional[str] = None
+    detection_source: Optional[str] = None
+    confidence: Optional[float] = None
+    evidence: List[str] = Field(default_factory=list)
+
+
+class LcClassificationAttributes(BaseModel):
+    revocability: Optional[str] = None
+    availability: Optional[str] = None
+    available_with_scope: Optional[str] = None
+    confirmation: Optional[str] = None
+    transferability: Optional[str] = None
+    assignment_of_proceeds: Optional[str] = None
+    revolving: Optional[str] = None
+    revolving_mode: Optional[str] = None
+    red_clause: Optional[str] = None
+    green_clause: Optional[str] = None
+    back_to_back: Optional[str] = None
+    documentation_basis: Optional[str] = None
+    partial_shipments: Optional[str] = None
+    transshipment: Optional[str] = None
+    latest_shipment_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    expiry_place: Optional[str] = None
+    presentation_period_days: Optional[int] = None
+    tenor_kind: Optional[str] = None
+    tenor_days: Optional[int] = None
+    tolerance_min_pct: Optional[float] = None
+    tolerance_max_pct: Optional[float] = None
+    reimbursement_present: Optional[str] = None
+
+
+class LcClassification(BaseModel):
+    format_family: Optional[str] = None
+    format_variant: Optional[str] = None
+    embedded_variant: Optional[str] = None
+    instrument_type: Optional[str] = None
+    workflow_orientation: Optional[str] = None
+    applicable_rules: Optional[str] = None
+    attributes: Optional[LcClassificationAttributes] = None
+    required_documents: List[LcRequiredDocument] = Field(default_factory=list)
 
 
 class CustomsSubmissionRequest(SubmissionBase):
@@ -225,7 +283,9 @@ class SwiftMT700(BaseModel):
     amount: Decimal = Field(..., gt=0)
     currency: str = Field(..., pattern=r'^[A-Z]{3}$')
     description_of_goods: str = Field(..., max_length=65000)
-    documents_required: List[str]
+    documents_required: List[str] = Field(default_factory=list)
+    lc_classification: Optional[LcClassification] = None
+    required_documents: List[LcRequiredDocument] = Field(default_factory=list)
     latest_shipment_date: Optional[datetime] = None
     partial_shipments: bool = False
     transhipment: bool = False

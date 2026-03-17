@@ -8,12 +8,14 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import logging
+from decimal import Decimal
 
 import httpx
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..models.integrations import (
-    IntegrationSubmission, CompanyIntegration, BillingEventType
+    IntegrationSubmission, CompanyIntegration, BillingEventType, Integration
 )
 from ..models import ValidationSession, User, UserRole
 from ..schemas.integrations import (
@@ -24,6 +26,82 @@ from ..middleware.billing_checkpoint import billing_guard
 from ..config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_datetime(value: Any) -> datetime:
+    """Best-effort datetime coercion with a safe epoch fallback."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate:
+            try:
+                return datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+    return datetime(1970, 1, 1)
+
+
+def _extract_lc_payload(validation_results: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(validation_results, dict):
+        return {}
+    lc_data = validation_results.get("lc_data")
+    if isinstance(lc_data, dict) and lc_data:
+        return lc_data
+
+    structured = validation_results.get("structured_result")
+    if isinstance(structured, dict):
+        lc_structured = structured.get("lc_structured")
+        if isinstance(lc_structured, dict) and lc_structured:
+            return lc_structured
+    return {}
+
+
+def _extract_required_document_codes(lc_data: Dict[str, Any]) -> List[str]:
+    classification = lc_data.get("lc_classification")
+    if isinstance(classification, dict):
+        req = classification.get("required_documents")
+        if isinstance(req, list):
+            codes: List[str] = []
+            for entry in req:
+                if isinstance(entry, dict):
+                    code = entry.get("code") or entry.get("document_code") or entry.get("document_type")
+                    if code:
+                        codes.append(str(code))
+            if codes:
+                return codes
+
+    docs = lc_data.get("documents_required")
+    if isinstance(docs, list):
+        return [str(item) for item in docs if item]
+
+    structured_docs = lc_data.get("required_documents")
+    if isinstance(structured_docs, list):
+        codes: List[str] = []
+        for entry in structured_docs:
+            if not isinstance(entry, dict):
+                continue
+            code = entry.get("code") or entry.get("document_code") or entry.get("document_type")
+            if code:
+                codes.append(str(code))
+        if codes:
+            return codes
+
+    return []
+
+
+def _extract_structured_required_documents(lc_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    classification = lc_data.get("lc_classification")
+    if isinstance(classification, dict):
+        value = classification.get("required_documents")
+        if isinstance(value, list):
+            return [entry for entry in value if isinstance(entry, dict)]
+
+    for key in ("required_documents",):
+        value = lc_data.get(key)
+        if isinstance(value, list):
+            return [entry for entry in value if isinstance(entry, dict)]
+    return []
 
 
 class BankIntegrationService:
@@ -191,21 +269,29 @@ class BankIntegrationService:
     ) -> SwiftMT700:
         """Prepare SWIFT MT700 message from validation session data."""
         # Extract LC data from session
-        lc_data = session.validation_results.get('lc_data', {})
+        validation_results = session.validation_results if isinstance(session.validation_results, dict) else {}
+        lc_data = _extract_lc_payload(validation_results)
+        required_doc_codes = _extract_required_document_codes(lc_data)
+        required_docs_structured = _extract_structured_required_documents(lc_data)
+        lc_classification = lc_data.get("lc_classification")
+        if not isinstance(lc_classification, dict):
+            lc_classification = request.lc_classification if isinstance(request.lc_classification, dict) else None
 
         return SwiftMT700(
             sender_bic=request.request_payload.get('sender_bic'),
             receiver_bic=request.request_payload.get('receiver_bic'),
             lc_number=request.lc_number,
-            issue_date=datetime.fromisoformat(lc_data.get('issue_date')),
-            expiry_date=datetime.fromisoformat(lc_data.get('expiry_date')),
+            issue_date=_coerce_datetime(lc_data.get('issue_date')),
+            expiry_date=_coerce_datetime(lc_data.get('expiry_date')),
             applicant=lc_data.get('applicant', {}),
             beneficiary=lc_data.get('beneficiary', {}),
             amount=Decimal(str(lc_data.get('amount', 0))),
             currency=lc_data.get('currency', 'USD'),
             description_of_goods=lc_data.get('description_of_goods', ''),
-            documents_required=lc_data.get('documents_required', []),
-            latest_shipment_date=lc_data.get('latest_shipment_date'),
+            documents_required=required_doc_codes,
+            lc_classification=lc_classification,
+            required_documents=required_docs_structured,
+            latest_shipment_date=_coerce_datetime(lc_data.get('latest_shipment_date')) if lc_data.get('latest_shipment_date') else None,
             partial_shipments=lc_data.get('partial_shipments', False),
             transhipment=lc_data.get('transhipment', False)
         )

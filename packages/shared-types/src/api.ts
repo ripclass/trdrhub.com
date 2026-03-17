@@ -466,6 +466,74 @@ export const AmendmentsAvailableSchema = z.object({
 }).passthrough();
 export type AmendmentsAvailable = z.infer<typeof AmendmentsAvailableSchema>;
 
+export const LcRequiredDocumentSchema = z.object({
+  code: z.string(),
+  display_name: z.string(),
+  category: z.string(),
+  raw_text: z.string(),
+  aliases_matched: z.array(z.string()),
+  originals: z.number().nullable().optional(),
+  copies: z.number().nullable().optional(),
+  signed: z.boolean().nullable().optional(),
+  negotiable: z.boolean().nullable().optional(),
+  issuer: z.string().nullable().optional(),
+  exact_wording: z.string().nullable().optional(),
+  legalized: z.boolean().nullable().optional(),
+  transport_mode: z.string().nullable().optional(),
+  detection_source: z.string(),
+  confidence: z.number(),
+  evidence: z.array(z.string()),
+}).passthrough();
+export type LcRequiredDocument = z.infer<typeof LcRequiredDocumentSchema>;
+
+export const LcClassificationAttributesSchema = z.object({
+  revocability: z.string(),
+  availability: z.string(),
+  available_with_scope: z.string(),
+  confirmation: z.string(),
+  transferability: z.string(),
+  assignment_of_proceeds: z.string(),
+  revolving: z.string(),
+  revolving_mode: z.string().nullable().optional(),
+  red_clause: z.string(),
+  green_clause: z.string(),
+  back_to_back: z.string(),
+  documentation_basis: z.string(),
+  partial_shipments: z.string(),
+  transshipment: z.string(),
+  latest_shipment_date: z.string().nullable().optional(),
+  expiry_date: z.string().nullable().optional(),
+  expiry_place: z.string().nullable().optional(),
+  presentation_period_days: z.number().nullable().optional(),
+  tenor_kind: z.string(),
+  tenor_days: z.number().nullable().optional(),
+  tolerance_min_pct: z.number().nullable().optional(),
+  tolerance_max_pct: z.number().nullable().optional(),
+  reimbursement_present: z.string(),
+}).passthrough();
+export type LcClassificationAttributes = z.infer<typeof LcClassificationAttributesSchema>;
+
+export const LcClassificationSchema = z.object({
+  format_family: z.string(),
+  format_variant: z.string(),
+  embedded_variant: z.string().nullable().optional(),
+  instrument_type: z.string(),
+  workflow_orientation: z.string(),
+  applicable_rules: z.string(),
+  attributes: LcClassificationAttributesSchema,
+  required_documents: z.array(LcRequiredDocumentSchema),
+}).passthrough();
+export type LcClassification = z.infer<typeof LcClassificationSchema>;
+
+export const LcStructuredPayloadSchema = z.object({
+  lc_classification: LcClassificationSchema.optional().nullable(),
+  documents_required: z.union([z.array(z.string()), z.string()]).optional(),
+  required_document_types: z.array(z.string()).optional(),
+  additional_conditions: z.union([z.array(z.string()), z.string()]).optional(),
+  documents_structured: z.array(z.record(z.unknown())).optional(),
+}).passthrough();
+export type LcStructuredPayload = z.infer<typeof LcStructuredPayloadSchema>;
+
 export const StructuredResultSchema = z.object({
   version: z.literal('structured_result_v1'),
   processing_summary: ProcessingSummarySchema,
@@ -477,7 +545,7 @@ export const StructuredResultSchema = z.object({
   analytics: StructuredResultAnalyticsSchema,
   timeline: z.array(StructuredTimelineEntrySchema),
   extracted_documents: z.record(z.unknown()).optional(),
-  lc_structured: z.record(z.unknown()).optional(), // Structured LC data from extractor (MT700, goods, clauses, etc.)
+  lc_structured: LcStructuredPayloadSchema.optional(),
   _extraction_core_v1: z.record(z.unknown()).optional(),
   _extraction_diagnostics: z.record(z.unknown()).optional(),
   validation_contract_v1: ValidationContractV1Schema.optional(),
@@ -754,7 +822,7 @@ export const ValidationResultsSchema = z.object({
   analytics: StructuredResultAnalyticsSchema,
   timeline: z.array(StructuredTimelineEntrySchema),
   structured_result: StructuredResultSchema,
-  lc_structured: z.record(z.unknown()).optional().nullable(),
+  lc_structured: LcStructuredPayloadSchema.optional().nullable(),
   ai_enrichment: AIEnrichmentPayloadSchema.optional().nullable(),
   telemetry: z.record(z.unknown()).optional(),
   reference_issues: z.array(ReferenceIssueSchema).optional(),
@@ -878,6 +946,10 @@ export const schemas = {
   AmendmentFieldChange: AmendmentFieldChangeSchema,
   Amendment: AmendmentSchema,
   AmendmentsAvailable: AmendmentsAvailableSchema,
+  LcRequiredDocument: LcRequiredDocumentSchema,
+  LcClassificationAttributes: LcClassificationAttributesSchema,
+  LcClassification: LcClassificationSchema,
+  LcStructuredPayload: LcStructuredPayloadSchema,
   StructuredResult: StructuredResultSchema,
   
   // LCopilot-specific schemas

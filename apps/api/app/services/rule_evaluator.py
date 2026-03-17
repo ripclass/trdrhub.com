@@ -34,6 +34,23 @@ def _normalize_lc_type_list(value: Any) -> List[str]:
     return normalized
 
 
+def _resolve_workflow_lc_type(context: Dict[str, Any]) -> str:
+    classification = context.get("lc_classification")
+    if not isinstance(classification, dict):
+        lc_payload = context.get("lc")
+        if isinstance(lc_payload, dict):
+            classification = lc_payload.get("lc_classification")
+    if isinstance(classification, dict):
+        workflow = str(classification.get("workflow_orientation") or "").strip().lower()
+        if workflow in {LCType.IMPORT.value, LCType.EXPORT.value, LCType.UNKNOWN.value}:
+            return workflow
+
+    legacy = str(context.get("lc_type") or LCType.UNKNOWN.value).strip().lower()
+    if legacy in {LCType.IMPORT.value, LCType.EXPORT.value, LCType.UNKNOWN.value}:
+        return legacy
+    return LCType.UNKNOWN.value
+
+
 class MissingFieldError(Exception):
     """Raised when a rule references a field that is not present in the context."""
 
@@ -608,7 +625,7 @@ class RuleEvaluator:
             }
         """
         rule_id = rule.get("rule_id", "unknown")
-        lc_type_context = str(context.get("lc_type") or LCType.UNKNOWN.value).lower()
+        lc_type_context = _resolve_workflow_lc_type(context)
         allowed_types = _normalize_lc_type_list(
             rule.get("lc_types")
             or rule.get("lc_type")

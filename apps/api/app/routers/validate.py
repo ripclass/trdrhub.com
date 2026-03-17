@@ -138,6 +138,7 @@ from app.services.extraction.ai_first_extractor import (
 )
 from app.services.extraction.launch_pipeline import get_launch_extraction_pipeline
 from app.services.extraction.iso20022_lc_extractor import detect_iso20022_schema
+from app.services.extraction.lc_taxonomy import build_lc_classification
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
@@ -293,6 +294,11 @@ def _extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:
 
 
 def _extract_workflow_lc_type(lc_context: Dict[str, Any]) -> Optional[str]:
+    classification = lc_context.get("lc_classification")
+    if isinstance(classification, dict):
+        workflow = normalize_lc_type(str(classification.get("workflow_orientation") or "").strip().lower())
+        if workflow:
+            return workflow
     raw_lc_type = (
         lc_context.get("lc_type")
         or lc_context.get("form_of_doc_credit")
@@ -301,6 +307,42 @@ def _extract_workflow_lc_type(lc_context: Dict[str, Any]) -> Optional[str]:
     if raw_lc_type is None:
         return None
     return normalize_lc_type(str(raw_lc_type).strip().lower())
+
+
+def _resolve_legacy_workflow_lc_fields(*contexts: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    for context in contexts:
+        if not isinstance(context, dict):
+            continue
+        classification = context.get("lc_classification")
+        if isinstance(classification, dict):
+            workflow = normalize_lc_type(str(classification.get("workflow_orientation") or "").strip().lower())
+            if workflow:
+                return {
+                    "lc_type": workflow,
+                    "lc_type_reason": "Derived from canonical workflow_orientation.",
+                    "lc_type_confidence": 0.85,
+                    "lc_type_source": "lc_classification",
+                }
+
+    for context in contexts:
+        if not isinstance(context, dict):
+            continue
+        workflow = normalize_lc_type(str(context.get("lc_type") or "").strip().lower())
+        if workflow:
+            confidence = context.get("lc_type_confidence")
+            return {
+                "lc_type": workflow,
+                "lc_type_reason": context.get("lc_type_reason") or "Preserved workflow alias.",
+                "lc_type_confidence": confidence if confidence not in (None, "") else 0,
+                "lc_type_source": context.get("lc_type_source") or "legacy_compatibility",
+            }
+
+    return {
+        "lc_type": LCType.UNKNOWN.value,
+        "lc_type_reason": "No workflow alias available from canonical classification or payload.",
+        "lc_type_confidence": 0,
+        "lc_type_source": "auto",
+    }
 
 
 def _extract_intake_only(payload: Dict[str, Any]) -> bool:
@@ -339,11 +381,11 @@ def _coerce_text_list(value: Any) -> List[str]:
 
 _DOC_REQUIREMENT_HINTS: List[Tuple[str, Tuple[str, ...]]] = [
     ("commercial_invoice", ("commercial invoice", "invoice", "signed invoice")),
-    ("bill_of_lading", ("bill of lading", "full set clean on board", "marine bill of lading", "ocean bill of lading")),
+    ("bill_of_lading", ("bill of lading", "full set clean on board", "marine bill of lading", "ocean bill of lading", "bl", "b/l")),
     ("air_waybill", ("air waybill", "awb", "airway bill")),
-    ("packing_list", ("packing list", "packing", "detailed packing list")),
+    ("packing_list", ("packing list", "packing", "detailed packing list", "pl")),
     ("certificate_of_origin", ("certificate of origin", "country of origin", "coo")),
-    ("insurance_certificate", ("insurance certificate", "insurance policy", "marine insurance")),
+    ("insurance_certificate", ("insurance certificate", "insurance policy", "marine insurance", "insurance")),
     ("inspection_certificate", ("inspection certificate", "certificate of inspection")),
     ("beneficiary_certificate", ("beneficiary certificate", "beneficiary's certificate", "beneficiary statement")),
     ("manufacturer_certificate", ("manufacturer certificate", "manufacturer's certificate")),
@@ -378,6 +420,137 @@ def _infer_required_document_types_from_lc(lc_payload: Dict[str, Any]) -> List[s
         if any(hint in haystack for hint in hints):
             matches.append(canonical)
     return sorted(set(matches))
+
+
+def _prepare_extractor_outputs_for_structured_result(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not payload:
+        return None
+
+    extractor_outputs = payload.get("lc_structured_output")
+    merged = dict(extractor_outputs) if isinstance(extractor_outputs, dict) else {}
+    lc_payload = payload.get("lc") if isinstance(payload.get("lc"), dict) else {}
+    workflow_aliases = {"import", "export", "draft", "unknown"}
+
+    payload_lc_type = str(payload.get("lc_type") or "").strip().lower()
+    if payload_lc_type in workflow_aliases:
+        merged["lc_type"] = payload_lc_type
+        if payload.get("lc_type_reason") not in (None, ""):
+            merged["lc_type_reason"] = payload.get("lc_type_reason")
+        if payload.get("lc_type_confidence") not in (None, ""):
+            merged["lc_type_confidence"] = payload.get("lc_type_confidence")
+        if payload.get("lc_type_source") not in (None, ""):
+            merged["lc_type_source"] = payload.get("lc_type_source")
+
+    for field in ("lc_type_reason", "lc_type_confidence", "lc_type_source"):
+        if merged.get(field) in (None, "") and payload.get(field) not in (None, ""):
+            merged[field] = payload.get(field)
+
+    if merged.get("lc_type") in (None, ""):
+        payload_workflow_fields = _resolve_legacy_workflow_lc_fields(payload)
+        merged["lc_type"] = payload_workflow_fields["lc_type"]
+        if merged.get("lc_type_reason") in (None, ""):
+            merged["lc_type_reason"] = payload_workflow_fields["lc_type_reason"]
+        if merged.get("lc_type_confidence") in (None, ""):
+            merged["lc_type_confidence"] = payload_workflow_fields["lc_type_confidence"]
+        if merged.get("lc_type_source") in (None, ""):
+            merged["lc_type_source"] = payload_workflow_fields["lc_type_source"]
+
+    if lc_payload:
+        for field in (
+            "documents_required",
+            "required_documents",
+            "additional_conditions",
+            "clauses",
+            "clauses_47a",
+            "number",
+            "lc_number",
+            "applicant",
+            "beneficiary",
+            "ports",
+            "goods",
+            "goods_items",
+            "goods_description",
+            "mt700",
+        ):
+            if merged.get(field) in (None, "", [], {}):
+                value = lc_payload.get(field)
+                if value not in (None, "", [], {}):
+                    merged[field] = value
+
+        if merged.get("required_document_types") in (None, "", [], {}):
+            required_document_types = _infer_required_document_types_from_lc(lc_payload)
+            if required_document_types:
+                merged["required_document_types"] = required_document_types
+
+    taxonomy_builder = globals().get("build_lc_classification")
+    if callable(taxonomy_builder) and not isinstance(merged.get("lc_classification"), dict):
+        merged["lc_classification"] = taxonomy_builder(merged or lc_payload, payload)
+
+    legacy_workflow_fields = _resolve_legacy_workflow_lc_fields(merged, payload)
+    merged["lc_type"] = legacy_workflow_fields["lc_type"]
+    merged["lc_type_reason"] = legacy_workflow_fields["lc_type_reason"]
+    merged["lc_type_confidence"] = legacy_workflow_fields["lc_type_confidence"]
+    merged["lc_type_source"] = legacy_workflow_fields["lc_type_source"]
+
+    if merged:
+        return merged
+
+    fallback_workflow_fields = _resolve_legacy_workflow_lc_fields(lc_payload, payload)
+    return {
+        "lc_type": fallback_workflow_fields["lc_type"],
+        "lc_type_reason": fallback_workflow_fields["lc_type_reason"],
+        "lc_type_confidence": fallback_workflow_fields["lc_type_confidence"],
+        "lc_type_source": fallback_workflow_fields["lc_type_source"],
+        "mt700": (lc_payload or {}).get("mt700") or {"blocks": {}, "raw_text": None, "version": "mt700_v1"},
+        "goods": (lc_payload or {}).get("goods") or (lc_payload or {}).get("goods_items") or [],
+        "clauses": (lc_payload or {}).get("clauses") or [],
+        "documents_required": (lc_payload or {}).get("documents_required") or (lc_payload or {}).get("required_documents") or [],
+        "required_document_types": _infer_required_document_types_from_lc(lc_payload or {}),
+        "additional_conditions": (lc_payload or {}).get("additional_conditions") or (lc_payload or {}).get("clauses_47a") or [],
+        "timeline": [],
+        "issues": [],
+    }
+
+
+def _build_minimal_lc_structured_output(lc_data: Optional[Dict[str, Any]], context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    lc_data = lc_data or {}
+    context = context or {}
+    lc_classification = build_lc_classification(lc_data, context) if lc_data else None
+
+    legacy_lc_type = "unknown"
+    legacy_lc_type_reason = "No workflow alias extracted from uploaded documents"
+    legacy_lc_type_confidence = 0.0
+    legacy_lc_type_source = "auto"
+
+    workflow_orientation = ""
+    if isinstance(lc_classification, dict):
+        workflow_orientation = str(lc_classification.get("workflow_orientation") or "").strip().lower()
+    if workflow_orientation in {"import", "export", "draft", "unknown"}:
+        legacy_lc_type = workflow_orientation
+        if workflow_orientation != "unknown":
+            legacy_lc_type_reason = "Derived from canonical workflow_orientation."
+            legacy_lc_type_confidence = 0.85
+            legacy_lc_type_source = "lc_classification"
+
+    raw_context_lc_type = str(context.get("lc_type") or "").strip().lower()
+    if legacy_lc_type == "unknown" and raw_context_lc_type in {"import", "export", "draft", "unknown"}:
+        legacy_lc_type = normalize_lc_type(raw_context_lc_type) or "unknown"
+        legacy_lc_type_reason = str(context.get("lc_type_reason") or "Preserved workflow alias from request context.")
+        legacy_lc_type_confidence = float(context.get("lc_type_confidence") or 0.0)
+        legacy_lc_type_source = str(context.get("lc_type_source") or "context")
+
+    return {
+        "lc_type": legacy_lc_type,
+        "lc_type_reason": legacy_lc_type_reason,
+        "lc_type_confidence": legacy_lc_type_confidence,
+        "lc_type_source": legacy_lc_type_source,
+        "lc_classification": lc_classification,
+        "mt700": lc_data.get("mt700") or {"blocks": {}, "raw_text": lc_data.get("raw_text"), "version": "mt700_v1"},
+        "goods": lc_data.get("goods") or lc_data.get("goods_items") or [],
+        "clauses": lc_data.get("clauses") or lc_data.get("additional_conditions") or [],
+        "timeline": [],
+        "issues": [],
+    }
 
 
 def _build_lc_intake_summary(lc_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -786,6 +959,77 @@ def _apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[st
         "final_reject": final_reject,
         "rules_veto": rules_veto,
     }
+    return structured_result
+
+
+def _backfill_hybrid_secondary_surfaces(structured_result: Dict[str, Any]) -> Dict[str, Any]:
+    """Late response-shaping backfill for bank profile + amendment surfaces.
+
+    This protects persisted/final payloads when the earlier hybrid block did not
+    survive response shaping or when bank identifiers arrive in slightly dirty
+    extracted forms.
+    """
+    if not isinstance(structured_result, dict):
+        return structured_result
+
+    lc_doc = None
+    for candidate in (structured_result.get("documents") or []):
+        if isinstance(candidate, dict) and str(candidate.get("document_type") or "").strip().lower() == "letter_of_credit":
+            lc_doc = candidate
+            break
+    if not lc_doc:
+        for candidate in (structured_result.get("documents_structured") or []):
+            if isinstance(candidate, dict) and str(candidate.get("document_type") or "").strip().lower() == "letter_of_credit":
+                lc_doc = candidate
+                break
+
+    extracted_fields = lc_doc.get("extracted_fields") if isinstance(lc_doc, dict) and isinstance(lc_doc.get("extracted_fields"), dict) else {}
+    extraction_artifacts = lc_doc.get("extraction_artifacts_v1") if isinstance(lc_doc, dict) and isinstance(lc_doc.get("extraction_artifacts_v1"), dict) else {}
+    raw_text = extraction_artifacts.get("raw_text") if isinstance(extraction_artifacts.get("raw_text"), str) else ""
+
+    if not isinstance(structured_result.get("bank_profile"), dict):
+        try:
+            detected_profile = detect_bank_from_lc({
+                "issuing_bank": extracted_fields.get("issuing_bank") or "",
+                "advising_bank": extracted_fields.get("advising_bank") or "",
+                "raw_text": raw_text,
+            })
+            if detected_profile:
+                structured_result["bank_profile"] = {
+                    "bank_code": detected_profile.bank_code,
+                    "bank_name": detected_profile.bank_name,
+                    "strictness": detected_profile.strictness.value,
+                    "country": getattr(detected_profile, "country", "") or "",
+                    "region": getattr(detected_profile, "region", "") or "",
+                    "source_issuing_bank": extracted_fields.get("issuing_bank") or "",
+                    "source_advising_bank": extracted_fields.get("advising_bank") or "",
+                    "special_requirements": list(getattr(detected_profile, "special_requirements", []) or []),
+                    "blocked_conditions": list(getattr(detected_profile, "blocked_conditions", []) or []),
+                }
+        except Exception as backfill_bank_err:
+            logger.warning(f"Late bank-profile backfill failed: {backfill_bank_err}")
+
+    if not isinstance(structured_result.get("amendments_available"), dict):
+        try:
+            amendments = generate_amendments_for_issues(
+                issues=[issue for issue in (structured_result.get("issues") or []) if isinstance(issue, dict)],
+                lc_data={
+                    "lc_number": structured_result.get("lc_number") or structured_result.get("number") or extracted_fields.get("lc_number") or "UNKNOWN",
+                    "amount": structured_result.get("amount") or extracted_fields.get("amount") or 0,
+                    "currency": structured_result.get("currency") or extracted_fields.get("currency") or "USD",
+                    "expiry_date": ((structured_result.get("dates") or {}).get("expiry") if isinstance(structured_result.get("dates"), dict) else None) or extracted_fields.get("expiry_date") or "",
+                },
+            )
+            if amendments:
+                amendment_cost = calculate_total_amendment_cost(amendments)
+                structured_result["amendments_available"] = {
+                    "count": len(amendments),
+                    "total_estimated_fee_usd": amendment_cost.get("total_estimated_fee_usd", 0),
+                    "amendments": [a.to_dict() for a in amendments],
+                }
+        except Exception as backfill_amendment_err:
+            logger.warning(f"Late amendment backfill failed: {backfill_amendment_err}")
+
     return structured_result
 
 
@@ -1966,6 +2210,8 @@ async def validate_doc(
                 # Detects relevant rulesets based on LC and document content
                 # =============================================================
                 lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
+                if isinstance(lc_ctx, dict) and not isinstance(lc_ctx.get("lc_classification"), dict):
+                    lc_ctx["lc_classification"] = build_lc_classification(lc_ctx, payload)
                 mt700 = lc_ctx.get("mt700") or {}
                 coo = payload.get("certificate_of_origin") or {}
                 invoice = payload.get("invoice") or {}
@@ -2632,20 +2878,7 @@ async def validate_doc(
             final_documents = _build_document_summaries(files_list, results, None)
         
         # Build extractor outputs from payload or extracted context
-        extractor_outputs = payload.get("lc_structured_output") if payload else None
-        if not extractor_outputs and payload:
-            # Fallback: build from LC detection results
-            extractor_outputs = {
-                "lc_type": payload.get("lc_type", "unknown"),
-                "lc_type_reason": payload.get("lc_type_reason", "Auto-detected"),
-                "lc_type_confidence": payload.get("lc_type_confidence", 0),
-                "lc_type_source": payload.get("lc_type_source", "auto"),
-                "mt700": (payload.get("lc") or {}).get("mt700") or {"blocks": {}, "raw_text": None, "version": "mt700_v1"},
-                "goods": (payload.get("lc") or {}).get("goods") or (payload.get("lc") or {}).get("goods_items") or [],
-                "clauses": (payload.get("lc") or {}).get("clauses") or [],
-                "timeline": [],
-                "issues": [],
-            }
+        extractor_outputs = _prepare_extractor_outputs_for_structured_result(payload)
         
         # Build Option-E structured result with proper error handling
         try:
@@ -3378,6 +3611,7 @@ async def validate_doc(
         try:
             structured_result = validate_and_annotate_response(structured_result)
             structured_result = _apply_cycle2_runtime_recovery(structured_result)
+            structured_result = _backfill_hybrid_secondary_surfaces(structured_result)
             structured_result["_day1_hook_callsite_summary"] = payload.get("_day1_hook_callsite_summary") if isinstance(payload.get("_day1_hook_callsite_summary"), dict) else {}
             structured_result["_day1_relay_debug"] = _build_day1_relay_debug(structured_result)
             relay_surfaces = (structured_result.get("_day1_relay_debug") or {}).get("surfaces")
@@ -5075,39 +5309,36 @@ async def _build_document_context(
     }
     if context.get("lc"):
         context["lc"] = _normalize_lc_payload_structures(context["lc"])
+        if not isinstance(context["lc"].get("lc_classification"), dict):
+            context["lc"]["lc_classification"] = build_lc_classification(context["lc"], context)
 
     # GUARANTEE: Always provide lc_structured_output for Option-E builder
     # Even if extraction failed, provide a minimal structure
     if "lc_structured_output" not in context:
         lc_data = context.get("lc") or {}
-        context["lc_structured_output"] = {
-            "lc_type": lc_data.get("type") or "unknown",
-            "lc_type_reason": "Extracted from uploaded documents" if lc_data else "No LC data extracted",
-            "lc_type_confidence": 50 if lc_data else 0,
-            "lc_type_source": "auto",
-            "mt700": lc_data.get("mt700") or {"blocks": {}, "raw_text": lc_data.get("raw_text"), "version": "mt700_v1"},
-            "goods": lc_data.get("goods") or lc_data.get("goods_items") or [],
-            "clauses": lc_data.get("clauses") or lc_data.get("additional_conditions") or [],
-            "timeline": [],
-            "issues": [],
-        }
+        context["lc_structured_output"] = _build_minimal_lc_structured_output(lc_data, context)
 
     return context
 
 
 def detect_lc_format(raw_lc_text: Optional[str]) -> str:
-    """
-    Detect whether an LC payload is ISO 20022 XML or MT700 text.
-    Defaults to MT700 when no XML signature is present.
-    """
-
     if not raw_lc_text:
-        return "mt700"
+        return "unknown"
 
+    stripped = raw_lc_text.strip()
     schema_type, _ = detect_iso20022_schema(raw_lc_text)
     if schema_type:
         return "iso20022"
-    return "mt700"
+    if stripped.startswith("<?xml") or stripped.startswith("<Document"):
+        return "xml_other"
+    lowered = raw_lc_text.lower()
+    if ":20:" in raw_lc_text and (":40a:" in lowered or ":40e:" in lowered or ":32b:" in lowered):
+        return "mt700"
+    if any(tag in raw_lc_text for tag in (":27:", ":31C:", ":45A:", ":46A:", ":47A:")):
+        return "mt700"
+    if any(token in lowered for token in ("letter of credit", "documentary credit", "standby letter of credit")):
+        return "pdf_text"
+    return "unknown"
 
 
 def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:

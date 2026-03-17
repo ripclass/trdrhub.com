@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -37,6 +38,12 @@ TSIN_XML = """
         <Nm>Exporter Co</Nm>
       </Bnfcry>
     </DocCdtDtls>
+    <DocsReqrd>
+      <Desc>Commercial Invoice</Desc>
+    </DocsReqrd>
+    <DocsReqrd>
+      <Desc>Analysis Certificate</Desc>
+    </DocsReqrd>
   </DocCdtIssnc>
 </Document>
 """.strip()
@@ -57,7 +64,14 @@ NON_ISO_XML = "<Document><foo>bar</foo></Document>"
 MT700_TEXT = ":27:1/1\n:40A:IRREVOCABLE\n:20:LC12345\n:31C:240101\n:32B:USD1000\n"
 
 
+def _ensure_api_root_on_path() -> None:
+    root_str = str(ROOT)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
+
+
 def _load_iso_module():
+    _ensure_api_root_on_path()
     spec = importlib.util.spec_from_file_location("iso20022_lc_extractor_test", ISO_EXTRACTOR_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load ISO extractor module")
@@ -81,25 +95,39 @@ def _load_function(path: Path, function_name: str, namespace: Dict[str, Any]) ->
 def test_iso_schema_detection_covers_supported_variants() -> None:
     iso_module = _load_iso_module()
 
-    assert iso_module.detect_iso20022_schema(TSRV_XML) == ("tsrv.001", 0.95)
-    assert iso_module.detect_iso20022_schema(TSIN_XML) == ("tsin.001", 0.95)
-    assert iso_module.detect_iso20022_schema(GENERIC_ISO_XML) == ("unknown_iso20022", 0.7)
+    tsrv_schema, tsrv_confidence = iso_module.detect_iso20022_schema(TSRV_XML)
+    tsin_schema, tsin_confidence = iso_module.detect_iso20022_schema(TSIN_XML)
+    generic_schema, generic_confidence = iso_module.detect_iso20022_schema(GENERIC_ISO_XML)
+
+    assert tsrv_schema == "tsrv.001"
+    assert tsrv_confidence >= 0.95
+    assert tsin_schema == "tsin.001"
+    assert tsin_confidence >= 0.95
+    assert generic_schema == "unknown_iso20022"
+    assert generic_confidence >= 0.7
 
 
-def test_enhanced_iso_extractor_sets_truthful_lc_type() -> None:
+def test_enhanced_iso_extractor_keeps_legacy_lc_type_workflow_only_and_extracts_docsreqrd() -> None:
     iso_module = _load_iso_module()
 
     standby = iso_module.extract_iso20022_lc_enhanced(TSRV_XML)
     assert standby["format"] == "iso20022"
     assert standby["schema"] == "tsrv.001"
-    assert standby["lc_type"] == "standby"
-    assert standby["lc_type_source"] == "iso20022_schema"
+    assert standby.get("lc_type") is None
+    assert standby["lc_classification"]["instrument_type"] == "standby_letter_of_credit"
 
     documentary = iso_module.extract_iso20022_lc_enhanced(TSIN_XML)
     assert documentary["format"] == "iso20022"
     assert documentary["schema"] == "tsin.001"
-    assert documentary["lc_type"] == "irrevocable"
-    assert documentary["lc_type_source"] == "iso20022_schema"
+    assert documentary.get("lc_type") is None
+    assert documentary["documents_required"] == ["Commercial Invoice", "Analysis Certificate"]
+    assert documentary["required_document_types"] == ["commercial_invoice", "analysis_certificate"]
+    assert documentary["lc_classification"]["instrument_type"] == "documentary_credit"
+    assert documentary["lc_classification"]["attributes"]["revocability"] == "irrevocable"
+    assert [item["code"] for item in documentary["lc_classification"]["required_documents"]] == [
+        "commercial_invoice",
+        "analysis_certificate",
+    ]
 
 
 def test_launch_and_validate_recognize_iso_formats_without_breaking_mt_detection() -> None:

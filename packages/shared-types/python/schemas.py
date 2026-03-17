@@ -435,6 +435,82 @@ class AmendmentsAvailable(BaseModel):
     total_processing_days: Optional[int] = None
 
 
+class LcRequiredDocument(BaseModel):
+    code: str
+    display_name: str
+    category: str
+    raw_text: str
+    aliases_matched: List[str]
+    originals: Optional[int] = None
+    copies: Optional[int] = None
+    signed: Optional[bool] = None
+    negotiable: Optional[bool] = None
+    issuer: Optional[str] = None
+    exact_wording: Optional[str] = None
+    legalized: Optional[bool] = None
+    transport_mode: Optional[str] = None
+    detection_source: str
+    confidence: float
+    evidence: List[str]
+
+    class Config:
+        extra = "allow"
+
+
+class LcClassificationAttributes(BaseModel):
+    revocability: str
+    availability: str
+    available_with_scope: str
+    confirmation: str
+    transferability: str
+    assignment_of_proceeds: str
+    revolving: str
+    revolving_mode: Optional[str] = None
+    red_clause: str
+    green_clause: str
+    back_to_back: str
+    documentation_basis: str
+    partial_shipments: str
+    transshipment: str
+    latest_shipment_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    expiry_place: Optional[str] = None
+    presentation_period_days: Optional[int] = None
+    tenor_kind: str
+    tenor_days: Optional[int] = None
+    tolerance_min_pct: Optional[float] = None
+    tolerance_max_pct: Optional[float] = None
+    reimbursement_present: str
+
+    class Config:
+        extra = "allow"
+
+
+class LcClassification(BaseModel):
+    format_family: str
+    format_variant: str
+    embedded_variant: Optional[str] = None
+    instrument_type: str
+    workflow_orientation: str
+    applicable_rules: str
+    attributes: LcClassificationAttributes
+    required_documents: List[LcRequiredDocument]
+
+    class Config:
+        extra = "allow"
+
+
+class LcStructuredPayload(BaseModel):
+    lc_classification: Optional[LcClassification] = None
+    documents_required: Optional[Any] = None
+    required_document_types: Optional[List[str]] = None
+    additional_conditions: Optional[Any] = None
+    documents_structured: Optional[List[Dict[str, Any]]] = None
+
+    class Config:
+        extra = "allow"
+
+
 class StructuredResultPayload(BaseModel):
     version: str = Field(default="structured_result_v1")
     processing_summary: StructuredProcessingSummary
@@ -445,6 +521,7 @@ class StructuredResultPayload(BaseModel):
     issues: List[StructuredResultIssue]
     analytics: StructuredResultAnalytics
     timeline: List[TimelineEntry]
+    lc_structured: Optional[LcStructuredPayload] = None
     extraction_core_v1: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_core_v1")
     extraction_diagnostics: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_diagnostics")
     validation_contract_v1: Optional[ValidationContractV1] = None
@@ -720,7 +797,7 @@ class ValidationResults(BaseModel):
     analytics: StructuredResultAnalytics
     timeline: List[TimelineEntry]
     structured_result: StructuredResultPayload
-    lc_structured: Optional[Dict[str, Any]] = None
+    lc_structured: Optional[LcStructuredPayload] = None
     ai_enrichment: Optional[AIEnrichmentPayload] = None
     telemetry: Optional[Dict[str, Any]] = None
     reference_issues: Optional[List[ReferenceIssue]] = None
@@ -786,6 +863,10 @@ SCHEMAS = {
     'AmendmentFieldChange': AmendmentFieldChange,
     'Amendment': Amendment,
     'AmendmentsAvailable': AmendmentsAvailable,
+    'LcRequiredDocument': LcRequiredDocument,
+    'LcClassificationAttributes': LcClassificationAttributes,
+    'LcClassification': LcClassification,
+    'LcStructuredPayload': LcStructuredPayload,
     'StructuredResultPayload': StructuredResultPayload,
     
     # LCopilot-specific types

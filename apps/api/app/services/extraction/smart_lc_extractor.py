@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from .iso20022_lc_extractor import detect_iso20022_schema, extract_iso20022_with_ai_fallback
 from .ai_first_extractor import extract_lc_ai_first
 from .lc_extractor import extract_lc_structured
+from .lc_taxonomy import build_lc_classification
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,13 @@ async def _extract_mt700(content: str, result: SmartExtractionResult) -> SmartEx
         
         # Add format badge info
         result.extracted_fields["_source_format"] = "MT700"
+        result.extracted_fields["_source_message_type"] = result.extracted_fields.get("_source_message_type") or "mt700"
+        result.extracted_fields["schema"] = result.extracted_fields.get("schema") or "mt700"
+        result.extracted_fields["format"] = result.extracted_fields.get("format") or "mt700"
+        result.extracted_fields["lc_classification"] = build_lc_classification(
+            result.extracted_fields,
+            {"format": "mt700", "format_detected": "mt700"},
+        )
         
         logger.info(f"MT700 extraction: success={result.success}, fields={len(result.extracted_fields)}")
         

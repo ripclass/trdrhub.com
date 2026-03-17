@@ -272,6 +272,118 @@ describe('ExporterResults', () => {
     expect(within(checklistCard).getByText(/Review: Awaiting document/i)).toBeInTheDocument();
   });
 
+  it('builds checklist rows from canonical MT required document types and keeps export lc label', async () => {
+    const mtResults = buildValidationResults();
+    mtResults.structured_result = {
+      ...mtResults.structured_result,
+      lc_type: 'export',
+      lc_type_reason: 'Detected exporter lane from beneficiary/applicant plus port flow.',
+      lc_structured: {
+        ...(mtResults.structured_result?.lc_structured ?? {}),
+        lc_type: 'export',
+        documents_required: "['INVOICE', 'BL', 'PL', 'COO', 'INSURANCE']",
+        required_document_types: [
+          'commercial_invoice',
+          'bill_of_lading',
+          'packing_list',
+          'certificate_of_origin',
+          'insurance_certificate',
+        ],
+        lc_classification: {
+          workflow_orientation: 'export',
+          instrument_type: 'documentary_credit',
+          required_documents: [
+            { code: 'commercial_invoice', display_name: 'Commercial Invoice' },
+            { code: 'ocean_bill_of_lading', display_name: 'Ocean Bill of Lading' },
+            { code: 'packing_list', display_name: 'Packing List' },
+            { code: 'certificate_of_origin', display_name: 'Certificate of Origin' },
+            { code: 'insurance_certificate', display_name: 'Insurance Certificate' },
+          ],
+        },
+      },
+    } as typeof mtResults.structured_result;
+    activeResults = mtResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+    );
+
+    expect(screen.getAllByText(/Export LC/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Workflow: Export LC/i)).toBeInTheDocument();
+    expect(screen.getByText(/Instrument: Documentary Credit/i)).toBeInTheDocument();
+    const checklistCard = findCardByTitle(/Required Document Checklist/i);
+    expect(within(checklistCard).getAllByText(/Commercial Invoice/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Ocean Bill of Lading/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Packing List/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Certificate of Origin/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Insurance Certificate/i).length).toBeGreaterThan(0);
+  });
+
+  it('prioritizes canonical workflow and structured required documents over legacy lc_type fields', async () => {
+    const canonicalResults = buildValidationResults();
+    canonicalResults.structured_result = {
+      ...canonicalResults.structured_result,
+      lc_type: 'import',
+      lc_structured: {
+        ...(canonicalResults.structured_result?.lc_structured ?? {}),
+        lc_type: 'import',
+        required_document_types: ['commercial_invoice'],
+        lc_classification: {
+          workflow_orientation: 'export',
+          instrument_type: 'standby_letter_of_credit',
+          required_documents: [
+            { code: 'commercial_invoice', display_name: 'Signed Commercial Invoice' },
+            { code: 'beneficiary_certificate', display_name: 'Beneficiary Statement' },
+            { code: 'insurance_certificate', raw_text: 'Insurance Certificate covering ICC (A) risks' },
+            { code: 'analysis_certificate', display_name: 'Analysis Certificate' },
+            {
+              code: 'courier_or_post_receipt_or_certificate_of_posting',
+              display_name: 'Courier Receipt',
+              raw_text: 'Courier receipt evidencing dispatch within three days after shipment',
+            },
+          ],
+        },
+      },
+    } as typeof canonicalResults.structured_result;
+    activeResults = canonicalResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+    );
+
+    expect(screen.getByText(/Workflow: Export LC/i)).toBeInTheDocument();
+    expect(screen.getByText(/Instrument: Standby Letter of Credit/i)).toBeInTheDocument();
+    const checklistCard = findCardByTitle(/Required Document Checklist/i);
+    expect(within(checklistCard).getAllByText(/Commercial Invoice/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Beneficiary (Certificate|Statement)/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Insurance Certificate/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Analysis Certificate/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Courier Receipt/i).length).toBeGreaterThan(0);
+  });
+
+  it('does not derive workflow from legacy lc_type when lc_classification is missing', async () => {
+    const legacyOnlyResults = buildValidationResults();
+    legacyOnlyResults.structured_result = {
+      ...legacyOnlyResults.structured_result,
+      lc_type: 'export',
+      lc_structured: {
+        ...(legacyOnlyResults.structured_result?.lc_structured ?? {}),
+        lc_type: 'export',
+        lc_classification: null,
+      },
+    } as typeof legacyOnlyResults.structured_result;
+    activeResults = legacyOnlyResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+    );
+
+    expect(screen.queryByText(/Workflow: Export LC/i)).not.toBeInTheDocument();
+  });
+
   it('uses internal compliance review wording in the action engine', async () => {
     const complianceResults = buildValidationResults({
       issues: [

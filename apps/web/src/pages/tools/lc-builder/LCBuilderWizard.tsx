@@ -81,6 +81,36 @@ const STANDARD_DOCUMENTS = [
   { type: "beneficiary_certificate", label: "Beneficiary Certificate", defaultOriginals: 1 },
 ];
 
+interface LcRequiredDocument {
+  code: string;
+  display_name?: string;
+  category?: string;
+  raw_text?: string;
+  aliases_matched?: string[];
+  originals?: number | null;
+  copies?: number | null;
+  signed?: boolean | null;
+  negotiable?: boolean | null;
+  issuer?: string | null;
+  exact_wording?: string | null;
+  legalized?: boolean | null;
+  transport_mode?: string | null;
+  detection_source?: string;
+  confidence?: number;
+  evidence?: string[];
+}
+
+interface LcClassification {
+  format_family?: string | null;
+  format_variant?: string | null;
+  embedded_variant?: string | null;
+  instrument_type?: string | null;
+  workflow_orientation?: string | null;
+  applicable_rules?: string | null;
+  attributes?: Record<string, unknown> | null;
+  required_documents?: LcRequiredDocument[];
+}
+
 interface FormData {
   // Step 1: Basic
   name: string;
@@ -124,6 +154,8 @@ interface FormData {
     specific_requirements: string;
     is_required: boolean;
   }>;
+  required_documents: LcRequiredDocument[];
+  lc_classification?: LcClassification | null;
   
   // Step 6: Payment
   payment_terms: string;
@@ -172,6 +204,12 @@ const initialFormData: FormData = {
     { document_type: "packing_list", copies_original: 3, copies_copy: 0, specific_requirements: "", is_required: true },
     { document_type: "bill_of_lading", copies_original: 3, copies_copy: 0, specific_requirements: "", is_required: true },
   ],
+  required_documents: [
+    { code: "commercial_invoice", display_name: "Commercial Invoice", originals: 3, copies: 0, detection_source: "lc_builder_wizard", confidence: 1, evidence: [] },
+    { code: "packing_list", display_name: "Packing List", originals: 3, copies: 0, detection_source: "lc_builder_wizard", confidence: 1, evidence: [] },
+    { code: "bill_of_lading", display_name: "Full Set Clean On Board B/L", originals: 3, copies: 0, detection_source: "lc_builder_wizard", confidence: 1, evidence: [] },
+  ],
+  lc_classification: null,
   
   payment_terms: "sight",
   usance_days: "30",
@@ -181,6 +219,49 @@ const initialFormData: FormData = {
   presentation_period: "21",
   confirmation_instructions: "without",
   additional_conditions: [],
+};
+
+const buildStructuredRequiredDocuments = (
+  docs: FormData["documents_required"],
+  fallbackExisting?: LcRequiredDocument[],
+): LcRequiredDocument[] => {
+  if (fallbackExisting && fallbackExisting.length > 0) {
+    return fallbackExisting;
+  }
+  return docs.map((doc) => ({
+    code: doc.document_type,
+    display_name: STANDARD_DOCUMENTS.find((item) => item.type === doc.document_type)?.label || doc.document_type,
+    category: "other",
+    raw_text: doc.specific_requirements || doc.document_type,
+    aliases_matched: [],
+    originals: doc.copies_original,
+    copies: doc.copies_copy,
+    detection_source: "lc_builder_wizard",
+    confidence: 1,
+    evidence: [],
+  }));
+};
+
+const getClassificationRequiredDocuments = (
+  classification: LcClassification | null | undefined,
+): LcRequiredDocument[] | undefined => {
+  if (!classification || !Array.isArray(classification.required_documents)) {
+    return undefined;
+  }
+  return classification.required_documents;
+};
+
+const withCanonicalRequiredDocuments = (
+  classification: LcClassification | null | undefined,
+  requiredDocuments: LcRequiredDocument[],
+): LcClassification | null => {
+  if (!classification || typeof classification !== "object") {
+    return null;
+  }
+  return {
+    ...classification,
+    required_documents: requiredDocuments,
+  };
 };
 
 export default function LCBuilderWizard() {
@@ -277,6 +358,22 @@ export default function LCBuilderWizard() {
           
           if (selectedImportFields.includes("documents")) {
             newFormData.documents_required = data.documents_required || initialFormData.documents_required;
+            newFormData.required_documents = buildStructuredRequiredDocuments(
+              data.documents_required || initialFormData.documents_required,
+              Array.isArray(data.required_documents)
+                ? data.required_documents
+                : getClassificationRequiredDocuments(
+                    data.lc_classification && typeof data.lc_classification === "object"
+                      ? data.lc_classification
+                      : null,
+                  ),
+            );
+            newFormData.lc_classification = withCanonicalRequiredDocuments(
+              data.lc_classification && typeof data.lc_classification === "object"
+                ? data.lc_classification
+                : newFormData.lc_classification,
+              newFormData.required_documents,
+            );
           }
           
           if (selectedImportFields.includes("payment")) {
@@ -289,6 +386,13 @@ export default function LCBuilderWizard() {
           
           if (selectedImportFields.includes("conditions")) {
             newFormData.additional_conditions = data.additional_conditions || [];
+          }
+
+          if (data.lc_classification && typeof data.lc_classification === "object") {
+            newFormData.lc_classification = withCanonicalRequiredDocuments(
+              data.lc_classification,
+              newFormData.required_documents,
+            );
           }
           
           setFormData(newFormData);
@@ -381,6 +485,31 @@ export default function LCBuilderWizard() {
         unit_price: data.unit_price || "",
         
         documents_required: data.documents_required || initialFormData.documents_required,
+        required_documents: buildStructuredRequiredDocuments(
+          data.documents_required || initialFormData.documents_required,
+          Array.isArray(data.required_documents)
+            ? data.required_documents
+            : getClassificationRequiredDocuments(
+                data.lc_classification && typeof data.lc_classification === "object"
+                  ? data.lc_classification
+                  : null,
+              ),
+        ),
+        lc_classification: withCanonicalRequiredDocuments(
+          data.lc_classification && typeof data.lc_classification === "object"
+            ? data.lc_classification
+            : null,
+          buildStructuredRequiredDocuments(
+            data.documents_required || initialFormData.documents_required,
+            Array.isArray(data.required_documents)
+              ? data.required_documents
+              : getClassificationRequiredDocuments(
+                  data.lc_classification && typeof data.lc_classification === "object"
+                    ? data.lc_classification
+                    : null,
+                ),
+          ),
+        ),
         
         payment_terms: data.payment_terms || "sight",
         usance_days: String(data.usance_days || 30),
@@ -449,6 +578,17 @@ export default function LCBuilderWizard() {
         unit_price: formData.unit_price,
         
         documents_required: formData.documents_required,
+        required_documents: buildStructuredRequiredDocuments(
+          formData.documents_required,
+          formData.required_documents,
+        ),
+        lc_classification: withCanonicalRequiredDocuments(
+          formData.lc_classification,
+          buildStructuredRequiredDocuments(
+            formData.documents_required,
+            formData.required_documents,
+          ),
+        ),
         
         payment_terms: formData.payment_terms,
         usance_days: formData.payment_terms === "usance" ? parseInt(formData.usance_days) : null,
@@ -558,7 +698,15 @@ export default function LCBuilderWizard() {
         if (idx >= 0) docs.splice(idx, 1);
       }
       
-      return { ...prev, documents_required: docs };
+      return {
+        ...prev,
+        documents_required: docs,
+        required_documents: buildStructuredRequiredDocuments(docs),
+        lc_classification: withCanonicalRequiredDocuments(
+          prev.lc_classification,
+          buildStructuredRequiredDocuments(docs),
+        ),
+      };
     });
   };
   
@@ -996,7 +1144,11 @@ export default function LCBuilderWizard() {
                                     ? { ...d, copies_original: parseInt(e.target.value) || 1 }
                                     : d
                                 );
-                                updateFormData("documents_required", docs);
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  documents_required: docs,
+                                  required_documents: buildStructuredRequiredDocuments(docs),
+                                }));
                               }}
                               className="w-16 h-8 bg-slate-800 border-slate-600 text-center"
                             />

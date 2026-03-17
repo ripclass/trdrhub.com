@@ -526,6 +526,29 @@ def _rule_matches_lc_type(rule: Dict[str, Any], domain: Optional[str], lc_type: 
     return lc_type in allowed_types
 
 
+def _get_lc_classification(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(lc_context.get("lc_classification"), dict):
+        return lc_context.get("lc_classification") or {}
+    lc_payload = doc_set.get("lc")
+    if isinstance(lc_payload, dict) and isinstance(lc_payload.get("lc_classification"), dict):
+        return lc_payload.get("lc_classification") or {}
+    if isinstance(doc_set.get("lc_classification"), dict):
+        return doc_set.get("lc_classification") or {}
+    return {}
+
+
+def _resolve_workflow_lc_type(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> str:
+    classification = _get_lc_classification(lc_context, doc_set)
+    workflow = str(classification.get("workflow_orientation") or "").strip().lower()
+    if workflow in {LCType.EXPORT.value, LCType.IMPORT.value, LCType.UNKNOWN.value}:
+        return workflow
+
+    legacy = str(doc_set.get("lc_type") or lc_context.get("lc_type") or LCType.UNKNOWN.value).strip().lower()
+    if legacy in {LCType.EXPORT.value, LCType.IMPORT.value, LCType.UNKNOWN.value}:
+        return legacy
+    return LCType.UNKNOWN.value
+
+
 def filter_rules_by_lc_context(
     rules_with_meta: List[Tuple[Dict[str, Any], Dict[str, Any]]],
     document_data: Dict[str, Any],
@@ -554,7 +577,7 @@ def activate_rules_for_lc(
     toggles = _derive_rule_toggles(lc_context, lc_text, doc_requirements)
     goods_ready = _has_goods_context(lc_context, doc_set)
     ports_ready = _has_complete_ports(lc_context)
-    lc_type = str(doc_set.get("lc_type") or lc_context.get("lc_type") or LCType.UNKNOWN.value).lower()
+    lc_type = _resolve_workflow_lc_type(lc_context, doc_set)
     doc_ready_map = _build_document_ready_map(lc_context, doc_set)
 
     drop_stats = {
@@ -643,10 +666,19 @@ DOC_SYNONYMS = {
     "bl": "bill_of_lading",
     "transport_document": "bill_of_lading",
     "transport-documents": "bill_of_lading",
+    "ocean_bill_of_lading": "bill_of_lading",
+    "marine_bill_of_lading": "bill_of_lading",
+    "charter_party_bill_of_lading": "bill_of_lading",
+    "air_waybill": "bill_of_lading",
+    "multimodal_transport_document": "bill_of_lading",
+    "road_transport_document": "bill_of_lading",
+    "railway_consignment_note": "bill_of_lading",
     "packing_list": "packing_list",
+    "weight_list": "packing_list",
     "certificate_of_origin": "certificate_of_origin",
     "coo": "certificate_of_origin",
     "insurance_certificate": "insurance_certificate",
+    "insurance_policy": "insurance_certificate",
     "insurance": "insurance_certificate",
     "policy": "insurance_certificate",
     "inspection_certificate": "inspection_certificate",
@@ -718,7 +750,7 @@ def _infer_document_requirements(
     requirements = {doc: False for doc in canonical_docs}
     requirements["lc"] = True
 
-    requested_docs = _extract_requested_documents(lc_context, lc_text)
+    requested_docs = _extract_requested_documents(lc_context, lc_text, doc_set)
     if not requested_docs:
         requested_docs = _fallback_documents_from_payload(doc_set)
 
@@ -735,8 +767,13 @@ def _infer_document_requirements(
     return requirements
 
 
-def _extract_requested_documents(lc_context: Dict[str, Any], lc_text: str) -> Set[str]:
+def _extract_requested_documents(
+    lc_context: Dict[str, Any],
+    lc_text: str,
+    doc_set: Optional[Dict[str, Any]] = None,
+) -> Set[str]:
     requested: Set[str] = set()
+    classification = _get_lc_classification(lc_context, doc_set or {})
 
     def _consume_tokens(raw: Any):
         if isinstance(raw, str):
@@ -753,6 +790,21 @@ def _extract_requested_documents(lc_context: Dict[str, Any], lc_text: str) -> Se
     for key in ("requested_documents", "documents_requested", "documents_required"):
         if key in lc_context:
             _consume_tokens(lc_context.get(key))
+
+    required_documents = classification.get("required_documents")
+    if isinstance(required_documents, list):
+        for entry in required_documents:
+            if isinstance(entry, str):
+                _consume_tokens(entry)
+                continue
+            if not isinstance(entry, dict):
+                continue
+            _consume_tokens(entry.get("code"))
+            _consume_tokens(entry.get("document_code"))
+            _consume_tokens(entry.get("document_type"))
+            _consume_tokens(entry.get("type"))
+            _consume_tokens(entry.get("name"))
+            _consume_tokens(entry.get("display_name"))
 
     if isinstance(lc_context.get("documents"), list):
         for entry in lc_context["documents"]:
@@ -1441,7 +1493,7 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
         if rule.get("document_type") in (None, "", document_type, "lc")
     ]
     doc_scope_count = len(filtered_rules_with_meta)
-    lc_type_context = str(document_data.get("lc_type") or LCType.UNKNOWN.value).lower()
+    lc_type_context = _resolve_workflow_lc_type(document_data.get("lc") or {}, document_data)
     filtered_rules_with_meta = [
         (rule, meta)
         for rule, meta in filtered_rules_with_meta
@@ -1636,5 +1688,3 @@ def validate_document(document_data: Dict[str, Any], document_type: str) -> List
         pass
 
     return asyncio.run(validate_document_async(document_data, document_type))
-
-

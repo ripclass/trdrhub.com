@@ -22,6 +22,7 @@ from app.services.extraction.iso20022_lc_extractor import (
     detect_iso20022_schema,
     extract_iso20022_with_ai_fallback,
 )
+from app.services.extraction.lc_taxonomy import build_lc_classification
 
 logger = logging.getLogger(__name__)
 
@@ -1754,6 +1755,7 @@ def _apply_canonical_normalization(payload: Dict[str, Any]) -> Dict[str, Any]:
     if normalization_meta:
         shaped["normalization"] = normalization_meta
 
+    shaped["lc_classification"] = build_lc_classification(shaped)
     return shaped
 
 
@@ -1783,11 +1785,21 @@ def _extract_amount_value(text: str, labels: List[str]) -> Optional[str]:
 
 def detect_lc_format(raw_lc_text: Optional[str]) -> str:
     if not raw_lc_text:
-        return "mt700"
+        return "unknown"
+    stripped = raw_lc_text.strip()
     schema_type, _ = detect_iso20022_schema(raw_lc_text)
     if schema_type:
         return "iso20022"
-    return "mt700"
+    if stripped.startswith("<?xml") or stripped.startswith("<Document"):
+        return "xml_other"
+    lowered = raw_lc_text.lower()
+    if ":20:" in raw_lc_text and (":40a:" in lowered or ":40e:" in lowered or ":32b:" in lowered):
+        return "mt700"
+    if any(tag in raw_lc_text for tag in (":27:", ":31C:", ":45A:", ":46A:", ":47A:")):
+        return "mt700"
+    if any(token in lowered for token in ("letter of credit", "documentary credit", "standby letter of credit")):
+        return "pdf_text"
+    return "unknown"
 
 
 _launch_pipeline_singleton: Optional[LaunchExtractionPipeline] = None

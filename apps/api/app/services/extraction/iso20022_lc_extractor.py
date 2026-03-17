@@ -21,6 +21,20 @@ import logging
 import xml.etree.ElementTree as ET
 from typing import Dict, Any, Optional, List, Tuple
 
+try:
+    from .lc_taxonomy import build_lc_classification
+except ImportError:  # pragma: no cover - direct module loading in tests/scripts
+    import importlib.util
+    from pathlib import Path
+
+    _lc_taxonomy_path = Path(__file__).with_name("lc_taxonomy.py")
+    _lc_taxonomy_spec = importlib.util.spec_from_file_location("lc_taxonomy_fallback", _lc_taxonomy_path)
+    if _lc_taxonomy_spec is None or _lc_taxonomy_spec.loader is None:
+        raise
+    _lc_taxonomy_module = importlib.util.module_from_spec(_lc_taxonomy_spec)
+    _lc_taxonomy_spec.loader.exec_module(_lc_taxonomy_module)
+    build_lc_classification = _lc_taxonomy_module.build_lc_classification
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +68,7 @@ ISO20022_LC_SCHEMAS = {
 
 DOCUMENTARY_CREDIT_SCHEMAS = {"tsin.001", "tsin.002", "tsmt.014", "tsmt.015", "tsmt.016"}
 UNDERTAKING_SCHEMAS = {"tsrv.001", "tsrv.003"}
+LEGACY_WORKFLOW_ALIASES = {"import", "export", "draft", "unknown"}
 
 ISO_FORM_CODE_TO_LC_TYPE = {
     "IRVC": "irrevocable",
@@ -70,6 +85,10 @@ def detect_iso20022_schema(xml_text: str) -> Tuple[Optional[str], float]:
     """
     if not xml_text or "<" not in xml_text:
         return None, 0.0
+
+    namespace_match = re.search(r"urn:iso:std:iso:20022:tech:xsd:((?:tsrv|tsmt|tsin)\.\d{3})", xml_text, re.IGNORECASE)
+    if namespace_match:
+        return namespace_match.group(1).lower(), 0.96
     
     # Check for known root elements
     for element, schema in ISO20022_LC_SCHEMAS.items():
@@ -127,15 +146,24 @@ def extract_iso20022_lc_enhanced(xml_text: str) -> Dict[str, Any]:
     }
     
     # Try different extraction strategies based on schema
-    if schema_type in ("tsrv.001", "tsrv.003"):
+    if schema_type.startswith("tsrv."):
         _extract_undertaking(root, lc_context)
-    elif schema_type in ("tsin.001", "tsin.002", "tsmt.014", "tsmt.015", "tsmt.016"):
+    elif schema_type.startswith("tsin.") or schema_type.startswith("tsmt."):
         _extract_documentary_credit(root, lc_context)
     else:
         # Generic/fallback extraction
         _extract_generic_trade_instrument(root, lc_context)
     
     _populate_iso_lc_type(root, lc_context)
+    lc_context["lc_classification"] = build_lc_classification(lc_context)
+    if not lc_context.get("required_document_types"):
+        required_codes = [
+            str(entry.get("code")).strip()
+            for entry in lc_context["lc_classification"].get("required_documents", [])
+            if isinstance(entry, dict) and str(entry.get("code") or "").strip()
+        ]
+        if required_codes:
+            lc_context["required_document_types"] = required_codes
 
     # Calculate extraction confidence
     lc_context["_extraction_confidence"] = _calculate_iso20022_confidence(lc_context)
@@ -201,6 +229,16 @@ def _extract_documentary_credit(root: ET.Element, context: Dict[str, Any]) -> No
         )
         if ref:
             context["number"] = ref
+
+        form = (
+            _find_descendant(lc_dtls, "DocCdtFrm") or
+            _find_descendant(lc_dtls, "DocCrdtFrm")
+        )
+        if form is not None:
+            form_code = _get_text(form, "Cd") or _get_text(form, "Prtry") or _element_text(form)
+            normalized_form = _normalize_iso_form_of_credit(form_code)
+            if normalized_form:
+                context["form_of_doc_credit"] = normalized_form
         
         # Amount
         amt = (
@@ -268,6 +306,8 @@ def _extract_documentary_credit(root: ET.Element, context: Dict[str, Any]) -> No
     if goods:
         _extract_goods(goods, context)
 
+    _extract_required_documents(root, context)
+
 
 def _extract_generic_trade_instrument(root: ET.Element, context: Dict[str, Any]) -> None:
     """Fallback extraction for generic TradInstr format."""
@@ -314,33 +354,22 @@ def _extract_generic_trade_instrument(root: ET.Element, context: Dict[str, Any])
 
 
 def _populate_iso_lc_type(root: ET.Element, context: Dict[str, Any]) -> None:
-    """Assign a truthful lc_type for ISO LCs when the schema or fields make it explicit."""
-    schema_type = str(context.get("schema") or "").strip().lower()
-    detection_confidence = float(context.get("_detection_confidence") or 0.0)
+    """
+    Preserve only workflow-compatible legacy lc_type values.
 
-    lc_type: Optional[str] = None
-    reason: Optional[str] = None
-
-    if schema_type in UNDERTAKING_SCHEMAS:
-        lc_type = "standby"
-        reason = f"ISO 20022 undertaking schema detected ({schema_type})."
-    else:
-        raw_type = _extract_iso_lc_type_signal(root)
-        normalized = _normalize_iso_lc_type(raw_type)
-        if normalized:
-            lc_type = normalized
-            reason = f"ISO 20022 documentary credit type extracted from XML field: {raw_type}."
-        elif schema_type in DOCUMENTARY_CREDIT_SCHEMAS:
-            lc_type = "documentary"
-            reason = f"ISO 20022 documentary credit schema detected ({schema_type})."
-
-    if not lc_type:
+    ISO schema/type/form signals belong in canonical lc_classification, not the
+    backward-compatible lc_type workflow alias.
+    """
+    candidate = str(context.get("lc_type") or "").strip().lower()
+    if candidate in LEGACY_WORKFLOW_ALIASES:
+        context["lc_type"] = candidate
+        context["lc_type_reason"] = context.get("lc_type_reason") or "Preserved workflow alias from ISO context."
+        context["lc_type_confidence"] = float(context.get("lc_type_confidence") or 0.0)
+        context["lc_type_source"] = context.get("lc_type_source") or "legacy_compatibility"
         return
 
-    context["lc_type"] = lc_type
-    context["lc_type_reason"] = reason
-    context["lc_type_confidence"] = round(max(detection_confidence, 0.8), 2)
-    context["lc_type_source"] = "iso20022_schema"
+    for key in ("lc_type", "lc_type_reason", "lc_type_confidence", "lc_type_source"):
+        context.pop(key, None)
 
 
 def _extract_iso_lc_type_signal(root: ET.Element) -> Optional[str]:
@@ -400,6 +429,22 @@ def _normalize_iso_lc_type(value: Optional[str]) -> Optional[str]:
     if "documentary" in lowered or "doc credit" in lowered or "doccrdt" in lowered or "doccdt" in lowered:
         return "documentary"
 
+    return None
+
+
+def _normalize_iso_form_of_credit(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+
+    upper = str(value).strip().upper()
+    if upper == "IRVC":
+        return "IRREVOCABLE"
+    if upper == "RVOC":
+        return "REVOCABLE"
+    if "IRREVOCABLE" in upper:
+        return "IRREVOCABLE"
+    if "REVOCABLE" in upper:
+        return "REVOCABLE"
     return None
 
 
@@ -529,6 +574,37 @@ def _extract_goods(goods: ET.Element, context: Dict[str, Any]) -> None:
         context["goods_items"] = goods_items
 
 
+def _extract_required_documents(root: ET.Element, context: Dict[str, Any]) -> None:
+    """Extract ISO DocsReqrd entries into raw document requirement fields."""
+    documents_required: List[str] = []
+
+    for elem in root.iter():
+        local = _local_name(elem.tag)
+        if local not in ("DocsReqrd", "DocReqrd", "ReqdDoc"):
+            continue
+
+        descriptions: List[str] = []
+        for child in elem.iter():
+            child_local = _local_name(child.tag)
+            if child_local in ("Desc", "Description", "DocDesc", "Narrative", "Txt"):
+                text = _element_text(child)
+                if text:
+                    descriptions.append(text)
+
+        if not descriptions:
+            aggregate = _element_text(elem)
+            if aggregate:
+                descriptions.append(aggregate)
+
+        for description in descriptions:
+            normalized = description.strip()
+            if normalized and normalized not in documents_required:
+                documents_required.append(normalized)
+
+    if documents_required:
+        context["documents_required"] = documents_required
+
+
 def _parse_party_info(party_elem: ET.Element) -> Dict[str, Any]:
     """Parse party information (applicant, beneficiary, bank)."""
     info = {}
@@ -584,6 +660,12 @@ def _get_descendant_text(root: ET.Element, local_name: str) -> Optional[str]:
     """Get text from first descendant with matching name."""
     elem = _find_descendant(root, local_name)
     return elem.text.strip() if elem is not None and elem.text else None
+
+
+def _element_text(root: ET.Element) -> str:
+    """Return concatenated text for an element and its descendants."""
+    parts = [part.strip() for part in root.itertext() if isinstance(part, str) and part.strip()]
+    return " ".join(parts)
 
 
 def _local_name(tag: str) -> str:

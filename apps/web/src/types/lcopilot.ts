@@ -63,6 +63,62 @@ export type OptionEDocument = {
   issues_count?: number;
 };
 
+export type LcClassificationRequiredDocument = {
+  code: string;
+  display_name?: string;
+  category?: string;
+  raw_text?: string;
+  aliases_matched?: string[];
+  originals?: number | null;
+  copies?: number | null;
+  signed?: boolean | null;
+  negotiable?: boolean | null;
+  issuer?: string | null;
+  exact_wording?: string | null;
+  legalized?: boolean | null;
+  transport_mode?: string | null;
+  detection_source?: string;
+  confidence?: number;
+  evidence?: string[];
+};
+
+export type LcClassificationAttributes = {
+  revocability?: string;
+  availability?: string;
+  available_with_scope?: string;
+  confirmation?: string;
+  transferability?: string;
+  assignment_of_proceeds?: string;
+  revolving?: string;
+  revolving_mode?: string | null;
+  red_clause?: string;
+  green_clause?: string;
+  back_to_back?: string;
+  documentation_basis?: string;
+  partial_shipments?: string;
+  transshipment?: string;
+  latest_shipment_date?: string | null;
+  expiry_date?: string | null;
+  expiry_place?: string | null;
+  presentation_period_days?: number | null;
+  tenor_kind?: string;
+  tenor_days?: number | null;
+  tolerance_min_pct?: number | null;
+  tolerance_max_pct?: number | null;
+  reimbursement_present?: string;
+};
+
+export type LcClassification = {
+  format_family?: string;
+  format_variant?: string;
+  embedded_variant?: string | null;
+  instrument_type?: string;
+  workflow_orientation?: string;
+  applicable_rules?: string;
+  attributes?: LcClassificationAttributes;
+  required_documents?: LcClassificationRequiredDocument[];
+};
+
 export type OptionELCStructured = {
   mt700?: {
     blocks?: Record<string, string | null>;
@@ -71,6 +127,14 @@ export type OptionELCStructured = {
   };
   goods?: Array<Record<string, unknown>>;
   clauses?: Array<Record<string, unknown>>;
+  documents_required?: string[] | string;
+  required_document_types?: string[];
+  additional_conditions?: string[] | string;
+  lc_type?: string | null;
+  lc_type_reason?: string | null;
+  lc_type_confidence?: number | null;
+  lc_type_source?: string | null;
+  lc_classification?: LcClassification | null;
   timeline?: Array<{
     title?: string;
     status?: string;

@@ -122,6 +122,45 @@ describe('results mapper - option e payload', () => {
     expect(mapped.structured_result.amendments_available?.amendments[0]?.field.tag).toBe('44E');
   });
 
+  it('preserves canonical lc_classification for workflow, instrument, and required document continuity', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        lc_type: 'import',
+        lc_structured: {
+          ...(seeded.structured_result?.lc_structured ?? {}),
+          lc_type: 'import',
+          lc_classification: {
+            workflow_orientation: 'export',
+            instrument_type: 'standby_letter_of_credit',
+            format_family: 'swift_mt_fin',
+            format_variant: 'mt760',
+            required_documents: [
+              { code: 'commercial_invoice', display_name: 'Commercial Invoice' },
+              { code: 'beneficiary_certificate', display_name: 'Beneficiary Statement' },
+              { code: 'analysis_certificate', display_name: 'Analysis Certificate' },
+              {
+                code: 'courier_or_post_receipt_or_certificate_of_posting',
+                display_name: 'Courier Receipt',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.structured_result.lc_structured?.lc_classification?.workflow_orientation).toBe('export');
+    expect(mapped.structured_result.lc_structured?.lc_classification?.instrument_type).toBe('standby_letter_of_credit');
+    expect(mapped.structured_result.lc_structured?.lc_classification?.required_documents).toHaveLength(4);
+    const requiredCodes =
+      mapped.structured_result.lc_structured?.lc_classification?.required_documents?.map((doc) => doc.code) ?? [];
+    expect(requiredCodes).toContain('analysis_certificate');
+    expect(requiredCodes).toContain('courier_or_post_receipt_or_certificate_of_posting');
+  });
+
   it('surfaces a contract warning for false-pass contradictions instead of masking them', () => {
     const seeded = buildValidationResults();
     const payload = {

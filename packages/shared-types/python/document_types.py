@@ -57,11 +57,13 @@ class DocumentType(str, Enum):
     # TRANSPORT DOCUMENTS
     # =========================================================================
     OCEAN_BILL_OF_LADING = "ocean_bill_of_lading"
+    CHARTER_PARTY_BILL_OF_LADING = "charter_party_bill_of_lading"
     SEA_WAYBILL = "sea_waybill"
     AIR_WAYBILL = "air_waybill"
     MULTIMODAL_TRANSPORT_DOCUMENT = "multimodal_transport_document"
     RAILWAY_CONSIGNMENT_NOTE = "railway_consignment_note"
     ROAD_TRANSPORT_DOCUMENT = "road_transport_document"
+    COURIER_OR_POST_RECEIPT_OR_CERTIFICATE_OF_POSTING = "courier_or_post_receipt_or_certificate_of_posting"
     FORWARDER_CERTIFICATE_OF_RECEIPT = "forwarder_certificate_of_receipt"
     HOUSE_BILL_OF_LADING = "house_bill_of_lading"
     MASTER_BILL_OF_LADING = "master_bill_of_lading"
@@ -130,6 +132,9 @@ class DocumentType(str, Enum):
     # =========================================================================
     # OTHER / SUPPORTING
     # =========================================================================
+    SHIPMENT_ADVICE = "shipment_advice"
+    DELIVERY_NOTE = "delivery_note"
+    OTHER_SPECIFIED_DOCUMENT = "other_specified_document"
     SUPPORTING_DOCUMENT = "supporting_document"
     OTHER = "other"
     UNKNOWN = "unknown"
@@ -264,6 +269,15 @@ DOCUMENT_TYPE_INFO: Dict[str, DocumentTypeInfo] = {
         description="Bill of lading for ocean freight",
         avg_pages=3,
     ),
+    DocumentType.CHARTER_PARTY_BILL_OF_LADING.value: DocumentTypeInfo(
+        value=DocumentType.CHARTER_PARTY_BILL_OF_LADING.value,
+        label="Charter Party Bill of Lading",
+        short_label="CP B/L",
+        category=DocumentCategory.TRANSPORT,
+        aliases=["charter_party_bl", "charter_party_bill", "charter party bill of lading", "cpbl"],
+        description="Bill of lading subject to a charter party",
+        avg_pages=3,
+    ),
     DocumentType.SEA_WAYBILL.value: DocumentTypeInfo(
         value=DocumentType.SEA_WAYBILL.value,
         label="Sea Waybill",
@@ -308,6 +322,15 @@ DOCUMENT_TYPE_INFO: Dict[str, DocumentTypeInfo] = {
         aliases=["cmr", "road", "trucking"],
         description="Transport document for road freight (CMR)",
         avg_pages=2,
+    ),
+    DocumentType.COURIER_OR_POST_RECEIPT_OR_CERTIFICATE_OF_POSTING.value: DocumentTypeInfo(
+        value=DocumentType.COURIER_OR_POST_RECEIPT_OR_CERTIFICATE_OF_POSTING.value,
+        label="Courier / Post Receipt",
+        short_label="Courier",
+        category=DocumentCategory.TRANSPORT,
+        aliases=["courier receipt", "post receipt", "certificate of posting", "postal receipt", "courier_or_post_receipt"],
+        description="Courier receipt, postal receipt, or certificate of posting",
+        avg_pages=1,
     ),
     DocumentType.FORWARDER_CERTIFICATE_OF_RECEIPT.value: DocumentTypeInfo(
         value=DocumentType.FORWARDER_CERTIFICATE_OF_RECEIPT.value,
@@ -729,6 +752,33 @@ DOCUMENT_TYPE_INFO: Dict[str, DocumentTypeInfo] = {
     # =========================================================================
     # OTHER / SUPPORTING
     # =========================================================================
+    DocumentType.SHIPMENT_ADVICE.value: DocumentTypeInfo(
+        value=DocumentType.SHIPMENT_ADVICE.value,
+        label="Shipment Advice",
+        short_label="Advice",
+        category=DocumentCategory.OTHER,
+        aliases=["shipping advice", "advice of shipment", "shipment notice", "shipping notice"],
+        description="Advice or notice confirming shipment details",
+        avg_pages=1,
+    ),
+    DocumentType.DELIVERY_NOTE.value: DocumentTypeInfo(
+        value=DocumentType.DELIVERY_NOTE.value,
+        label="Delivery Note",
+        short_label="D/N",
+        category=DocumentCategory.OTHER,
+        aliases=["delivery order note", "goods received note", "delivery docket", "delivery_note"],
+        description="Delivery note or dispatch note",
+        avg_pages=1,
+    ),
+    DocumentType.OTHER_SPECIFIED_DOCUMENT.value: DocumentTypeInfo(
+        value=DocumentType.OTHER_SPECIFIED_DOCUMENT.value,
+        label="Other Specified Document",
+        short_label="Other Spec.",
+        category=DocumentCategory.OTHER,
+        aliases=["other specified document", "specified document", "other_specified_document"],
+        description="Catch-all for explicitly specified but uncategorized LC documents",
+        avg_pages=1,
+    ),
     DocumentType.SUPPORTING_DOCUMENT.value: DocumentTypeInfo(
         value=DocumentType.SUPPORTING_DOCUMENT.value,
         label="Supporting Document",
@@ -816,14 +866,24 @@ def normalize_document_type(input_value: str) -> str:
         return DocumentType.LETTER_OF_CREDIT.value
     if "invoice" in normalized or normalized == "inv":
         return DocumentType.COMMERCIAL_INVOICE.value
+    if "charter party" in normalized:
+        return DocumentType.CHARTER_PARTY_BILL_OF_LADING.value
     if "lading" in normalized or normalized in ("bl", "bol", "b/l"):
         return DocumentType.BILL_OF_LADING.value
+    if "courier" in normalized or "posting" in normalized or "postal receipt" in normalized:
+        return DocumentType.COURIER_OR_POST_RECEIPT_OR_CERTIFICATE_OF_POSTING.value
     if "packing" in normalized:
         return DocumentType.PACKING_LIST.value
     if "origin" in normalized or normalized == "coo":
         return DocumentType.CERTIFICATE_OF_ORIGIN.value
     if "insurance" in normalized:
         return DocumentType.INSURANCE_CERTIFICATE.value
+    if "shipment advice" in normalized or "shipping advice" in normalized or "shipment notice" in normalized:
+        return DocumentType.SHIPMENT_ADVICE.value
+    if "delivery note" in normalized or "delivery docket" in normalized or "goods received note" in normalized:
+        return DocumentType.DELIVERY_NOTE.value
+    if "specified document" in normalized:
+        return DocumentType.OTHER_SPECIFIED_DOCUMENT.value
     if "inspection" in normalized:
         return DocumentType.INSPECTION_CERTIFICATE.value
     if "weight" in normalized:

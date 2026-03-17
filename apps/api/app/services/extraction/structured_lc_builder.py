@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 from datetime import datetime
+import ast
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+try:
+    from .lc_taxonomy import build_lc_classification
+except ImportError:  # pragma: no cover - direct module loading in tests/scripts
+    import importlib.util
+    from pathlib import Path
+
+    _lc_taxonomy_path = Path(__file__).with_name("lc_taxonomy.py")
+    _lc_taxonomy_spec = importlib.util.spec_from_file_location("lc_taxonomy_fallback", _lc_taxonomy_path)
+    if _lc_taxonomy_spec is None or _lc_taxonomy_spec.loader is None:
+        raise
+    _lc_taxonomy_module = importlib.util.module_from_spec(_lc_taxonomy_spec)
+    _lc_taxonomy_spec.loader.exec_module(_lc_taxonomy_module)
+    build_lc_classification = _lc_taxonomy_module.build_lc_classification
+
 OPTION_E_VERSION = "structured_result_v1"
+LEGACY_WORKFLOW_LC_TYPES = {"import", "export", "draft", "unknown"}
 
 
 def _now_iso() -> str:
@@ -13,6 +29,28 @@ def _now_iso() -> str:
 
 def _safe(value: Any, default: Any = None) -> Any:
     return value if value not in (None, "") else default
+
+
+def _coerce_text_sequence(value: Any) -> List[str]:
+    if value in (None, "", [], {}):
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, tuple):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return []
+        if trimmed.startswith("[") and trimmed.endswith("]"):
+            try:
+                parsed = ast.literal_eval(trimmed)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except Exception:
+                pass
+        return [trimmed]
+    return [str(value).strip()] if str(value).strip() else []
 
 
 def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -30,11 +68,49 @@ def _pluck_lc_type(extractor_outputs: Optional[Dict[str, Any]]) -> Dict[str, Any
     confidence = float(raw_confidence) if raw_confidence <= 1 else float(raw_confidence) / 100
     
     return {
-        "lc_type": extractor_outputs.get("lc_type", "unknown"),
-        "lc_type_reason": extractor_outputs.get("lc_type_reason", "Insufficient details."),
+        "lc_type": _safe(extractor_outputs.get("lc_type"), "unknown"),
+        "lc_type_reason": _safe(extractor_outputs.get("lc_type_reason"), "Insufficient details."),
         "lc_type_confidence": confidence,
-        "lc_type_source": extractor_outputs.get("lc_type_source", "auto"),
+        "lc_type_source": _safe(extractor_outputs.get("lc_type_source"), "auto"),
     }
+
+
+def _resolve_legacy_lc_type_fields(
+    extractor_outputs: Optional[Dict[str, Any]],
+    legacy_payload: Optional[Dict[str, Any]],
+    lc_classification: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    extractor_outputs = extractor_outputs or {}
+    legacy_payload = legacy_payload or {}
+    base = _pluck_lc_type(extractor_outputs)
+
+    workflow_orientation = ""
+    if isinstance(lc_classification, dict):
+        workflow_orientation = str(lc_classification.get("workflow_orientation") or "").strip().lower()
+
+    if workflow_orientation in {"import", "export", "unknown"}:
+        base["lc_type"] = workflow_orientation
+        if str(extractor_outputs.get("lc_type") or "").strip().lower() not in LEGACY_WORKFLOW_LC_TYPES:
+            base["lc_type_reason"] = "Derived from canonical workflow_orientation."
+            base["lc_type_confidence"] = max(float(base.get("lc_type_confidence") or 0.0), 0.85)
+            base["lc_type_source"] = "lc_classification"
+        return base
+
+    for raw in (
+        legacy_payload.get("lc_type"),
+        extractor_outputs.get("lc_type"),
+    ):
+        candidate = str(raw or "").strip().lower()
+        if candidate in LEGACY_WORKFLOW_LC_TYPES:
+            base["lc_type"] = candidate
+            return base
+
+    base["lc_type"] = "unknown"
+    if workflow_orientation:
+        base["lc_type_reason"] = "Canonical classification does not map to a legacy workflow alias."
+        base["lc_type_confidence"] = max(float(base.get("lc_type_confidence") or 0.0), 0.5)
+        base["lc_type_source"] = "lc_classification"
+    return base
 
 
 def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -152,7 +228,6 @@ def build_unified_structured_result(
 
     extractor_outputs = extractor_outputs or {}
     docs_structured = _normalize_documents_structured(session_documents or [])
-    lc_type_fields = _pluck_lc_type(extractor_outputs)
 
     mt700_block = extractor_outputs.get("mt700") or _default_mt700()
     goods = extractor_outputs.get("goods", [])
@@ -163,10 +238,21 @@ def build_unified_structured_result(
         extractor_outputs.get("clauses_47a") or 
         []
     )
+    documents_required = (
+        _coerce_text_sequence(extractor_outputs.get("documents_required"))
+        or _coerce_text_sequence(extractor_outputs.get("required_documents"))
+    )
+    required_document_types = _coerce_text_sequence(extractor_outputs.get("required_document_types"))
+    additional_conditions = _coerce_text_sequence(extractor_outputs.get("additional_conditions")) or _coerce_text_sequence(clauses)
+    clauses = additional_conditions
     raw_timeline = extractor_outputs.get("timeline")
     timeline = _normalize_timeline(raw_timeline, len(docs_structured))
     timeline_meta = _timeline_metadata(raw_timeline)
     issues = extractor_outputs.get("issues", [])
+    lc_classification = extractor_outputs.get("lc_classification")
+    if not isinstance(lc_classification, dict):
+        lc_classification = build_lc_classification(extractor_outputs, legacy_payload)
+    lc_type_fields = _resolve_legacy_lc_type_fields(extractor_outputs, legacy_payload, lc_classification)
 
     # Build dates object from extractor outputs
     dates = {
@@ -199,8 +285,15 @@ def build_unified_structured_result(
         "applicant": extractor_outputs.get("applicant"),
         "beneficiary": extractor_outputs.get("beneficiary"),
         "ports": extractor_outputs.get("ports"),
-        "additional_conditions": extractor_outputs.get("additional_conditions"),  # Canonical name
+        "lc_classification": lc_classification,
+        "documents_required": documents_required,
+        "required_document_types": required_document_types,
+        "additional_conditions": additional_conditions,
         "hs_codes": extractor_outputs.get("hs_codes"),
+        "lc_type": lc_type_fields["lc_type"],
+        "lc_type_reason": lc_type_fields["lc_type_reason"],
+        "lc_type_confidence": lc_type_fields["lc_type_confidence"],
+        "lc_type_source": lc_type_fields["lc_type_source"],
         "dates": dates if dates else None,
     }
 
