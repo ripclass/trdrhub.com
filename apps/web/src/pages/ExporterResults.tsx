@@ -1323,10 +1323,28 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           }
           return false;
         });
+        const rawMatchedRequirementStatus = matchedDoc?.requirementStatus;
+        const hasMissingFields = Boolean(
+          matchedDoc && Array.isArray(matchedDoc.missingRequiredFields) && matchedDoc.missingRequiredFields.length > 0,
+        );
+        const hasReviewSignals = Boolean(
+          matchedDoc &&
+            ((matchedDoc.warningReasons ?? []).length > 0 ||
+              (matchedDoc.reviewReasons ?? []).length > 0 ||
+              matchedDoc.reviewState === 'needs_review' ||
+              matchedDoc.reviewState === 'blocked'),
+        );
         const requirementStatus: RequirementChecklistStatus = !matchedDoc
           ? 'missing'
-          : (matchedDoc.requirementStatus ??
-              (((matchedDoc.missingRequiredFields ?? []) as string[]).length > 0 ? 'partial' : 'matched'));
+          : rawMatchedRequirementStatus === 'matched'
+          ? 'matched'
+          : rawMatchedRequirementStatus === 'missing'
+          ? 'partial'
+          : rawMatchedRequirementStatus === 'partial'
+          ? 'partial'
+          : hasMissingFields || hasReviewSignals
+          ? 'partial'
+          : 'matched';
         const reviewState: RequirementChecklistReviewState = !matchedDoc
           ? 'awaiting_document'
           : matchedDoc.reviewState === 'blocked'
@@ -1426,8 +1444,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       if (item.requirementStatus === 'missing') {
         actions.push({
           priority: 'critical',
-          title: `Upload ${item.label}`,
-          detail: item.requirementText,
+          title: item.matchedDoc ? `Complete ${item.label} requirement coverage` : `Upload ${item.label}`,
+          detail: item.matchedDoc
+            ? item.reviewNotes[0] || 'A matching file exists, but the required declaration or clause coverage is still unresolved.'
+            : item.requirementText,
         });
         return;
       }
@@ -1565,15 +1585,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const submissionEligibility = canonicalResultTruth.submissionEligibility;
   const bankVerdict = canonicalResultTruth.bankVerdict as { can_submit?: boolean } | null;
   const canSubmitFromValidation = canonicalResultTruth.canSubmitFromValidation;
+  const canGenerateCustomsPack = exporterPresentationTruth.presentationStatus !== 'not_ready';
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsQueryEnabled && guardrailsLoading) return false;
     if (!canSubmitFromValidation) return false;
+    if (exporterPresentationTruth.presentationStatus !== 'ready') return false;
     if (!guardrails) {
       return canSubmitFromValidation;
     }
     return guardrails.can_submit && guardrails.high_severity_discrepancies === 0;
-  }, [enableBankSubmission, guardrails, guardrailsLoading, guardrailsQueryEnabled, canSubmitFromValidation]);
+  }, [
+    enableBankSubmission,
+    guardrails,
+    guardrailsLoading,
+    guardrailsQueryEnabled,
+    canSubmitFromValidation,
+    exporterPresentationTruth.presentationStatus,
+  ]);
 
   // Contract Validation warnings (Output-First layer)
   const contractWarnings = resultData?.contractWarnings ?? [];
@@ -2420,13 +2449,18 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         variant={manifestData ? "outline" : "default"}
                         className="w-full"
                         onClick={() => generateCustomsPackMutation.mutate()}
-                        disabled={generateCustomsPackMutation.isPending}
+                        disabled={generateCustomsPackMutation.isPending || !canGenerateCustomsPack}
                       >
                         <RefreshCw className={cn("w-4 h-4 mr-2", generateCustomsPackMutation.isPending && "animate-spin")} />
                         {generateCustomsPackMutation.isPending 
                           ? "Generating..." 
                           : "Generate Customs Pack"}
                       </Button>
+                      {!canGenerateCustomsPack && (
+                        <p className="text-xs text-muted-foreground">
+                          Resolve blocked required-document or review states before generating a customs pack.
+                        </p>
+                      )}
                       {/* Show Download only when manifest exists (pack was generated) */}
                       {manifestData && (
                         <Button
