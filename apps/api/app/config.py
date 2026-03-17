@@ -5,6 +5,7 @@ Configuration settings for LCopilot application.
 import os
 import json
 from typing import Optional, List, Any, Dict
+from urllib.parse import urlparse
 from pydantic import field_validator, model_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -317,6 +318,74 @@ class Settings(BaseSettings):
                     + ", ".join(missing)
                 )
         return values
+
+
+def normalize_origin(origin: str) -> str:
+    parsed = urlparse(str(origin or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
+def _dedupe_origins(origins: List[str]) -> List[str]:
+    seen = set()
+    ordered: List[str] = []
+    for origin in origins:
+        normalized = normalize_origin(origin)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered
+
+
+def resolve_allowed_cors_origins(config: Settings) -> List[str]:
+    configured_origins = config.CORS_ALLOW_ORIGINS or []
+
+    if not config.is_production() and configured_origins == ["http://localhost:5173"]:
+        return [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+
+    wildcard_configured = any(str(origin).strip() == "*" for origin in configured_origins)
+    normalized_configured = _dedupe_origins(configured_origins)
+
+    if config.is_production():
+        production_frontends = _dedupe_origins([
+            "https://trdrhub.com",
+            "https://www.trdrhub.com",
+            "https://app.trdrhub.com",
+            "https://trdrhub.vercel.app",
+            config.FRONTEND_URL,
+        ])
+
+        if wildcard_configured:
+            return production_frontends
+
+        return _dedupe_origins([*normalized_configured, *production_frontends])
+
+    if wildcard_configured:
+        return ["*"]
+
+    return normalized_configured or ["http://localhost:5173"]
+
+
+def build_cors_headers_for_origin(config: Settings, origin: str) -> Dict[str, str]:
+    normalized_origin = normalize_origin(origin)
+    if not normalized_origin:
+        return {}
+
+    allowed_origins = resolve_allowed_cors_origins(config)
+    if "*" in allowed_origins or normalized_origin in allowed_origins:
+        return {
+            "Access-Control-Allow-Origin": normalized_origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+
+    return {}
 
 
 # Global settings instance with error handling for CORS_ALLOW_ORIGINS

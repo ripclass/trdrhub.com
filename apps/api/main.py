@@ -62,7 +62,7 @@ from app.routes.health import router as health_router
 from app.routes.ocr_health import router as ocr_health_router
 from app.routes.debug import router as debug_router
 from app.schemas import ApiError
-from app.config import settings
+from app.config import settings, resolve_allowed_cors_origins, build_cors_headers_for_origin
 from app.middleware.quota_middleware import QuotaEnforcementMiddleware
 from app.middleware.rate_limit import RateLimiterMiddleware
 from app.middleware.csrf import CSRFMiddleware
@@ -397,24 +397,7 @@ if not settings.USE_STUBS:
 # In production, restrict to specific domains for security
 # Set CORS_ALLOW_ORIGINS env var as comma-separated list: "https://trdrhub.com,https://www.trdrhub.com"
 # Defaults to ["*"] for development
-cors_origins = settings.CORS_ALLOW_ORIGINS
-if settings.is_production() and cors_origins == ["*"]:
-    # Fallback for production if not configured - use common production domains
-    cors_origins = [
-        "https://trdrhub.com",
-        "https://www.trdrhub.com",
-        "https://trdrhub.vercel.app",  # Vercel preview URLs
-    ]
-    print(
-        "WARNING: CORS_ALLOW_ORIGINS not configured for production, using defaults. "
-        "Set CORS_ALLOW_ORIGINS env var for security."
-    )
-
-if not settings.is_production() and cors_origins == ["http://localhost:5173"]:
-    cors_origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
+cors_origins = resolve_allowed_cors_origins(settings)
 
 allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 allowed_headers = [
@@ -469,26 +452,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         error_type=type(exc).__name__
     )
 
-    # Get CORS headers from request origin
-    origin = request.headers.get("origin")
-    cors_headers = {}
-    if origin:
-        # Check if origin is in allowed list
-        allowed_origins = settings.CORS_ALLOW_ORIGINS
-        if settings.is_production() and allowed_origins == ["*"]:
-            # Use default production origins
-            allowed_origins = [
-                "https://trdrhub.com",
-                "https://www.trdrhub.com",
-                "https://trdrhub.vercel.app",
-            ]
-        if "*" in allowed_origins or origin in allowed_origins:
-            cors_headers = {
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Allow-Methods": "*",
-                "Access-Control-Allow-Headers": "*",
-            }
+    cors_headers = build_cors_headers_for_origin(settings, request.headers.get("origin"))
 
     # Serialize error response to JSON string first, then parse back to dict
     # This ensures datetime objects are properly serialized to ISO strings
@@ -525,22 +489,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     
     error_message = "; ".join(messages) if messages else "Request validation failed"
     
-    # Build CORS headers
-    origin = request.headers.get("origin")
-    cors_headers = {}
-    if origin:
-        allowed_origins = settings.CORS_ALLOW_ORIGINS
-        if settings.is_production() and allowed_origins == ["*"]:
-            allowed_origins = [
-                "https://trdrhub.com",
-                "https://www.trdrhub.com",
-                "https://trdrhub.vercel.app",
-            ]
-        if "*" in allowed_origins or origin in allowed_origins:
-            cors_headers = {
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Credentials": "true",
-            }
+    cors_headers = build_cors_headers_for_origin(settings, request.headers.get("origin"))
     
     return JSONResponse(
         status_code=422,
