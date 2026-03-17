@@ -17,6 +17,16 @@ SWIFT_VARIANTS = {
 
 LEGACY_WORKFLOW_ALIASES = {"import", "export", "draft", "unknown"}
 WORKFLOW_ORIENTATIONS = {"import", "export", "domestic", "intermediary_or_trader", "unknown"}
+COUNTRY_SYNONYMS = {
+    "u.s.a": "united states",
+    "usa": "united states",
+    "us": "united states",
+    "united states of america": "united states",
+    "bd": "bangladesh",
+    "bangla desh": "bangladesh",
+    "u.k.": "united kingdom",
+    "uk": "united kingdom",
+}
 
 ISO_VARIANT_RE = re.compile(r"\b((?:tsrv|tsmt|tsin)\.\d{3})\b", re.IGNORECASE)
 SWIFT_VARIANT_RE = re.compile(
@@ -275,10 +285,10 @@ def detect_workflow_orientation(source: Dict[str, Any], legacy_payload: Dict[str
 
 
 def _detect_trade_lane_workflow(source: Dict[str, Any], legacy_payload: Dict[str, Any]) -> str:
-    detector = _load_lc_type_detector()
-    if detector is None:
+    if not _has_trade_lane_evidence(source, legacy_payload):
         return ""
 
+    detector = _load_lc_type_detector()
     shipment_context: Dict[str, Any] = {}
     shipment = source.get("shipment")
     if isinstance(shipment, dict):
@@ -322,11 +332,13 @@ def _detect_trade_lane_workflow(source: Dict[str, Any], legacy_payload: Dict[str
             if value not in (None, "") and request_key not in request_context:
                 request_context[request_key] = value
 
-    guess = detector(source, shipment_context, request_context=request_context)
-    candidate = str((guess or {}).get("lc_type") or "").strip().lower()
-    if candidate in {"import", "export"}:
-        return candidate
-    return ""
+    if detector is not None:
+        guess = detector(source, shipment_context, request_context=request_context)
+        candidate = str((guess or {}).get("lc_type") or "").strip().lower()
+        if candidate in {"import", "export"}:
+            return candidate
+
+    return _infer_trade_lane_workflow_locally(source, shipment_context)
 
 
 def _load_lc_type_detector():
@@ -334,17 +346,137 @@ def _load_lc_type_detector():
         from app.services.lc_classifier import detect_lc_type
 
         return detect_lc_type
-    except ModuleNotFoundError:
+    except Exception:
         classifier_path = Path(__file__).resolve().parents[1] / "lc_classifier.py"
-        package_root = classifier_path.parents[2]
-        if str(package_root) not in sys.path:
-            sys.path.insert(0, str(package_root))
-        spec = importlib.util.spec_from_file_location("lc_taxonomy_lc_classifier", classifier_path)
-        if spec is None or spec.loader is None:
+        try:
+            package_root = classifier_path.parents[2]
+            if str(package_root) not in sys.path:
+                sys.path.insert(0, str(package_root))
+            spec = importlib.util.spec_from_file_location("lc_taxonomy_lc_classifier", classifier_path)
+            if spec is None or spec.loader is None:
+                return None
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return getattr(module, "detect_lc_type", None)
+        except Exception:
             return None
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return getattr(module, "detect_lc_type", None)
+
+
+def _has_trade_lane_evidence(source: Dict[str, Any], legacy_payload: Dict[str, Any]) -> bool:
+    party_signals = (
+        source.get("applicant"),
+        source.get("beneficiary"),
+        source.get("applicant_country"),
+        source.get("beneficiary_country"),
+        legacy_payload.get("company_country"),
+        legacy_payload.get("companyCountry"),
+    )
+    port_signals = (
+        source.get("port_of_loading"),
+        source.get("port_of_discharge"),
+        source.get("port_of_loading_country"),
+        source.get("port_of_discharge_country"),
+        (source.get("ports") or {}).get("loading") if isinstance(source.get("ports"), dict) else None,
+        (source.get("ports") or {}).get("discharge") if isinstance(source.get("ports"), dict) else None,
+    )
+    has_party_signal = any(value not in (None, "", [], {}) for value in party_signals)
+    has_port_signal = any(value not in (None, "", [], {}) for value in port_signals)
+    return has_party_signal and has_port_signal
+
+
+def _infer_trade_lane_workflow_locally(source: Dict[str, Any], shipment_context: Dict[str, Any]) -> str:
+    applicant_country = _extract_country_hint(
+        source.get("applicant"),
+        source.get("applicant_country"),
+        source.get("applicantCountry"),
+    )
+    beneficiary_country = _extract_country_hint(
+        source.get("beneficiary"),
+        source.get("beneficiary_country"),
+        source.get("beneficiaryCountry"),
+    )
+    port_of_loading_country = _extract_country_hint(
+        shipment_context.get("port_of_loading_country"),
+        shipment_context.get("port_of_loading_country_name"),
+        shipment_context.get("port_of_loading_country_code"),
+        source.get("port_of_loading_country"),
+        source.get("port_of_loading_country_name"),
+        source.get("port_of_loading_country_code"),
+        shipment_context.get("port_of_loading"),
+        shipment_context.get("port_of_shipment"),
+        (source.get("ports") or {}).get("loading") if isinstance(source.get("ports"), dict) else None,
+        source.get("port_of_loading"),
+    )
+    port_of_discharge_country = _extract_country_hint(
+        shipment_context.get("port_of_discharge_country"),
+        shipment_context.get("port_of_discharge_country_name"),
+        shipment_context.get("port_of_discharge_country_code"),
+        source.get("port_of_discharge_country"),
+        source.get("port_of_discharge_country_name"),
+        source.get("port_of_discharge_country_code"),
+        shipment_context.get("port_of_discharge"),
+        shipment_context.get("port_of_destination"),
+        (source.get("ports") or {}).get("discharge") if isinstance(source.get("ports"), dict) else None,
+        source.get("port_of_discharge"),
+    )
+
+    if (
+        applicant_country
+        and beneficiary_country
+        and port_of_loading_country
+        and port_of_discharge_country
+        and applicant_country != beneficiary_country
+    ):
+        if beneficiary_country == port_of_loading_country and applicant_country == port_of_discharge_country:
+            return "export"
+        if applicant_country == port_of_loading_country and beneficiary_country == port_of_discharge_country:
+            return "import"
+
+    return ""
+
+
+def _extract_country_hint(*values: Any) -> str:
+    for value in values:
+        country = _extract_country_from_value(value)
+        if country:
+            return country
+    return ""
+
+
+def _extract_country_from_value(value: Any) -> str:
+    if value in (None, "", [], {}, ()):
+        return ""
+    if isinstance(value, dict):
+        for key in ("country", "country_name", "countryName", "address", "name", "value"):
+            country = _extract_country_from_value(value.get(key))
+            if country:
+                return country
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            country = _extract_country_from_value(item)
+            if country:
+                return country
+        return ""
+
+    text = str(value).strip()
+    if not text:
+        return ""
+    segments = [segment.strip(" .,-") for segment in re.split(r"[\n,;/]+", text) if segment.strip(" .,-")]
+    candidates = list(reversed(segments)) + [text]
+    for candidate in candidates:
+        normalized = _normalize_country_name(candidate)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _normalize_country_name(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s.]", " ", text)).strip()
+    return COUNTRY_SYNONYMS.get(text, text)
 
 
 def detect_instrument_type(source: Dict[str, Any], format_family: str, format_variant: str) -> str:
