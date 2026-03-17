@@ -434,12 +434,14 @@ export default function ExportLCUpload({
   const { validate, isLoading: isValidating, clearError } = useValidate();
   const quotaState = useLcopilotQuota();
   const isLCResolved = lcIntake.status === "resolved" && !!lcIntake.continuationAllowed;
+  const isLcResolving = lcIntake.status === "uploading";
   
   const { saveDraft, loadDraft, removeDraft } = useDrafts();
   const { checkLCExists } = useVersions();
   
   // Loading state
   const isProcessing = isValidating;
+  const isValidationProcessing = isValidating && !isLcResolving;
 
   // Load draft if draftId is provided in URL params
   useEffect(() => {
@@ -1232,19 +1234,19 @@ export default function ExportLCUpload({
             <div
               className={cn(
                 "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
-                lcIntake.status === "uploading"
-                  ? "border-exporter bg-exporter/5 cursor-wait"
+                isLcResolving || !!lcIntake.file
+                  ? "border-exporter bg-exporter/5 cursor-default"
                   : "border-gray-200 hover:border-exporter/50 hover:bg-secondary/20 cursor-pointer"
               )}
               onClick={() => {
-                if (lcIntake.status === "uploading" || isProcessing) return;
+                if (isLcResolving || isProcessing || !!lcIntake.file) return;
                 const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
                 input?.click();
               }}
               role="button"
-              tabIndex={lcIntake.status === "uploading" || isProcessing ? -1 : 0}
+              tabIndex={isLcResolving || isProcessing || !!lcIntake.file ? -1 : 0}
               onKeyDown={(e) => {
-                if (lcIntake.status === "uploading" || isProcessing) return;
+                if (isLcResolving || isProcessing || !!lcIntake.file) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
@@ -1260,28 +1262,34 @@ export default function ExportLCUpload({
                 onChange={handleLCIntakeFileChange}
               />
               <div className="flex flex-col items-center gap-4">
-                <div className={cn("p-4 rounded-full", lcIntake.status === "uploading" ? "bg-exporter/10" : "bg-exporter/10")}>
+                <div className="p-4 rounded-full bg-exporter/10">
                   <Sparkles className="w-8 h-8 text-exporter" />
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-foreground mb-2">
-                    {lcIntake.status === "uploading" ? "Resolving Letter of Credit..." : "Upload Letter of Credit"}
+                    {isLcResolving
+                      ? "Resolving Letter of Credit..."
+                      : lcIntake.file
+                      ? "Letter of Credit Uploaded"
+                      : "Upload Letter of Credit"}
                   </h3>
                   <p className="text-muted-foreground mb-4">
-                    {lcIntake.status === "uploading"
+                    {isLcResolving
                       ? "We’re checking the LC, detecting workflow, and extracting required supporting documents."
+                      : lcIntake.file
+                      ? "The LC file is already attached. Clear it first if you want to upload a different one."
                       : "Click anywhere in this box or use the button below to choose the LC file first."}
                   </p>
                 </div>
                 <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
-                  <Button asChild variant="outline" disabled={lcIntake.status === "uploading" || isProcessing}>
+                  <Button asChild variant="outline" disabled={isLcResolving || isProcessing || !!lcIntake.file}>
                     <label htmlFor="lc-intake-upload" className="cursor-pointer">
                       <Plus className="w-4 h-4 mr-2" />
                       Choose LC File
                     </label>
                   </Button>
                   {lcIntake.file && (
-                    <Button variant="ghost" onClick={handleClearLCIntake}>
+                    <Button variant="ghost" onClick={handleClearLCIntake} disabled={isLcResolving || isProcessing}>
                       Clear
                     </Button>
                   )}
@@ -1649,7 +1657,7 @@ export default function ExportLCUpload({
                       disabled={!isReadyToProcess || !quotaState.canValidate}
                       className="hover:opacity-90 bg-gradient-exporter"
                     >
-                      {isProcessing ? (
+                      {isValidationProcessing ? (
                         <>
                           <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
                           Validating...
@@ -1662,7 +1670,7 @@ export default function ExportLCUpload({
                 </div>
               </div>
 
-              {isProcessing && (
+              {isValidationProcessing && (
                 <ValidationProgressIndicator fileCount={completedFiles.length} />
               )}
 
