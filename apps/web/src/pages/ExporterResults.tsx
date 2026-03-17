@@ -33,9 +33,7 @@ import {
   PrinterIcon,
   Clock,
   Package,
-  BarChart3,
   TrendingUp,
-  PieChart,
   Receipt,
   Send,
   History,
@@ -65,6 +63,7 @@ import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 // LcHeader removed - LC info now shown inline in SummaryStrip
 // RiskPanel removed - action items now only in Issues tab
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
+import { getExporterOverviewTruth } from "@/lib/exporter/overviewTruth";
 // Extracted components and utilities from ExporterResults
 import {
   BankVerdictCard,
@@ -233,6 +232,16 @@ const normalizeLcEnumLabel = (value: string): string =>
 
 type RequirementChecklistStatus = 'matched' | 'partial' | 'missing';
 type RequirementChecklistReviewState = 'ready' | 'needs_review' | 'blocked' | 'awaiting_document';
+
+type RequirementChecklistSummary = {
+  matched: number;
+  partial: number;
+  missing: number;
+  ready: number;
+  needsReview: number;
+  blocked: number;
+  awaitingDocument: number;
+};
 
 const REQUIREMENT_STATUS_META: Record<
   RequirementChecklistStatus,
@@ -995,7 +1004,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const showSkeletonLayout = Boolean(
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError),
   );
-  const { successCount, errorCount, warningCount, successRate, extractionRate, extractionSuccessful } = useMemo(() => {
+  const { successCount, warningCount, successRate, extractionRate, extractionSuccessful } = useMemo(() => {
     // Use authoritative document_status from backend (same source as SummaryStrip)
     const statusDistribution = 
       analyticsData?.document_status_distribution ?? 
@@ -1090,10 +1099,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [analyticsData?.document_risk, documents],
   );
   const extractionAccuracy = useMemo(() => extractionRate, [extractionRate]);
-  const customsReadyScore = useMemo(
-    () => Math.max(0, complianceScore - warningCount * 5),
-    [complianceScore, warningCount],
-  );
   const lcRequirementSource = useMemo(() => {
     const canonicalRequiredDocs = Array.isArray(lcClassification?.required_documents)
       ? (lcClassification.required_documents as LcClassificationRequiredDocument[])
@@ -1152,6 +1157,33 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       "Compliance score " + complianceScore + "%",
     ],
     [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
+  );
+  const overviewTruth = useMemo(
+    () =>
+      getExporterOverviewTruth({
+        totalDocuments,
+        totalIssues: issueCards.length,
+        complianceScore,
+        extractionAccuracy,
+        processingTime,
+        successCount,
+        warningCount,
+        packGenerated,
+        performanceInsights,
+        canonicalResultTruth,
+      }),
+    [
+      totalDocuments,
+      issueCards.length,
+      complianceScore,
+      extractionAccuracy,
+      processingTime,
+      successCount,
+      warningCount,
+      packGenerated,
+      performanceInsights,
+      canonicalResultTruth,
+    ],
   );
   const requirementChecklist = useMemo(() => {
     const requiredConditions = lcRequirementSource;
@@ -1378,6 +1410,27 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
     return items;
   }, [documents, lcClassification?.required_documents, lcRequirementSource, lcRequirementTypes]);
+  const requirementChecklistSummary = useMemo<RequirementChecklistSummary>(() => {
+    return requirementChecklist.reduce(
+      (acc, item) => {
+        acc[item.requirementStatus] += 1;
+        if (item.reviewState === 'ready') acc.ready += 1;
+        if (item.reviewState === 'needs_review') acc.needsReview += 1;
+        if (item.reviewState === 'blocked') acc.blocked += 1;
+        if (item.reviewState === 'awaiting_document') acc.awaitingDocument += 1;
+        return acc;
+      },
+      {
+        matched: 0,
+        partial: 0,
+        missing: 0,
+        ready: 0,
+        needsReview: 0,
+        blocked: 0,
+        awaitingDocument: 0,
+      },
+    );
+  }, [requirementChecklist]);
   const actionEngine = useMemo(() => {
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
 
@@ -1522,7 +1575,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = Boolean(manifestData?.documents?.length);
   const bankReadyLabel = canonicalResultTruth.readinessLabel;
-  const bankReadyClass = canonicalResultTruth.readinessClass;
   const processingSummaryExtras =
     (structuredResult as any)?.processing_summary_v2 ??
     (structuredResult?.processing_summary as Record<string, any> | undefined);
@@ -1951,10 +2003,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             lcTypeLabel={lcTypeLabel}
             lcTypeCaption={lcTypeCaption}
             lcTypeConfidence={lcTypeConfidenceValue}
-            packGenerated={packGenerated}
-            overallStatus={overallStatus}
+            packGenerated={overviewTruth.packGenerated}
+            overallStatus={overviewTruth.overallStatus}
             actualIssuesCount={issueCards.length}
             complianceScore={complianceScore}
+            readinessLabel={overviewTruth.readinessLabel}
+            readinessSummary={overviewTruth.readinessSummary}
           />
           {lcClassification && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -2085,7 +2139,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </AlertDescription>
               </Alert>
             )}
-            <div className={cn("grid gap-6", hasTimeline ? "md:grid-cols-2" : "md:grid-cols-1")}>
+            <div className={cn("grid gap-6", hasTimeline ? "xl:grid-cols-[1.1fr_0.9fr]" : "md:grid-cols-1")}>
               {hasTimeline && (
                 <Card className="shadow-soft border border-border/60">
                   <CardHeader className="pb-3">
@@ -2128,51 +2182,78 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </CardContent>
                 </Card>
               )}
-              {/* Export Statistics */}
               <Card className="shadow-soft border border-border/60">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold">Export Document Statistics</CardTitle>
+                  <CardTitle className="text-lg font-semibold">Overview Support Metrics</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Validation health
+                    Supporting analytics for the current validation state
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center p-3 bg-success/5 border border-success/20 rounded-lg">
-                      <div className="text-2xl font-bold text-success">{successCount}</div>
-                      <div className="text-sm text-muted-foreground">Verified</div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {overviewTruth.summaryMetrics.map((metric) => {
+                      const toneClass =
+                        metric.tone === 'success'
+                          ? 'text-success'
+                          : metric.tone === 'warning'
+                          ? 'text-warning'
+                          : metric.tone === 'destructive'
+                          ? 'text-destructive'
+                          : metric.tone === 'primary'
+                          ? 'text-primary'
+                          : 'text-foreground';
+                      return (
+                        <div key={metric.label} className="rounded-lg border border-border/60 p-3">
+                          <p className="text-xs text-muted-foreground uppercase tracking-wide">{metric.label}</p>
+                          <p className={`text-2xl font-semibold ${toneClass}`}>{metric.value}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                    <div className="grid grid-cols-2 gap-3">
+                      {overviewTruth.supportMetrics.map((metric) => {
+                        const toneClass =
+                          metric.tone === 'success'
+                            ? 'text-success'
+                            : metric.tone === 'warning'
+                            ? 'text-warning'
+                            : metric.tone === 'destructive'
+                            ? 'text-destructive'
+                            : metric.tone === 'primary'
+                            ? 'text-primary'
+                            : 'text-foreground';
+                        return (
+                          <div key={metric.label} className="rounded-lg border border-border/60 p-3">
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">{metric.label}</p>
+                            <p className={`text-2xl font-semibold ${toneClass}`}>{metric.value}</p>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="text-center p-3 bg-warning/5 border border-warning/20 rounded-lg">
-                      <div className="text-2xl font-bold text-warning">{warningCount}</div>
-                      <div className="text-sm text-muted-foreground">Warnings</div>
+                    <div className="space-y-3">
+                      {overviewTruth.progressMetrics.map((metric) => (
+                        <div key={metric.label}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm">{metric.label}</span>
+                            <span className="text-sm font-medium">{metric.value}%</span>
+                          </div>
+                          <Progress value={metric.value} className="h-2" />
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>LC Compliance:</span>
-                      <span className={`font-medium ${lcComplianceScore >= 70 ? 'text-success' : lcComplianceScore >= 30 ? 'text-warning' : 'text-destructive'}`}>
-                        {lcComplianceScore}%
-                      </span>
+                  <div className="rounded-lg border border-border/60 p-3 bg-muted/20">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium text-primary">Performance Insights</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Compliance Readiness:</span>
-                      <span className={`font-medium ${customsReadyScore >= 90 ? 'text-success' : customsReadyScore >= 50 ? 'text-warning' : 'text-destructive'}`}>
-                        {customsReadyScore}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Bank Ready:</span>
-                      <span className={`font-medium ${bankReadyClass}`}>
-                        {bankReadyLabel}
-                      </span>
-                    </div>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      {overviewTruth.performanceInsights.map((insight, idx) => (
+                        <li key={idx}>• {insight}</li>
+                      ))}
+                    </ul>
                   </div>
-                  {packGenerated && (
-                    <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                      <p className="text-sm font-medium text-primary">Customs Pack Generated</p>
-                      <p className="text-xs text-muted-foreground mt-1">Manifest and bundle are ready to download. Compliance readiness is shown separately.</p>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             </div>
@@ -2183,10 +2264,30 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold">Required Document Checklist</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Requirement coverage and review readiness shown separately
+                    Requirement coverage first, review consequence second
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-border/60 p-3">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Matched</p>
+                      <p className="text-xl font-semibold text-success">{requirementChecklistSummary.matched}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Partial</p>
+                      <p className="text-xl font-semibold text-warning">{requirementChecklistSummary.partial}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3 col-span-2 sm:col-span-1">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Missing</p>
+                      <p className="text-xl font-semibold text-destructive">{requirementChecklistSummary.missing}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Ready: <span className="font-medium text-foreground">{requirementChecklistSummary.ready}</span></span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Review: <span className="font-medium text-foreground">{requirementChecklistSummary.needsReview}</span></span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Blocked: <span className="font-medium text-foreground">{requirementChecklistSummary.blocked}</span></span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Awaiting doc: <span className="font-medium text-foreground">{requirementChecklistSummary.awaitingDocument}</span></span>
+                  </div>
                   {requirementChecklist.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No explicit LC requirements were parsed into checklist items yet.</p>
                   ) : (
@@ -2195,34 +2296,54 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       const reviewMeta = REVIEW_STATE_META[item.reviewState];
 
                       return (
-                        <div key={item.key} className="rounded-lg border border-border/60 p-3 space-y-2">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="font-medium text-sm">{item.label}</p>
-                              <p className="text-xs text-muted-foreground">{item.requirementText}</p>
-                            </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <StatusBadge status={requirementMeta.badgeStatus}>
-                                Requirement: {requirementMeta.label}
-                              </StatusBadge>
-                              <StatusBadge status={reviewMeta.badgeStatus}>
-                                Review: {reviewMeta.label}
-                              </StatusBadge>
-                            </div>
+                        <div key={item.key} className="rounded-lg border border-border/60 p-4 space-y-3">
+                          <div className="space-y-1">
+                            <p className="font-medium text-sm">{item.label}</p>
+                            <p className="text-xs text-muted-foreground">{item.requirementText}</p>
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {item.matchedDoc ? (
-                              <>Matched to <span className="font-medium text-foreground">{item.matchedDoc.name}</span></>
-                            ) : (
-                              'No uploaded document matched this LC requirement yet.'
-                            )}
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-md border border-border/60 p-3 bg-muted/10">
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Requirement coverage</p>
+                              <div className="flex items-center justify-between gap-2">
+                                <StatusBadge status={requirementMeta.badgeStatus}>
+                                  {requirementMeta.label}
+                                </StatusBadge>
+                                <span className="text-xs text-muted-foreground text-right">
+                                  {item.matchedDoc ? (
+                                    <>Matched to <span className="font-medium text-foreground">{item.matchedDoc.name}</span></>
+                                  ) : (
+                                    'No matching upload yet'
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="rounded-md border border-border/60 p-3 bg-muted/10">
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Review consequence</p>
+                              <div className="flex items-center justify-between gap-2">
+                                <StatusBadge status={reviewMeta.badgeStatus}>
+                                  {reviewMeta.label}
+                                </StatusBadge>
+                                <span className="text-xs text-muted-foreground text-right">
+                                  {item.reviewState === 'ready'
+                                    ? 'No current review hold'
+                                    : item.reviewState === 'awaiting_document'
+                                    ? 'Needs supporting upload'
+                                    : item.reviewState === 'blocked'
+                                    ? 'Blocks clean presentation'
+                                    : 'Manual review still required'}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                           {item.reviewNotes.length > 0 && (
-                            <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
-                              {item.reviewNotes.slice(0, 2).map((issue, idx) => (
-                                <li key={`${item.key}-issue-${idx}`}>{issue}</li>
-                              ))}
-                            </ul>
+                            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                              <p className="text-[10px] uppercase tracking-wide text-amber-700 mb-2">Why this still matters</p>
+                              <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+                                {item.reviewNotes.slice(0, 2).map((issue, idx) => (
+                                  <li key={`${item.key}-issue-${idx}`}>{issue}</li>
+                                ))}
+                              </ul>
+                            </div>
                           )}
                         </div>
                       );
@@ -2234,10 +2355,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold">Action Engine</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Prioritized next steps before submission
+                    Escalations and next steps after checklist review
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Critical: <span className="font-medium text-foreground">{actionEngine.filter((action) => action.priority === 'critical').length}</span></span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Major: <span className="font-medium text-foreground">{actionEngine.filter((action) => action.priority === 'major').length}</span></span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Minor: <span className="font-medium text-foreground">{actionEngine.filter((action) => action.priority === 'minor').length}</span></span>
+                  </div>
                   {actionEngine.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No immediate actions generated from the current validation state.</p>
                   ) : (
@@ -2257,107 +2383,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </Card>
             </div>
 
-            {/* Analytics Summary (merged from Analytics tab) */}
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card className="shadow-soft border border-border/60">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5" />
-                    Processing Performance
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm">Structured Extraction</span>
-                        <span className="text-sm font-medium">{extractionAccuracy}%</span>
-                      </div>
-                      <Progress value={extractionAccuracy} className="h-2" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm">LC Compliance</span>
-                        <span className="text-sm font-medium">{lcComplianceScore}%</span>
-                      </div>
-                      <Progress value={lcComplianceScore} className="h-2" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm">Compliance Readiness</span>
-                        <span className="text-sm font-medium">{customsReadyScore}%</span>
-                      </div>
-                      <Progress value={customsReadyScore} className="h-2" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div className="text-center p-2 bg-success/5 border border-success/20 rounded-lg">
-                      <div className="text-lg font-bold text-success">{processingTime}</div>
-                      <div className="text-xs text-muted-foreground">Processing Time</div>
-                    </div>
-                    <div className="text-center p-2 bg-primary/5 border border-primary/20 rounded-lg">
-                      <div className="text-lg font-bold text-primary">{totalDocuments}</div>
-                      <div className="text-xs text-muted-foreground">Documents</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card className="shadow-soft border border-border/60">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                    <PieChart className="w-5 h-5" />
-                    Document Status
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 bg-success rounded-full"></div>
-                        <span className="text-sm">Verified</span>
-                      </div>
-                      <span className="text-sm font-medium">
-                        {successCount} ({totalDocuments ? Math.round((successCount/totalDocuments)*100) : 0}%)
-                      </span>
-                    </div>
-                    {warningCount > 0 && (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 bg-warning rounded-full"></div>
-                        <span className="text-sm">With Warnings</span>
-                      </div>
-                      <span className="text-sm font-medium">
-                        {warningCount} ({totalDocuments ? Math.round((warningCount/totalDocuments)*100) : 0}%)
-                      </span>
-                    </div>
-                    )}
-                    {errorCount > 0 && (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 bg-destructive rounded-full"></div>
-                        <span className="text-sm">With Errors</span>
-                      </div>
-                      <span className="text-sm font-medium">
-                        {errorCount} ({totalDocuments ? Math.round((errorCount/totalDocuments)*100) : 0}%)
-                      </span>
-                    </div>
-                    )}
-                  </div>
-                  <div className="mt-4 p-3 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium text-primary">Performance Insights</span>
-                    </div>
-                    <ul className="text-xs text-muted-foreground space-y-1">
-                      {performanceInsights.slice(0, 3).map((insight, idx) => (
-                        <li key={idx}>• {insight}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
           <TabsContent value="customs" className="space-y-6">
             <Card className="shadow-soft border border-border/60">
@@ -2387,21 +2412,25 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </p>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
-                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Compliance Readiness</p>
-                    <div className="flex items-center gap-3">
+                    <p className="text-xs uppercase text-muted-foreground tracking-wide">Submission Readiness</p>
+                    <div className="flex items-center gap-3 flex-wrap">
                       <div className={cn(
                         "text-2xl font-semibold",
-                        customsReadyScore >= 80 ? "text-success" : customsReadyScore >= 50 ? "text-warning" : "text-destructive"
-                      )}>{customsReadyScore}%</div>
-                      <Badge variant="outline">Compliance Readiness</Badge>
+                        customsPackReadiness.status === 'ready'
+                          ? 'text-success'
+                          : customsPackReadiness.status === 'review_required'
+                          ? 'text-warning'
+                          : 'text-destructive'
+                      )}>
+                        {customsPackReadiness.status === 'ready'
+                          ? 'Ready'
+                          : customsPackReadiness.status === 'review_required'
+                          ? 'Review needed'
+                          : 'Blocked'}
+                      </div>
+                      <Badge variant="outline">{customsPackReadiness.source === 'backend' ? 'Canonical readiness' : 'Derived readiness'}</Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {customsReadyScore >= 80 
-                        ? "Compliance posture is strong for customs clearance." 
-                        : customsReadyScore >= 50 
-                        ? "Some compliance issues need review before clearance."
-                        : "Critical compliance issues must be resolved before clearance."}
-                    </p>
+                    <p className="text-sm text-muted-foreground">{customsPackReadiness.summary}</p>
                   </div>
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Actions</p>
