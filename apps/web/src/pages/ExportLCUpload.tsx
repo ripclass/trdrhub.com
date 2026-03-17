@@ -26,6 +26,7 @@ import {
   SPECIAL_CONDITIONS_PLACEHOLDER_TEXT,
   summarizeSpecialConditions,
 } from "@/lib/exporter/specialConditions";
+import { getUploadRequirementsModel } from "@/lib/exporter/uploadRequirements";
 // Shared document types - SINGLE SOURCE OF TRUTH
 import { 
   DOCUMENT_TYPES, 
@@ -1077,6 +1078,16 @@ export default function ExportLCUpload({
     () => summarizeSpecialConditions(lcIntake.specialConditions || []),
     [lcIntake.specialConditions],
   );
+  const uploadRequirements = useMemo(
+    () =>
+      getUploadRequirementsModel({
+        requiredDocumentTypes: lcIntake.requiredDocumentTypes || [],
+        documentsRequired: lcIntake.documentsRequired || [],
+        specialConditions: lcIntake.specialConditions || [],
+        resolveLabel: (docType) => exportDocumentTypes.find((t) => t.value === docType)?.label || docType,
+      }),
+    [lcIntake.requiredDocumentTypes, lcIntake.documentsRequired, lcIntake.specialConditions],
+  );
   const hiddenQuickBadgeCount = Math.max(0, exportDocumentTypes.length - quickBadgeTypes.length);
 
   const wrapperClass = embedded
@@ -1407,24 +1418,34 @@ export default function ExportLCUpload({
             ) : (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  {(lcIntake.requiredDocumentTypes || []).length > 0 ? (
-                    (lcIntake.requiredDocumentTypes || []).map((docType, index) => {
-                      const label = exportDocumentTypes.find((t) => t.value === docType)?.label || docType;
-                      const exactRequirement = String(lcIntake.documentsRequired?.[index] || '').trim();
-                      const isFound = completedFiles.some((file) => normalizeDocumentType(file.documentType) === docType || normalizeDocumentType(file.detectedType) === docType);
-                      return (
-                        <div key={`${docType}-${index}`} className="rounded-lg border border-gray-200/70 bg-background p-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={isFound ? "default" : "outline"}>
-                              {label} - {isFound ? "Found" : "Missing"}
-                            </Badge>
+                  {uploadRequirements.documentRequirements.length > 0 || uploadRequirements.additionalRequirements.length > 0 ? (
+                    <>
+                      {uploadRequirements.documentRequirements.map((requirement) => {
+                        const normalizedType = normalizeDocumentType(requirement.type);
+                        const isFound = completedFiles.some((file) => normalizeDocumentType(file.documentType) === normalizedType || normalizeDocumentType(file.detectedType) === normalizedType);
+                        return (
+                          <div key={requirement.key} className="rounded-lg border border-gray-200/70 bg-background p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant={isFound ? "default" : "outline"}>
+                                {requirement.label} - {isFound ? "Found" : "Missing"}
+                              </Badge>
+                            </div>
+                            {requirement.exactRequirement && requirement.exactRequirement.toLowerCase() !== requirement.label.toLowerCase() && (
+                              <p className="mt-2 text-xs text-muted-foreground">{requirement.exactRequirement}</p>
+                            )}
                           </div>
-                          {exactRequirement && exactRequirement.toLowerCase() !== label.toLowerCase() && (
-                            <p className="mt-2 text-xs text-muted-foreground">{exactRequirement}</p>
-                          )}
+                        );
+                      })}
+                      {uploadRequirements.additionalRequirements.map((requirement) => (
+                        <div key={requirement.key} className="rounded-lg border border-amber-300/60 bg-amber-50/40 p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">{requirement.label} - Required</Badge>
+                            <Badge variant="secondary">LC condition</Badge>
+                          </div>
+                          <p className="mt-2 text-xs text-muted-foreground">{requirement.detail}</p>
                         </div>
-                      );
-                    })
+                      ))}
+                    </>
                   ) : (
                     <p className="text-sm text-muted-foreground">No explicit supporting-document requirements were extracted yet.</p>
                   )}

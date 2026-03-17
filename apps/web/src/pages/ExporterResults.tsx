@@ -1158,33 +1158,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     ],
     [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
   );
-  const overviewTruth = useMemo(
-    () =>
-      getExporterOverviewTruth({
-        totalDocuments,
-        totalIssues: issueCards.length,
-        complianceScore,
-        extractionAccuracy,
-        processingTime,
-        successCount,
-        warningCount,
-        packGenerated,
-        performanceInsights,
-        canonicalResultTruth,
-      }),
-    [
-      totalDocuments,
-      issueCards.length,
-      complianceScore,
-      extractionAccuracy,
-      processingTime,
-      successCount,
-      warningCount,
-      packGenerated,
-      performanceInsights,
-      canonicalResultTruth,
-    ],
-  );
   const requirementChecklist = useMemo(() => {
     const requiredConditions = lcRequirementSource;
     const humanizeIssueReason = (reason: string, docType?: string): string => {
@@ -1583,6 +1556,33 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     processingSummaryExtras?.processing_time_display ||
     analyticsExtras?.processing_time_display ||
     "-";
+  const overviewTruth = useMemo(
+    () =>
+      getExporterOverviewTruth({
+        totalDocuments,
+        totalIssues: issueCards.length,
+        complianceScore,
+        extractionAccuracy,
+        processingTime,
+        successCount,
+        warningCount,
+        packGenerated,
+        performanceInsights,
+        canonicalResultTruth,
+      }),
+    [
+      totalDocuments,
+      issueCards.length,
+      complianceScore,
+      extractionAccuracy,
+      processingTime,
+      successCount,
+      warningCount,
+      packGenerated,
+      performanceInsights,
+      canonicalResultTruth,
+    ],
+  );
   const submissionEligibility = canonicalResultTruth.submissionEligibility;
   const bankVerdict = canonicalResultTruth.bankVerdict as { can_submit?: boolean } | null;
   const canSubmitFromValidation = canonicalResultTruth.canSubmitFromValidation;
