@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import ast
+import re
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -189,6 +190,61 @@ def _default_mt700() -> Dict[str, Any]:
     return {"blocks": blocks, "raw_text": None, "version": "mt700_v1"}
 
 
+def _hydrate_mt700_from_extractor_outputs(extractor_outputs: Dict[str, Any]) -> Dict[str, Any]:
+    mt700_source = extractor_outputs.get("mt700")
+    mt700_payload = dict(mt700_source) if isinstance(mt700_source, dict) else {}
+    default_blocks = _default_mt700()["blocks"]
+    source_blocks = mt700_payload.get("blocks") if isinstance(mt700_payload.get("blocks"), dict) else {}
+    hydrated_blocks: Dict[str, Any] = {key: source_blocks.get(key) for key in default_blocks}
+    raw_text = mt700_payload.get("raw_text") or extractor_outputs.get("raw_text")
+
+    for key in default_blocks:
+        if hydrated_blocks.get(key) not in (None, "", [], {}):
+            continue
+        if extractor_outputs.get(key) not in (None, "", [], {}):
+            hydrated_blocks[key] = extractor_outputs.get(key)
+            continue
+        if mt700_payload.get(key) not in (None, "", [], {}):
+            hydrated_blocks[key] = mt700_payload.get(key)
+
+    # Recover block values from raw SWIFT text when mt700 metadata is sparse.
+    if raw_text and all(value in (None, "", [], {}) for value in hydrated_blocks.values()):
+        for match in re.finditer(
+            r"(?ms)^\s*:(\d{2}[A-Z]?):\s*(.*?)\s*(?=^\s*:\d{2}[A-Z]?:|\Z)",
+            str(raw_text),
+        ):
+            field = str(match.group(1) or "").upper()
+            if field not in hydrated_blocks:
+                continue
+            value = str(match.group(2) or "").strip()
+            if value:
+                hydrated_blocks[field] = value
+
+    if hydrated_blocks.get("46A") in (None, "", [], {}):
+        docs_required = _coerce_text_sequence(extractor_outputs.get("documents_required")) or _coerce_text_sequence(
+            extractor_outputs.get("required_documents")
+        )
+        if docs_required:
+            hydrated_blocks["46A"] = docs_required
+
+    if hydrated_blocks.get("47A") in (None, "", [], {}):
+        additional_conditions = _coerce_text_sequence(extractor_outputs.get("additional_conditions")) or _coerce_text_sequence(
+            extractor_outputs.get("clauses")
+        )
+        if additional_conditions:
+            hydrated_blocks["47A"] = additional_conditions
+
+    has_block_content = any(value not in (None, "", [], {}) for value in hydrated_blocks.values())
+    if not has_block_content and not raw_text:
+        return _default_mt700()
+
+    return {
+        "blocks": hydrated_blocks,
+        "raw_text": raw_text,
+        "version": mt700_payload.get("version") or "mt700_v1",
+    }
+
+
 def _default_timeline(count: int) -> List[Dict[str, Any]]:
     return [
         {
@@ -229,7 +285,7 @@ def build_unified_structured_result(
     extractor_outputs = extractor_outputs or {}
     docs_structured = _normalize_documents_structured(session_documents or [])
 
-    mt700_block = extractor_outputs.get("mt700") or _default_mt700()
+    mt700_block = _hydrate_mt700_from_extractor_outputs(extractor_outputs)
     goods = extractor_outputs.get("goods", [])
     # Support both canonical name "additional_conditions" and legacy "clauses"
     clauses = (

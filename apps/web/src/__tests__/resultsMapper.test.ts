@@ -82,6 +82,27 @@ describe('results mapper - option e payload', () => {
     );
   });
 
+  it('does not inflate LC workflow-unknown warnings into major discrepancies', () => {
+    const payload = JSON.parse(JSON.stringify(optionEFixture));
+    payload.structured_result.issues = [
+      {
+        id: 'lc-type-unknown-1',
+        rule: 'LC-TYPE-UNKNOWN',
+        title: 'LC Type Not Determined',
+        severity: 'warning',
+        description: 'Workflow orientation could not be determined from uploaded LC.',
+        expected: 'Identify workflow orientation',
+        found: 'workflow_orientation=unknown',
+        suggested_fix: 'Review and set workflow manually.',
+        ruleset_domain: 'system.lc_type',
+      },
+    ];
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.issues[0]?.severity).toBe('minor');
+    expect(mapped.issues[0]?.severity_display).toBe('Review required');
+  });
+
   it('preserves bank context and amendment intelligence on the canonical structured result path', () => {
     const seeded = buildValidationResults();
     const payload = {

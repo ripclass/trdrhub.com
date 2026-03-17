@@ -138,6 +138,35 @@ export const DOCUMENT_TYPE_VALUES = {
 
 export type DocumentTypeValue = typeof DOCUMENT_TYPE_VALUES[keyof typeof DOCUMENT_TYPE_VALUES];
 
+const MOJIBAKE_ICON_RE = /[âð]|ï¸|Ã|�/;
+
+const CATEGORY_ICON_FALLBACK: Record<DocumentCategory, string> = {
+  [DOCUMENT_CATEGORIES.CORE]: '📄',
+  [DOCUMENT_CATEGORIES.TRANSPORT]: '🚢',
+  [DOCUMENT_CATEGORIES.INSPECTION]: '🔍',
+  [DOCUMENT_CATEGORIES.HEALTH]: '🌿',
+  [DOCUMENT_CATEGORIES.FINANCIAL]: '💵',
+  [DOCUMENT_CATEGORIES.CUSTOMS]: '🛃',
+  [DOCUMENT_CATEGORIES.OTHER]: '📎',
+};
+
+const DOC_ICON_OVERRIDES: Partial<Record<DocumentTypeValue, string>> = {
+  [DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT]: '📄',
+  [DOCUMENT_TYPE_VALUES.SWIFT_MESSAGE]: '💬',
+  [DOCUMENT_TYPE_VALUES.COMMERCIAL_INVOICE]: '🧾',
+  [DOCUMENT_TYPE_VALUES.BILL_OF_LADING]: '🚢',
+  [DOCUMENT_TYPE_VALUES.PACKING_LIST]: '📦',
+  [DOCUMENT_TYPE_VALUES.CERTIFICATE_OF_ORIGIN]: '🌍',
+  [DOCUMENT_TYPE_VALUES.INSURANCE_CERTIFICATE]: '🛡️',
+  [DOCUMENT_TYPE_VALUES.INSURANCE_POLICY]: '📜',
+  [DOCUMENT_TYPE_VALUES.BENEFICIARY_CERTIFICATE]: '✍️',
+  [DOCUMENT_TYPE_VALUES.WEIGHT_CERTIFICATE]: '⚖️',
+  [DOCUMENT_TYPE_VALUES.INSPECTION_CERTIFICATE]: '🔍',
+  [DOCUMENT_TYPE_VALUES.OTHER_SPECIFIED_DOCUMENT]: '📎',
+  [DOCUMENT_TYPE_VALUES.OTHER]: '📎',
+  [DOCUMENT_TYPE_VALUES.UNKNOWN]: '❓',
+};
+
 // =============================================================================
 // DOCUMENT TYPE METADATA
 // =============================================================================
@@ -447,7 +476,7 @@ export const DOCUMENT_TYPES: Record<DocumentTypeValue, DocumentTypeInfo> = {
     shortLabel: 'Wt Cert',
     category: DOCUMENT_CATEGORIES.INSPECTION,
     emoji: 'âš–ï¸',
-    aliases: ['weight', 'weighment', 'weight_cert'],
+    aliases: ['weight', 'weighment', 'weight_cert', 'weight_list'],
     description: 'Certificate of weight',
     avgPages: 1,
   },
@@ -699,7 +728,7 @@ export const DOCUMENT_TYPES: Record<DocumentTypeValue, DocumentTypeInfo> = {
     shortLabel: 'Benef Cert',
     category: DOCUMENT_CATEGORIES.OTHER,
     emoji: 'âœï¸',
-    aliases: ['beneficiary', 'benef_cert', 'attestation'],
+    aliases: ['beneficiary', 'benef_cert', 'beneficiary_certificate', 'beneficiary_statement', 'attestation'],
     description: 'Certificate signed by beneficiary',
     avgPages: 1,
   },
@@ -939,6 +968,25 @@ export function normalizeDocumentType(input: string): DocumentTypeValue {
 export function getDocumentTypeInfo(typeValue: string): DocumentTypeInfo | undefined {
   const normalized = normalizeDocumentType(typeValue);
   return DOCUMENT_TYPES[normalized];
+}
+
+/**
+ * Returns a clean icon for UI rendering even when legacy metadata contains mojibake.
+ */
+export function getDocumentTypeIcon(typeValue: string): string {
+  const normalized = normalizeDocumentType(typeValue);
+  const info = DOCUMENT_TYPES[normalized];
+  const raw = info?.emoji;
+  if (typeof raw === 'string' && raw.trim().length > 0 && !MOJIBAKE_ICON_RE.test(raw)) {
+    return raw;
+  }
+  if (DOC_ICON_OVERRIDES[normalized]) {
+    return DOC_ICON_OVERRIDES[normalized] as string;
+  }
+  if (info?.category && CATEGORY_ICON_FALLBACK[info.category]) {
+    return CATEGORY_ICON_FALLBACK[info.category];
+  }
+  return CATEGORY_ICON_FALLBACK[DOCUMENT_CATEGORIES.OTHER];
 }
 
 /**

@@ -37,11 +37,11 @@ TENOR_DAYS_RE = re.compile(r"\b(\d{1,3})\s*DAYS?\b", re.IGNORECASE)
 
 DOCUMENT_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("proforma_invoice", ("pro forma invoice", "proforma invoice")),
-    ("commercial_invoice", ("commercial invoice", "signed commercial invoice", "signed invoice", "invoice")),
+    ("commercial_invoice", ("commercial invoice", "signed commercial invoice", "signed invoice", "invoice", "inv")),
     ("draft_bill_of_exchange", ("bill of exchange", "draft drawn", "draft at", "draft", "boe")),
     ("charter_party_bill_of_lading", ("charter party bill of lading", "charter party b/l", "charter party bl")),
     ("ocean_bill_of_lading", ("ocean bill of lading", "marine bill of lading", "clean on board bill of lading")),
-    ("bill_of_lading", ("bill of lading", "b/l", " bl ")),
+    ("bill_of_lading", ("bill of lading", "b/l", "bl")),
     ("air_waybill", ("air waybill", "awb")),
     ("sea_waybill", ("sea waybill",)),
     ("multimodal_transport_document", ("multimodal transport document", "combined transport document")),
@@ -49,14 +49,14 @@ DOCUMENT_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("railway_consignment_note", ("railway consignment note", "cim", "smgs")),
     ("courier_or_post_receipt_or_certificate_of_posting", ("courier receipt", "post receipt", "certificate of posting", "postal receipt")),
     ("forwarder_certificate_of_receipt", ("forwarder certificate of receipt", "fcr")),
-    ("packing_list", ("packing list",)),
+    ("packing_list", ("packing list", "pl")),
     ("weight_list", ("weight list",)),
     ("certificate_of_origin", ("certificate of origin", "country of origin certificate", "coo")),
     ("inspection_certificate", ("inspection certificate", "inspection report")),
     ("quality_certificate", ("quality certificate",)),
     ("analysis_certificate", ("analysis certificate",)),
     ("insurance_policy", ("insurance policy",)),
-    ("insurance_certificate", ("insurance certificate",)),
+    ("insurance_certificate", ("insurance certificate", "insurance")),
     ("beneficiary_certificate", ("beneficiary certificate", "beneficiary statement")),
     ("manufacturer_certificate", ("manufacturer certificate",)),
     ("conformity_certificate", ("certificate of conformity", "conformity certificate")),
@@ -71,6 +71,18 @@ DOCUMENT_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("export_license", ("export license", "export licence")),
     ("import_license", ("import license", "import licence")),
 )
+
+COMPACT_REQUIREMENT_TOKENS: Dict[str, str] = {
+    "INVOICE": "commercial_invoice",
+    "INV": "commercial_invoice",
+    "BL": "bill_of_lading",
+    "B/L": "bill_of_lading",
+    "AWB": "air_waybill",
+    "PL": "packing_list",
+    "COO": "certificate_of_origin",
+    "INSURANCE": "insurance_certificate",
+    "INS": "insurance_certificate",
+}
 
 TRANSPORT_DOCUMENT_CODES = {
     "bill_of_lading",
@@ -503,14 +515,38 @@ def normalize_required_document_entry(raw: Any) -> Optional[Dict[str, Any]]:
 
 
 def match_required_document_codes(line: str) -> List[Tuple[str, str]]:
-    lowered = f" {line.lower()} "
+    lowered = line.lower()
     matches: List[Tuple[str, str]] = []
+    seen_codes: set[str] = set()
+    for token in _extract_compact_requirement_tokens(line):
+        code = COMPACT_REQUIREMENT_TOKENS.get(token)
+        if code and code not in seen_codes:
+            matches.append((code, token.lower()))
+            seen_codes.add(code)
     for code, aliases in DOCUMENT_PATTERNS:
+        if code in seen_codes:
+            continue
         for alias in aliases:
-            if alias in lowered:
+            if _contains_alias(lowered, alias):
                 matches.append((code, alias))
+                seen_codes.add(code)
                 break
     return matches
+
+
+def _contains_alias(lowered_line: str, alias: str) -> bool:
+    normalized_alias = alias.lower().strip()
+    if not normalized_alias:
+        return False
+    if re.search(r"[^a-z0-9]", normalized_alias):
+        return normalized_alias in lowered_line
+    pattern = re.compile(rf"(^|[^a-z0-9]){re.escape(normalized_alias)}([^a-z0-9]|$)")
+    return bool(pattern.search(lowered_line))
+
+
+def _extract_compact_requirement_tokens(line: str) -> List[str]:
+    tokens = re.findall(r"[A-Z0-9/]+", (line or "").upper())
+    return [token for token in tokens if token in COMPACT_REQUIREMENT_TOKENS]
 
 
 def dedupe_required_documents(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

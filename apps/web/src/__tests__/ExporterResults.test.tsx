@@ -238,6 +238,58 @@ describe('ExporterResults', () => {
     expect(within(customsPanel).getByText(readinessValue as string)).toBeInTheDocument();
   });
 
+  it('uses backend submission eligibility as the source of truth for customs readiness status', async () => {
+    const backendReadyResults = buildValidationResults();
+    backendReadyResults.structured_result = {
+      ...backendReadyResults.structured_result,
+      lc_structured: {
+        ...(backendReadyResults.structured_result?.lc_structured ?? {}),
+        lc_classification: {
+          workflow_orientation: 'export',
+          instrument_type: 'documentary_credit',
+          required_documents: [
+            { code: 'commercial_invoice', display_name: 'Commercial Invoice' },
+            { code: 'beneficiary_certificate', display_name: 'Beneficiary Certificate' },
+          ],
+        },
+      },
+      submission_eligibility: { can_submit: true, reasons: [] },
+      effective_submission_eligibility: { can_submit: true, reasons: [] },
+      customs_pack: {
+        ready: true,
+        manifest: [],
+        format: 'zip-manifest-v1',
+      },
+      bank_verdict: {
+        verdict: 'CAUTION',
+        verdict_color: 'yellow',
+        verdict_message: 'Minor corrections recommended',
+        recommendation: 'Review warnings before submission',
+        can_submit: true,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: 0,
+        issue_summary: { critical: 0, major: 1, minor: 0, total: 1 },
+        action_items: [],
+        action_items_count: 0,
+      },
+    } as typeof backendReadyResults.structured_result;
+    activeResults = backendReadyResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    expect(within(customsPanel).getAllByText(/Ready for presentation/i).length).toBeGreaterThan(0);
+    expect(within(customsPanel).queryByText(/Not ready for presentation/i)).toBeNull();
+    expect(
+      within(customsPanel).getByText(/Submission readiness follows backend validation eligibility/i),
+    ).toBeInTheDocument();
+  });
+
   it('separates requirement coverage from review readiness in checklist rows', async () => {
     const checklistResults = buildValidationResults();
     checklistResults.documents = checklistResults.documents.map((doc) => {
@@ -318,6 +370,34 @@ describe('ExporterResults', () => {
     expect(within(checklistCard).getAllByText(/Packing List/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).getAllByText(/Certificate of Origin/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).getAllByText(/Insurance Certificate/i).length).toBeGreaterThan(0);
+  });
+
+  it('does not present generic 47A placeholders as extracted condition detail', async () => {
+    const placeholderResults = buildValidationResults();
+    placeholderResults.structured_result = {
+      ...placeholderResults.structured_result,
+      lc_structured: {
+        ...(placeholderResults.structured_result?.lc_structured ?? {}),
+        number: '100924060096',
+        amount: '100000',
+        applicant: 'Applicant Co.',
+        beneficiary: 'Beneficiary Co.',
+        additional_conditions: ['ADDITIONAL CONDITIONS APPLY'],
+      },
+    } as typeof placeholderResults.structured_result;
+    activeResults = placeholderResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+    expect(
+      screen.getByText(/Field 47A references additional conditions, but no detailed clause text was extracted/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^ADDITIONAL CONDITIONS APPLY$/i)).toBeNull();
   });
 
   it('prioritizes canonical workflow and structured required documents over legacy lc_type fields', async () => {

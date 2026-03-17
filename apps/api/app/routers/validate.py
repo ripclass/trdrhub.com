@@ -138,7 +138,7 @@ from app.services.extraction.ai_first_extractor import (
 )
 from app.services.extraction.launch_pipeline import get_launch_extraction_pipeline
 from app.services.extraction.iso20022_lc_extractor import detect_iso20022_schema
-from app.services.extraction.lc_taxonomy import build_lc_classification
+from app.services.extraction.lc_taxonomy import build_lc_classification, normalize_required_documents
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
@@ -403,6 +403,15 @@ _DOC_REQUIREMENT_HINTS: List[Tuple[str, Tuple[str, ...]]] = [
 
 
 def _infer_required_document_types_from_lc(lc_payload: Dict[str, Any]) -> List[str]:
+    normalized_required_documents = normalize_required_documents(lc_payload or {})
+    normalized_codes = [
+        str(entry.get("code")).strip().lower()
+        for entry in normalized_required_documents
+        if isinstance(entry, dict) and str(entry.get("code") or "").strip()
+    ]
+    if normalized_codes:
+        return sorted(set(normalized_codes))
+
     texts: List[str] = []
     for key in ("documents_required", "required_documents", "additional_conditions", "clauses", "clauses_47a"):
         texts.extend(_coerce_text_list(lc_payload.get(key)))
@@ -483,7 +492,7 @@ def _prepare_extractor_outputs_for_structured_result(payload: Optional[Dict[str,
                 merged["required_document_types"] = required_document_types
 
     taxonomy_builder = globals().get("build_lc_classification")
-    if callable(taxonomy_builder) and not isinstance(merged.get("lc_classification"), dict):
+    if callable(taxonomy_builder):
         merged["lc_classification"] = taxonomy_builder(merged or lc_payload, payload)
 
     legacy_workflow_fields = _resolve_legacy_workflow_lc_fields(merged, payload)

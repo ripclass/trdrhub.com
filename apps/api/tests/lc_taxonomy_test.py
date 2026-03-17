@@ -108,3 +108,19 @@ def test_required_document_normalization_covers_new_canonical_aliases() -> None:
     assert "courier_or_post_receipt_or_certificate_of_posting" in codes
     assert "beneficiary_certificate" in codes
     assert "analysis_certificate" in codes
+
+
+def test_mt700_compact_required_document_shorthand_maps_to_canonical_codes() -> None:
+    taxonomy = _load_taxonomy_module()
+
+    classification = taxonomy.build_lc_classification(
+        {"documents_required": ["INVOICE/BL/PL/COO/INSURANCE"]}
+    )
+    codes = {item["code"] for item in classification["required_documents"]}
+
+    assert "commercial_invoice" in codes
+    assert "bill_of_lading" in codes
+    assert "packing_list" in codes
+    assert "certificate_of_origin" in codes
+    assert "insurance_certificate" in codes
+    assert "other_specified_document" not in codes

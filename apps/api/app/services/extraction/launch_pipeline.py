@@ -152,11 +152,29 @@ class LaunchExtractionPipeline:
                 quality_assessment=quality_assessment,
             )
 
+        if normalized_doc_type in {"beneficiary_certificate", "beneficiary_statement"}:
+            return await self._process_insurance_certificate(
+                extracted_text=extracted_text,
+                filename=filename,
+                quality_assessment=quality_assessment,
+                forced_subtype="beneficiary_certificate",
+                post_validation_target="beneficiary_certificate",
+            )
+
         if normalized_doc_type == "inspection_certificate":
             return await self._process_inspection_certificate(
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+            )
+
+        if normalized_doc_type in {"weight_list", "weight_certificate"}:
+            return await self._process_inspection_certificate(
+                extracted_text=extracted_text,
+                filename=filename,
+                quality_assessment=quality_assessment,
+                forced_subtype="weight_certificate",
+                post_validation_target=normalized_doc_type,
             )
 
         if normalized_doc_type == "supporting_document":
@@ -615,8 +633,16 @@ class LaunchExtractionPipeline:
         regulatory_review = _assess_regulatory_completeness(shaped_payload, regulatory_subtype=regulatory_subtype)
         return {"handled": True, "context_key": "certificate_of_origin", "context_payload": {**shaped_payload, "regulatory_review": regulatory_review}, "doc_info_patch": {**base_patch, "regulatory_subtype": regulatory_subtype, "regulatory_family": shaped_payload.get("regulatory_family"), "parse_complete": regulatory_review.get("parse_complete"), "parse_completeness": regulatory_review.get("required_ratio"), "missing_required_fields": regulatory_review.get("missing_required_fields", []), "required_fields_found": regulatory_review.get("required_found"), "required_fields_total": regulatory_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(regulatory_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_coo_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
 
-    async def _process_insurance_certificate(self, *, extracted_text: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
-        insurance_subtype = _detect_insurance_subtype(filename=filename, extracted_text=extracted_text)
+    async def _process_insurance_certificate(
+        self,
+        *,
+        extracted_text: str,
+        filename: str,
+        quality_assessment: Any,
+        forced_subtype: Optional[str] = None,
+        post_validation_target: str = "insurance_certificate",
+    ) -> Dict[str, Any]:
+        insurance_subtype = forced_subtype or _detect_insurance_subtype(filename=filename, extracted_text=extracted_text)
         base_patch = {
             "ocr_quality": {
                 "overall_score": quality_assessment.overall_score,
@@ -657,7 +683,7 @@ class LaunchExtractionPipeline:
                     },
                     "has_structured_data": True,
                     "validation_doc_type": "insurance",
-                    "post_validation_target": "insurance_certificate",
+                    "post_validation_target": post_validation_target,
                 }
         except Exception as exc:
             logger.warning("Launch pipeline insurance AI extraction failed for %s: %s", filename, exc, exc_info=True)
@@ -689,14 +715,44 @@ class LaunchExtractionPipeline:
                     },
                     "has_structured_data": True,
                     "validation_doc_type": "insurance",
-                    "post_validation_target": "insurance_certificate",
+                    "post_validation_target": post_validation_target,
                 }
         except Exception as exc:
             logger.warning("Launch pipeline insurance regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
         shaped_payload = _shape_insurance_payload({}, insurance_subtype=insurance_subtype, raw_text=extracted_text)
         insurance_review = _assess_insurance_completeness(shaped_payload, insurance_subtype=insurance_subtype)
-        return {"handled": True, "context_key": "insurance_certificate", "context_payload": {**shaped_payload, "insurance_review": insurance_review}, "doc_info_patch": {**base_patch, "insurance_subtype": insurance_subtype, "insurance_family": shaped_payload.get("insurance_family"), "parse_complete": insurance_review.get("parse_complete"), "parse_completeness": insurance_review.get("required_ratio"), "missing_required_fields": insurance_review.get("missing_required_fields", []), "required_fields_found": insurance_review.get("required_found"), "required_fields_total": insurance_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(insurance_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_insurance_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
+        has_structured_values = _has_extracted_content(
+            shaped_payload,
+            ["policy_number", "certificate_number", "insured_amount", "issuer_name"],
+        )
+        extraction_status = (
+            "success"
+            if insurance_review.get("parse_complete")
+            else ("partial" if has_structured_values else "failed")
+        )
+        has_structured_data = extraction_status != "failed"
+        return {
+            "handled": True,
+            "context_key": "insurance_certificate",
+            "context_payload": {**shaped_payload, "insurance_review": insurance_review},
+            "doc_info_patch": {
+                **base_patch,
+                "insurance_subtype": insurance_subtype,
+                "insurance_family": shaped_payload.get("insurance_family"),
+                "parse_complete": insurance_review.get("parse_complete"),
+                "parse_completeness": insurance_review.get("required_ratio"),
+                "missing_required_fields": insurance_review.get("missing_required_fields", []),
+                "required_fields_found": insurance_review.get("required_found"),
+                "required_fields_total": insurance_review.get("required_total"),
+                "review_reasons": list(base_patch.get("review_reasons") or []) + list(insurance_review.get("review_reasons") or []),
+                "extraction_status": extraction_status,
+                "extraction_error": None if has_structured_data else "launch_pipeline_insurance_extraction_failed",
+            },
+            "has_structured_data": has_structured_data,
+            "validation_doc_type": "insurance" if has_structured_data else None,
+            "post_validation_target": post_validation_target if has_structured_data else None,
+        }
 
     async def _process_supporting_document(self, *, extracted_text: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
         supporting_guess = _guess_supporting_document_subtype(filename=filename, extracted_text=extracted_text)
@@ -740,8 +796,16 @@ class LaunchExtractionPipeline:
             "post_validation_target": None,
         }
 
-    async def _process_inspection_certificate(self, *, extracted_text: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
-        inspection_subtype = _detect_inspection_subtype(filename=filename, extracted_text=extracted_text)
+    async def _process_inspection_certificate(
+        self,
+        *,
+        extracted_text: str,
+        filename: str,
+        quality_assessment: Any,
+        forced_subtype: Optional[str] = None,
+        post_validation_target: str = "inspection_certificate",
+    ) -> Dict[str, Any]:
+        inspection_subtype = forced_subtype or _detect_inspection_subtype(filename=filename, extracted_text=extracted_text)
         base_patch = {
             "ocr_quality": {
                 "overall_score": quality_assessment.overall_score,
@@ -783,7 +847,7 @@ class LaunchExtractionPipeline:
                     },
                     "has_structured_data": True,
                     "validation_doc_type": "inspection",
-                    "post_validation_target": "inspection_certificate",
+                    "post_validation_target": post_validation_target,
                 }
         except Exception as exc:
             logger.warning("Launch pipeline inspection AI extraction failed for %s: %s", filename, exc, exc_info=True)
@@ -815,14 +879,52 @@ class LaunchExtractionPipeline:
                     },
                     "has_structured_data": True,
                     "validation_doc_type": "inspection",
-                    "post_validation_target": "inspection_certificate",
+                    "post_validation_target": post_validation_target,
                 }
         except Exception as exc:
             logger.warning("Launch pipeline inspection regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
         shaped_payload = _shape_inspection_payload({}, inspection_subtype=inspection_subtype, raw_text=extracted_text)
         inspection_review = _assess_inspection_completeness(shaped_payload, inspection_subtype=inspection_subtype)
-        return {"handled": True, "context_key": "inspection_certificate", "context_payload": {**shaped_payload, "inspection_review": inspection_review}, "doc_info_patch": {**base_patch, "inspection_subtype": inspection_subtype, "inspection_family": shaped_payload.get("inspection_family"), "parse_complete": inspection_review.get("parse_complete"), "parse_completeness": inspection_review.get("required_ratio"), "missing_required_fields": inspection_review.get("missing_required_fields", []), "required_fields_found": inspection_review.get("required_found"), "required_fields_total": inspection_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(inspection_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_inspection_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
+        has_structured_values = _has_extracted_content(
+            shaped_payload,
+            [
+                "inspection_result",
+                "quality_finding",
+                "analysis_result",
+                "gross_weight",
+                "net_weight",
+                "measurement_value",
+                "inspection_agency",
+            ],
+        )
+        extraction_status = (
+            "success"
+            if inspection_review.get("parse_complete")
+            else ("partial" if has_structured_values else "failed")
+        )
+        has_structured_data = extraction_status != "failed"
+        return {
+            "handled": True,
+            "context_key": "inspection_certificate",
+            "context_payload": {**shaped_payload, "inspection_review": inspection_review},
+            "doc_info_patch": {
+                **base_patch,
+                "inspection_subtype": inspection_subtype,
+                "inspection_family": shaped_payload.get("inspection_family"),
+                "parse_complete": inspection_review.get("parse_complete"),
+                "parse_completeness": inspection_review.get("required_ratio"),
+                "missing_required_fields": inspection_review.get("missing_required_fields", []),
+                "required_fields_found": inspection_review.get("required_found"),
+                "required_fields_total": inspection_review.get("required_total"),
+                "review_reasons": list(base_patch.get("review_reasons") or []) + list(inspection_review.get("review_reasons") or []),
+                "extraction_status": extraction_status,
+                "extraction_error": None if has_structured_data else "launch_pipeline_inspection_extraction_failed",
+            },
+            "has_structured_data": has_structured_data,
+            "validation_doc_type": "inspection" if has_structured_data else None,
+            "post_validation_target": post_validation_target if has_structured_data else None,
+        }
 
 
 def _set_nested_value(root: Dict[str, Any], path: tuple[str, ...], value: Any) -> None:
@@ -1271,8 +1373,20 @@ def _shape_insurance_payload(payload: Dict[str, Any], *, insurance_subtype: str,
     shaped["policy_number"] = _first(
         shaped.get("policy_number"),
         shaped.get("certificate_number"),
-        _extract_label_value(raw_text, ["policy no", "policy number", "certificate no", "certificate number"]),
+        _extract_label_value(
+            raw_text,
+            [
+                "policy no",
+                "policy number",
+                "certificate no",
+                "certificate number",
+                "certificate ref",
+                "cert ref",
+                "beneficiary cert ref",
+            ],
+        ),
     )
+    shaped["certificate_number"] = _first(shaped.get("certificate_number"), shaped.get("policy_number"))
     shaped["insured_amount"] = _first(
         shaped.get("insured_amount"),
         _extract_amount_value(raw_text, ["insured amount", "sum insured", "coverage amount"]),
@@ -1450,7 +1564,7 @@ def _shape_inspection_payload(payload: Dict[str, Any], *, inspection_subtype: st
     shaped["inspection_result"] = _first(
         shaped.get("inspection_result"),
         shaped.get("inspection_results"),
-        _extract_label_value(raw_text, ["inspection result", "findings", "observations", "results"]),
+        _extract_label_value(raw_text, ["inspection result", "findings", "observations", "results", "result"]),
     )
     shaped["quality_finding"] = _first(
         shaped.get("quality_finding"),
@@ -1757,6 +1871,21 @@ def _apply_canonical_normalization(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     shaped["lc_classification"] = build_lc_classification(shaped)
     return shaped
+
+
+def _has_extracted_content(payload: Optional[Dict[str, Any]], candidate_fields: List[str]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    for field in candidate_fields:
+        value = payload.get(field)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if isinstance(value, (list, dict)) and not value:
+            continue
+        return True
+    return False
 
 
 def _extract_label_value(text: str, labels: List[str]) -> Optional[str]:

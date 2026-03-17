@@ -102,6 +102,10 @@ import { BlockedValidationCard } from "@/components/validation/ValidationStatusB
 import { DocumentDetailsDrawer, type DocumentForDrawer } from "@/components/lcopilot/DocumentDetailsDrawer";
 import { deriveValidationState } from "@/lib/validation/validationState";
 import { getCanonicalResultTruth } from "@/lib/lcopilot/resultTruth";
+import {
+  SPECIAL_CONDITIONS_PLACEHOLDER_TEXT,
+  summarizeSpecialConditions,
+} from "@/lib/exporter/specialConditions";
 
 type ExporterResultsProps = {
   embedded?: boolean;
@@ -893,6 +897,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const lcPortsCard = lcData ? renderPortsCard(lcData.ports) : null;
   const lcGoodsItemsList = lcData ? renderGoodsItemsList(lcGoodsItems) : null;
   const lcAdditionalConditions = lcData?.additional_conditions;
+  const lcAdditionalConditionSummary = useMemo(
+    () => summarizeSpecialConditions(formatConditions(lcAdditionalConditions)),
+    [lcAdditionalConditions],
+  );
   const referenceIssues: ReferenceIssue[] = Array.isArray(structuredResult?.reference_issues)
     ? (structuredResult?.reference_issues as ReferenceIssue[])
     : [];
@@ -1425,10 +1433,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     });
   }, [requirementChecklist, issueCards]);
   const customsPackReadiness = useMemo(() => {
-    const blockers = requirementChecklist.filter(
+    const derivedBlockers = requirementChecklist.filter(
       (item) => item.requirementStatus === 'missing' || item.reviewState === 'blocked',
     );
-    const reviews = requirementChecklist.filter(
+    const derivedReviews = requirementChecklist.filter(
       (item) => item.requirementStatus === 'partial' || item.reviewState === 'needs_review',
     );
     const ownerBuckets = {
@@ -1448,14 +1456,59 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       else if (owner.includes('compliance')) ownerBuckets.compliance += 1;
       else if (owner.includes('waiver')) ownerBuckets.waiver += 1;
     });
-    const status = blockers.length > 0 ? 'not_ready' : reviews.length > 0 || issueCards.length > 0 ? 'review_required' : 'ready';
-    const summary = blockers.length > 0
-      ? 'Not ready for clean presentation until missing required documents and blocked review items are cleared.'
-      : reviews.length > 0 || issueCards.length > 0
-      ? 'Presentation requires review or remediation before it should be treated as clean.'
-      : 'Document set appears ready for clean presentation on current review.';
-    return { status, summary, blockers, reviews, ownerBuckets };
-  }, [requirementChecklist, issueCards]);
+    const derivedStatus =
+      derivedBlockers.length > 0
+        ? 'not_ready'
+        : derivedReviews.length > 0 || issueCards.length > 0
+        ? 'review_required'
+        : 'ready';
+    const derivedSummary =
+      derivedBlockers.length > 0
+        ? 'Not ready for clean presentation until missing required documents and blocked review items are cleared.'
+        : derivedReviews.length > 0 || issueCards.length > 0
+        ? 'Presentation requires review or remediation before it should be treated as clean.'
+        : 'Document set appears ready for clean presentation on current review.';
+
+    const backendEligibility = canonicalResultTruth.submissionEligibility;
+    const backendCanSubmit = backendEligibility?.can_submit;
+    const backendCustomsReady = structuredResult?.customs_pack?.ready;
+    const backendReadinessAvailable =
+      typeof backendCanSubmit === 'boolean' || typeof backendCustomsReady === 'boolean';
+
+    if (!backendReadinessAvailable) {
+      return {
+        status: derivedStatus,
+        summary: derivedSummary,
+        blockers: derivedBlockers,
+        reviews: derivedReviews,
+        ownerBuckets,
+        source: 'derived',
+      };
+    }
+
+    const backendStatus =
+      backendCanSubmit === false || backendCustomsReady === false
+        ? 'not_ready'
+        : canonicalResultTruth.readinessLabel === 'Review needed'
+        ? 'review_required'
+        : 'ready';
+
+    const backendSummary =
+      backendStatus === 'not_ready'
+        ? 'Submission readiness follows backend validation eligibility and is currently blocked.'
+        : backendStatus === 'review_required'
+        ? 'Submission readiness follows backend validation eligibility and currently requires review.'
+        : 'Submission readiness follows backend validation eligibility and is ready for presentation.';
+
+    return {
+      status: backendStatus,
+      summary: backendSummary,
+      blockers: backendStatus === 'not_ready' ? derivedBlockers : [],
+      reviews: backendStatus === 'ready' ? [] : derivedReviews,
+      ownerBuckets,
+      source: 'backend',
+    };
+  }, [requirementChecklist, issueCards, canonicalResultTruth, structuredResult?.customs_pack?.ready]);
   const overallStatus = canonicalResultTruth.overallStatus;
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = Boolean(manifestData?.documents?.length);
@@ -2711,14 +2764,21 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                             </div>
                             {lcPortsCard}
                             {lcGoodsItemsList}
-                            {lcAdditionalConditions && (
+                            {(lcAdditionalConditionSummary.items.length > 0 ||
+                              lcAdditionalConditionSummary.placeholderOnly) && (
                               <div>
                                 <p className="text-sm font-semibold mb-2">Additional Conditions (47A)</p>
-                                <ul className="text-sm space-y-1.5 list-disc list-inside">
-                                  {formatConditions(lcAdditionalConditions).map((condition, idx) => (
-                                    <li key={idx} className="text-muted-foreground">{condition}</li>
-                                  ))}
-                                </ul>
+                                {lcAdditionalConditionSummary.items.length > 0 ? (
+                                  <ul className="text-sm space-y-1.5 list-disc list-inside">
+                                    {lcAdditionalConditionSummary.items.map((condition, idx) => (
+                                      <li key={idx} className="text-muted-foreground">{condition}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">
+                                    {SPECIAL_CONDITIONS_PLACEHOLDER_TEXT}
+                                  </p>
+                                )}
                               </div>
                             )}
                           </div>

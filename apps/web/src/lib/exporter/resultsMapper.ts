@@ -149,8 +149,19 @@ const formatTextValue = (value: any): string => {
   return String(value);
 };
 
-const normalizeSeverity = (value?: string | null): string => {
+const normalizeSeverity = (
+  value?: string | null,
+  issue?: { rule?: string | null; ruleset_domain?: string | null },
+): string => {
   const normalized = (value ?? '').toLowerCase();
+  const normalizedRule = String(issue?.rule ?? '').trim().toUpperCase();
+  const normalizedDomain = String(issue?.ruleset_domain ?? '').trim().toLowerCase();
+  if (
+    ['warn', 'warning'].includes(normalized) &&
+    (normalizedRule === 'LC-TYPE-UNKNOWN' || normalizedDomain === 'system.lc_type')
+  ) {
+    return 'minor';
+  }
   if (['critical', 'fail', 'error', 'high'].includes(normalized)) return 'critical';
   if (['major', 'warn', 'warning', 'medium'].includes(normalized)) return 'major';
   if (['minor', 'low'].includes(normalized)) return 'minor';
@@ -416,7 +427,7 @@ const mapIssues = (
     const firstDoc = documentNames[0];
     const docMeta = firstDoc ? lookup.get(firstDoc.toLowerCase()) : undefined;
 
-    const severity = normalizeSeverity(issue?.severity ?? provenanceEntry?.severity);
+    const severity = normalizeSeverity(issue?.severity ?? provenanceEntry?.severity, issue);
     const expected = formatTextValue(issue?.expected);
     const found = formatTextValue(issue?.found ?? issue?.actual);
     const suggestion = formatTextValue(issue?.suggestion ?? issue?.suggested_fix);
