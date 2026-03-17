@@ -63,7 +63,7 @@ import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 // LcHeader removed - LC info now shown inline in SummaryStrip
 // RiskPanel removed - action items now only in Issues tab
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
-import { getExporterOverviewTruth } from "@/lib/exporter/overviewTruth";
+import { getExporterOverviewTruth, getExporterPresentationTruth } from "@/lib/exporter/overviewTruth";
 // Extracted components and utilities from ExporterResults
 import {
   BankVerdictCard,
@@ -1404,6 +1404,21 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       },
     );
   }, [requirementChecklist]);
+  const exporterPresentationTruth = useMemo(
+    () =>
+      getExporterPresentationTruth({
+        canonicalResultTruth,
+        checklistTruth: {
+          missingRequirements: requirementChecklistSummary.missing,
+          partialRequirements: requirementChecklistSummary.partial,
+          blockedReviews: requirementChecklistSummary.blocked,
+          reviewRequired: requirementChecklistSummary.needsReview,
+          awaitingDocuments: requirementChecklistSummary.awaitingDocument,
+        },
+        totalIssues: issueCards.length,
+      }),
+    [canonicalResultTruth, requirementChecklistSummary, issueCards.length],
+  );
   const actionEngine = useMemo(() => {
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
 
@@ -1491,59 +1506,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       else if (owner.includes('compliance')) ownerBuckets.compliance += 1;
       else if (owner.includes('waiver')) ownerBuckets.waiver += 1;
     });
-    const derivedStatus =
-      derivedBlockers.length > 0
-        ? 'not_ready'
-        : derivedReviews.length > 0 || issueCards.length > 0
-        ? 'review_required'
-        : 'ready';
-    const derivedSummary =
-      derivedBlockers.length > 0
-        ? 'Not ready for clean presentation until missing required documents and blocked review items are cleared.'
-        : derivedReviews.length > 0 || issueCards.length > 0
-        ? 'Presentation requires review or remediation before it should be treated as clean.'
-        : 'Document set appears ready for clean presentation on current review.';
-
-    const backendEligibility = canonicalResultTruth.submissionEligibility;
-    const backendCanSubmit = backendEligibility?.can_submit;
-    const backendCustomsReady = structuredResult?.customs_pack?.ready;
-    const backendReadinessAvailable =
-      typeof backendCanSubmit === 'boolean' || typeof backendCustomsReady === 'boolean';
-
-    if (!backendReadinessAvailable) {
-      return {
-        status: derivedStatus,
-        summary: derivedSummary,
-        blockers: derivedBlockers,
-        reviews: derivedReviews,
-        ownerBuckets,
-        source: 'derived',
-      };
-    }
-
-    const backendStatus =
-      backendCanSubmit === false || backendCustomsReady === false
-        ? 'not_ready'
-        : canonicalResultTruth.readinessLabel === 'Review needed'
-        ? 'review_required'
-        : 'ready';
-
-    const backendSummary =
-      backendStatus === 'not_ready'
-        ? 'Submission readiness follows backend validation eligibility and is currently blocked.'
-        : backendStatus === 'review_required'
-        ? 'Submission readiness follows backend validation eligibility and currently requires review.'
-        : 'Submission readiness follows backend validation eligibility and is ready for presentation.';
-
     return {
-      status: backendStatus,
-      summary: backendSummary,
-      blockers: backendStatus === 'not_ready' ? derivedBlockers : [],
-      reviews: backendStatus === 'ready' ? [] : derivedReviews,
+      status: exporterPresentationTruth.presentationStatus,
+      summary: exporterPresentationTruth.presentationSummary,
+      blockers: exporterPresentationTruth.presentationStatus === 'not_ready' ? derivedBlockers : [],
+      reviews: exporterPresentationTruth.presentationStatus === 'ready' ? [] : derivedReviews,
       ownerBuckets,
-      source: 'backend',
+      source: 'shared',
     };
-  }, [requirementChecklist, issueCards, canonicalResultTruth, structuredResult?.customs_pack?.ready]);
+  }, [requirementChecklist, issueCards, exporterPresentationTruth]);
   const overallStatus = canonicalResultTruth.overallStatus;
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = Boolean(manifestData?.documents?.length);
@@ -1569,6 +1540,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         packGenerated,
         performanceInsights,
         canonicalResultTruth,
+        checklistTruth: {
+          missingRequirements: requirementChecklistSummary.missing,
+          partialRequirements: requirementChecklistSummary.partial,
+          blockedReviews: requirementChecklistSummary.blocked,
+          reviewRequired: requirementChecklistSummary.needsReview,
+          awaitingDocuments: requirementChecklistSummary.awaitingDocument,
+        },
       }),
     [
       totalDocuments,
@@ -1581,6 +1559,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       packGenerated,
       performanceInsights,
       canonicalResultTruth,
+      requirementChecklistSummary,
     ],
   );
   const submissionEligibility = canonicalResultTruth.submissionEligibility;
@@ -2428,7 +2407,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           ? 'Review needed'
                           : 'Blocked'}
                       </div>
-                      <Badge variant="outline">{customsPackReadiness.source === 'backend' ? 'Canonical readiness' : 'Derived readiness'}</Badge>
+                      <Badge variant="outline">{customsPackReadiness.source === 'shared' ? 'Shared presentation truth' : 'Derived readiness'}</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">{customsPackReadiness.summary}</p>
                   </div>
