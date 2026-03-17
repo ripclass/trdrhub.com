@@ -124,3 +124,40 @@ def test_mt700_compact_required_document_shorthand_maps_to_canonical_codes() -> 
     assert "certificate_of_origin" in codes
     assert "insurance_certificate" in codes
     assert "other_specified_document" not in codes
+
+
+def test_existing_unknown_workflow_does_not_block_recomputed_export_orientation() -> None:
+    taxonomy = _load_taxonomy_module()
+
+    classification = taxonomy.build_lc_classification(
+        {
+            "schema": "mt700",
+            "raw_text": "IRREVOCABLE DOCUMENTARY CREDIT SUBJECT TO UCP 600.",
+            "applicant": "GLOBAL IMPORTERS INC.\n1250 HUDSON STREET, NEW YORK, USA",
+            "beneficiary": "DHAKA KNITWEAR & EXPORTS LTD.\nPLOT 22, DEPZ, SAVAR, DHAKA, BANGLADESH",
+            "port_of_loading": "CHITTAGONG SEA PORT, BANGLADESH",
+            "port_of_discharge": "NEW YORK, USA",
+            "lc_classification": {"workflow_orientation": "unknown"},
+        }
+    )
+
+    assert classification["workflow_orientation"] == "export"
+
+
+def test_existing_non_unknown_workflow_orientation_remains_authoritative() -> None:
+    taxonomy = _load_taxonomy_module()
+
+    classification = taxonomy.build_lc_classification(
+        {
+            "schema": "mt700",
+            "raw_text": "IRREVOCABLE DOCUMENTARY CREDIT SUBJECT TO UCP 600.",
+            "applicant": "GLOBAL IMPORTERS INC.\n1250 HUDSON STREET, NEW YORK, USA",
+            "beneficiary": "DHAKA KNITWEAR & EXPORTS LTD.\nPLOT 22, DEPZ, SAVAR, DHAKA, BANGLADESH",
+            "port_of_loading": "CHITTAGONG SEA PORT, BANGLADESH",
+            "port_of_discharge": "NEW YORK, USA",
+            "lc_classification": {"workflow_orientation": "import"},
+        },
+        {"lc_type": "export"},
+    )
+
+    assert classification["workflow_orientation"] == "import"

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
+import sys
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
@@ -252,7 +255,7 @@ def detect_workflow_orientation(source: Dict[str, Any], legacy_payload: Dict[str
     existing = source.get("lc_classification")
     if isinstance(existing, dict):
         workflow = str(existing.get("workflow_orientation") or "").strip().lower()
-        if workflow in WORKFLOW_ORIENTATIONS:
+        if workflow in WORKFLOW_ORIENTATIONS - {"unknown"}:
             return workflow
 
     for raw in (legacy_payload.get("lc_type"), source.get("workflow_orientation"), source.get("lc_type")):
@@ -265,7 +268,83 @@ def detect_workflow_orientation(source: Dict[str, Any], legacy_payload: Dict[str
         return "domestic"
     if any(token in text for token in ("second beneficiary", "transferred credit", "intermediary", "trader")):
         return "intermediary_or_trader"
+    inferred_trade_lane = _detect_trade_lane_workflow(source, legacy_payload)
+    if inferred_trade_lane in {"import", "export"}:
+        return inferred_trade_lane
     return "unknown"
+
+
+def _detect_trade_lane_workflow(source: Dict[str, Any], legacy_payload: Dict[str, Any]) -> str:
+    detector = _load_lc_type_detector()
+    if detector is None:
+        return ""
+
+    shipment_context: Dict[str, Any] = {}
+    shipment = source.get("shipment")
+    if isinstance(shipment, dict):
+        shipment_context.update(shipment)
+    ports = source.get("ports")
+    if isinstance(ports, dict):
+        if ports.get("loading") and not shipment_context.get("port_of_loading"):
+            shipment_context["port_of_loading"] = ports.get("loading")
+        if ports.get("discharge") and not shipment_context.get("port_of_discharge"):
+            shipment_context["port_of_discharge"] = ports.get("discharge")
+
+    for key in (
+        "port_of_loading",
+        "port_of_discharge",
+        "port_of_loading_country",
+        "port_of_loading_country_name",
+        "port_of_loading_country_code",
+        "port_of_discharge_country",
+        "port_of_discharge_country_name",
+        "port_of_discharge_country_code",
+        "port_of_shipment",
+        "port_of_destination",
+    ):
+        value = source.get(key)
+        if value not in (None, "") and key not in shipment_context:
+            shipment_context[key] = value
+
+    request_context: Dict[str, Any] = {}
+    for source_dict in (legacy_payload, source):
+        if not isinstance(source_dict, dict):
+            continue
+        for legacy_key, request_key in (
+            ("user_type", "user_type"),
+            ("userType", "user_type"),
+            ("workflow_type", "workflow_type"),
+            ("workflowType", "workflow_type"),
+            ("company_country", "company_country"),
+            ("companyCountry", "company_country"),
+        ):
+            value = source_dict.get(legacy_key)
+            if value not in (None, "") and request_key not in request_context:
+                request_context[request_key] = value
+
+    guess = detector(source, shipment_context, request_context=request_context)
+    candidate = str((guess or {}).get("lc_type") or "").strip().lower()
+    if candidate in {"import", "export"}:
+        return candidate
+    return ""
+
+
+def _load_lc_type_detector():
+    try:
+        from app.services.lc_classifier import detect_lc_type
+
+        return detect_lc_type
+    except ModuleNotFoundError:
+        classifier_path = Path(__file__).resolve().parents[1] / "lc_classifier.py"
+        package_root = classifier_path.parents[2]
+        if str(package_root) not in sys.path:
+            sys.path.insert(0, str(package_root))
+        spec = importlib.util.spec_from_file_location("lc_taxonomy_lc_classifier", classifier_path)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return getattr(module, "detect_lc_type", None)
 
 
 def detect_instrument_type(source: Dict[str, Any], format_family: str, format_variant: str) -> str:
