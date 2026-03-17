@@ -1147,95 +1147,6 @@ export default function ExportLCUpload({
 
       {!isLoadingDraft && (
         <div className={wrapperClass}>
-        {/* Advanced LC Overrides / Notes */}
-        <Card className="mb-8 shadow-soft border-0">
-          <CardHeader>
-            <CardTitle>Advanced LC Overrides & Notes</CardTitle>
-            <CardDescription>
-              Auto-detected LC information is preferred. Use this area only when you need to correct detection behavior or add optional notes.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="lcNumber">LC Number *</Label>
-                <div className="relative">
-                  <Input
-                    id="lcNumber"
-                    placeholder="e.g., BD-2024-001"
-                    value={lcNumber}
-                    onChange={(e) => handleLCNumberChange(e.target.value)}
-                    className="mt-2"
-                  />
-                  {isCheckingLC && (
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      <div className="animate-spin w-4 h-4 border-2 border-exporter border-t-transparent rounded-full"></div>
-                    </div>
-                  )}
-                </div>
-                {versionInfo?.exists && (
-                  <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                      <div className="text-sm">
-                        <p className="font-medium text-amber-800">
-                          Amendment Detected
-                        </p>
-                        <p className="text-amber-700">
-                          LC #{lcNumber} already exists with {versionInfo.currentVersions} version{versionInfo.currentVersions !== 1 ? 's' : ''}.
-                          This upload will create <strong>{versionInfo.nextVersion}</strong>.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="issueDate">Issue Date</Label>
-                <Input
-                  id="issueDate"
-                  type="date"
-                  value={issueDate}
-                  onChange={(e) => setIssueDate(e.target.value)}
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label htmlFor="lcTypeOverride">LC Type Mode</Label>
-                <Select
-                  value={lcTypeOverride}
-                  onValueChange={(value) =>
-                    setLcTypeOverride(value as 'auto' | 'export' | 'import')
-                  }
-                >
-                  <SelectTrigger className="mt-2" id="lcTypeOverride">
-                    <SelectValue placeholder="Auto Detect" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">Auto-detect (recommended)</SelectItem>
-                    <SelectItem value="export">Force Export LC</SelectItem>
-                    <SelectItem value="import">Force Import LC</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Override when the detector misclassifies your LC. Auto mode keeps both importer and exporter checks aligned.
-                </p>
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="notes">Additional Notes (Optional)</Label>
-              <Textarea
-                id="notes"
-                placeholder="Any special instructions or notes about this LC..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="mt-2"
-                rows={3}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
         {templatePrefillInfo && (
           <Card className="mb-6 border-blue-200 bg-blue-50">
             <CardContent className="p-4">
@@ -1318,7 +1229,29 @@ export default function ExportLCUpload({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="border-2 border-dashed rounded-lg p-6 text-center border-exporter/30 bg-exporter/5">
+            <div
+              className={cn(
+                "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
+                lcIntake.status === "uploading"
+                  ? "border-exporter bg-exporter/5 cursor-wait"
+                  : "border-gray-200 hover:border-exporter/50 hover:bg-secondary/20 cursor-pointer"
+              )}
+              onClick={() => {
+                if (lcIntake.status === "uploading" || isProcessing) return;
+                const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
+                input?.click();
+              }}
+              role="button"
+              tabIndex={lcIntake.status === "uploading" || isProcessing ? -1 : 0}
+              onKeyDown={(e) => {
+                if (lcIntake.status === "uploading" || isProcessing) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
+                  input?.click();
+                }
+              }}
+            >
               <input
                 id="lc-intake-upload"
                 type="file"
@@ -1326,21 +1259,25 @@ export default function ExportLCUpload({
                 className="hidden"
                 onChange={handleLCIntakeFileChange}
               />
-              <div className="flex flex-col items-center gap-3">
-                <div className="bg-exporter/10 p-3 rounded-full">
-                  <Sparkles className="w-7 h-7 text-exporter" />
+              <div className="flex flex-col items-center gap-4">
+                <div className={cn("p-4 rounded-full", lcIntake.status === "uploading" ? "bg-exporter/10" : "bg-exporter/10")}>
+                  <Sparkles className="w-8 h-8 text-exporter" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-foreground mb-1">Upload LC first</h3>
-                  <p className="text-sm text-muted-foreground">
-                    We’ll check whether it is a real LC, identify flow, and extract required supporting documents.
+                  <h3 className="text-lg font-semibold text-foreground mb-2">
+                    {lcIntake.status === "uploading" ? "Resolving Letter of Credit..." : "Upload Letter of Credit"}
+                  </h3>
+                  <p className="text-muted-foreground mb-4">
+                    {lcIntake.status === "uploading"
+                      ? "We’re checking the LC, detecting workflow, and extracting required supporting documents."
+                      : "Click anywhere in this box or use the button below to choose the LC file first."}
                   </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
                   <Button asChild variant="outline" disabled={lcIntake.status === "uploading" || isProcessing}>
                     <label htmlFor="lc-intake-upload" className="cursor-pointer">
                       <Plus className="w-4 h-4 mr-2" />
-                      {lcIntake.file ? "Replace LC" : "Choose LC File"}
+                      Choose LC File
                     </label>
                   </Button>
                   {lcIntake.file && (
@@ -1398,6 +1335,23 @@ export default function ExportLCUpload({
             )}
           </CardContent>
         </Card>
+
+        {lcIntake.status === "uploading" && (
+          <Card className="mb-6 shadow-soft border-0">
+            <CardContent className="pt-6 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium text-foreground">Resolving Letter of Credit</p>
+                  <p className="text-sm text-muted-foreground">
+                    Checking the LC, identifying workflow, and extracting required supporting documents.
+                  </p>
+                </div>
+                <Badge variant="outline">LC upload in progress</Badge>
+              </div>
+              <Progress value={70} className="h-2" />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Step 1.5: Requirement summary / live checklist */}
         <Card className="mb-6 shadow-soft border-0">
@@ -1660,7 +1614,7 @@ export default function ExportLCUpload({
                     <p className="font-medium">{lcNumber || "Not provided"}</p>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Documents:</span>
+                    <span className="text-muted-foreground">Supporting Documents:</span>
                     <p className="font-medium">{completedFiles.length} files uploaded</p>
                   </div>
                   <div>
