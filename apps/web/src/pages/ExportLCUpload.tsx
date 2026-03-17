@@ -459,7 +459,67 @@ export default function ExportLCUpload({
           setIssueDate(draft.issueDate || '');
           setNotes(draft.notes || '');
 
-          if (draft.lcIntakeSnapshot) {
+          if (filesData.length > 0) {
+            const restoredLcFileData = filesData.find((fileData) => fileData.documentType === DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT);
+            const restoredSupportingFilesData = filesData.filter((fileData) => fileData.documentType !== DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT);
+
+            if (draft.lcIntakeSnapshot) {
+              const lcFile = restoredLcFileData?.dataUrl
+                ? dataUrlToFile(
+                    restoredLcFileData.dataUrl,
+                    draft.lcIntakeSnapshot.fileName || restoredLcFileData.name,
+                    draft.lcIntakeSnapshot.type || restoredLcFileData.type || 'application/pdf',
+                  )
+                : draft.lcIntakeSnapshot.fileName
+                ? new File([], draft.lcIntakeSnapshot.fileName, {
+                    type: draft.lcIntakeSnapshot.type || 'application/pdf',
+                  })
+                : null;
+
+              setLcIntake({
+                status: draft.lcIntakeSnapshot.status,
+                file: lcFile,
+                message: draft.lcIntakeSnapshot.message,
+                continuationAllowed: draft.lcIntakeSnapshot.continuationAllowed,
+                isLc: draft.lcIntakeSnapshot.isLc,
+                jobId: draft.lcIntakeSnapshot.jobId,
+                lcSummary: draft.lcIntakeSnapshot.lcSummary,
+                lcDetection: draft.lcIntakeSnapshot.lcDetection as any,
+                requiredDocumentTypes: draft.lcIntakeSnapshot.requiredDocumentTypes || [],
+                documentsRequired: draft.lcIntakeSnapshot.documentsRequired || [],
+                specialConditions: draft.lcIntakeSnapshot.specialConditions || [],
+                detectedDocuments: draft.lcIntakeSnapshot.detectedDocuments || [],
+              });
+            }
+
+            // Files available from session storage - restore them
+            const restoredFiles: UploadedFile[] = restoredSupportingFilesData.map((fileData) => {
+              const restoredFileData = fileData as RestoredFileData;
+              const detection = detectDocumentTypeFromFilename(restoredFileData.name);
+              const restoredDocumentType =
+                restoredFileData.documentType || restoredFileData.tag || detection.type;
+              return {
+                id: restoredFileData.id,
+                file: restoredFileData.dataUrl
+                  ? dataUrlToFile(restoredFileData.dataUrl, restoredFileData.name, restoredFileData.type)
+                  : new File([], restoredFileData.name, { type: restoredFileData.type }),
+                name: restoredFileData.name,
+                size: restoredFileData.size,
+                type: restoredFileData.type,
+                status: restoredFileData.status,
+                progress: restoredFileData.progress,
+                documentType: restoredDocumentType,
+                manualDocumentType: !!restoredFileData.manualDocumentType,
+                detectedType: restoredFileData.detectedType || detection.type,
+                detectedConfidence: restoredFileData.detectedConfidence ?? detection.confidence,
+                isTradeDocument: restoredFileData.isTradeDocument ?? detection.isTradeDoc,
+                relevanceWarning: restoredFileData.relevanceWarning ?? detection.warning,
+              };
+            });
+
+            setUploadedFiles(restoredFiles);
+            setHasSessionFiles(true);
+          } else if (draft.lcIntakeSnapshot) {
             setLcIntake({
               status: draft.lcIntakeSnapshot.status,
               file: draft.lcIntakeSnapshot.fileName
@@ -481,31 +541,6 @@ export default function ExportLCUpload({
           }
 
           if (filesData.length > 0) {
-            // Files available from session storage - restore them
-            const restoredFiles: UploadedFile[] = filesData.map((fileData) => {
-              const restoredFileData = fileData as RestoredFileData;
-              const detection = detectDocumentTypeFromFilename(restoredFileData.name);
-              const restoredDocumentType =
-                restoredFileData.documentType || restoredFileData.tag || detection.type;
-              return {
-                id: restoredFileData.id,
-                file: new File([], fileData.name), // Placeholder file object
-                name: restoredFileData.name,
-                size: restoredFileData.size,
-                type: restoredFileData.type,
-                status: restoredFileData.status,
-                progress: restoredFileData.progress,
-                documentType: restoredDocumentType,
-                manualDocumentType: !!restoredFileData.manualDocumentType,
-                detectedType: restoredFileData.detectedType || detection.type,
-                detectedConfidence: restoredFileData.detectedConfidence ?? detection.confidence,
-                isTradeDocument: restoredFileData.isTradeDocument ?? detection.isTradeDoc,
-                relevanceWarning: restoredFileData.relevanceWarning ?? detection.warning,
-              };
-            });
-
-            setUploadedFiles(restoredFiles);
-            setHasSessionFiles(true);
 
             toast({
               title: "Draft Loaded",
@@ -637,7 +672,15 @@ export default function ExportLCUpload({
     }
   };
 
-  const handleSaveDraft = () => {
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+
+  const handleSaveDraft = async () => {
     const completedFiles = uploadedFiles.filter(f => f.status === "completed");
     const hasResolvedOrAttachedLc = !!lcIntake.file || lcIntake.status === "resolved" || lcIntake.status === "ambiguous" || lcIntake.status === "invalid";
 
@@ -658,23 +701,38 @@ export default function ExportLCUpload({
         tag: file.documentType,
       }));
 
-      // Prepare files data for session storage (simplified)
-      const filesData: FileData[] = completedFiles.map(file => ({
-        id: file.id,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        documentType: file.documentType,
-        manualDocumentType: file.manualDocumentType,
-        detectedType: file.detectedType,
-        detectedConfidence: file.detectedConfidence,
-        isTradeDocument: file.isTradeDocument,
-        relevanceWarning: file.relevanceWarning,
-        status: file.status,
-        progress: file.progress,
-        // Note: Not storing actual file content for demo purposes
-        // In production, you might want to store small files as base64
-      }));
+      const lcFileData = lcIntake.file
+        ? {
+            id: `lc-${lcIntake.file.name}`,
+            name: lcIntake.file.name,
+            size: lcIntake.file.size,
+            type: lcIntake.file.type,
+            documentType: DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT,
+            status: 'completed' as const,
+            progress: 100,
+            dataUrl: await fileToDataUrl(lcIntake.file),
+          }
+        : null;
+
+      const completedFilesData = await Promise.all(
+        completedFiles.map(async (file) => ({
+          id: file.id,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          documentType: file.documentType,
+          manualDocumentType: file.manualDocumentType,
+          detectedType: file.detectedType,
+          detectedConfidence: file.detectedConfidence,
+          isTradeDocument: file.isTradeDocument,
+          relevanceWarning: file.relevanceWarning,
+          status: file.status,
+          progress: file.progress,
+          dataUrl: await fileToDataUrl(file.file),
+        })),
+      );
+
+      const filesData: FileData[] = lcFileData ? [lcFileData, ...completedFilesData] : completedFilesData;
 
       const savedDraft = saveDraft({
         id: currentDraftId || undefined,
@@ -818,6 +876,17 @@ export default function ExportLCUpload({
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const dataUrlToFile = (dataUrl: string, fileName: string, mimeType?: string) => {
+    const [header, body] = dataUrl.split(',');
+    const detectedMime = header?.match(/data:(.*?);base64/)?.[1] || mimeType || 'application/octet-stream';
+    const binary = atob(body || '');
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new File([bytes], fileName, { type: detectedMime });
   };
 
   const handlePreviewFile = (file: UploadedFile) => {
