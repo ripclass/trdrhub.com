@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATE_PATH = ROOT / "app" / "routers" / "validate.py"
+REQUEST_PARSING_PATH = ROOT / "app" / "routers" / "validation" / "request_parsing.py"
 LC_TYPES_PATH = ROOT / "app" / "core" / "lc_types.py"
 LC_CLASSIFIER_PATH = ROOT / "app" / "services" / "lc_classifier.py"
 LC_TAXONOMY_PATH = ROOT / "app" / "services" / "extraction" / "lc_taxonomy.py"
@@ -122,6 +123,24 @@ def test_live_route_detector_classifies_export_from_exporter_lane_and_raw_port_s
     assert guess["confidence"] > 0.5
 
 
+def test_live_route_detector_classifies_export_from_flat_lc_ports_without_shipment_context() -> None:
+    classifier = _load_module(LC_CLASSIFIER_PATH, "lc_classifier_live_route_flat_port_test")
+    lc_context = _live_like_lc_context()
+
+    guess = classifier.detect_lc_type(
+        lc_context,
+        {},
+        request_context={
+            "user_type": "exporter",
+            "workflow_type": "export-lc-intake",
+            "company_country": None,
+        },
+    )
+
+    assert guess["lc_type"] == "export"
+    assert guess["confidence"] > 0.5
+
+
 def test_live_route_response_builder_keeps_export_workflow_for_live_shaped_payload() -> None:
     validate_symbols = _load_validate_workflow_symbols()
     prepare_structured = validate_symbols["_prepare_extractor_outputs_for_structured_result"]
@@ -146,6 +165,57 @@ def test_live_route_response_builder_keeps_export_workflow_for_live_shaped_paylo
 
     assert structured_result["lc_type"] == "export"
     assert structured_result["lc_structured"]["lc_classification"]["workflow_orientation"] == "export"
+
+
+def test_intake_route_uses_top_level_lc_ports_for_shipment_context() -> None:
+    request_parsing = _load_module(REQUEST_PARSING_PATH, "request_parsing_live_route_test")
+    payload = {
+        "user_type": "exporter",
+        "workflow_type": "export-lc-intake",
+        "lc": {
+            "ports": {"unrelated": "value"},
+            "port_of_loading": "CHITTAGONG SEA PORT, BANGLADESH",
+            "port_of_discharge": "NEW YORK, USA",
+        },
+    }
+
+    shipment_context = request_parsing.resolve_shipment_context(payload)
+
+    assert shipment_context == {
+        "port_of_loading": "CHITTAGONG SEA PORT, BANGLADESH",
+        "port_of_discharge": "NEW YORK, USA",
+    }
+
+
+def test_intake_route_ignores_unknown_extracted_workflow_and_falls_back_to_detection() -> None:
+    validate_symbols = _load_validate_workflow_symbols()
+    extract_workflow_lc_type = validate_symbols["_extract_workflow_lc_type"]
+    classifier = _load_module(LC_CLASSIFIER_PATH, "lc_classifier_live_route_intake_test")
+    request_parsing = _load_module(REQUEST_PARSING_PATH, "request_parsing_live_route_intake_test")
+
+    lc_context = _live_like_lc_context()
+    lc_context["ports"] = {"unrelated": "value"}
+    lc_context["lc_classification"] = {"workflow_orientation": "unknown"}
+    lc_context["lc_type"] = "unknown"
+    payload = {
+        "user_type": "exporter",
+        "workflow_type": "export-lc-intake",
+        "lc": lc_context,
+    }
+
+    assert extract_workflow_lc_type(lc_context) is None
+
+    guess = classifier.detect_lc_type(
+        lc_context,
+        request_parsing.resolve_shipment_context(payload),
+        request_context={
+            "user_type": payload["user_type"],
+            "workflow_type": payload["workflow_type"],
+            "company_country": None,
+        },
+    )
+
+    assert guess["lc_type"] == "export"
 
 
 def test_exporter_lane_stays_unknown_when_ports_do_not_expose_country_signal() -> None:

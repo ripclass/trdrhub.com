@@ -36,19 +36,48 @@ def resolve_shipment_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         ctx = payload.get(key)
         if isinstance(ctx, dict):
             return ctx
-    lc_ports = (payload.get("lc") or {}).get("ports")
+    shipment: Dict[str, Any] = {}
+    lc_context = payload.get("lc")
+    if not isinstance(lc_context, dict):
+        return {}
+
+    lc_ports = lc_context.get("ports")
     if isinstance(lc_ports, dict):
-        shipment: Dict[str, Any] = {}
-        loading_value = lc_ports.get("port_of_loading") or lc_ports.get("loading")
-        discharge_value = lc_ports.get("port_of_discharge") or lc_ports.get("discharge")
-        if loading_value:
-            shipment["port_of_loading"] = loading_value
-        if discharge_value:
-            shipment["port_of_discharge"] = discharge_value
-        if shipment:
-            return shipment
-        return lc_ports
-    return {}
+        for source_key, shipment_key in (
+            ("port_of_loading", "port_of_loading"),
+            ("loading", "port_of_loading"),
+            ("port_of_discharge", "port_of_discharge"),
+            ("discharge", "port_of_discharge"),
+            ("port_of_shipment", "port_of_shipment"),
+            ("port_of_destination", "port_of_destination"),
+            ("port_of_loading_country", "port_of_loading_country"),
+            ("port_of_discharge_country", "port_of_discharge_country"),
+            ("port_of_loading_country_name", "port_of_loading_country_name"),
+            ("port_of_discharge_country_name", "port_of_discharge_country_name"),
+            ("port_of_loading_country_code", "port_of_loading_country_code"),
+            ("port_of_discharge_country_code", "port_of_discharge_country_code"),
+        ):
+            value = lc_ports.get(source_key)
+            if value not in (None, ""):
+                shipment[shipment_key] = value
+
+    for source_key, shipment_key in (
+        ("port_of_loading", "port_of_loading"),
+        ("port_of_discharge", "port_of_discharge"),
+        ("port_of_shipment", "port_of_shipment"),
+        ("port_of_destination", "port_of_destination"),
+        ("port_of_loading_country", "port_of_loading_country"),
+        ("port_of_discharge_country", "port_of_discharge_country"),
+        ("port_of_loading_country_name", "port_of_loading_country_name"),
+        ("port_of_discharge_country_name", "port_of_discharge_country_name"),
+        ("port_of_loading_country_code", "port_of_loading_country_code"),
+        ("port_of_discharge_country_code", "port_of_discharge_country_code"),
+    ):
+        value = lc_context.get(source_key)
+        if value not in (None, "") and shipment.get(shipment_key) in (None, ""):
+            shipment[shipment_key] = value
+
+    return shipment
 
 
 def extract_lc_type_override(payload: Dict[str, Any]) -> Optional[str]:

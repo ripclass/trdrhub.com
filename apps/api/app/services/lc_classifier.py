@@ -92,8 +92,10 @@ def detect_lc_type(
         or _normalize_country(lc_context.get("port_of_loading_country_name"))
         or _normalize_country(lc_context.get("port_of_loading_country_code"))
         or _extract_port_country(shipment_context, "port_of_loading")
+        or _extract_port_country(lc_context, "port_of_loading")
         or _normalize_country(ports_context.get("loading") or ports_context.get("port_of_loading"))
-        or _normalize_country(shipment_context.get("port_of_shipment"))
+        or _extract_port_country(shipment_context, "port_of_shipment")
+        or _extract_port_country(lc_context, "port_of_shipment")
     )
     pod_country = (
         _normalize_country(shipment_context.get("port_of_discharge_country"))
@@ -103,8 +105,10 @@ def detect_lc_type(
         or _normalize_country(lc_context.get("port_of_discharge_country_name"))
         or _normalize_country(lc_context.get("port_of_discharge_country_code"))
         or _extract_port_country(shipment_context, "port_of_discharge")
+        or _extract_port_country(lc_context, "port_of_discharge")
         or _normalize_country(ports_context.get("discharge") or ports_context.get("port_of_discharge"))
-        or _normalize_country(shipment_context.get("port_of_destination"))
+        or _extract_port_country(shipment_context, "port_of_destination")
+        or _extract_port_country(lc_context, "port_of_destination")
     )
     has_loading_country_signal = any(
         (

@@ -297,7 +297,7 @@ def _extract_workflow_lc_type(lc_context: Dict[str, Any]) -> Optional[str]:
     classification = lc_context.get("lc_classification")
     if isinstance(classification, dict):
         workflow = normalize_lc_type(str(classification.get("workflow_orientation") or "").strip().lower())
-        if workflow:
+        if workflow and workflow != LCType.UNKNOWN.value:
             return workflow
     raw_lc_type = (
         lc_context.get("lc_type")
@@ -306,7 +306,10 @@ def _extract_workflow_lc_type(lc_context: Dict[str, Any]) -> Optional[str]:
     )
     if raw_lc_type is None:
         return None
-    return normalize_lc_type(str(raw_lc_type).strip().lower())
+    workflow = normalize_lc_type(str(raw_lc_type).strip().lower())
+    if workflow == LCType.UNKNOWN.value:
+        return None
+    return workflow
 
 
 def _resolve_legacy_workflow_lc_fields(*contexts: Optional[Dict[str, Any]]) -> Dict[str, Any]:
