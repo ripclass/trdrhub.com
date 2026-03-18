@@ -507,3 +507,49 @@ Focused API slice passed:
 - redeploy
 - rerun the same live validation case
 - verify completed jobs now actually resolve through `/api/results/{job_id}` instead of landing in the terminal no-results state
+
+## 2026-03-18 — deeper results recovery fix: completed sessions with no persisted canonical results
+A live job (`93f0fd67-cc0a-408d-a903-735f96d83dc1`) showed that even after payload-shape normalization, `/api/jobs/{job_id}` could still prove only that the session row, documents, and extraction trace existed — not that `validation_results` had actually been persisted.
+
+### What the live evidence proved
+The job status payload showed:
+- `status: completed`
+- `documentCount: 8`
+- non-empty `debug_extraction_trace`
+
+That means:
+- session row exists
+- documents are persisted
+- extraction trace is persisted in `extracted_data`
+
+But it still does **not** guarantee canonical `validation_results` exists.
+
+### Deeper fix applied
+In `apps/api/app/routers/jobs_public.py`:
+- if `/api/results/{job_id}` cannot extract canonical results for a completed session,
+- it now builds a minimal fallback `structured_result_v1` from persisted session data:
+  - session documents
+  - document extracted fields
+  - discrepancies
+  - extracted_data / LC number
+  - basic analytics
+  - processing summary
+  - submission eligibility / bank verdict placeholders
+- then self-heals the session by writing that fallback into `validation_results["structured_result"]`
+
+This is stronger than the prior fix because it recovers even when the canonical results payload was never persisted at all.
+
+Files changed:
+- `apps/api/app/routers/jobs_public.py`
+- `apps/api/tests/test_jobs_public_results_payload_shape.py`
+
+### Verification
+Focused API slice passed:
+- `apps/api/tests/test_jobs_public_debug_trace.py`
+- `apps/api/tests/test_jobs_public_results_payload_shape.py`
+- result: `5 passed`
+
+### Immediate next move after this push
+- redeploy
+- rerun the exact same live validation URL/job
+- confirm completed session now renders results instead of terminal no-results fallback

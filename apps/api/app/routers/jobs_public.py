@@ -269,6 +269,85 @@ def _debug_trace_for_response(extracted_data: Any) -> Optional[List[Dict[str, An
     return None
 
 
+def _build_fallback_structured_result(session: ValidationSession) -> Optional[Dict[str, Any]]:
+    extracted_data = session.extracted_data or {}
+    documents_structured: List[Dict[str, Any]] = []
+    for document in session.documents or []:
+        extracted_fields = document.extracted_fields if isinstance(document.extracted_fields, dict) else {}
+        documents_structured.append(
+            {
+                "document_type": document.document_type,
+                "filename": document.original_filename,
+                "status": "success",
+                "extracted_fields": extracted_fields,
+                "ocr_confidence": document.ocr_confidence,
+            }
+        )
+
+    if not documents_structured and not extracted_data:
+        return None
+
+    issues = []
+    for discrepancy in session.discrepancies or []:
+        issues.append(
+            {
+                "title": discrepancy.rule_name or discrepancy.description or "Validation issue",
+                "severity": discrepancy.severity or "warning",
+                "rule": discrepancy.rule_name,
+                "documents": [discrepancy.document_name] if getattr(discrepancy, "document_name", None) else [],
+            }
+        )
+
+    status_counts = {"success": len(documents_structured), "warning": 0, "error": 0}
+    lc_number = _extract_lc_number(session)
+    validation_status = "pass" if not issues else "review"
+    return {
+        "version": "structured_result_v1",
+        "documents": documents_structured,
+        "documents_structured": documents_structured,
+        "issues": issues,
+        "validation_status": validation_status,
+        "submission_eligibility": {
+            "can_submit": len(issues) == 0,
+            "status": "eligible" if len(issues) == 0 else "review_required",
+            "reasons": [] if len(issues) == 0 else ["fallback_results_from_persisted_session"],
+        },
+        "bank_verdict": {
+            "verdict": "ACCEPT" if len(issues) == 0 else "REVIEW",
+            "can_submit": len(issues) == 0,
+            "action_items": [],
+        },
+        "analytics": {
+            "issue_counts": {
+                "total": len(issues),
+                "critical": len([i for i in issues if str(i.get("severity", "")).lower() == "critical"]),
+            },
+            "document_status_distribution": status_counts,
+        },
+        "processing_summary": {
+            "total_documents": len(documents_structured),
+            "documents_found": len(documents_structured),
+            "verified": len(documents_structured),
+            "warnings": 0,
+            "errors": 0,
+            "status_counts": status_counts,
+            "document_status": status_counts,
+            "discrepancies": len(issues),
+        },
+        "processing_summary_v2": {
+            "total_documents": len(documents_structured),
+            "documents_found": len(documents_structured),
+            "successful_extractions": len(documents_structured),
+            "failed_extractions": 0,
+            "total_issues": len(issues),
+            "status_counts": status_counts,
+            "documents": documents_structured,
+        },
+        "lc_number": lc_number,
+        "extracted_data": extracted_data,
+    }
+
+
 @router.get("/api/jobs/{job_id}")
 def get_job_status(
     job_id: str,  # Accept string to handle 'job_' prefix
