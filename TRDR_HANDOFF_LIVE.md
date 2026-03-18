@@ -234,3 +234,17 @@ That narrowed the remaining seam further:
 ### Verification
 Focused test still passes:
 - `shows a terminal no-results state instead of pretending validation is still running`
+
+## 2026-03-18 — deploy repair for `f163ddb`
+The first deployment of commit `f163ddb` failed in Vercel with an esbuild syntax error (`Unexpected "}"`).
+
+### Actual cause
+`apps/web/src/hooks/use-lcopilot.ts` still contained a duplicated tail fragment after the real file end (same class of file-tail corruption seen earlier in other exporter files). The duplicate block started after the real `useValidationHistory` return and introduced an extra closing brace sequence.
+
+### Repair
+- removed the duplicated tail fragment from `apps/web/src/hooks/use-lcopilot.ts`
+- reran `npm run build` inside `apps/web`
+- local production build succeeds now
+
+### Important lesson
+When exporter fixes touch this file, always check the file tail for duplicate append junk before trusting a deploy/build failure at face value.

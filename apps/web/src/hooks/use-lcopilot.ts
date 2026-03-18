@@ -833,17 +833,3 @@ export const useValidationHistory = (limit: number = 10, statusFilter?: string) 
     clearError: () => setError(null),
   };
 };
-fect(() => {
-    fetchHistory().catch(() => {
-      // Error already handled in fetchHistory
-    });
-  }, [fetchHistory]);
-
-  return {
-    history,
-    isLoading,
-    error,
-    refetch: fetchHistory,
-    clearError: () => setError(null),
-  };
-};
