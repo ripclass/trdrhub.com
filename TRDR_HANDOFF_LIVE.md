@@ -472,3 +472,38 @@ However, focused web tests in this branch are already broadly noisy/red in unrel
 - rerun live validation
 - confirm results page renders instead of crashing on `terminalResultsTimedOut`
 - only then continue performance / multimodal-first proof work
+
+## 2026-03-18 — backend results seam fix: completed job with no canonical payload
+After the frontend crash was fixed, live validation exposed the next honest seam: results page could show a completed job but still say canonical results were unavailable.
+
+### Root cause
+In `apps/api/app/routers/jobs_public.py`:
+- `/api/jobs/{job_id}` could report the session as completed whenever `validation_results` existed
+- but `/api/results/{job_id}` only accepted a narrow version-tagged `structured_result_v1` payload shape via `_extract_option_e_payload()`
+
+That meant a job could be **Completed** while the results route still 404'd with:
+- `error_code: no_structured_result`
+
+if the stored payload was valid-but-unversioned or nested differently.
+
+### Fix applied
+- broadened structured-result detection to accept legacy/unversioned but clearly valid structured payloads
+- normalized accepted payloads into canonical shape
+- backfilled `version: structured_result_v1`
+- synchronized `documents` / `documents_structured`
+- self-healed the stored session payload by writing normalized nested `structured_result` back when served
+
+Files changed:
+- `apps/api/app/routers/jobs_public.py`
+- `apps/api/tests/test_jobs_public_results_payload_shape.py`
+
+### Verification
+Focused API slice passed:
+- `apps/api/tests/test_jobs_public_debug_trace.py`
+- `apps/api/tests/test_jobs_public_results_payload_shape.py`
+- result: `4 passed`
+
+### Immediate next move after this push
+- redeploy
+- rerun the same live validation case
+- verify completed jobs now actually resolve through `/api/results/{job_id}` instead of landing in the terminal no-results state

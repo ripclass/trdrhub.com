@@ -135,13 +135,45 @@ def _summarize_documents(results_payload: Dict[str, Any]) -> Optional[Dict[str, 
     return summary
 
 
+def _looks_like_structured_result(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    hallmark_keys = {
+        "documents",
+        "documents_structured",
+        "issues",
+        "processing_summary",
+        "processing_summary_v2",
+        "validation_status",
+        "submission_eligibility",
+        "bank_verdict",
+        "analytics",
+        "lc_structured",
+        "lc_data",
+    }
+    return any(key in payload for key in hallmark_keys)
+
+
+def _normalize_structured_result_shape(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(payload)
+    normalized.setdefault("version", "structured_result_v1")
+    documents = normalized.get("documents") or normalized.get("documents_structured") or []
+    if isinstance(documents, list):
+        normalized.setdefault("documents", documents)
+        normalized.setdefault("documents_structured", documents)
+    return normalized
+
+
 def _extract_option_e_payload(payload: Any) -> Optional[Dict[str, Any]]:
     if isinstance(payload, dict):
         if payload.get("version") == "structured_result_v1":
-            return payload
+            return _normalize_structured_result_shape(payload)
         nested = payload.get("structured_result")
-        if isinstance(nested, dict) and nested.get("version") == "structured_result_v1":
-            return nested
+        if isinstance(nested, dict):
+            if nested.get("version") == "structured_result_v1" or _looks_like_structured_result(nested):
+                return _normalize_structured_result_shape(nested)
+        if _looks_like_structured_result(payload):
+            return _normalize_structured_result_shape(payload)
     return None
 
 
@@ -334,6 +366,12 @@ def get_job_results(
 
     stored_payload = session.validation_results or {}
     structured_result = _extract_option_e_payload(stored_payload)
+    if structured_result and isinstance(stored_payload, dict):
+        nested = stored_payload.get("structured_result") if isinstance(stored_payload.get("structured_result"), dict) else None
+        if nested is not structured_result and nested != structured_result:
+            session.validation_results = {**stored_payload, "structured_result": structured_result}
+            db.commit()
+            db.refresh(session)
     if not structured_result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
