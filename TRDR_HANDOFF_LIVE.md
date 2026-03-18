@@ -585,3 +585,38 @@ No backend payload/result fixes can help until this routing seam is deployed.
 - probe `https://trdrhub.com/api/results/{job_id}` directly again
 - verify it now reaches Render instead of 404ing at the web origin
 - then re-open the same live results page
+
+## 2026-03-18 — actual active Vercel rewrite fixed in `apps/web/vercel.json`
+After confirming production was already on commit `7d3ea08`, direct probing clarified the last routing mismatch:
+
+### Live probe results
+- `https://trdrhub.com/api/results/{job_id}` -> `404 Not Found`
+- `https://trdrhub-api.onrender.com/api/results/{job_id}` -> `403 Not authenticated`
+- `https://trdrhub-api.onrender.com/results/{job_id}` -> `404 Not Found`
+
+### What that proved
+The backend route is real at:
+- `/api/results/{job_id}`
+
+So if the web origin had been rewriting correctly, `trdrhub.com/api/results/...` should have surfaced the backend response shape instead of a plain 404.
+
+### Root cause
+The **active app-level Vercel config** in `apps/web/vercel.json` had this rewrite:
+- `/api/(.*)` -> `https://trdrhub-api.onrender.com/$1`
+
+That strips the `/api` prefix and incorrectly turns:
+- `/api/results/{job_id}` into `https://trdrhub-api.onrender.com/results/{job_id}`
+
+which does not exist.
+
+### Fix applied
+Patched `apps/web/vercel.json` to:
+- `/api/(.*)` -> `https://trdrhub-api.onrender.com/api/$1`
+
+This is the actual live production rewrite fix for the web origin.
+
+### Immediate next move after this push
+- redeploy web again
+- probe `https://trdrhub.com/api/results/{job_id}`
+- confirm the web origin now returns the backend-style response instead of 404
+- then re-open the same live results page

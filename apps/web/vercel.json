@@ -11,7 +11,7 @@
     },
     {
       "source": "/api/(.*)",
-      "destination": "https://trdrhub-api.onrender.com/$1"
+      "destination": "https://trdrhub-api.onrender.com/api/$1"
     },
     {
       "source": "/(.*)",
