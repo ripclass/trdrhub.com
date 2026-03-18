@@ -640,7 +640,12 @@ export const useCanonicalJobResult = (
     isPolling,
     jobError,
     results: visibleResults,
-    isLoading: enabled && !visibleResults && (isLoadingResults || isPolling || (!jobStatus && !jobError && !resultsError)),
+    isLoading:
+      enabled &&
+      !visibleResults &&
+      !terminalResultsTimedOut &&
+      !isTerminalWithoutResults &&
+      (isLoadingResults || (!isTerminal && isPolling) || isAwaitingInitialState),
     resultsError: visibleResults ? null : resultsError ?? jobError,
     refreshResults,
   };
@@ -815,6 +820,20 @@ export const useValidationHistory = (limit: number = 10, statusFilter?: string) 
   }, [limit, statusFilter]);
 
   useEffect(() => {
+    fetchHistory().catch(() => {
+      // Error already handled in fetchHistory
+    });
+  }, [fetchHistory]);
+
+  return {
+    history,
+    isLoading,
+    error,
+    refetch: fetchHistory,
+    clearError: () => setError(null),
+  };
+};
+fect(() => {
     fetchHistory().catch(() => {
       // Error already handled in fetchHistory
     });

@@ -213,3 +213,24 @@ Focused test passes:
 
 ### File changed
 - `apps/web/src/hooks/use-lcopilot.ts`
+
+## 2026-03-18 — follow-up hung results-request escape hatch
+A later live report on job `065b3748-c5cc-48ea-863b-5261f48725af` showed the same contradictory state still persisting even after long delay:
+- `Validation in progress`
+- `Current status: Completed`
+- still stuck after ~30 minutes
+
+### Stronger diagnosis
+That narrowed the remaining seam further:
+- this was not only lingering poll state
+- the terminal results request path itself can hang long enough to keep the shell in perpetual loading
+
+### Follow-up fix
+`apps/web/src/hooks/use-lcopilot.ts`
+- added `terminalResultsTimedOut`
+- when job status is terminal, results are still absent, and results-loading remains stuck, the hook now times out that generic loading state after 4 seconds
+- this prevents a hung `/api/results` path from keeping the review shell in fake in-progress mode forever
+
+### Verification
+Focused test still passes:
+- `shows a terminal no-results state instead of pretending validation is still running`
