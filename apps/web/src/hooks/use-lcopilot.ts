@@ -537,6 +537,8 @@ export const useCanonicalJobResult = (
   const [resultsJobId, setResultsJobId] = useState<string | null>(null);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
   const [resultsError, setResultsError] = useState<ValidationError | null>(null);
+  const [terminalResultsTimedOut, setTerminalResultsTimedOut] = useState(false);
+  const [authRetryCount, setAuthRetryCount] = useState(0);
   const inFlightRef = useRef<Promise<ValidationResults | null> | null>(null);
 
   useEffect(() => {
@@ -551,6 +553,7 @@ export const useCanonicalJobResult = (
     setResults(cached);
     setResultsJobId(jobId);
     setResultsError(null);
+    setAuthRetryCount(0);
     inFlightRef.current = null;
   }, [jobId, queryClient]);
 
@@ -583,6 +586,11 @@ export const useCanonicalJobResult = (
           return data;
         } catch (err: any) {
           const validationError = toResultsError(err);
+          const authHydrationFailure = reason === 'auto' && isAuthHydrationError(validationError) && authRetryCount < 3;
+          if (authHydrationFailure) {
+            setAuthRetryCount((count) => count + 1);
+            return null;
+          }
           if (!suppressError) {
             setResultsError(validationError);
             throw validationError;
@@ -597,7 +605,7 @@ export const useCanonicalJobResult = (
       inFlightRef.current = request;
       return request;
     },
-    [enabled, jobId, jobStatus?.status, queryClient],
+    [authRetryCount, enabled, jobId, jobStatus?.status, queryClient],
   );
 
   const visibleResults =
@@ -608,8 +616,8 @@ export const useCanonicalJobResult = (
   const normalizedStatus = normalizeJobStatus(jobStatus?.status);
   const isTerminal = TERMINAL_JOB_STATUSES.has(normalizedStatus);
   const isAwaitingInitialState = !jobStatus && !jobError && !resultsError;
-  const isTerminalWithoutResults = enabled && isTerminal && !visibleResults;
-  const [terminalResultsTimedOut, setTerminalResultsTimedOut] = useState(false);
+  const isAuthRetrying = enabled && isTerminal && !visibleResults && authRetryCount > 0 && authRetryCount <= 3 && !resultsError;
+  const isTerminalWithoutResults = enabled && isTerminal && !visibleResults && !isAuthRetrying;
 
   useEffect(() => {
     if (!enabled || !isTerminalWithoutResults || !isLoadingResults) {
@@ -625,16 +633,19 @@ export const useCanonicalJobResult = (
   }, [enabled, isLoadingResults, isTerminalWithoutResults]);
 
   useEffect(() => {
-    if (!enabled || !jobId || visibleResults || isLoadingResults) {
+    if (!enabled || !jobId || visibleResults || isLoadingResults || !isTerminal) {
       return;
     }
 
-    if (isTerminal) {
+    const delayMs = authRetryCount > 0 ? 1200 : 0;
+    const timeoutId = setTimeout(() => {
       refreshResults('auto').catch(() => {
         // surfaced through hook state once the job is terminal
       });
-    }
-  }, [enabled, isLoadingResults, isTerminal, jobId, refreshResults, visibleResults]);
+    }, delayMs);
+
+    return () => clearTimeout(timeoutId);
+  }, [authRetryCount, enabled, isLoadingResults, isTerminal, jobId, refreshResults, visibleResults]);
 
   useEffect(() => {
     if (!enabled || !jobId || visibleResults || isLoadingResults || jobStatus?.status) {

@@ -620,3 +620,31 @@ This is the actual live production rewrite fix for the web origin.
 - probe `https://trdrhub.com/api/results/{job_id}`
 - confirm the web origin now returns the backend-style response instead of 404
 - then re-open the same live results page
+
+## 2026-03-18 — auth-hydration mitigation on terminal results fetch
+After production routing was fixed, direct browser probing of `https://trdrhub.com/api/results/{job_id}` returned:
+- `{"detail":"Not authenticated"}`
+
+That is expected for a direct address-bar hit, because the endpoint requires bearer auth and the browser location bar does not send the JS-added Authorization header.
+
+### Remaining likely seam
+Inside the actual app flow, terminal results fetch can still race with frontend auth/session hydration:
+- results page calls `/api/results/{job_id}`
+- Supabase/backend token is not yet attached on the first terminal fetch
+- backend returns 401/403
+- UI falls too quickly into terminal no-results/error state
+
+### Mitigation applied
+In `apps/web/src/hooks/use-lcopilot.ts`:
+- detect auth-hydration style results errors (401/403 / not authenticated)
+- when they occur during automatic terminal results fetch, retry instead of surfacing immediately
+- track a short auth-retry window (`authRetryCount`)
+- keep terminal results in a loading/retrying state while auth settles instead of immediately concluding no-results
+
+### Important truth
+This is a frontend resilience mitigation for likely auth-hydration races. It does not change backend auth rules. Direct unauthenticated hits to `/api/results/{job_id}` should still return auth errors.
+
+### Immediate next move after this push
+- redeploy web
+- open the in-app results page again (not the raw URL directly)
+- confirm the page either resolves after auth settles or at least no longer falls prematurely into terminal no-results due to an early 401/403 race
