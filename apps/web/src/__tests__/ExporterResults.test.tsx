@@ -88,14 +88,14 @@ vi.mock('@/config/exporterFeatureFlags', () => ({
 describe('ExporterResults', () => {
   beforeEach(() => {
     activeResults = buildValidationResults();
-    mockUseCanonicalJobResult.mockReturnValue({
+    mockUseCanonicalJobResult.mockImplementation(() => ({
       jobStatus: { status: 'completed' },
       results: activeResults,
       isLoading: false,
       resultsError: null,
       jobError: null,
       refreshResults: vi.fn().mockResolvedValue(activeResults),
-    });
+    }));
   });
 
   it('renders overview metrics from processing summary', async () => {
@@ -394,6 +394,135 @@ describe('ExporterResults', () => {
     expect(within(checklistCard).getAllByText(/Packing List/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).getAllByText(/Certificate of Origin/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).getAllByText(/Insurance Certificate/i).length).toBeGreaterThan(0);
+  });
+
+  it('labels summary confidence as workflow confidence instead of generic confidence', async () => {
+    const confidenceResults = buildValidationResults();
+    confidenceResults.structured_result = {
+      ...confidenceResults.structured_result,
+      lc_type_confidence: 0.85,
+      lc_structured: {
+        ...(confidenceResults.structured_result?.lc_structured ?? {}),
+        lc_classification: {
+          workflow_orientation: 'export',
+          instrument_type: 'documentary_credit',
+        },
+      },
+    } as typeof confidenceResults.structured_result;
+    activeResults = confidenceResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+    );
+
+    expect(screen.getByText(/85% workflow confidence/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^85% confidence$/i)).toBeNull();
+  });
+
+  it('keeps non-document requirement conditions out of checklist rows and surfaces them separately', async () => {
+    const requirementResults = buildValidationResults();
+    requirementResults.documents = requirementResults.documents.map((doc) => {
+      if (doc.typeKey === 'beneficiary_certificate') {
+        return {
+          ...doc,
+          requirementStatus: 'matched',
+          reviewState: 'ready',
+        };
+      }
+      return doc;
+    });
+    requirementResults.structured_result = {
+      ...requirementResults.structured_result,
+      lc_structured: {
+        ...(requirementResults.structured_result?.lc_structured ?? {}),
+        lc_classification: {
+          workflow_orientation: 'export',
+          instrument_type: 'documentary_credit',
+          required_documents: [
+            {
+              code: 'beneficiary_certificate',
+              display_name: 'Beneficiary Certificate',
+              raw_text: 'BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND MANUFACTURED IN 2026.',
+            },
+          ],
+          requirement_conditions: [
+            'ALL DOCUMENTS MUST SHOW LC NO. EXP2026BD001 AND BUYER PURCHASE ORDER NO. GBE-44592.',
+          ],
+          unmapped_requirements: [
+            'UNKNOWN CERTIFICATE WORDING REQUIRING MANUAL MAPPING.',
+          ],
+        },
+      },
+    } as typeof requirementResults.structured_result;
+    activeResults = requirementResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+    );
+
+    const checklistCard = findCardByTitle(/Required Document Checklist/i);
+    expect(within(checklistCard).getAllByText(/Beneficiary Certificate/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).queryByText(/Required Document 1/i)).toBeNull();
+    expect(within(checklistCard).queryByText(/Other Specified Document/i)).toBeNull();
+    expect(within(checklistCard).getByText(/Document Presentation Conditions/i)).toBeInTheDocument();
+    expect(within(checklistCard).getByText(/ALL DOCUMENTS MUST SHOW LC NO/i)).toBeInTheDocument();
+    expect(within(checklistCard).getByText(/Requirement Text Needing Mapping/i)).toBeInTheDocument();
+    expect(within(checklistCard).getByText(/UNKNOWN CERTIFICATE WORDING REQUIRING MANUAL MAPPING/i)).toBeInTheDocument();
+  });
+
+  it('uses canonical LC results in the drawer instead of raw per-document LC fields', async () => {
+    const drawerResults = buildValidationResults();
+    drawerResults.documents = drawerResults.documents.map((doc) =>
+      doc.typeKey === 'letter_of_credit'
+        ? {
+            ...doc,
+            extractedFields: {
+              bl_number: 'MADE',
+              issue_date: '260415',
+              issuer: 'MARKING: NAME, BUYER NAME, LC NUMBER, STYLE, SIZE BREAKDOWN.',
+            },
+          }
+        : doc,
+    );
+    drawerResults.structured_result = {
+      ...drawerResults.structured_result,
+      lc_structured: {
+        ...(drawerResults.structured_result?.lc_structured ?? {}),
+        number: 'EXP2026BD001',
+        issue_date: '2026-04-15',
+        expiry_date: '2026-10-15',
+        latest_shipment_date: '2026-09-30',
+        beneficiary: 'Dhaka Knitwear & Exports Ltd.',
+        port_of_loading: 'CHITTAGONG SEA PORT, BANGLADESH',
+        required_documents_detailed: [
+          {
+            code: 'beneficiary_certificate',
+            display_name: 'Beneficiary Certificate',
+            raw_text: 'BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND MANUFACTURED IN 2026.',
+          },
+        ],
+      },
+    } as typeof drawerResults.structured_result;
+    activeResults = drawerResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+    const lcCard = findCardByTitle(/^LC\.pdf$/i);
+    await user.click(within(lcCard).getByRole('button', { name: /View Details/i }));
+
+    expect(screen.getByText(/Issue Date/i)).toBeInTheDocument();
+    expect(screen.getByText('2026-04-15')).toBeInTheDocument();
+    expect(screen.getAllByText(/Required Documents/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND MANUFACTURED IN 2026\./i)).toBeInTheDocument();
+    expect(screen.queryByText(/B\/L Number/i)).toBeNull();
+    expect(screen.queryByText(/^MADE$/i)).toBeNull();
   });
 
   it('does not present generic 47A placeholders as extracted condition detail', async () => {

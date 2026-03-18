@@ -95,7 +95,7 @@ export function SummaryStrip({
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <Badge variant="secondary" className="text-xs">{lcTypeLabel}</Badge>
                   {lcTypeConfidence != null && lcTypeConfidence > 0 && (
-                    <span className="text-xs text-muted-foreground">{lcTypeConfidence}% confidence</span>
+                    <span className="text-xs text-muted-foreground">{lcTypeConfidence}% workflow confidence</span>
                   )}
                 </div>
                 <p className="text-sm text-muted-foreground">

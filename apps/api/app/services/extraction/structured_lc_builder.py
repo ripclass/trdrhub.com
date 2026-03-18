@@ -309,6 +309,19 @@ def build_unified_structured_result(
     if not isinstance(lc_classification, dict):
         lc_classification = build_lc_classification(extractor_outputs, legacy_payload)
     lc_type_fields = _resolve_legacy_lc_type_fields(extractor_outputs, legacy_payload, lc_classification)
+    required_documents_detailed = (
+        extractor_outputs.get("required_documents_detailed")
+        if isinstance(extractor_outputs.get("required_documents_detailed"), list)
+        else (lc_classification or {}).get("required_documents")
+    ) or []
+    requirement_conditions = _coerce_text_sequence(
+        extractor_outputs.get("requirement_conditions")
+        or (lc_classification or {}).get("requirement_conditions")
+    )
+    unmapped_requirements = _coerce_text_sequence(
+        extractor_outputs.get("unmapped_requirements")
+        or (lc_classification or {}).get("unmapped_requirements")
+    )
 
     # Build dates object from extractor outputs
     dates = {
@@ -344,6 +357,9 @@ def build_unified_structured_result(
         "lc_classification": lc_classification,
         "documents_required": documents_required,
         "required_document_types": required_document_types,
+        "required_documents_detailed": required_documents_detailed,
+        "requirement_conditions": requirement_conditions,
+        "unmapped_requirements": unmapped_requirements,
         "additional_conditions": additional_conditions,
         "hs_codes": extractor_outputs.get("hs_codes"),
         "lc_type": lc_type_fields["lc_type"],

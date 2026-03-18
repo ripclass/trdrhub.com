@@ -138,7 +138,12 @@ from app.services.extraction.ai_first_extractor import (
 )
 from app.services.extraction.launch_pipeline import get_launch_extraction_pipeline
 from app.services.extraction.iso20022_lc_extractor import detect_iso20022_schema
-from app.services.extraction.lc_taxonomy import build_lc_classification, normalize_required_documents
+from app.services.extraction.lc_taxonomy import (
+    build_lc_classification,
+    normalize_required_documents,
+    extract_requirement_conditions,
+    extract_unmapped_requirements,
+)
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
@@ -416,7 +421,7 @@ def _infer_required_document_types_from_lc(lc_payload: Dict[str, Any]) -> List[s
         return sorted(set(normalized_codes))
 
     texts: List[str] = []
-    for key in ("documents_required", "required_documents", "additional_conditions", "clauses", "clauses_47a"):
+    for key in ("documents_required", "required_documents"):
         texts.extend(_coerce_text_list(lc_payload.get(key)))
 
     mt700 = lc_payload.get("mt700") or {}
@@ -424,7 +429,6 @@ def _infer_required_document_types_from_lc(lc_payload: Dict[str, Any]) -> List[s
         blocks = mt700.get("blocks") or {}
         if isinstance(blocks, dict):
             texts.extend(_coerce_text_list(blocks.get("46A")))
-            texts.extend(_coerce_text_list(blocks.get("47A")))
 
     haystack = "\n".join(texts).lower()
     matches: List[str] = []
@@ -471,6 +475,8 @@ def _prepare_extractor_outputs_for_structured_result(payload: Optional[Dict[str,
         for field in (
             "documents_required",
             "required_documents",
+            "requirement_conditions",
+            "unmapped_requirements",
             "additional_conditions",
             "clauses",
             "clauses_47a",
@@ -518,6 +524,8 @@ def _prepare_extractor_outputs_for_structured_result(payload: Optional[Dict[str,
         "clauses": (lc_payload or {}).get("clauses") or [],
         "documents_required": (lc_payload or {}).get("documents_required") or (lc_payload or {}).get("required_documents") or [],
         "required_document_types": _infer_required_document_types_from_lc(lc_payload or {}),
+        "requirement_conditions": (lc_payload or {}).get("requirement_conditions") or [],
+        "unmapped_requirements": (lc_payload or {}).get("unmapped_requirements") or [],
         "additional_conditions": (lc_payload or {}).get("additional_conditions") or (lc_payload or {}).get("clauses_47a") or [],
         "timeline": [],
         "issues": [],
@@ -2014,16 +2022,20 @@ async def validate_doc(
 
         if intake_only:
             lc_summary = _build_lc_intake_summary(lc_context)
+            required_documents_detailed = normalize_required_documents(lc_context)
             required_document_types = _infer_required_document_types_from_lc(lc_context)
+            requirement_conditions = extract_requirement_conditions(lc_context)
+            unmapped_requirements = extract_unmapped_requirements(lc_context)
             special_conditions = _coerce_text_list(
                 lc_context.get("additional_conditions")
                 or lc_context.get("clauses")
                 or lc_context.get("clauses_47a")
             )
-            documents_required = _coerce_text_list(
-                lc_context.get("documents_required")
-                or lc_context.get("required_documents")
-            )
+            documents_required = [
+                str(item.get("raw_text") or item.get("display_name") or item.get("code")).strip()
+                for item in required_documents_detailed
+                if isinstance(item, dict) and str(item.get("raw_text") or item.get("display_name") or item.get("code")).strip()
+            ]
             intake_status = "resolved" if has_lc_document else "invalid"
             return {
                 "status": intake_status,
@@ -2042,6 +2054,9 @@ async def validate_doc(
                 "lc_summary": lc_summary,
                 "required_document_types": required_document_types,
                 "documents_required": documents_required,
+                "required_documents_detailed": required_documents_detailed,
+                "requirement_conditions": requirement_conditions,
+                "unmapped_requirements": unmapped_requirements,
                 "special_conditions": special_conditions,
                 "detected_documents": [
                     {

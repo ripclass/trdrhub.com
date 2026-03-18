@@ -59,6 +59,7 @@ vi.mock("@/api/sme-templates", () => ({
 import {
   detectDocumentTypeFromFilename,
   formatWorkflowBadgeLabel,
+  formatWorkflowConfidenceBadgeLabel,
   getQuickBadgeDocumentTypes,
 } from "@/pages/ExportLCUpload";
 import {
@@ -97,8 +98,12 @@ describe("ExportLCUpload typing helpers", () => {
   });
 
   it("labels intake workflow as workflow instead of generic LC type", () => {
-    expect(formatWorkflowBadgeLabel("unknown")).toBe("Workflow: unknown");
-    expect(formatWorkflowBadgeLabel("export")).toBe("Workflow: export");
+    expect(formatWorkflowBadgeLabel("unknown")).toBe("Unknown Workflow");
+    expect(formatWorkflowBadgeLabel("export")).toBe("Export Workflow");
+  });
+
+  it("labels intake confidence as workflow confidence instead of generic confidence", () => {
+    expect(formatWorkflowConfidenceBadgeLabel(0.52)).toBe("Workflow confidence: 52%");
   });
 
   it("retains required beneficiary and weight classes in quick badges without silent truncation", () => {

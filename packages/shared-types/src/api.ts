@@ -522,6 +522,8 @@ export const LcClassificationSchema = z.object({
   applicable_rules: z.string(),
   attributes: LcClassificationAttributesSchema,
   required_documents: z.array(LcRequiredDocumentSchema),
+  requirement_conditions: z.array(z.string()).optional(),
+  unmapped_requirements: z.array(z.string()).optional(),
 }).passthrough();
 export type LcClassification = z.infer<typeof LcClassificationSchema>;
 
@@ -529,6 +531,9 @@ export const LcStructuredPayloadSchema = z.object({
   lc_classification: LcClassificationSchema.optional().nullable(),
   documents_required: z.union([z.array(z.string()), z.string()]).optional(),
   required_document_types: z.array(z.string()).optional(),
+  required_documents_detailed: z.array(LcRequiredDocumentSchema).optional(),
+  requirement_conditions: z.array(z.string()).optional(),
+  unmapped_requirements: z.array(z.string()).optional(),
   additional_conditions: z.union([z.array(z.string()), z.string()]).optional(),
   documents_structured: z.array(z.record(z.unknown())).optional(),
 }).passthrough();

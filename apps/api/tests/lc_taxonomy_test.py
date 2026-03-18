@@ -126,6 +126,30 @@ def test_mt700_compact_required_document_shorthand_maps_to_canonical_codes() -> 
     assert "other_specified_document" not in codes
 
 
+def test_requirement_contract_separates_document_requirements_from_conditions() -> None:
+    taxonomy = _load_taxonomy_module()
+
+    classification = taxonomy.build_lc_classification(
+        {
+            "documents_required": [
+                "BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND MANUFACTURED IN 2026.",
+                "NON-NEGOTIABLE DOCUMENTS TO BE SENT TO APPLICANT WITHIN 5 DAYS OF SHIPMENT.",
+                "ALL DOCUMENTS MUST SHOW LC NO. EXP2026BD001 AND BUYER PURCHASE ORDER NO. GBE-44592.",
+            ]
+        }
+    )
+
+    required_docs = classification["required_documents"]
+    codes = {item["code"] for item in required_docs}
+    assert "beneficiary_certificate" in codes
+    assert "other_specified_document" not in codes
+    assert classification["requirement_conditions"] == [
+        "NON-NEGOTIABLE DOCUMENTS TO BE SENT TO APPLICANT WITHIN 5 DAYS OF SHIPMENT.",
+        "ALL DOCUMENTS MUST SHOW LC NO. EXP2026BD001 AND BUYER PURCHASE ORDER NO. GBE-44592.",
+    ]
+    assert classification["unmapped_requirements"] == []
+
+
 def test_existing_unknown_workflow_does_not_block_recomputed_export_orientation() -> None:
     taxonomy = _load_taxonomy_module()
 

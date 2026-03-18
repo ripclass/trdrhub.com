@@ -8,6 +8,7 @@ import type {
   IssueCard,
   ReferenceIssue,
   AIEnrichmentPayload,
+  LcClassificationRequiredDocument,
 } from '@/types/lcopilot';
 // Schema-first validation (runtime type checking)
 import { ValidationResultsSchema, safeValidateApiResponse } from '@shared/types';
@@ -50,6 +51,9 @@ export interface ValidationResponse {
   lc_summary?: Record<string, any>;
   required_document_types?: string[];
   documents_required?: string[];
+  required_documents_detailed?: LcClassificationRequiredDocument[];
+  requirement_conditions?: string[];
+  unmapped_requirements?: string[];
   special_conditions?: string[];
   message?: string;
   action_required?: string;

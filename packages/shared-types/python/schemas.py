@@ -495,6 +495,8 @@ class LcClassification(BaseModel):
     applicable_rules: str
     attributes: LcClassificationAttributes
     required_documents: List[LcRequiredDocument]
+    requirement_conditions: Optional[List[str]] = None
+    unmapped_requirements: Optional[List[str]] = None
 
     class Config:
         extra = "allow"
@@ -504,6 +506,9 @@ class LcStructuredPayload(BaseModel):
     lc_classification: Optional[LcClassification] = None
     documents_required: Optional[Any] = None
     required_document_types: Optional[List[str]] = None
+    required_documents_detailed: Optional[List[LcRequiredDocument]] = None
+    requirement_conditions: Optional[List[str]] = None
+    unmapped_requirements: Optional[List[str]] = None
     additional_conditions: Optional[Any] = None
     documents_structured: Optional[List[Dict[str, Any]]] = None
 

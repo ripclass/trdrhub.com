@@ -85,6 +85,45 @@ DOCUMENT_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("import_license", ("import license", "import licence")),
 )
 
+REQUIREMENT_CONDITION_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\ball documents?\b", re.IGNORECASE),
+    re.compile(r"\bdocuments?\s+must\b", re.IGNORECASE),
+    re.compile(r"\bmust\s+(?:show|bear|indicate|mention|state|be|not be|be sent|be dated|be authenticated)\b", re.IGNORECASE),
+    re.compile(r"\bto be sent\b", re.IGNORECASE),
+    re.compile(r"\bwithin\s+\d+\s+days?\b", re.IGNORECASE),
+    re.compile(r"\bacceptable\b", re.IGNORECASE),
+    re.compile(r"\bnon[-\s]?negotiable documents?\b", re.IGNORECASE),
+    re.compile(r"\bdocuments?\s+are discrepant\b", re.IGNORECASE),
+    re.compile(r"\bshipment must\b", re.IGNORECASE),
+    re.compile(r"\bpayment charge\b", re.IGNORECASE),
+)
+
+DOCUMENT_LIKE_REQUIREMENT_KEYWORDS = (
+    "certificate",
+    "invoice",
+    "bill",
+    "list",
+    "policy",
+    "waybill",
+    "report",
+    "license",
+    "licence",
+    "permit",
+    "declaration",
+    "receipt",
+    "manifest",
+    "statement",
+    "advice",
+    "note",
+    "document",
+)
+
+EXPLICIT_OTHER_SPECIFIED_DOCUMENT_ALIASES = (
+    "other specified document",
+    "other required document",
+    "other document",
+)
+
 COMPACT_REQUIREMENT_TOKENS: Dict[str, str] = {
     "INVOICE": "commercial_invoice",
     "INV": "commercial_invoice",
@@ -149,7 +188,8 @@ def build_lc_classification(
     instrument_type = detect_instrument_type(source, format_family, format_variant)
     workflow_orientation = detect_workflow_orientation(source, legacy_payload)
     applicable_rules = detect_applicable_rules(source)
-    required_documents = normalize_required_documents(source)
+    requirement_contract = extract_requirement_contract(source)
+    required_documents = requirement_contract["required_documents"]
 
     return {
         "format_family": format_family,
@@ -160,6 +200,8 @@ def build_lc_classification(
         "applicable_rules": applicable_rules,
         "attributes": build_attribute_payload(source, applicable_rules, instrument_type, required_documents),
         "required_documents": required_documents,
+        "requirement_conditions": requirement_contract["requirement_conditions"],
+        "unmapped_requirements": requirement_contract["unmapped_requirements"],
     }
 
 
@@ -617,8 +659,10 @@ def detect_confirmation(source: Dict[str, Any], text: str) -> str:
     return "unknown"
 
 
-def normalize_required_documents(source: Dict[str, Any]) -> List[Dict[str, Any]]:
+def extract_requirement_contract(source: Dict[str, Any]) -> Dict[str, List[Any]]:
     items: List[Dict[str, Any]] = []
+    requirement_conditions: List[str] = []
+    unmapped_requirements: List[str] = []
     for raw_code in coerce_text_sequence(source.get("required_document_types")):
         code = normalize_document_code(raw_code)
         if code:
@@ -644,12 +688,49 @@ def normalize_required_documents(source: Dict[str, Any]) -> List[Dict[str, Any]]
                 items.append(normalized_entry)
                 lines_source = []
         for line in coerce_text_sequence(lines_source):
-            matches = match_required_document_codes(line)
-            if not matches and len(line.strip()) >= 6:
-                matches = [("other_specified_document", line.strip())]
-            for code, alias in matches:
-                items.append(required_document_item(code, line.strip(), [alias], "documents_required_text", 0.84))
-    return dedupe_required_documents(items)
+            normalized_line = line.strip()
+            if not normalized_line:
+                continue
+            matches = match_required_document_codes(normalized_line)
+            if matches:
+                for code, alias in matches:
+                    items.append(required_document_item(code, normalized_line, [alias], "documents_required_text", 0.84))
+                continue
+            if _is_non_document_requirement_condition(normalized_line):
+                requirement_conditions.append(normalized_line)
+                continue
+            if _mentions_explicit_other_specified_document(normalized_line):
+                items.append(
+                    required_document_item(
+                        "other_specified_document",
+                        normalized_line,
+                        [normalized_line],
+                        "documents_required_fallback",
+                        0.72,
+                    )
+                )
+                continue
+            if _looks_like_document_requirement(normalized_line):
+                unmapped_requirements.append(normalized_line)
+                continue
+            requirement_conditions.append(normalized_line)
+    return {
+        "required_documents": dedupe_required_documents(items),
+        "requirement_conditions": _dedupe_text_sequence(requirement_conditions),
+        "unmapped_requirements": _dedupe_text_sequence(unmapped_requirements),
+    }
+
+
+def normalize_required_documents(source: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return extract_requirement_contract(source)["required_documents"]
+
+
+def extract_requirement_conditions(source: Dict[str, Any]) -> List[str]:
+    return extract_requirement_contract(source)["requirement_conditions"]
+
+
+def extract_unmapped_requirements(source: Dict[str, Any]) -> List[str]:
+    return extract_requirement_contract(source)["unmapped_requirements"]
 
 
 def required_document_item(code: str, raw_text: str, aliases_matched: Sequence[str], detection_source: str, confidence: float) -> Dict[str, Any]:
@@ -743,6 +824,38 @@ def match_required_document_codes(line: str) -> List[Tuple[str, str]]:
                 seen_codes.add(code)
                 break
     return matches
+
+
+def _is_non_document_requirement_condition(line: str) -> bool:
+    lowered = line.lower()
+    return any(pattern.search(lowered) for pattern in REQUIREMENT_CONDITION_PATTERNS)
+
+
+def _mentions_explicit_other_specified_document(line: str) -> bool:
+    lowered = line.lower()
+    return any(alias in lowered for alias in EXPLICIT_OTHER_SPECIFIED_DOCUMENT_ALIASES)
+
+
+def _looks_like_document_requirement(line: str) -> bool:
+    lowered = line.lower()
+    if _is_non_document_requirement_condition(line):
+        return False
+    return any(keyword in lowered for keyword in DOCUMENT_LIKE_REQUIREMENT_KEYWORDS)
+
+
+def _dedupe_text_sequence(values: Sequence[str]) -> List[str]:
+    deduped: List[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized:
+            continue
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+    return deduped
 
 
 def _contains_alias(lowered_line: str, alias: str) -> bool:

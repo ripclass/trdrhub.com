@@ -117,6 +117,8 @@ export type LcClassification = {
   applicable_rules?: string;
   attributes?: LcClassificationAttributes;
   required_documents?: LcClassificationRequiredDocument[];
+  requirement_conditions?: string[];
+  unmapped_requirements?: string[];
 };
 
 export type OptionELCStructured = {
@@ -129,6 +131,9 @@ export type OptionELCStructured = {
   clauses?: Array<Record<string, unknown>>;
   documents_required?: string[] | string;
   required_document_types?: string[];
+  required_documents_detailed?: LcClassificationRequiredDocument[];
+  requirement_conditions?: string[];
+  unmapped_requirements?: string[];
   additional_conditions?: string[] | string;
   lc_type?: string | null;
   lc_type_reason?: string | null;

@@ -27,6 +27,7 @@ import {
   summarizeSpecialConditions,
 } from "@/lib/exporter/specialConditions";
 import { getUploadRequirementsModel } from "@/lib/exporter/uploadRequirements";
+import type { LcClassificationRequiredDocument } from "@/types/lcopilot";
 // Shared document types - SINGLE SOURCE OF TRUTH
 import { 
   DOCUMENT_TYPES, 
@@ -86,6 +87,9 @@ interface LCIntakeState {
   };
   requiredDocumentTypes?: string[];
   documentsRequired?: string[];
+  requiredDocumentsDetailed?: LcClassificationRequiredDocument[];
+  requirementConditions?: string[];
+  unmappedRequirements?: string[];
   specialConditions?: string[];
   detectedDocuments?: Array<{ type: string; filename?: string; document_type_resolution?: string }>;
   error?: {
@@ -228,6 +232,13 @@ export function formatWorkflowBadgeLabel(workflowType?: string): string {
   const normalized = String(workflowType || "").trim().toLowerCase();
   const humanized = normalized ? normalized.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : 'Unknown';
   return `${humanized} Workflow`;
+}
+
+export function formatWorkflowConfidenceBadgeLabel(confidence?: number | null): string {
+  if (typeof confidence !== "number" || Number.isNaN(confidence) || confidence <= 0) {
+    return "Workflow confidence unavailable";
+  }
+  return `Workflow confidence: ${Math.round(confidence * 100)}%`;
 }
 
 export function getQuickBadgeDocumentTypes(
@@ -487,6 +498,9 @@ export default function ExportLCUpload({
                 lcDetection: draft.lcIntakeSnapshot.lcDetection as any,
                 requiredDocumentTypes: draft.lcIntakeSnapshot.requiredDocumentTypes || [],
                 documentsRequired: draft.lcIntakeSnapshot.documentsRequired || [],
+                requiredDocumentsDetailed: draft.lcIntakeSnapshot.requiredDocumentsDetailed || [],
+                requirementConditions: draft.lcIntakeSnapshot.requirementConditions || [],
+                unmappedRequirements: draft.lcIntakeSnapshot.unmappedRequirements || [],
                 specialConditions: draft.lcIntakeSnapshot.specialConditions || [],
                 detectedDocuments: draft.lcIntakeSnapshot.detectedDocuments || [],
               });
@@ -535,6 +549,9 @@ export default function ExportLCUpload({
               lcDetection: draft.lcIntakeSnapshot.lcDetection as any,
               requiredDocumentTypes: draft.lcIntakeSnapshot.requiredDocumentTypes || [],
               documentsRequired: draft.lcIntakeSnapshot.documentsRequired || [],
+              requiredDocumentsDetailed: draft.lcIntakeSnapshot.requiredDocumentsDetailed || [],
+              requirementConditions: draft.lcIntakeSnapshot.requirementConditions || [],
+              unmappedRequirements: draft.lcIntakeSnapshot.unmappedRequirements || [],
               specialConditions: draft.lcIntakeSnapshot.specialConditions || [],
               detectedDocuments: draft.lcIntakeSnapshot.detectedDocuments || [],
             });
@@ -754,6 +771,9 @@ export default function ExportLCUpload({
           lcDetection: lcIntake.lcDetection,
           requiredDocumentTypes: lcIntake.requiredDocumentTypes,
           documentsRequired: lcIntake.documentsRequired,
+          requiredDocumentsDetailed: lcIntake.requiredDocumentsDetailed,
+          requirementConditions: lcIntake.requirementConditions,
+          unmappedRequirements: lcIntake.unmappedRequirements,
           specialConditions: lcIntake.specialConditions,
           detectedDocuments: lcIntake.detectedDocuments,
         },
@@ -937,6 +957,9 @@ export default function ExportLCUpload({
           lcDetection: response.lc_detection,
           requiredDocumentTypes: response.required_document_types || [],
           documentsRequired: response.documents_required || [],
+          requiredDocumentsDetailed: response.required_documents_detailed || [],
+          requirementConditions: response.requirement_conditions || [],
+          unmappedRequirements: response.unmapped_requirements || [],
           specialConditions: response.special_conditions || [],
           detectedDocuments: response.detected_documents || [],
           error: response.error,
@@ -955,6 +978,9 @@ export default function ExportLCUpload({
         lcDetection: response.lc_detection,
         requiredDocumentTypes: response.required_document_types || [],
         documentsRequired: response.documents_required || [],
+        requiredDocumentsDetailed: response.required_documents_detailed || [],
+        requirementConditions: response.requirement_conditions || [],
+        unmappedRequirements: response.unmapped_requirements || [],
         specialConditions: response.special_conditions || [],
         detectedDocuments: response.detected_documents || [],
       });
@@ -1192,10 +1218,20 @@ export default function ExportLCUpload({
       getUploadRequirementsModel({
         requiredDocumentTypes: lcIntake.requiredDocumentTypes || [],
         documentsRequired: lcIntake.documentsRequired || [],
+        requiredDocumentsDetailed: lcIntake.requiredDocumentsDetailed || [],
+        requirementConditions: lcIntake.requirementConditions || [],
+        unmappedRequirements: lcIntake.unmappedRequirements || [],
         specialConditions: lcIntake.specialConditions || [],
         resolveLabel: (docType) => exportDocumentTypes.find((t) => t.value === docType)?.label || docType,
       }),
-    [lcIntake.requiredDocumentTypes, lcIntake.documentsRequired, lcIntake.specialConditions],
+    [
+      lcIntake.requiredDocumentTypes,
+      lcIntake.documentsRequired,
+      lcIntake.requiredDocumentsDetailed,
+      lcIntake.requirementConditions,
+      lcIntake.unmappedRequirements,
+      lcIntake.specialConditions,
+    ],
   );
   const hiddenQuickBadgeCount = Math.max(0, exportDocumentTypes.length - quickBadgeTypes.length);
 
@@ -1436,7 +1472,7 @@ export default function ExportLCUpload({
                     <Badge variant="outline">{formatWorkflowBadgeLabel(lcIntake.lcDetection.lc_type)}</Badge>
                     <Badge variant="outline">Workflow lane only</Badge>
                     {typeof lcIntake.lcDetection.confidence === 'number' && (
-                      <Badge variant="outline">Confidence: {Math.round(lcIntake.lcDetection.confidence * 100)}%</Badge>
+                      <Badge variant="outline">{formatWorkflowConfidenceBadgeLabel(lcIntake.lcDetection.confidence)}</Badge>
                     )}
                     {lcIntake.lcDetection.is_draft && <Badge variant="outline">Draft LC</Badge>}
                   </div>
@@ -1515,7 +1551,13 @@ export default function ExportLCUpload({
                         <div key={requirement.key} className="rounded-lg border border-amber-300/60 bg-amber-50/40 p-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge variant="outline">{requirement.label} - Required</Badge>
-                            <Badge variant="secondary">LC condition</Badge>
+                            <Badge variant="secondary">
+                              {requirement.category === "identifier"
+                                ? "LC condition"
+                                : requirement.category === "unmapped_requirement"
+                                ? "Manual review"
+                                : "LC condition"}
+                            </Badge>
                           </div>
                           <p className="mt-2 text-xs text-muted-foreground">{requirement.detail}</p>
                         </div>

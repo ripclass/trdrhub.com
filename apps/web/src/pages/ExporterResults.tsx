@@ -262,6 +262,101 @@ const REVIEW_STATE_META: Record<
   awaiting_document: { label: 'Awaiting document', badgeStatus: 'warning' },
 };
 
+const buildCanonicalLcDrawerFields = (lcStructured: Record<string, any> | null): Record<string, any> => {
+  if (!lcStructured || typeof lcStructured !== "object") {
+    return {};
+  }
+
+  const existing = lcStructured.extracted_fields;
+  if (existing && typeof existing === "object" && Object.keys(existing).length > 0) {
+    return existing as Record<string, any>;
+  }
+
+  const lcClassification =
+    lcStructured.lc_classification && typeof lcStructured.lc_classification === "object"
+      ? (lcStructured.lc_classification as Record<string, any>)
+      : {};
+  const dates =
+    lcStructured.dates && typeof lcStructured.dates === "object"
+      ? (lcStructured.dates as Record<string, any>)
+      : {};
+  const ports =
+    lcStructured.ports && typeof lcStructured.ports === "object"
+      ? (lcStructured.ports as Record<string, any>)
+      : {};
+
+  const normalizeTextList = (values: unknown): string[] => {
+    if (!Array.isArray(values)) return [];
+    const seen = new Set<string>();
+    const items: string[] = [];
+    values.forEach((value) => {
+      const text =
+        typeof value === "string"
+          ? value.trim()
+          : value && typeof value === "object"
+          ? String(
+              (value as Record<string, unknown>).raw_text ||
+                (value as Record<string, unknown>).display_name ||
+                (value as Record<string, unknown>).code ||
+                "",
+            ).trim()
+          : "";
+      if (!text) return;
+      const key = text.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push(text);
+    });
+    return items;
+  };
+
+  const pickFirst = (...values: unknown[]) =>
+    values.find((value) => value !== null && value !== undefined && (typeof value !== "string" || value.trim().length > 0));
+
+  const requiredDocuments = normalizeTextList(
+    lcStructured.required_documents_detailed ?? lcClassification.required_documents,
+  );
+  const requirementConditions = normalizeTextList(
+    lcStructured.requirement_conditions ?? lcClassification.requirement_conditions,
+  );
+  const unmappedRequirements = normalizeTextList(
+    lcStructured.unmapped_requirements ?? lcClassification.unmapped_requirements,
+  );
+  const additionalConditions = normalizeTextList(lcStructured.additional_conditions);
+
+  return Object.fromEntries(
+    Object.entries({
+      lc_number: pickFirst(lcStructured.lc_number, lcStructured.number, lcStructured.reference),
+      issue_date: pickFirst(lcStructured.issue_date, dates.issue, dates.issue_date),
+      expiry_date: pickFirst(lcStructured.expiry_date, dates.expiry, dates.expiry_date),
+      latest_shipment_date: pickFirst(
+        lcStructured.latest_shipment_date,
+        lcStructured.latest_shipment,
+        dates.latest_shipment,
+        dates.latest_shipment_date,
+      ),
+      place_of_expiry: pickFirst(lcStructured.place_of_expiry, dates.place_of_expiry),
+      applicant: lcStructured.applicant,
+      beneficiary: lcStructured.beneficiary,
+      issuing_bank: lcStructured.issuing_bank,
+      advising_bank: lcStructured.advising_bank,
+      port_of_loading: pickFirst(lcStructured.port_of_loading, ports.loading, ports.port_of_loading),
+      port_of_discharge: pickFirst(lcStructured.port_of_discharge, ports.discharge, ports.port_of_discharge),
+      amount: lcStructured.amount,
+      currency: lcStructured.currency,
+      incoterm: lcStructured.incoterm,
+      ucp_reference: lcStructured.ucp_reference,
+      goods_description: lcStructured.goods_description,
+      exporter_bin: lcStructured.exporter_bin,
+      exporter_tin: lcStructured.exporter_tin,
+      documents_required: requiredDocuments,
+      requirement_conditions: requirementConditions,
+      unmapped_requirements: unmappedRequirements,
+      additional_conditions: additionalConditions,
+    }).filter(([, value]) => value !== null && value !== undefined && value !== "" && (!Array.isArray(value) || value.length > 0)),
+  );
+};
+
 // NOTE: Components, types, and utilities are now imported from ./exporter/results
 
 export default function ExporterResults({
@@ -932,6 +1027,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   }, [rawAiInsights]);
   const hasIssueCards = issueCards.length > 0;
   const lcStructuredData = structuredResult?.lc_structured as Record<string, any> | null;
+  const canonicalLcDrawerFields = useMemo(
+    () => buildCanonicalLcDrawerFields(lcStructuredData),
+    [lcStructuredData],
+  );
   const lcClassification = (lcStructuredData?.lc_classification ?? null) as LcClassification | null;
   const workflowOrientation = String(
     lcClassification?.workflow_orientation ?? "unknown",
@@ -1120,42 +1219,33 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [analyticsData?.document_risk, documents],
   );
   const extractionAccuracy = useMemo(() => extractionRate, [extractionRate]);
-  const lcRequirementSource = useMemo(() => {
-    const canonicalRequiredDocs = Array.isArray(lcClassification?.required_documents)
-      ? (lcClassification.required_documents as LcClassificationRequiredDocument[])
-      : [];
-    const canonicalTexts = canonicalRequiredDocs
-      .map((doc) => doc?.raw_text || doc?.display_name || doc?.code)
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const canonicalRequiredDocs = useMemo(() => {
     const candidates = [
-      lcData?.documents_required,
-      lcData?.required_documents,
-      lcPrimaryExtractedFields?.documents_required,
-      lcPrimaryExtractedFields?.required_documents,
-      lcPrimaryExtractedFields?.documentsRequired,
-      lcPrimaryExtractedFields?.requiredDocuments,
-      canonicalTexts,
-      lcData?.required_document_types,
-      lcPrimaryExtractedFields?.required_document_types,
-      lcPrimaryExtractedFields?.requiredDocumentTypes,
+      Array.isArray(lcClassification?.required_documents)
+        ? (lcClassification.required_documents as LcClassificationRequiredDocument[])
+        : [],
+      Array.isArray(lcData?.required_documents_detailed)
+        ? (lcData.required_documents_detailed as LcClassificationRequiredDocument[])
+        : [],
+      Array.isArray(lcPrimaryExtractedFields?.required_documents_detailed)
+        ? (lcPrimaryExtractedFields.required_documents_detailed as LcClassificationRequiredDocument[])
+        : [],
     ];
     for (const candidate of candidates) {
-      const formatted = formatConditions(candidate);
-      if (formatted.length > 0) {
-        return formatted;
+      if (candidate.length > 0) {
+        return candidate;
       }
     }
-    return [] as string[];
-  }, [lcClassification?.required_documents, lcData, lcPrimaryExtractedFields]);
+    return [] as LcClassificationRequiredDocument[];
+  }, [lcClassification?.required_documents, lcData?.required_documents_detailed, lcPrimaryExtractedFields?.required_documents_detailed]);
   const lcRequirementTypes = useMemo(() => {
-    const canonicalRequiredDocs = Array.isArray(lcClassification?.required_documents)
-      ? (lcClassification.required_documents as LcClassificationRequiredDocument[])
-      : [];
     const canonicalCodes = canonicalRequiredDocs
       .map((doc) => String(doc?.code || "").trim().toLowerCase())
       .filter((code) => code.length > 0);
+    if (canonicalCodes.length > 0) {
+      return canonicalCodes;
+    }
     const candidates = [
-      canonicalCodes,
       lcData?.required_document_types,
       lcData?.requiredDocumentTypes,
       lcPrimaryExtractedFields?.required_document_types,
@@ -1169,7 +1259,35 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       }
     }
     return [] as string[];
-  }, [lcClassification?.required_documents, lcData, lcPrimaryExtractedFields]);
+  }, [canonicalRequiredDocs, lcData, lcPrimaryExtractedFields]);
+  const lcRequirementConditions = useMemo(() => {
+    const candidates = [
+      lcClassification?.requirement_conditions,
+      lcData?.requirement_conditions,
+      lcPrimaryExtractedFields?.requirement_conditions,
+    ];
+    for (const candidate of candidates) {
+      const formatted = formatConditions(candidate);
+      if (formatted.length > 0) {
+        return formatted;
+      }
+    }
+    return [] as string[];
+  }, [lcClassification?.requirement_conditions, lcData, lcPrimaryExtractedFields]);
+  const lcUnmappedRequirements = useMemo(() => {
+    const candidates = [
+      lcClassification?.unmapped_requirements,
+      lcData?.unmapped_requirements,
+      lcPrimaryExtractedFields?.unmapped_requirements,
+    ];
+    for (const candidate of candidates) {
+      const formatted = formatConditions(candidate);
+      if (formatted.length > 0) {
+        return formatted;
+      }
+    }
+    return [] as string[];
+  }, [lcClassification?.unmapped_requirements, lcData, lcPrimaryExtractedFields]);
 
   const performanceInsights = useMemo(
     () => [
@@ -1180,7 +1298,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
   );
   const requirementChecklist = useMemo(() => {
-    const requiredConditions = lcRequirementSource;
     const humanizeIssueReason = (reason: string, docType?: string): string => {
       const key = String(reason || '').trim();
       const normalizedDocType = String(docType || '').toLowerCase();
@@ -1271,10 +1388,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
     const requirementSeeds: RequirementRowSeed[] = [];
     const seenKeys = new Set<string>();
-    const canonicalRequiredDocs = Array.isArray(lcClassification?.required_documents)
-      ? (lcClassification.required_documents as LcClassificationRequiredDocument[])
-      : [];
-
     const pushRequirementSeed = (seed: RequirementRowSeed): void => {
       if (seenKeys.has(seed.key)) return;
       seenKeys.add(seed.key);
@@ -1300,38 +1413,19 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
     });
 
-    lcRequirementTypes.forEach((rawType, index) => {
-      const code = normalizeRequirementCode(rawType);
-      if (!code) return;
-      const requirementText = requiredConditions[index] || humanizeLabel(code);
-      pushRequirementSeed({
-        key: code,
-        label: humanizeLabel(code),
-        requirementText,
-        code,
-        typeCandidates: buildTypeCandidates(code),
+    if (requirementSeeds.length === 0) {
+      lcRequirementTypes.forEach((rawType) => {
+        const code = normalizeRequirementCode(rawType);
+        if (!code) return;
+        pushRequirementSeed({
+          key: code,
+          label: humanizeLabel(code),
+          requirementText: humanizeLabel(code),
+          code,
+          typeCandidates: buildTypeCandidates(code),
+        });
       });
-    });
-
-    requiredConditions.forEach((condition, index) => {
-      const conditionText = String(condition || '').trim();
-      if (!conditionText) return;
-      const normalizedCondition = conditionText.toLowerCase();
-      const inferredCode = normalizeRequirementCode(lcRequirementTypes[index] || null);
-      const candidateKeyBase =
-        inferredCode ||
-        normalizedCondition.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48) ||
-        `required_text_${index + 1}`;
-      const key = inferredCode ? candidateKeyBase : `required_text_${candidateKeyBase}`;
-      const label = inferredCode ? humanizeLabel(inferredCode) : `Required Document ${index + 1}`;
-      pushRequirementSeed({
-        key,
-        label,
-        requirementText: conditionText,
-        code: inferredCode,
-        typeCandidates: buildTypeCandidates(inferredCode),
-      });
-    });
+    }
 
     const items = requirementSeeds
       .map((seed) => {
@@ -1421,7 +1515,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       }>;
 
     return items;
-  }, [documents, lcClassification?.required_documents, lcRequirementSource, lcRequirementTypes]);
+  }, [documents, canonicalRequiredDocs, lcRequirementTypes]);
   const requirementChecklistSummary = useMemo<RequirementChecklistSummary>(() => {
     return requirementChecklist.reduce(
       (acc, item) => {
@@ -2417,6 +2511,30 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       );
                     })
                   )}
+                  {(lcRequirementConditions.length > 0 || lcUnmappedRequirements.length > 0) && (
+                    <div className="space-y-3">
+                      {lcRequirementConditions.length > 0 && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
+                          <p className="text-sm font-semibold">Document Presentation Conditions</p>
+                          <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+                            {lcRequirementConditions.map((condition, idx) => (
+                              <li key={`requirement-condition-${idx}`}>{condition}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {lcUnmappedRequirements.length > 0 && (
+                        <div className="rounded-lg border border-border/60 bg-muted/10 p-4 space-y-2">
+                          <p className="text-sm font-semibold">Requirement Text Needing Mapping</p>
+                          <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                            {lcUnmappedRequirements.map((requirement, idx) => (
+                              <li key={`unmapped-requirement-${idx}`}>{requirement}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
               <Card className="shadow-soft border border-border/60">
@@ -2830,7 +2948,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               status: document.status,
                               extractionStatus: document.extractionStatus,
                               issuesCount: document.issuesCount,
-                              extractedFields: document.extractedFields,
+                              extractedFields:
+                                String(document.typeKey || "").toLowerCase() === "letter_of_credit" &&
+                                Object.keys(canonicalLcDrawerFields).length > 0
+                                  ? canonicalLcDrawerFields
+                                  : document.extractedFields,
                               warningReasons: (document as any).warningReasons ?? [],
                               reviewReasons: (document as any).reviewReasons ?? [],
                               criticalFieldStates: (document as any).criticalFieldStates ?? {},

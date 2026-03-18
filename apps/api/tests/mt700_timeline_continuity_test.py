@@ -28,6 +28,7 @@ def _load_launch_pipeline_symbols() -> Dict[str, Any]:
     source = LAUNCH_PIPELINE_PATH.read_text(encoding="utf-8")
     parsed = ast.parse(source)
     target_functions = {
+        "_build_lc_user_facing_extracted_fields",
         "_coerce_mt700_date_iso",
         "_extract_mt700_timeline_fields",
         "_shape_lc_financial_payload",
@@ -158,3 +159,51 @@ def test_structured_builder_preserves_mt700_timeline_dates_after_shaping() -> No
     assert result["dates"]["expiry"] == "2026-10-15"
     assert result["dates"]["latest_shipment"] == "2026-09-30"
     assert result["dates"]["place_of_expiry"] == "USA"
+
+
+def test_lc_user_facing_extracted_fields_prefer_canonical_snapshot_values() -> None:
+    launch_ns = _load_launch_pipeline_symbols()
+    shape_lc_financial_payload = launch_ns["_shape_lc_financial_payload"]
+    build_lc_user_facing_extracted_fields = launch_ns["_build_lc_user_facing_extracted_fields"]
+
+    shaped = shape_lc_financial_payload(
+        {
+            "number": "EXP2026BD001",
+            "issue_date": "2026-04-15",
+            "beneficiary": "Dhaka Knitwear & Exports Ltd.",
+            "goods_description": "100% cotton knit t-shirts",
+            "required_documents_detailed": [
+                {
+                    "code": "beneficiary_certificate",
+                    "display_name": "Beneficiary Certificate",
+                    "raw_text": "BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND MANUFACTURED IN 2026.",
+                }
+            ],
+            "requirement_conditions": [
+                "ALL DOCUMENTS MUST SHOW LC NO. EXP2026BD001 AND BUYER PURCHASE ORDER NO. GBE-44592."
+            ],
+            "unmapped_requirements": [
+                "UNKNOWN CERTIFICATE WORDING REQUIRING MANUAL MAPPING."
+            ],
+        },
+        lc_subtype="letter_of_credit",
+        raw_text=MT700_SAMPLE_TEXT,
+        source_type="letter_of_credit",
+        lc_format="mt700",
+    )
+
+    user_facing = build_lc_user_facing_extracted_fields(shaped)
+
+    assert user_facing["lc_number"] == "EXP2026BD001"
+    assert user_facing["issue_date"] == "2026-04-15"
+    assert user_facing["expiry_date"] == "2026-10-15"
+    assert user_facing["latest_shipment_date"] == "2026-09-30"
+    assert user_facing["documents_required"] == [
+        "BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND MANUFACTURED IN 2026."
+    ]
+    assert user_facing["requirement_conditions"] == [
+        "ALL DOCUMENTS MUST SHOW LC NO. EXP2026BD001 AND BUYER PURCHASE ORDER NO. GBE-44592."
+    ]
+    assert user_facing["unmapped_requirements"] == [
+        "UNKNOWN CERTIFICATE WORDING REQUIRING MANUAL MAPPING."
+    ]

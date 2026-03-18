@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { nanoid } from 'nanoid';
+import type { LcClassificationRequiredDocument } from '@/types/lcopilot';
 
 // File metadata interface (no File objects)
 export interface FileMeta {
@@ -42,6 +43,9 @@ export interface DraftData {
     lcDetection?: Record<string, any>;
     requiredDocumentTypes?: string[];
     documentsRequired?: string[];
+    requiredDocumentsDetailed?: LcClassificationRequiredDocument[];
+    requirementConditions?: string[];
+    unmappedRequirements?: string[];
     specialConditions?: string[];
     detectedDocuments?: Array<{ type: string; filename?: string }>;
   };

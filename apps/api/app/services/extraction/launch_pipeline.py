@@ -242,6 +242,7 @@ class LaunchExtractionPipeline:
         try:
             if lc_format == "iso20022":
                 iso_context = await extract_iso20022_with_ai_fallback(extracted_text, ai_threshold=0.5)
+                user_facing_fields = _build_lc_user_facing_extracted_fields(iso_context)
                 return {
                     "handled": True,
                     "context_key": "lc",
@@ -253,7 +254,7 @@ class LaunchExtractionPipeline:
                     },
                     "doc_info_patch": {
                         **base_patch,
-                        "extracted_fields": iso_context,
+                        "extracted_fields": user_facing_fields or iso_context,
                         "extraction_status": "success",
                         "extraction_method": iso_context.get("_extraction_method", "iso20022"),
                         "extraction_confidence": iso_context.get("_extraction_confidence", 0.0),
@@ -277,6 +278,7 @@ class LaunchExtractionPipeline:
             if lc_struct and extraction_status != "failed":
                 shaped_payload = _shape_lc_financial_payload(lc_struct, lc_subtype=lc_subtype, raw_text=extracted_text, source_type=document_type, lc_format=lc_format)
                 lc_review = _assess_lc_financial_completeness(shaped_payload, lc_subtype=lc_subtype)
+                user_facing_fields = _build_lc_user_facing_extracted_fields(shaped_payload)
                 return {
                     "handled": True,
                     "context_key": "lc",
@@ -285,7 +287,7 @@ class LaunchExtractionPipeline:
                         **base_patch,
                         "lc_subtype": lc_subtype,
                         "lc_family": shaped_payload.get("lc_family"),
-                        "extracted_fields": lc_struct.get("extracted_fields") if isinstance(lc_struct.get("extracted_fields"), dict) else lc_struct,
+                        "extracted_fields": user_facing_fields or (lc_struct.get("extracted_fields") if isinstance(lc_struct.get("extracted_fields"), dict) else lc_struct),
                         "extraction_status": "success" if lc_review.get("parse_complete") else "partial",
                         "extraction_method": lc_struct.get("_extraction_method", "unknown"),
                         "extraction_confidence": lc_struct.get("_extraction_confidence", 0.0),
@@ -317,6 +319,7 @@ class LaunchExtractionPipeline:
             if lc_context:
                 shaped_payload = _shape_lc_financial_payload(lc_context, lc_subtype=lc_subtype, raw_text=extracted_text, source_type=document_type, lc_format=lc_format)
                 lc_review = _assess_lc_financial_completeness(shaped_payload, lc_subtype=lc_subtype)
+                user_facing_fields = _build_lc_user_facing_extracted_fields(shaped_payload)
                 return {
                     "handled": True,
                     "context_key": "lc",
@@ -325,7 +328,7 @@ class LaunchExtractionPipeline:
                         **base_patch,
                         "lc_subtype": lc_subtype,
                         "lc_family": shaped_payload.get("lc_family"),
-                        "extracted_fields": lc_context,
+                        "extracted_fields": user_facing_fields or lc_context,
                         "extraction_status": "success" if lc_review.get("parse_complete") else "partial",
                         "extraction_method": "regex_fallback",
                         "parse_complete": lc_review.get("parse_complete"),
@@ -1351,6 +1354,23 @@ def _shape_invoice_financial_payload(payload: Dict[str, Any], *, invoice_subtype
         shaped.get("invoice_number"),
         _extract_label_value(raw_text, ["bill no", "draft no", "note no", "reference no", "debit note no", "credit note no"]),
     )
+    shaped["lc_reference"] = _first(
+        shaped.get("lc_reference"),
+        shaped.get("lc_number"),
+        _extract_label_value(
+            raw_text,
+            [
+                "lc no",
+                "lc number",
+                "lc ref",
+                "lc reference",
+                "letter of credit no",
+                "letter of credit number",
+                "credit number",
+            ],
+        ),
+    )
+    shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("lc_reference"))
     if invoice_subtype == "payment_receipt":
         shaped["receipt_number"] = _first(
             shaped.get("receipt_number"),
@@ -1584,6 +1604,111 @@ def _shape_lc_financial_payload(payload: Dict[str, Any], *, lc_subtype: str, raw
             shaped["dates"] = dates
 
     return _apply_canonical_normalization(shaped)
+
+
+def _build_lc_user_facing_extracted_fields(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    shaped = payload or {}
+
+    def _first(*values):
+        for value in values:
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            return value
+        return None
+
+    def _normalize_text_list(values: Any) -> List[str]:
+        if not isinstance(values, list):
+            return []
+        items: List[str] = []
+        seen = set()
+        for value in values:
+            if isinstance(value, dict):
+                text = str(
+                    value.get("raw_text")
+                    or value.get("display_name")
+                    or value.get("code")
+                    or ""
+                ).strip()
+            else:
+                text = str(value or "").strip()
+            if not text:
+                continue
+            lowered = text.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            items.append(text)
+        return items
+
+    dates = shaped.get("dates") if isinstance(shaped.get("dates"), dict) else {}
+    ports = shaped.get("ports") if isinstance(shaped.get("ports"), dict) else {}
+    lc_classification = shaped.get("lc_classification") if isinstance(shaped.get("lc_classification"), dict) else {}
+
+    required_documents = _normalize_text_list(
+        _first(
+            shaped.get("required_documents_detailed"),
+            lc_classification.get("required_documents"),
+            shaped.get("required_documents"),
+        )
+    )
+    requirement_conditions = _normalize_text_list(
+        _first(
+            shaped.get("requirement_conditions"),
+            lc_classification.get("requirement_conditions"),
+        )
+    )
+    unmapped_requirements = _normalize_text_list(
+        _first(
+            shaped.get("unmapped_requirements"),
+            lc_classification.get("unmapped_requirements"),
+        )
+    )
+
+    user_facing_fields = {
+        "lc_number": _first(shaped.get("lc_number"), shaped.get("number"), shaped.get("reference")),
+        "issue_date": _first(shaped.get("issue_date"), dates.get("issue"), dates.get("issue_date")),
+        "expiry_date": _first(shaped.get("expiry_date"), dates.get("expiry"), dates.get("expiry_date")),
+        "latest_shipment_date": _first(
+            shaped.get("latest_shipment_date"),
+            shaped.get("latest_shipment"),
+            dates.get("latest_shipment"),
+            dates.get("latest_shipment_date"),
+        ),
+        "place_of_expiry": _first(shaped.get("place_of_expiry"), dates.get("place_of_expiry")),
+        "applicant": shaped.get("applicant"),
+        "beneficiary": shaped.get("beneficiary"),
+        "issuing_bank": shaped.get("issuing_bank"),
+        "advising_bank": shaped.get("advising_bank"),
+        "port_of_loading": _first(
+            shaped.get("port_of_loading"),
+            ports.get("loading"),
+            ports.get("port_of_loading"),
+        ),
+        "port_of_discharge": _first(
+            shaped.get("port_of_discharge"),
+            ports.get("discharge"),
+            ports.get("port_of_discharge"),
+        ),
+        "amount": shaped.get("amount"),
+        "currency": shaped.get("currency"),
+        "incoterm": shaped.get("incoterm"),
+        "ucp_reference": shaped.get("ucp_reference"),
+        "goods_description": shaped.get("goods_description"),
+        "exporter_bin": shaped.get("exporter_bin"),
+        "exporter_tin": shaped.get("exporter_tin"),
+        "documents_required": required_documents,
+        "requirement_conditions": requirement_conditions,
+        "unmapped_requirements": unmapped_requirements,
+        "additional_conditions": _normalize_text_list(shaped.get("additional_conditions")),
+    }
+
+    return {
+        key: value
+        for key, value in user_facing_fields.items()
+        if value not in (None, "", [])
+    }
 
 
 def _assess_insurance_completeness(payload: Optional[Dict[str, Any]], *, insurance_subtype: str) -> Dict[str, Any]:
