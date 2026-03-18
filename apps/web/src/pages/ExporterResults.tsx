@@ -987,6 +987,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     () =>
       issueCards.reduce(
         (acc, card) => {
+          const countClass = String((card as any).count_class ?? 'documentary_discrepancy');
+          if (countClass !== 'documentary_discrepancy') {
+            return acc;
+          }
           const severity = normalizeDiscrepancySeverity(card.severity);
           acc[severity] = (acc[severity] || 0) + 1;
           return acc;
@@ -994,6 +998,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         { critical: 0, major: 0, minor: 0 } as Record<"critical" | "major" | "minor", number>
       ),
     [issueCards]
+  );
+  const laneCounts = useMemo(
+    () =>
+      issueCards.reduce(
+        (acc, card) => {
+          const workflowLane = String((card as any).workflow_lane ?? 'documentary_review');
+          if (workflowLane === 'compliance_review') acc.compliance += 1;
+          else if (workflowLane === 'manual_review') acc.manual += 1;
+          else acc.documentary += 1;
+          return acc;
+        },
+        { documentary: 0, compliance: 0, manual: 0 },
+      ),
+    [issueCards],
   );
   const filteredIssueCards = useMemo(() => {
     if (issueFilter === "all") return issueCards;
@@ -1004,6 +1022,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const showSkeletonLayout = Boolean(
     validationSessionId && !resultData && resultsLoading && !(jobError || resultsError),
   );
+  const normalizedJobStatus = String(jobStatus?.status ?? '').trim().toLowerCase();
+  const isTerminalJobStatus = ['completed', 'failed', 'error'].includes(normalizedJobStatus);
+  const isResultsPending = !resultData && resultsLoading && !(jobError || resultsError);
   const { successCount, warningCount, successRate, extractionRate, extractionSuccessful } = useMemo(() => {
     // Use authoritative document_status from backend (same source as SummaryStrip)
     const statusDistribution = 
@@ -1662,6 +1683,45 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       ? jobStatus.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
       : "Processing";
 
+    if (isTerminalJobStatus && !isResultsPending) {
+      return (
+        <div className="min-h-[60vh] p-6">
+          <Card className="max-w-2xl mx-auto border border-border/60 shadow-soft">
+            <CardHeader>
+              <CardTitle>Validation finished, but results are not available yet</CardTitle>
+              <CardDescription>
+                The job reached a terminal state ({statusLabel}), but the canonical results payload has not loaded on this route yet.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Route/state mismatch</AlertTitle>
+                <AlertDescription>
+                  Don&apos;t treat this as validation still running. Retry loading the result payload or return to the review shell and reopen this case.
+                </AlertDescription>
+              </Alert>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => refreshResults('manual')} disabled={!validationSessionId || resultsLoading}>
+                  {resultsLoading ? 'Fetching...' : 'Retry loading results'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams);
+                    params.set('section', 'reviews');
+                    setSearchParams(params, { replace: true });
+                  }}
+                >
+                  Return to review shell
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-[60vh] p-6">
         <div className="flex flex-col items-center justify-center space-y-4 pb-8">
@@ -2194,7 +2254,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold">Overview Support Metrics</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Supporting analytics for the current validation state
+                    Secondary metrics that support the readiness state without replacing it
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -2711,6 +2771,29 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               const requiredFieldsTotal = (document as any).requiredFieldsTotal;
               const discrepancyCount = document.issuesCount ?? 0;
               const warningReasons = ((document as any).warningReasons ?? []) as string[];
+              const reviewReasons = ((document as any).reviewReasons ?? []) as string[];
+              const requirementStatus = document.requirementStatus ?? 'matched';
+              const reviewState = document.reviewState ?? 'ready';
+              const extractionLabel =
+                document.status === 'success'
+                  ? 'Extracted'
+                  : document.status === 'error'
+                  ? 'Extraction blocked'
+                  : 'Extraction warning';
+              const requirementMeta =
+                requirementStatus === 'matched'
+                  ? { label: 'Requirement matched', status: 'success' as const, note: 'This upload covers the required document type.' }
+                  : requirementStatus === 'missing'
+                  ? { label: 'Requirement missing', status: 'error' as const, note: 'This upload does not currently satisfy the required document coverage.' }
+                  : { label: 'Requirement partial', status: 'warning' as const, note: 'This upload only partially satisfies the required document coverage.' };
+              const reviewMeta =
+                reviewState === 'ready'
+                  ? { label: 'Ready for review flow', status: 'success' as const, note: 'No active review hold is attached to this document.' }
+                  : reviewState === 'blocked'
+                  ? { label: 'Review blocked', status: 'error' as const, note: 'This document currently blocks clean presentation.' }
+                  : reviewState === 'needs_review'
+                  ? { label: 'Review required', status: 'warning' as const, note: 'This document needs manual review before clean presentation.' }
+                  : { label: 'Awaiting supporting upload', status: 'warning' as const, note: 'A matching supporting document is still required before clean presentation.' };
               
               return (
                 <Card
@@ -2732,11 +2815,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </div>
                       <div className="flex items-center gap-3">
                         <StatusBadge status={document.status}>
-                          {document.status === "success"
-                            ? "Verified"
-                            : document.status === "error"
-                            ? "With Errors"
-                            : "With Warnings"}
+                          {extractionLabel}
                         </StatusBadge>
                         <Button 
                           variant="outline" 
@@ -2770,16 +2849,46 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {typeof parseComplete === "boolean" && (
-                      <div className="mb-3 text-xs text-muted-foreground">
-                        Parse completeness: {parseComplete ? "Complete" : "Partial"}
-                        {typeof requiredFieldsFound === "number" && typeof requiredFieldsTotal === "number"
-                          ? ` (${requiredFieldsFound}/${requiredFieldsTotal} required fields)`
-                          : typeof parseCompleteness === "number"
-                          ? ` (${Math.round(parseCompleteness * 100)}%)`
-                          : ""}
+                    <div className="mb-4 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-md border border-border/60 p-3 bg-muted/10">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Extraction truth</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <StatusBadge status={document.status}>{extractionLabel}</StatusBadge>
+                          <span className="text-xs text-muted-foreground text-right">
+                            {typeof parseComplete === "boolean"
+                              ? `Parse ${parseComplete ? 'complete' : 'partial'}`
+                              : (document.extractionStatus ?? 'unknown').replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        {(typeof requiredFieldsFound === 'number' && typeof requiredFieldsTotal === 'number') || typeof parseCompleteness === 'number' ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {typeof requiredFieldsFound === 'number' && typeof requiredFieldsTotal === 'number'
+                              ? `${requiredFieldsFound}/${requiredFieldsTotal} extraction-required fields found`
+                              : `Parse completeness ${Math.round((parseCompleteness ?? 0) * 100)}%`}
+                          </p>
+                        ) : null}
                       </div>
-                    )}
+                      <div className="rounded-md border border-border/60 p-3 bg-muted/10">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Requirement coverage</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <StatusBadge status={requirementMeta.status}>{requirementMeta.label}</StatusBadge>
+                          <span className="text-xs text-muted-foreground text-right">
+                            {discrepancyCount > 0 ? `${discrepancyCount} linked issue${discrepancyCount > 1 ? 's' : ''}` : 'No linked issues'}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">{requirementMeta.note}</p>
+                      </div>
+                      <div className="rounded-md border border-border/60 p-3 bg-muted/10">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Review consequence</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <StatusBadge status={reviewMeta.status}>{reviewMeta.label}</StatusBadge>
+                          <span className="text-xs text-muted-foreground text-right">
+                            {reviewReasons.length > 0 ? `${reviewReasons.length} review note${reviewReasons.length > 1 ? 's' : ''}` : 'No review notes'}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">{reviewMeta.note}</p>
+                      </div>
+                    </div>
                     {warningReasons.length > 0 && (
                       <div className="mb-3 space-y-2">
                         <div className="flex flex-wrap gap-2">
@@ -2894,6 +3003,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               issueCards={issueCards}
               filteredIssueCards={filteredIssueCards}
               severityCounts={severityCounts}
+              laneCounts={laneCounts}
               issueFilter={issueFilter}
               setIssueFilter={setIssueFilter}
               documentStatusMap={documentStatusMap}

@@ -135,16 +135,6 @@ export const getExporterOverviewTruth = (
           ? 'destructive'
           : 'warning',
     },
-    {
-      label: 'LC Compliance',
-      value: `${input.complianceScore}%`,
-      tone: toMetricTone(input.complianceScore, { success: 80, warning: 50 }),
-    },
-    {
-      label: 'Processing Time',
-      value: input.processingTime,
-      tone: 'primary',
-    },
   ];
 
   const supportMetrics: OverviewSupportMetric[] = [
@@ -157,6 +147,16 @@ export const getExporterOverviewTruth = (
       label: 'Warnings',
       value: input.warningCount,
       tone: input.warningCount > 0 ? 'warning' : 'default',
+    },
+    {
+      label: 'LC Compliance',
+      value: `${input.complianceScore}%`,
+      tone: toMetricTone(input.complianceScore, { success: 80, warning: 50 }),
+    },
+    {
+      label: 'Processing Time',
+      value: input.processingTime,
+      tone: 'primary',
     },
   ];
 

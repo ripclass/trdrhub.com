@@ -467,6 +467,8 @@ const mapIssues = (
       remediation_owner: fixOwner,
       next_action: nextAction,
       workflow_lane: workflowLane,
+      count_class: countClass,
+      presentation_impact: presentationImpact,
       confidence,
       suggestion,
       field: issue?.field ?? issue?.metadata?.field,

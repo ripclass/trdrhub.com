@@ -35,16 +35,11 @@ const findCardByTitle = (title: RegExp | string, index = 0): HTMLElement => {
   return current ?? (heading as HTMLElement);
 };
 
+const mockUseCanonicalJobResult = vi.fn();
+
 vi.mock('@/hooks/use-lcopilot', () => {
   return {
-    useCanonicalJobResult: () => ({
-      jobStatus: { status: 'completed' },
-      results: activeResults,
-      isLoading: false,
-      resultsError: null,
-      jobError: null,
-      refreshResults: vi.fn().mockResolvedValue(activeResults),
-    }),
+    useCanonicalJobResult: () => mockUseCanonicalJobResult(),
   };
 });
 
@@ -93,6 +88,14 @@ vi.mock('@/config/exporterFeatureFlags', () => ({
 describe('ExporterResults', () => {
   beforeEach(() => {
     activeResults = buildValidationResults();
+    mockUseCanonicalJobResult.mockReturnValue({
+      jobStatus: { status: 'completed' },
+      results: activeResults,
+      isLoading: false,
+      resultsError: null,
+      jobError: null,
+      refreshResults: vi.fn().mockResolvedValue(activeResults),
+    });
   });
 
   it('renders overview metrics from processing summary', async () => {
@@ -236,6 +239,27 @@ describe('ExporterResults', () => {
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getByText(readinessValue as string)).toBeInTheDocument();
+  });
+
+  it('shows a terminal no-results state instead of pretending validation is still running', async () => {
+    const refreshResults = vi.fn().mockResolvedValue(null);
+    mockUseCanonicalJobResult.mockReturnValue({
+      jobStatus: { status: 'completed' },
+      results: null,
+      isLoading: false,
+      resultsError: null,
+      jobError: null,
+      refreshResults,
+    });
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+
+    expect(screen.getByText(/Validation finished, but results are not available yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Validation in progress/i)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /Retry loading results/i }));
+    expect(refreshResults).toHaveBeenCalledWith('manual');
   });
 
   it('uses backend submission eligibility as the source of truth for customs readiness status', async () => {
@@ -640,9 +664,27 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
-    expect(
-      screen.getByText(/This document could not be fully parsed/i),
-    ).toBeInTheDocument();
+    expect(screen.getAllByText(/Extraction warning/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Requirement coverage/i).length).toBeGreaterThan(0);
+  });
+
+  it('separates extraction, requirement, and review truth on document cards', async () => {
+    const docTruth = buildValidationResults();
+    docTruth.documents[0].status = 'success';
+    docTruth.documents[0].requirementStatus = 'matched';
+    docTruth.documents[0].reviewState = 'needs_review';
+    docTruth.documents[0].reviewReasons = ['Invoice totals need manual review'];
+    activeResults = docTruth;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+
+    expect(screen.getAllByText(/Extraction truth/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Requirement coverage/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Review consequence/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Requirement matched/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Review consequence/i).length).toBeGreaterThan(0);
   });
 
   it('does not show parse-failed messaging for verified documents with no extracted fields', async () => {
@@ -663,9 +705,8 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
-    expect(
-      screen.getByText(/No structured fields were extracted for this document/i),
-    ).toBeInTheDocument();
+    expect(screen.getAllByText(/Extracted/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Requirement matched/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/could not be fully parsed/i)).not.toBeInTheDocument();
   });
 });

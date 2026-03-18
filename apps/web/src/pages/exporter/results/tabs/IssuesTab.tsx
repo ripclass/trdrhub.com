@@ -18,9 +18,10 @@ interface SeverityCounts {
   minor: number;
 }
 
-interface BucketCounts {
-  compliance: number;
+interface LaneCounts {
   documentary: number;
+  compliance: number;
+  manual: number;
 }
 
 interface IssuesTabProps {
@@ -50,6 +51,7 @@ export function IssuesTab({
   issueCards,
   filteredIssueCards,
   severityCounts,
+  laneCounts,
   issueFilter,
   setIssueFilter,
   documentStatusMap,
@@ -118,7 +120,7 @@ export function IssuesTab({
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-6">
             <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">High-likelihood discrepancy</p>
               <p className="text-2xl font-bold text-destructive">{severityCounts.critical}</p>
@@ -133,7 +135,11 @@ export function IssuesTab({
             </div>
             <div className="p-3 rounded-lg bg-sky-500/5 border border-sky-500/20">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Compliance alerts</p>
-              <p className="text-2xl font-bold text-sky-700">{bucketCounts.compliance}</p>
+              <p className="text-2xl font-bold text-sky-700">{laneCounts.compliance}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Manual review items</p>
+              <p className="text-2xl font-bold text-violet-700">{laneCounts.manual}</p>
             </div>
             <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Issues</p>
