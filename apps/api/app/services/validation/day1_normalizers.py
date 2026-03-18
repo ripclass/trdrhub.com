@@ -67,6 +67,60 @@ _UNIT_ALIASES = {
 }
 
 
+def _parse_trade_date_to_iso(text: str) -> Optional[str]:
+    normalized = _base_clean(text).upper()
+    if not normalized:
+        return None
+
+    # Exact ISO first
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
+        try:
+            return datetime.strptime(normalized, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
+    # Compact SWIFT YYMMDD, optionally followed by place/country text (e.g. 261015USA)
+    compact_match = re.match(r"^(\d{6})(?:\s*[A-Z].*)?$", normalized)
+    if compact_match:
+        compact = compact_match.group(1)
+        year = 2000 + int(compact[:2])
+        month = int(compact[2:4])
+        day = int(compact[4:6])
+        try:
+            return datetime(year=year, month=month, day=day).strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
+    # DD/MM/YYYY or D/M/YYYY
+    m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", normalized)
+    if m:
+        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return datetime(year=y, month=mth, day=d).strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
+    # DD-MM-YYYY
+    m = re.fullmatch(r"(\d{1,2})-(\d{1,2})-(\d{4})", normalized)
+    if m:
+        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return datetime(year=y, month=mth, day=d).strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
+    # DD MON YYYY
+    m = re.fullmatch(r"(\d{1,2})\s+([A-Z]{3})\s+(\d{4})", normalized)
+    if m and m.group(2) in _MONTHS:
+        d, mon, y = int(m.group(1)), _MONTHS[m.group(2)], int(m.group(3))
+        try:
+            return datetime(year=y, month=mon, day=d).strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
+    return None
+
+
 def _base_clean(text: Optional[str]) -> str:
     if not text:
         return ""
@@ -164,48 +218,9 @@ def validate_gross_net_pair(gross: WeightResult, net: WeightResult) -> Optional[
 
 
 def normalize_date(raw: Optional[str]) -> NormalizeResult:
-    text = _base_clean(raw).upper()
-    if not text:
-        return NormalizeResult(raw, None, False, "DATE_PARSE_INVALID")
-
-    # YYYY-MM-DD
-    try:
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-            parsed = datetime.strptime(text, "%Y-%m-%d")
-            return NormalizeResult(raw, parsed.strftime("%Y-%m-%d"), True)
-    except ValueError:
-        return NormalizeResult(raw, None, False, "DATE_PARSE_INVALID")
-
-    # DD/MM/YYYY or D/M/YYYY
-    m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
-    if m:
-        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        try:
-            parsed = datetime(year=y, month=mth, day=d)
-            return NormalizeResult(raw, parsed.strftime("%Y-%m-%d"), True)
-        except ValueError:
-            return NormalizeResult(raw, None, False, "DATE_PARSE_INVALID")
-
-    # DD-MM-YYYY
-    m = re.fullmatch(r"(\d{1,2})-(\d{1,2})-(\d{4})", text)
-    if m:
-        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        try:
-            parsed = datetime(year=y, month=mth, day=d)
-            return NormalizeResult(raw, parsed.strftime("%Y-%m-%d"), True)
-        except ValueError:
-            return NormalizeResult(raw, None, False, "DATE_PARSE_INVALID")
-
-    # DD MON YYYY
-    m = re.fullmatch(r"(\d{1,2})\s+([A-Z]{3})\s+(\d{4})", text)
-    if m and m.group(2) in _MONTHS:
-        d, mon, y = int(m.group(1)), _MONTHS[m.group(2)], int(m.group(3))
-        try:
-            parsed = datetime(year=y, month=mon, day=d)
-            return NormalizeResult(raw, parsed.strftime("%Y-%m-%d"), True)
-        except ValueError:
-            return NormalizeResult(raw, None, False, "DATE_PARSE_INVALID")
-
+    parsed = _parse_trade_date_to_iso(raw or "")
+    if parsed:
+        return NormalizeResult(raw, parsed, True)
     return NormalizeResult(raw, None, False, "DATE_PARSE_INVALID")
 
 

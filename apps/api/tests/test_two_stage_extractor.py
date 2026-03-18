@@ -140,6 +140,28 @@ class TestFieldValidator:
         score, issues = self.validator.validate(field)
         assert score == 1.0
         assert field.normalized_value == "2026-03-15"
+
+    def test_validate_date_swift_compact_yymmdd(self):
+        field = ExtractedField(
+            name="issue_date",
+            field_type=FieldType.DATE,
+            raw_value="260415",
+        )
+        score, issues = self.validator.validate(field)
+        assert score == 1.0
+        assert field.normalized_value == "2026-04-15"
+        assert issues == []
+
+    def test_validate_date_swift_compact_with_place_suffix(self):
+        field = ExtractedField(
+            name="expiry_date",
+            field_type=FieldType.DATE,
+            raw_value="261015USA",
+        )
+        score, issues = self.validator.validate(field)
+        assert score == 1.0
+        assert field.normalized_value == "2026-10-15"
+        assert issues == []
     
     def test_validate_swift_valid(self):
         field = ExtractedField(

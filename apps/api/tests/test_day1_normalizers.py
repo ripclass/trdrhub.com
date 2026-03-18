@@ -71,6 +71,18 @@ def test_invalid_date_rejected():
     assert out.error_code == "DATE_PARSE_INVALID"
 
 
+def test_date_swift_yymmdd_to_iso():
+    out = normalize_date("260415")
+    assert out.valid is True
+    assert out.normalized == "2026-04-15"
+
+
+def test_date_swift_yymmdd_with_place_suffix_to_iso():
+    out = normalize_date("261015USA")
+    assert out.valid is True
+    assert out.normalized == "2026-10-15"
+
+
 def test_issuer_normalization():
     out = normalize_issuer("  Acme Trading   Limited. ")
     assert out.valid is True

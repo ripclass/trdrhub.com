@@ -220,10 +220,25 @@ class FieldValidator:
     def _validate_date(self, field: ExtractedField) -> Tuple[float, List[str]]:
         """Validate date formats."""
         from datetime import datetime
-        
+
         value = str(field.raw_value).strip()
         issues = []
-        
+        compact = value.upper().strip()
+        compact = re.sub(r"^[A-Z ]{2,40}[:#-]*\s*", "", compact)
+        compact = re.sub(r"(\d{6})([A-Z]{3,})$", r"\1", compact)
+        compact = re.sub(r"\s+[A-Z]{3,}$", "", compact)
+
+        if re.fullmatch(r"\d{6}", compact):
+            yy, mm, dd = int(compact[:2]), int(compact[2:4]), int(compact[4:6])
+            year = 2000 + yy if yy <= 69 else 1900 + yy
+            try:
+                dt = datetime(year=year, month=mm, day=dd)
+                field.normalized_value = dt.strftime("%Y-%m-%d")
+                return 1.0, []
+            except ValueError:
+                issues.append("Cannot parse date")
+                return 0.0, issues
+
         # Common date formats
         formats = [
             "%Y-%m-%d",
@@ -234,23 +249,23 @@ class FieldValidator:
             "%d %b %Y",
             "%d %B %Y",
         ]
-        
+
         for fmt in formats:
             try:
-                dt = datetime.strptime(value, fmt)
+                dt = datetime.strptime(compact, fmt)
                 field.normalized_value = dt.strftime("%Y-%m-%d")
-                
+
                 # Sanity check: not too far in past or future
                 now = datetime.now()
                 years_diff = abs((dt - now).days) / 365
                 if years_diff > 5:
                     issues.append("Date is more than 5 years from now")
                     return 0.7, issues
-                
+
                 return 1.0, []
             except ValueError:
                 continue
-        
+
         issues.append("Cannot parse date")
         return 0.0, issues
     
