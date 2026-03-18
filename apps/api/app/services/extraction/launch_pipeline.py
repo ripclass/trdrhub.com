@@ -23,6 +23,7 @@ from app.services.extraction.iso20022_lc_extractor import (
     extract_iso20022_with_ai_fallback,
 )
 from app.services.extraction.lc_taxonomy import build_lc_classification
+from app.services.extraction.multimodal_document_extractor import extract_document_multimodal_first
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,8 @@ class LaunchExtractionPipeline:
         document_type: str,
         filename: str,
         extraction_artifacts_v1: Optional[Dict[str, Any]] = None,
+        file_bytes: Optional[bytes] = None,
+        content_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         extraction_artifacts_v1 = extraction_artifacts_v1 or {}
         normalized_doc_type = _canonicalize_launch_doc_type(str(document_type or "").strip().lower())
@@ -115,6 +118,8 @@ class LaunchExtractionPipeline:
                 document_type=normalized_doc_type,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                file_bytes=file_bytes,
+                content_type=content_type,
             )
 
         if normalized_doc_type in {"commercial_invoice", "proforma_invoice"}:
@@ -122,6 +127,9 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
             )
 
         if normalized_doc_type == "bill_of_lading":
@@ -129,6 +137,9 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
             )
 
         if normalized_doc_type == "packing_list":
@@ -136,6 +147,9 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
             )
 
         if normalized_doc_type == "certificate_of_origin":
@@ -143,6 +157,9 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
             )
 
         if normalized_doc_type == "insurance_certificate":
@@ -150,6 +167,9 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
             )
 
         if normalized_doc_type in {"beneficiary_certificate", "beneficiary_statement"}:
@@ -157,6 +177,9 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
                 forced_subtype="beneficiary_certificate",
                 post_validation_target="beneficiary_certificate",
             )
@@ -166,6 +189,9 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
             )
 
         if normalized_doc_type in {"weight_list", "weight_certificate"}:
@@ -173,6 +199,9 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
                 forced_subtype="weight_certificate",
                 post_validation_target=normalized_doc_type,
             )
@@ -182,11 +211,14 @@ class LaunchExtractionPipeline:
                 extracted_text=extracted_text,
                 filename=filename,
                 quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
             )
 
         return {"handled": False}
 
-    async def _process_lc_like(self, *, extracted_text: str, document_type: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
+    async def _process_lc_like(self, *, extracted_text: str, document_type: str, filename: str, quality_assessment: Any, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         lc_format = detect_lc_format(extracted_text)
         lc_subtype = _detect_lc_financial_subtype(filename=filename, document_type=document_type, extracted_text=extracted_text)
         base_patch = {
@@ -225,8 +257,16 @@ class LaunchExtractionPipeline:
                     "post_validation_target": None,
                 }
 
-            lc_struct = await extract_lc_ai_first(extracted_text)
-            extraction_status = lc_struct.get("_status", "unknown")
+            multimodal_struct = await extract_document_multimodal_first(
+                document_type=document_type,
+                filename=filename,
+                file_bytes=file_bytes,
+                content_type=content_type,
+                extracted_text=extracted_text,
+                subtype_hint=lc_subtype,
+            )
+            lc_struct = multimodal_struct or await extract_lc_ai_first(extracted_text)
+            extraction_status = lc_struct.get("_status", "unknown") if isinstance(lc_struct, dict) else "unknown"
             if lc_struct and extraction_status != "failed":
                 shaped_payload = _shape_lc_financial_payload(lc_struct, lc_subtype=lc_subtype, raw_text=extracted_text, source_type=document_type, lc_format=lc_format)
                 lc_review = _assess_lc_financial_completeness(shaped_payload, lc_subtype=lc_subtype)
@@ -320,7 +360,7 @@ class LaunchExtractionPipeline:
             "post_validation_target": None,
         }
 
-    async def _process_invoice(self, *, extracted_text: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
+    async def _process_invoice(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         invoice_subtype = _detect_invoice_financial_subtype(filename=filename, extracted_text=extracted_text)
         base_patch = {
             "ocr_quality": {
@@ -333,7 +373,15 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
-            invoice_struct = await extract_invoice_ai_first(extracted_text)
+            multimodal_struct = await extract_document_multimodal_first(
+                document_type=document_type,
+                filename=filename,
+                file_bytes=file_bytes,
+                content_type=content_type,
+                extracted_text=extracted_text,
+                subtype_hint=invoice_subtype,
+            )
+            invoice_struct = multimodal_struct or await extract_invoice_ai_first(extracted_text)
             extraction_status = invoice_struct.get("_status", "unknown")
             if invoice_struct and extraction_status != "failed":
                 shaped_payload = _shape_invoice_financial_payload(invoice_struct, invoice_subtype=invoice_subtype, raw_text=extracted_text)
@@ -403,7 +451,7 @@ class LaunchExtractionPipeline:
         invoice_review = _assess_invoice_financial_completeness(shaped_payload, invoice_subtype=invoice_subtype)
         return {"handled": True, "context_key": "invoice", "context_payload": {**shaped_payload, "invoice_review": invoice_review}, "doc_info_patch": {**base_patch, "invoice_subtype": invoice_subtype, "invoice_family": shaped_payload.get("invoice_family"), "parse_complete": invoice_review.get("parse_complete"), "parse_completeness": invoice_review.get("required_ratio"), "missing_required_fields": invoice_review.get("missing_required_fields", []), "required_fields_found": invoice_review.get("required_found"), "required_fields_total": invoice_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(invoice_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_invoice_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
 
-    async def _process_bl(self, *, extracted_text: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
+    async def _process_bl(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         transport_subtype = _detect_transport_subtype(filename=filename, extracted_text=extracted_text)
         base_patch = {
             "ocr_quality": {
@@ -416,7 +464,15 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
-            bl_struct = await extract_bl_ai_first(extracted_text)
+            multimodal_struct = await extract_document_multimodal_first(
+                document_type=document_type,
+                filename=filename,
+                file_bytes=file_bytes,
+                content_type=content_type,
+                extracted_text=extracted_text,
+                subtype_hint=transport_subtype,
+            )
+            bl_struct = multimodal_struct or await extract_bl_ai_first(extracted_text)
             extraction_status = bl_struct.get("_status", "unknown")
             if bl_struct and extraction_status != "failed":
                 shaped_payload = _shape_transport_payload(bl_struct, transport_subtype=transport_subtype, raw_text=extracted_text)
@@ -488,7 +544,7 @@ class LaunchExtractionPipeline:
         transport_review = _assess_transport_completeness(shaped_payload, transport_subtype=transport_subtype)
         return {"handled": True, "context_key": "bill_of_lading", "context_payload": {**shaped_payload, "transport_review": transport_review}, "doc_info_patch": {**base_patch, "transport_subtype": transport_subtype, "transport_family": shaped_payload.get("transport_family"), "transport_mode": shaped_payload.get("transport_mode"), "parse_complete": transport_review.get("parse_complete"), "parse_completeness": transport_review.get("required_ratio"), "missing_required_fields": transport_review.get("missing_required_fields", []), "required_fields_found": transport_review.get("required_found"), "required_fields_total": transport_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(transport_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_bl_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
 
-    async def _process_packing_list(self, *, extracted_text: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
+    async def _process_packing_list(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         base_patch = {
             "ocr_quality": {
                 "overall_score": quality_assessment.overall_score,
@@ -500,7 +556,14 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
-            packing_struct = await extract_packing_list_ai_first(extracted_text)
+            multimodal_struct = await extract_document_multimodal_first(
+                document_type=document_type,
+                filename=filename,
+                file_bytes=file_bytes,
+                content_type=content_type,
+                extracted_text=extracted_text,
+            )
+            packing_struct = multimodal_struct or await extract_packing_list_ai_first(extracted_text)
             extraction_status = packing_struct.get("_status", "unknown")
             if packing_struct and extraction_status != "failed":
                 return {
@@ -548,7 +611,7 @@ class LaunchExtractionPipeline:
 
         return {"handled": True, "context_key": "packing_list", "context_payload": {"raw_text": extracted_text}, "doc_info_patch": {**base_patch, "extraction_status": "failed", "extraction_error": "launch_pipeline_packing_list_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
 
-    async def _process_certificate_of_origin(self, *, extracted_text: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
+    async def _process_certificate_of_origin(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         regulatory_subtype = _detect_regulatory_subtype(filename=filename, extracted_text=extracted_text)
         base_patch = {
             "ocr_quality": {
@@ -561,7 +624,15 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
-            coo_struct = await extract_coo_ai_first(extracted_text)
+            multimodal_struct = await extract_document_multimodal_first(
+                document_type=document_type,
+                filename=filename,
+                file_bytes=file_bytes,
+                content_type=content_type,
+                extracted_text=extracted_text,
+                subtype_hint=regulatory_subtype,
+            )
+            coo_struct = multimodal_struct or await extract_coo_ai_first(extracted_text)
             extraction_status = coo_struct.get("_status", "unknown")
             if coo_struct and extraction_status != "failed":
                 shaped_payload = _shape_regulatory_payload(coo_struct, regulatory_subtype=regulatory_subtype, raw_text=extracted_text)
@@ -639,6 +710,9 @@ class LaunchExtractionPipeline:
         extracted_text: str,
         filename: str,
         quality_assessment: Any,
+        document_type: str,
+        file_bytes: Optional[bytes] = None,
+        content_type: Optional[str] = None,
         forced_subtype: Optional[str] = None,
         post_validation_target: str = "insurance_certificate",
     ) -> Dict[str, Any]:
@@ -654,7 +728,15 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
-            insurance_struct = await extract_insurance_ai_first(extracted_text)
+            multimodal_struct = await extract_document_multimodal_first(
+                document_type=document_type,
+                filename=filename,
+                file_bytes=file_bytes,
+                content_type=content_type,
+                extracted_text=extracted_text,
+                subtype_hint=insurance_subtype,
+            )
+            insurance_struct = multimodal_struct or await extract_insurance_ai_first(extracted_text)
             extraction_status = insurance_struct.get("_status", "unknown")
             if insurance_struct and extraction_status != "failed":
                 shaped_payload = _shape_insurance_payload(insurance_struct, insurance_subtype=insurance_subtype, raw_text=extracted_text)
@@ -754,8 +836,16 @@ class LaunchExtractionPipeline:
             "post_validation_target": post_validation_target if has_structured_data else None,
         }
 
-    async def _process_supporting_document(self, *, extracted_text: str, filename: str, quality_assessment: Any) -> Dict[str, Any]:
+    async def _process_supporting_document(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         supporting_guess = _guess_supporting_document_subtype(filename=filename, extracted_text=extracted_text)
+        multimodal_struct = await extract_document_multimodal_first(
+            document_type=document_type,
+            filename=filename,
+            file_bytes=file_bytes,
+            content_type=content_type,
+            extracted_text=extracted_text,
+            subtype_hint=supporting_guess.get("subtype"),
+        )
         base_patch = {
             "ocr_quality": {
                 "overall_score": quality_assessment.overall_score,
@@ -767,6 +857,7 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         payload = _apply_canonical_normalization({
+            **(multimodal_struct or {}),
             "raw_text": extracted_text,
             "supporting_subtype_guess": supporting_guess.get("subtype"),
             "supporting_family_guess": supporting_guess.get("family"),
@@ -802,6 +893,9 @@ class LaunchExtractionPipeline:
         extracted_text: str,
         filename: str,
         quality_assessment: Any,
+        document_type: str,
+        file_bytes: Optional[bytes] = None,
+        content_type: Optional[str] = None,
         forced_subtype: Optional[str] = None,
         post_validation_target: str = "inspection_certificate",
     ) -> Dict[str, Any]:
@@ -817,7 +911,15 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
-            inspection_struct = await extract_inspection_ai_first(extracted_text)
+            multimodal_struct = await extract_document_multimodal_first(
+                document_type=document_type,
+                filename=filename,
+                file_bytes=file_bytes,
+                content_type=content_type,
+                extracted_text=extracted_text,
+                subtype_hint=inspection_subtype,
+            )
+            inspection_struct = multimodal_struct or await extract_inspection_ai_first(extracted_text)
             extraction_status = inspection_struct.get("_status", "unknown")
             if inspection_struct and extraction_status != "failed":
                 shaped_payload = _shape_inspection_payload(inspection_struct, inspection_subtype=inspection_subtype, raw_text=extracted_text)

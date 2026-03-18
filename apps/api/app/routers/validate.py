@@ -4423,12 +4423,14 @@ async def _build_document_context(
         content_type = getattr(upload_file, "content_type", "unknown")
         document_type = _resolve_document_type(filename, idx, normalized_tags)
         document_id = str(uuid4())
+        doc_process_started_at = time.perf_counter()
         doc_info: Dict[str, Any] = {
             "id": document_id,
             "filename": filename,
             "document_type": document_type,
             "extracted_fields": {},
             "extraction_status": "empty",
+            "timings_ms": {},
         }
         if normalized_tags and filename:
             lower_name = filename.lower()
@@ -4441,6 +4443,12 @@ async def _build_document_context(
         extraction_artifacts_v1 = extraction_artifacts_by_idx.get(idx) or _empty_extraction_artifacts_v1(raw_text=extracted_text or "")
         doc_info["extraction_artifacts_v1"] = extraction_artifacts_v1
         doc_info["ocr_confidence"] = extraction_artifacts_v1.get("ocr_confidence")
+        ocr_elapsed_ms = extraction_artifacts_v1.get("total_time_ms")
+        if ocr_elapsed_ms is not None:
+            try:
+                doc_info.setdefault("timings_ms", {})["ocr"] = round(float(ocr_elapsed_ms), 2)
+            except Exception:
+                pass
 
         artifacts_index = context.setdefault("document_artifacts_v1", {})
         artifacts_index[document_id] = extraction_artifacts_v1
@@ -4486,17 +4494,23 @@ async def _build_document_context(
 
         launch_pipeline_result: Optional[Dict[str, Any]] = None
         launch_pipeline = get_launch_extraction_pipeline()
+        launch_pipeline_started_at = time.perf_counter()
         if document_type in ("letter_of_credit", "swift_message", "lc_application", "commercial_invoice", "proforma_invoice", "bill_of_lading", "packing_list", "certificate_of_origin", "insurance_certificate", "insurance_policy", "inspection_certificate", "pre_shipment_inspection", "quality_certificate", "weight_certificate", "weight_list", "measurement_certificate", "analysis_certificate", "lab_test_report", "sgs_certificate", "bureau_veritas_certificate", "intertek_certificate", "beneficiary_certificate", "manufacturer_certificate", "conformity_certificate", "non_manipulation_certificate", "phytosanitary_certificate", "fumigation_certificate", "health_certificate", "veterinary_certificate", "sanitary_certificate", "halal_certificate", "kosher_certificate", "organic_certificate", "gsp_form_a", "eur1_movement_certificate", "customs_declaration", "export_license", "import_license", "air_waybill", "sea_waybill", "road_transport_document", "railway_consignment_note", "forwarder_certificate_of_receipt", "shipping_company_certificate", "warehouse_receipt", "cargo_manifest", "supporting_document"):
             try:
+                file_bytes = await upload_file.read()
+                await upload_file.seek(0)
                 launch_pipeline_result = await launch_pipeline.process_document(
                     extracted_text=extracted_text,
                     document_type=document_type,
                     filename=filename,
                     extraction_artifacts_v1=extraction_artifacts_v1,
+                    file_bytes=file_bytes,
+                    content_type=content_type,
                 )
             except Exception as launch_exc:
                 logger.warning("Launch extraction pipeline failed for %s: %s", filename, launch_exc, exc_info=True)
                 launch_pipeline_result = None
+        doc_info.setdefault("timings_ms", {})["launch_pipeline"] = round((time.perf_counter() - launch_pipeline_started_at) * 1000, 2)
 
         try:
             if launch_pipeline_result and launch_pipeline_result.get("handled"):
@@ -4511,11 +4525,13 @@ async def _build_document_context(
 
                 validation_doc_type = launch_pipeline_result.get("validation_doc_type")
                 if validation_doc_type and context_key and isinstance(context.get(context_key), dict):
+                    two_stage_started_at = time.perf_counter()
                     validated_payload, validation_summary = _apply_two_stage_validation(
                         context[context_key], validation_doc_type, filename, job_id=job_id
                     )
                     context[context_key].update(validated_payload)
                     launch_pipeline_result.setdefault("doc_info_patch", {})["validation_summary"] = validation_summary
+                    doc_info.setdefault("timings_ms", {})["two_stage_validation"] = round((time.perf_counter() - two_stage_started_at) * 1000, 2)
                     if context_key == "lc":
                         context["lc_structured_output"] = validated_payload
 
@@ -4609,6 +4625,16 @@ async def _build_document_context(
                     extraction_status_now,
                     bool(extraction_artifacts_v1.get("fallback_activated")),
                     extraction_artifacts_v1.get("reason_codes") or [],
+                )
+                doc_info.setdefault("timings_ms", {})["document_total"] = round((time.perf_counter() - doc_process_started_at) * 1000, 2)
+                logger.info(
+                    "validate.extraction.timing file=%s doc_type=%s ocr_ms=%s launch_pipeline_ms=%s two_stage_ms=%s total_ms=%s",
+                    filename,
+                    document_type,
+                    (doc_info.get("timings_ms") or {}).get("ocr"),
+                    (doc_info.get("timings_ms") or {}).get("launch_pipeline"),
+                    (doc_info.get("timings_ms") or {}).get("two_stage_validation"),
+                    (doc_info.get("timings_ms") or {}).get("document_total"),
                 )
                 debug_extraction_trace.append(trace_payload)
 

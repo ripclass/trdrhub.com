@@ -248,3 +248,140 @@ The first deployment of commit `f163ddb` failed in Vercel with an esbuild syntax
 
 ### Important lesson
 When exporter fixes touch this file, always check the file tail for duplicate append junk before trusting a deploy/build failure at face value.
+
+## 2026-03-18 — architecture/performance framing correction
+Ripon clarified the correct engine framing for the backend:
+- `AI-first`
+- `deterministic`
+- `veto`
+
+This is the actual 3-layer model.
+Do **not** describe it as “AI-first + 3 more layers”.
+
+## 2026-03-18 — fresh audit direction on validation speed
+A later architecture audit was started after Ripon pushed back on the earlier simplification. Confirmed code facts from the repo:
+- AI-first extraction is already on the hot path in `apps/api/app/routers/validate.py`
+- launch extraction boundary exists in `apps/api/app/services/extraction/launch_pipeline.py`
+- AI-first extractors exist for LC / invoice / BL / packing list / COO / insurance / inspection
+- validate route still appears to combine many heavy responsibilities in one request path:
+  - OCR/text extraction
+  - launch-pipeline / AI-first extraction
+  - two-stage validation / normalization
+  - requirement parsing
+  - sanctions / policy / risk work
+  - response shaping / final contract assembly
+  - persistence/session updates
+
+### Working conclusion
+The current likely performance problem is **not** that AI-first is missing.
+The likely problem is that AI-first is embedded inside a very large synchronous validation route, so first useful review is delayed by downstream deterministic/veto/shaping work.
+
+### Next best step
+Run a proper code audit of the exporter validation hot path using the correct 3-layer framing:
+- AI-first
+- deterministic
+- veto
+
+The goal of that audit should be:
+1. confirm the real hot path
+2. identify what is already good and worth preserving
+3. rank actual bottlenecks
+4. separate confirmed facts from inference
+5. produce a refactor-first plan before implementation starts
+
+### Team/work style reminder
+How Ripon and the assistant are working together right now:
+- Ripon sets direction, product truth, and quality bar
+- assistant implements and verifies directly in code/live product
+- Codex can be used as a **thorough reviewer/auditor**, but not as a substitute for clear direct implementation work
+- no hardcoded patches
+- no shortcuts
+- no shallow surface-only fixes
+- deepest correct seam first
+- finish the last mile properly
+- update handoff + memory on every real commit
+- be genuinely helpful, not performative
+
+## 2026-03-18 — extraction architecture correction: multimodal-first seam started
+Ripon clarified the extraction intent unambiguously:
+- extraction must be **true file-native multimodal first**
+- PDFs/images should go to the frontier model first
+- OCR/native text should be fallback/support evidence, not the primary extraction gate
+- this is separate from the validation engine; validation remains the 3-layer model:
+  1. AI-first
+  2. deterministic
+  3. veto
+
+### Confirmed repo truth before refactor
+The live extraction path was audited and confirmed to be:
+- `file -> OCR/native parse -> text -> AI extraction`
+
+That meant the existing "AI-first extraction" implementation was actually **text-first in runtime terms**, because the model was receiving OCR/native text (`raw_text`) rather than the original PDF/image as the primary input.
+
+### Why this mattered
+This explained both major complaints:
+- slow extraction on messy PDFs/images
+- extraction failures despite strong frontier models
+
+The root issue was not frontier capability; it was that the live extraction seam still depended on OCR/text recovery before AI saw the document.
+
+### Refactor started in repo
+A real extraction-only refactor was started in the backend to move the live path toward multimodal-first.
+
+#### New file added
+- `apps/api/app/services/extraction/multimodal_document_extractor.py`
+
+What this new module does:
+- accepts real uploaded PDF/image bytes
+- renders PDFs to page images
+- sends document pages directly to multimodal models
+- uses OCR/native text only as secondary support context in the multimodal prompt
+- covers the finite supported trade-doc family map rather than a tiny pilot:
+  - LC / SWIFT / LC application
+  - invoice / proforma
+  - transport docs
+  - packing list
+  - COO / regulatory / customs / licenses
+  - insurance / beneficiary / special certificates
+  - inspection / testing / weight / measurement
+  - generic supporting docs
+
+#### Live-path wiring completed so far
+- `apps/api/app/routers/validate.py`
+  - `LaunchExtractionPipeline.process_document(...)` now receives real `file_bytes` + `content_type`
+  - extraction timing instrumentation was also added for:
+    - OCR
+    - launch pipeline
+    - two-stage validation
+    - total per-document time
+- `apps/api/app/services/extraction/launch_pipeline.py`
+  - now imports the new multimodal extractor
+  - now attempts multimodal-first before the old text-fed AI extractor for:
+    - LC-like docs
+    - invoice
+    - transport/BL
+    - packing list
+    - COO/regulatory
+    - insurance/beneficiary
+    - inspection/weight families
+    - generic supporting docs
+
+### Current status at handoff
+- code compiled successfully after the seam change (`py_compile` on `multimodal_document_extractor.py`, `launch_pipeline.py`, and `validate.py`)
+- the live extraction route is now structurally capable of handing real upload bytes into a multimodal-first extractor before falling back to the old text-fed path
+- this is a real root-seam move, not a toy side-path
+
+### Important unfinished truth
+This pass is **not finished yet**.
+Still pending:
+1. reduce/remove duplicate route-owned extraction logic that still exists downstream of the launch pipeline
+2. verify the new multimodal-first path on real LC-first + bulk supporting-document uploads
+3. decide whether any doc-family-specific shaping/verification needs tightening after real runs
+4. only then commit/deploy the next clean extraction stage
+
+### Next session starting point
+Resume from the extraction seam, not from validation.
+Immediate next move:
+- continue making `LaunchExtractionPipeline` the authoritative extraction boundary
+- reduce route-owned duplicate extraction after launch-pipeline handling
+- test real LC-first intake + unlocked supporting-doc bulk upload against the new multimodal-first path
