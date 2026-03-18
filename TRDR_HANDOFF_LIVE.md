@@ -182,3 +182,34 @@ Files changed:
 
 ### Important repo-state note
 While implementing these seams, several files were found with pre-existing duplicated tail fragments / corrupted appended blocks that caused misleading syntax/transform failures. These had to be surgically cleaned while preserving the actual logic changes. If similar compile failures recur in these exact exporter files, inspect file tails for accidental duplicate append blocks before assuming a new logic regression.
+
+## 2026-03-18 — follow-up live stuck-state fix in `useCanonicalJobResult`
+After deploy, live verification on job `3f26aba2-6ce9-464d-a65e-d3454391ea12` still showed:
+- `Validation in progress`
+- `Current status: Completed`
+
+That proved the earlier page-level terminal no-results branch was not sufficient by itself.
+
+### Root cause
+The remaining seam was in `apps/web/src/hooks/use-lcopilot.ts` inside `useCanonicalJobResult`:
+- hook-level `isLoading` still trusted lingering polling/loading state
+- so a terminal job with no results payload could continue to surface as generic loading
+- consequence: `ExporterResults.tsx` never escaped the loading shell, even though job status was already terminal
+
+### Follow-up fix
+`useCanonicalJobResult` now derives:
+- `isAwaitingInitialState`
+- `isTerminalWithoutResults`
+
+and `isLoading` is now suppressed for the terminal-without-results case.
+
+Effectively:
+- terminal completion without canonical results is no longer allowed to masquerade as ordinary loading
+- this allows the already-shipped terminal no-results UI state in `ExporterResults.tsx` to actually render on live routes
+
+### Verification
+Focused test passes:
+- `shows a terminal no-results state instead of pretending validation is still running`
+
+### File changed
+- `apps/web/src/hooks/use-lcopilot.ts`

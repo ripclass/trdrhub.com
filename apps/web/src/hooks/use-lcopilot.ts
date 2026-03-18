@@ -606,6 +606,8 @@ export const useCanonicalJobResult = (
 
   const normalizedStatus = normalizeJobStatus(jobStatus?.status);
   const isTerminal = TERMINAL_JOB_STATUSES.has(normalizedStatus);
+  const isAwaitingInitialState = !jobStatus && !jobError && !resultsError;
+  const isTerminalWithoutResults = enabled && isTerminal && !visibleResults;
 
   useEffect(() => {
     if (!enabled || !jobId || visibleResults || isLoadingResults) {
