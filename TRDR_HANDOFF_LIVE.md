@@ -385,3 +385,57 @@ Immediate next move:
 - continue making `LaunchExtractionPipeline` the authoritative extraction boundary
 - reduce route-owned duplicate extraction after launch-pipeline handling
 - test real LC-first intake + unlocked supporting-doc bulk upload against the new multimodal-first path
+
+## 2026-03-18 — extraction boundary cleanup + LC-first mixed-batch regression locked
+A real follow-up pass was completed on the multimodal-first extraction seam.
+
+Files changed:
+- `apps/api/app/routers/validate.py`
+- `apps/api/app/services/extraction/launch_pipeline.py`
+- `apps/api/tests/test_build_document_context_boundary.py`
+
+### What this pass fixed
+1. **Route-owned duplicate extraction removed after launch-pipeline handling**
+   - `_build_document_context()` no longer runs a second AI/regex extractor stack for LC/invoice/BL/packing/COO/insurance/inspection after `LaunchExtractionPipeline.process_document(...)`
+   - practical effect: launch pipeline is now the authoritative structured-extraction boundary for handled docs
+   - route fallback is now limited to preserving raw/native evidence for unhandled docs instead of re-owning structured extraction
+
+2. **LC-first batch-state continuity tightened**
+   - once an LC lands through the launch pipeline, `_build_document_context()` now refreshes `lc_required_document_types` from the extracted LC payload in the same batch
+   - this fixes the stale-state seam where LC-required supporting-doc expectations could remain empty while later files in the same batch were processed
+
+3. **Broader trade-document family canonicalization tightened inside launch pipeline**
+   - launch pipeline now canonicalizes more aliases into the right structured families instead of silently falling through:
+     - transport family additions include `forwarder_certificate_of_receipt`, `warehouse_receipt`, `cargo_manifest`
+     - regulatory family aliases route through the COO/regulatory boundary
+     - insurance/special-certificate aliases route through the insurance boundary
+     - inspection/weight/testing aliases route through the inspection boundary
+   - naming mismatches like `manufacturer_certificate` / `conformity_certificate` were also normalized so subtype detection and completeness logic stop drifting
+
+4. **Focused regression added for the real intended upload pattern**
+   - new test: `apps/api/tests/test_build_document_context_boundary.py`
+   - verifies `_build_document_context()` on:
+     - LC uploaded first
+     - mixed supporting-doc batch after
+     - launch pipeline mocked as the sole structured extractor boundary
+   - test proves the LC-first batch behavior survives with no route-owned structured-extraction fallback
+
+### Verification state
+Focused extraction regression slice passes:
+- `tests/mt700_required_docs_continuity_test.py`
+- `tests/test_mt_pipeline_contract.py`
+- `tests/test_iso_runtime_shape.py`
+- `tests/test_build_document_context_boundary.py`
+
+Result at verification time:
+- `12 passed`
+
+### Important current truth
+This is a meaningful boundary cleanup, not the full extraction refactor finish line.
+Still not yet proven in this pass:
+- true end-to-end live `/api/validate` multipart verification with real LC-first + bulk supporting files
+- real production behavior of the multimodal-first path on messy PDFs/images across the broad trade-doc universe
+
+### Best next move after this commit
+- deploy this extraction-boundary cleanup
+- then run a real LC-first + mixed supporting-doc upload against live/staging to verify the multimodal-first path behaves correctly beyond focused regression coverage

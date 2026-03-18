@@ -1155,18 +1155,76 @@ TRANSPORT_DOC_ALIASES = {
     "railway_consignment_note",
     "road_transport_document",
     "forwarders_certificate_of_receipt",
+    "forwarder_certificate_of_receipt",
     "house_bill_of_lading",
     "master_bill_of_lading",
     "delivery_order",
     "mates_receipt",
     "shipping_company_certificate",
+    "warehouse_receipt",
+    "cargo_manifest",
+}
+
+REGULATORY_DOC_ALIASES = {
+    "certificate_of_origin",
+    "gsp_form_a",
+    "eur1_movement_certificate",
+    "customs_declaration",
+    "export_license",
+    "import_license",
+    "phytosanitary_certificate",
+    "fumigation_certificate",
+    "health_certificate",
+    "veterinary_certificate",
+    "sanitary_certificate",
+    "cites_permit",
+    "radiation_certificate",
+}
+
+INSURANCE_DOC_ALIASES = {
+    "insurance_certificate",
+    "insurance_policy",
+    "beneficiary_certificate",
+    "beneficiary_statement",
+    "manufacturer_certificate",
+    "manufacturers_certificate",
+    "conformity_certificate",
+    "certificate_of_conformity",
+    "non_manipulation_certificate",
+    "halal_certificate",
+    "kosher_certificate",
+    "organic_certificate",
+}
+
+INSPECTION_DOC_ALIASES = {
+    "inspection_certificate",
+    "pre_shipment_inspection",
+    "quality_certificate",
+    "weight_certificate",
+    "weight_list",
+    "measurement_certificate",
+    "analysis_certificate",
+    "lab_test_report",
+    "sgs_certificate",
+    "bureau_veritas_certificate",
+    "intertek_certificate",
 }
 
 
 def _canonicalize_launch_doc_type(doc_type: str) -> str:
     normalized = str(doc_type or "").strip().lower().replace("-", "_").replace(" ", "_")
-    if normalized in TRANSPORT_DOC_ALIASES:
+    transport_aliases = globals().get("TRANSPORT_DOC_ALIASES", set()) or set()
+    regulatory_aliases = globals().get("REGULATORY_DOC_ALIASES", set()) or set()
+    insurance_aliases = globals().get("INSURANCE_DOC_ALIASES", set()) or set()
+    inspection_aliases = globals().get("INSPECTION_DOC_ALIASES", set()) or set()
+    if normalized in transport_aliases:
         return "bill_of_lading"
+    if normalized in regulatory_aliases:
+        return "certificate_of_origin"
+    if normalized in insurance_aliases:
+        return "insurance_certificate"
+    if normalized in inspection_aliases:
+        return "inspection_certificate"
     return normalized
 
 
@@ -1419,7 +1477,9 @@ def _assess_insurance_completeness(payload: Optional[Dict[str, Any]], *, insuran
     subtype_required = {
         "insurance_policy": ["policy_number", "insured_amount"],
         "beneficiary_certificate": ["certificate_number"],
+        "manufacturer_certificate": ["certificate_number"],
         "manufacturers_certificate": ["certificate_number"],
+        "conformity_certificate": ["certificate_number"],
         "certificate_of_conformity": ["certificate_number"],
         "non_manipulation_certificate": ["certificate_number"],
         "halal_certificate": ["certificate_number"],
@@ -1444,8 +1504,8 @@ def _detect_insurance_subtype(*, filename: str, extracted_text: str) -> str:
     checks = [
         ("insurance_policy", ["insurance policy", "policy"]),
         ("beneficiary_certificate", ["beneficiary certificate"]),
-        ("manufacturers_certificate", ["manufacturer's certificate", "manufacturers certificate"]),
-        ("certificate_of_conformity", ["certificate of conformity"]),
+        ("manufacturer_certificate", ["manufacturer certificate", "manufacturer's certificate", "manufacturers certificate"]),
+        ("conformity_certificate", ["conformity certificate", "certificate of conformity"]),
         ("non_manipulation_certificate", ["non-manipulation certificate"]),
         ("halal_certificate", ["halal certificate"]),
         ("kosher_certificate", ["kosher certificate"]),
