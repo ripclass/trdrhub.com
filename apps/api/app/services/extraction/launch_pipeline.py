@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import json
 import logging
 import re
@@ -112,7 +113,13 @@ class LaunchExtractionPipeline:
             metadata=extraction_artifacts_v1,
         )
 
-        if normalized_doc_type in {"letter_of_credit", "swift_message", "lc_application"}:
+        if normalized_doc_type in {
+            "letter_of_credit",
+            "swift_message",
+            "lc_application",
+            "bank_guarantee",
+            "standby_letter_of_credit",
+        }:
             return await self._process_lc_like(
                 extracted_text=extracted_text,
                 document_type=normalized_doc_type,
@@ -1388,6 +1395,67 @@ def _detect_lc_financial_subtype(*, filename: str, document_type: str, extracted
     return str(document_type or "letter_of_credit").strip().lower() or "letter_of_credit"
 
 
+def _coerce_mt700_date_iso(value: Any) -> Optional[str]:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+
+    match = re.search(r"(\d{6}|\d{8})", raw_value)
+    if not match:
+        return None
+
+    digits = match.group(1)
+    try:
+        if len(digits) == 6:
+            year = int(digits[:2])
+            month = int(digits[2:4])
+            day = int(digits[4:6])
+            full_year = 2000 + year if year < 80 else 1900 + year
+        else:
+            full_year = int(digits[:4])
+            month = int(digits[4:6])
+            day = int(digits[6:8])
+        return date(full_year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _extract_mt700_timeline_fields(raw_text: str) -> Dict[str, Any]:
+    source = raw_text or ""
+    if not source:
+        return {}
+
+    def _find(pattern: str) -> Optional[str]:
+        match = re.search(pattern, source, flags=re.IGNORECASE)
+        if not match:
+            return None
+        value = str(match.group(1) or "").strip()
+        return value or None
+
+    issue_raw = _find(r":?31C:\s*([^\n\r]+)")
+    expiry_raw = _find(r":?31D:\s*([^\n\r]+)")
+    latest_raw = _find(r":?44C:\s*([^\n\r]+)")
+
+    timeline: Dict[str, Any] = {}
+    issue_date = _coerce_mt700_date_iso(issue_raw)
+    expiry_date = _coerce_mt700_date_iso(expiry_raw)
+    latest_shipment_date = _coerce_mt700_date_iso(latest_raw)
+
+    if issue_date:
+        timeline["issue_date"] = issue_date
+    if expiry_date:
+        timeline["expiry_date"] = expiry_date
+    if latest_shipment_date:
+        timeline["latest_shipment_date"] = latest_shipment_date
+
+    if expiry_raw:
+        place = re.sub(r"^\s*\d{6,8}", "", expiry_raw).strip(" ,-/")
+        if place:
+            timeline["place_of_expiry"] = re.sub(r"\s+", " ", place)
+
+    return timeline
+
+
 def _shape_lc_financial_payload(payload: Dict[str, Any], *, lc_subtype: str, raw_text: str, source_type: str, lc_format: str) -> Dict[str, Any]:
     shaped = dict(payload or {})
     shaped["raw_text"] = raw_text
@@ -1470,6 +1538,51 @@ def _shape_lc_financial_payload(payload: Dict[str, Any], *, lc_subtype: str, raw
     shaped["currency"] = _first(shaped.get("currency"), _extract_label_value(raw_text, ["currency"]))
     shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("number"), shaped.get("reference"), _extract_label_value(raw_text, ["lc number", "credit number", "reference number"]))
     shaped["guarantee_reference"] = _first(shaped.get("guarantee_reference"), _extract_label_value(raw_text, ["guarantee no", "guarantee number", "reference number"]))
+
+    if lc_format == "mt700":
+        mt700_timeline = _extract_mt700_timeline_fields(raw_text)
+        issue_date = mt700_timeline.get("issue_date")
+        expiry_date = mt700_timeline.get("expiry_date")
+        latest_shipment_date = mt700_timeline.get("latest_shipment_date")
+        place_of_expiry = mt700_timeline.get("place_of_expiry")
+
+        if issue_date:
+            shaped["issue_date"] = issue_date
+        if expiry_date:
+            shaped["expiry_date"] = expiry_date
+        if latest_shipment_date:
+            shaped["latest_shipment_date"] = latest_shipment_date
+            shaped["latest_shipment"] = latest_shipment_date
+        if place_of_expiry:
+            shaped["place_of_expiry"] = place_of_expiry
+
+        timeline = shaped.get("timeline") if isinstance(shaped.get("timeline"), dict) else {}
+        if issue_date:
+            timeline["issue_date"] = issue_date
+        if expiry_date:
+            timeline["expiry_date"] = expiry_date
+        if latest_shipment_date:
+            timeline["latest_shipment"] = latest_shipment_date
+        if place_of_expiry:
+            timeline["place_of_expiry"] = place_of_expiry
+        if timeline:
+            shaped["timeline"] = timeline
+
+        dates = shaped.get("dates") if isinstance(shaped.get("dates"), dict) else {}
+        if issue_date:
+            dates["issue"] = issue_date
+            dates["issue_date"] = issue_date
+        if expiry_date:
+            dates["expiry"] = expiry_date
+            dates["expiry_date"] = expiry_date
+        if latest_shipment_date:
+            dates["latest_shipment"] = latest_shipment_date
+            dates["latest_shipment_date"] = latest_shipment_date
+        if place_of_expiry:
+            dates["place_of_expiry"] = place_of_expiry
+        if dates:
+            shaped["dates"] = dates
+
     return _apply_canonical_normalization(shaped)
 
 

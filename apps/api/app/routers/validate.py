@@ -581,9 +581,9 @@ def _build_lc_intake_summary(lc_payload: Dict[str, Any]) -> Dict[str, Any]:
         "beneficiary": beneficiary.get("name") or lc_payload.get("beneficiary_name"),
         "currency": amount.get("currency") or lc_payload.get("currency"),
         "amount": amount.get("amount") or lc_payload.get("lc_amount") or lc_payload.get("amount_value"),
-        "issue_date": dates.get("issue_date") or lc_payload.get("issue_date"),
-        "expiry_date": dates.get("expiry_date") or lc_payload.get("expiry_date"),
-        "latest_shipment_date": dates.get("latest_shipment_date") or lc_payload.get("latest_shipment_date"),
+        "issue_date": dates.get("issue_date") or dates.get("issue") or lc_payload.get("issue_date"),
+        "expiry_date": dates.get("expiry_date") or dates.get("expiry") or lc_payload.get("expiry_date"),
+        "latest_shipment_date": dates.get("latest_shipment_date") or dates.get("latest_shipment") or lc_payload.get("latest_shipment_date") or lc_payload.get("latest_shipment"),
         "port_of_loading": ports.get("port_of_loading") or lc_payload.get("port_of_loading"),
         "port_of_discharge": ports.get("port_of_discharge") or lc_payload.get("port_of_discharge"),
     }
