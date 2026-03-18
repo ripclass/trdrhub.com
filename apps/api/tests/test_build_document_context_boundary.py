@@ -334,3 +334,161 @@ def test_build_document_context_lc_first_mixed_batch_uses_launch_pipeline_as_sin
     assert docs[2]["document_type"] == "weight_list"
     assert docs[3]["document_type"] == "supporting_document"
     assert docs[3]["extraction_status"] == "text_only"
+
+
+def test_build_document_context_allows_lc_launch_pipeline_when_route_text_is_empty() -> None:
+    _install_stub_modules()
+
+    class LCOnlyPipeline:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def process_document(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(
+                {
+                    "filename": kwargs.get("filename"),
+                    "document_type": kwargs.get("document_type"),
+                    "extracted_text": kwargs.get("extracted_text"),
+                    "has_file_bytes": bool(kwargs.get("file_bytes")),
+                }
+            )
+            if kwargs.get("document_type") == "letter_of_credit":
+                return {
+                    "handled": True,
+                    "context_key": "lc",
+                    "context_payload": {
+                        "raw_text": "",
+                        "lc_number": "LC-MM-001",
+                        "documents_required": ["COMMERCIAL INVOICE", "PACKING LIST"],
+                    },
+                    "doc_info_patch": {
+                        "extracted_fields": {
+                            "lc_number": "LC-MM-001",
+                            "documents_required": ["COMMERCIAL INVOICE", "PACKING LIST"],
+                        },
+                        "extraction_status": "success",
+                        "extraction_method": "multimodal_ai_first",
+                    },
+                    "has_structured_data": True,
+                    "lc_number": "LC-MM-001",
+                    "validation_doc_type": None,
+                    "post_validation_target": "lc",
+                }
+            return {"handled": False}
+
+    pipeline = LCOnlyPipeline()
+
+    async def _fake_extract_text_empty_for_lc(upload_file: DummyUploadFile, document_type: Optional[str] = None) -> dict[str, Any]:
+        if upload_file.filename == "LC_Image_001.pdf":
+            return {
+                "text": "",
+                "artifacts": {
+                    "version": "extraction_artifacts_v1",
+                    "raw_text": "",
+                    "tables": [],
+                    "key_value_candidates": [],
+                    "spans": [],
+                    "bbox": [],
+                    "ocr_confidence": None,
+                    "attempted_stages": [],
+                    "text_length_by_stage": {},
+                    "stage_errors": {},
+                    "reason_codes": ["OCR_SKIPPED_NO_VIABLE_PROVIDER"],
+                    "provider_attempts": [],
+                    "fallback_activated": False,
+                    "final_stage": None,
+                    "final_text_length": 0,
+                    "stage_scores": {},
+                    "selected_stage": None,
+                    "rejected_stages": {},
+                },
+            }
+        return await _fake_extract_text_from_upload(upload_file, document_type=document_type)
+
+    namespace: Dict[str, Any] = {
+        "asyncio": asyncio,
+        "os": os,
+        "time": time,
+        "uuid4": uuid4,
+        "Any": Any,
+        "Dict": Dict,
+        "List": List,
+        "Optional": Optional,
+        "settings": _SettingsStub(),
+        "logger": _LoggerStub(),
+        "_canonical_document_tag": lambda value: str(value).strip().lower(),
+        "_resolve_document_type": lambda filename, idx, normalized_tags: normalized_tags.get(str(filename).lower(), "supporting_document"),
+        "_extract_text_from_upload": _fake_extract_text_empty_for_lc,
+        "_empty_extraction_artifacts_v1": lambda raw_text="", ocr_confidence=None: {
+            "version": "extraction_artifacts_v1",
+            "raw_text": raw_text or "",
+            "tables": [],
+            "key_value_candidates": [],
+            "spans": [],
+            "bbox": [],
+            "ocr_confidence": ocr_confidence,
+            "attempted_stages": [],
+            "text_length_by_stage": {},
+            "stage_errors": {},
+            "reason_codes": [],
+            "provider_attempts": [],
+            "fallback_activated": False,
+            "final_stage": None,
+            "final_text_length": len((raw_text or "").strip()),
+            "stage_scores": {},
+            "selected_stage": None,
+            "rejected_stages": {},
+        },
+        "_infer_required_document_types_from_lc": lambda lc: ["commercial_invoice", "packing_list"] if lc and lc.get("documents_required") else [],
+        "_maybe_promote_document_type_from_content": lambda **kwargs: {
+            "document_type": kwargs.get("current_type"),
+            "promoted": False,
+            "content_classification": None,
+        },
+        "get_launch_extraction_pipeline": lambda: pipeline,
+        "_apply_two_stage_validation": lambda payload, *args, **kwargs: (payload, {}),
+        "_context_payload_for_doc_type": lambda context, document_type: context.get(document_type) or context.get({
+            "letter_of_credit": "lc",
+            "commercial_invoice": "invoice",
+            "supporting_document": "supporting_document",
+        }.get(document_type, document_type), {}),
+        "_apply_direct_token_recovery": lambda *args, **kwargs: None,
+        "_enforce_day1_runtime_policy": lambda *args, **kwargs: None,
+        "_apply_extraction_guard": lambda *args, **kwargs: None,
+        "_finalize_text_backed_extraction_status": lambda *args, **kwargs: None,
+        "_stabilize_document_review_semantics": lambda *args, **kwargs: None,
+        "_resolve_doc_llm_trace": lambda *args, **kwargs: {},
+        "_count_populated_canonical_fields": lambda fields: len(fields or {}),
+        "_build_document_extraction_payload": lambda **kwargs: kwargs,
+        "_log_document_extraction_telemetry": lambda **kwargs: None,
+        "_augment_doc_field_details_with_decisions": lambda docs: None,
+        "_annotate_documents_with_review_metadata": lambda docs: {"documents": len(docs or [])},
+        "_normalize_lc_payload_structures": lambda payload: payload,
+        "build_lc_classification": lambda lc, context=None: {"required_documents": [{"code": "commercial_invoice"}, {"code": "packing_list"}]},
+        "_build_minimal_lc_structured_output": lambda lc_data, context: {"lc_number": (lc_data or {}).get("lc_number")},
+        "_extraction_fallback_hotfix_enabled": lambda: False,
+    }
+
+    loaded = _load_symbols(VALIDATE_PATH, {"_build_document_context"}, namespace)
+    build_document_context = loaded["_build_document_context"]
+
+    files = [DummyUploadFile("LC_Image_001.pdf", "application/pdf", b"lc-image-bytes")]
+
+    context = asyncio.run(
+        build_document_context(
+            files,
+            document_tags={
+                "LC_Image_001.pdf": "letter_of_credit",
+            },
+        )
+    )
+
+    assert len(pipeline.calls) == 1
+    assert pipeline.calls[0]["filename"] == "LC_Image_001.pdf"
+    assert pipeline.calls[0]["document_type"] == "letter_of_credit"
+    assert pipeline.calls[0]["extracted_text"] == ""
+    assert pipeline.calls[0]["has_file_bytes"] is True
+    assert context["lc_number"] == "LC-MM-001"
+    assert context["lc"]["documents_required"] == ["COMMERCIAL INVOICE", "PACKING LIST"]
+    assert context["documents"][0]["extraction_method"] == "multimodal_ai_first"
+    assert context["documents"][0]["extraction_status"] == "success"

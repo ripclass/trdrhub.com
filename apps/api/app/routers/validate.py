@@ -4455,7 +4455,9 @@ async def _build_document_context(
 
         if idx in extraction_errors:
             logger.warning(f"⚠ OCR extraction error for {filename}: {extraction_errors[idx]}")
-        if not extracted_text:
+
+        allows_multimodal_lc_bootstrap = document_type in {"letter_of_credit", "swift_message", "lc_application"}
+        if not extracted_text and not allows_multimodal_lc_bootstrap:
             logger.warning(f"⚠ No text extracted from {filename} - skipping field extraction")
             doc_info["extraction_status"] = "empty"
             logger.info(
@@ -4468,8 +4470,10 @@ async def _build_document_context(
             )
             document_details.append(doc_info)
             continue
-        
-        logger.info(f"✓ Extracted {len(extracted_text)} characters from {filename}")
+        if extracted_text:
+            logger.info(f"✓ Extracted {len(extracted_text)} characters from {filename}")
+        else:
+            logger.info("validate.extraction.multimodal_lc_bootstrap file=%s doc_type=%s proceeding_without_route_text=%s", filename, document_type, True)
 
         content_type_resolution = _maybe_promote_document_type_from_content(
             filename=filename,
@@ -6069,6 +6073,42 @@ def _map_ocr_provider_error_code(error: Optional[str]) -> Optional[str]:
     return "OCR_UNKNOWN_PROVIDER_ERROR"
 
 
+def _get_viable_ocr_providers() -> List[str]:
+    try:
+        from app.ocr.factory import get_ocr_factory
+        from app.services.ocr_diagnostics import get_ocr_diagnostics, resolve_ocr_provider_name
+
+        factory = get_ocr_factory()
+        configured = [resolve_ocr_provider_name(name) for name in list(getattr(factory, "configured_providers", None) or []) if name]
+        initialized = {
+            resolve_ocr_provider_name(adapter.provider_name)
+            for adapter in list(getattr(factory, "get_all_adapters", lambda: [])() or [])
+            if getattr(adapter, "provider_name", None)
+        }
+        diagnostics = get_ocr_diagnostics()
+        states = {
+            str(entry.get("provider_name") or ""): entry
+            for entry in diagnostics.ordered_states(configured)
+            if entry.get("provider_name")
+        }
+    except Exception:
+        return []
+
+    fatal_error_codes = {"OCR_AUTH_FAILURE", "OCR_PERMISSION_DENIED", "OCR_PROCESSOR_NOT_FOUND"}
+    viable: List[str] = []
+    for provider_name in configured:
+        if provider_name not in initialized:
+            continue
+        state = states.get(provider_name) or {}
+        last_error_code = str(state.get("last_error_code") or "")
+        if last_error_code in fatal_error_codes:
+            continue
+        if state.get("healthy") is False:
+            continue
+        viable.append(provider_name)
+    return viable
+
+
 def _score_stage_candidate(stage: str, text: str, document_type: Optional[str]) -> Dict[str, Any]:
     stripped = str(text or "").strip()
     total_chars = len(stripped)
@@ -6427,6 +6467,7 @@ async def _extract_text_from_upload(upload_file: Any, document_type: Optional[st
         return {"stage": stage_name, "text": stage_text}
 
     min_chars_for_skip = max(1, int(getattr(settings, "OCR_MIN_TEXT_CHARS_FOR_SKIP", 1200) or 1200))
+    native_text_soft_skip_chars = max(1, int(getattr(settings, "OCR_NATIVE_TEXT_SOFT_SKIP_CHARS", 250) or 250))
 
     if detected_input_mime == "text/plain":
         logger.info("validate.extraction.stage_entered file=%s stage=%s", filename, "plaintext_native")
@@ -6474,8 +6515,11 @@ async def _extract_text_from_upload(upload_file: Any, document_type: Optional[st
     if text_output_clean:
         stage_candidates["plaintext_native" if detected_input_mime == "text/plain" else "native_pdf_text"] = text_output
 
-    # If direct PDF text is already rich enough, skip OCR provider calls.
-    if len(text_output_clean) >= min_chars_for_skip:
+    # If direct/native text is already sufficient support evidence, do not spend time on OCR.
+    native_text_is_usable = len(text_output_clean) >= native_text_soft_skip_chars
+    if len(text_output_clean) >= min_chars_for_skip or (
+        detected_input_mime == "application/pdf" and native_text_is_usable
+    ):
         selection = _choose_stage()
         return _finalize_text_extraction_result(
             artifacts,
@@ -6580,6 +6624,37 @@ async def _extract_text_from_upload(upload_file: Any, document_type: Optional[st
                     artifacts,
                     stage=(selection or {}).get("stage") or "binary_metadata_scrape",
                     text=(selection or {}).get("text") or fallback_text,
+                )
+        _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
+        return _finalize_text_extraction_result(artifacts, stage="native_pdf_text", text="")
+
+    viable_ocr_providers = _get_viable_ocr_providers()
+    if not viable_ocr_providers:
+        _record_extraction_reason_code(artifacts, "OCR_SKIPPED_NO_VIABLE_PROVIDER")
+        if text_output_clean:
+            selection = _choose_stage()
+            return _finalize_text_extraction_result(
+                artifacts,
+                stage=(selection or {}).get("stage") or "native_pdf_text",
+                text=(selection or {}).get("text") or text_output,
+            )
+        if hotfix_enabled:
+            binary_text = _scrape_binary_text_metadata(file_bytes)
+            _record_extraction_stage(
+                artifacts,
+                filename=filename,
+                stage="binary_metadata_scrape",
+                text=binary_text,
+                fallback=True,
+            )
+            if (binary_text or "").strip():
+                _record_extraction_reason_code(artifacts, "FALLBACK_TEXT_RECOVERED")
+                stage_candidates["binary_metadata_scrape"] = binary_text
+                selection = _choose_stage()
+                return _finalize_text_extraction_result(
+                    artifacts,
+                    stage=(selection or {}).get("stage") or "binary_metadata_scrape",
+                    text=(selection or {}).get("text") or binary_text,
                 )
         _record_extraction_reason_code(artifacts, "EXTRACTION_EMPTY_ALL_STAGES")
         return _finalize_text_extraction_result(artifacts, stage="native_pdf_text", text="")
