@@ -579,6 +579,7 @@ export const useCanonicalJobResult = (
           setResults(data);
           setResultsJobId(jobId);
           setResultsError(null);
+          setTerminalResultsTimedOut(false);
           return data;
         } catch (err: any) {
           const validationError = toResultsError(err);
@@ -608,6 +609,20 @@ export const useCanonicalJobResult = (
   const isTerminal = TERMINAL_JOB_STATUSES.has(normalizedStatus);
   const isAwaitingInitialState = !jobStatus && !jobError && !resultsError;
   const isTerminalWithoutResults = enabled && isTerminal && !visibleResults;
+  const [terminalResultsTimedOut, setTerminalResultsTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!enabled || !isTerminalWithoutResults || !isLoadingResults) {
+      setTerminalResultsTimedOut(false);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setTerminalResultsTimedOut(true);
+    }, 4000);
+
+    return () => clearTimeout(timeoutId);
+  }, [enabled, isLoadingResults, isTerminalWithoutResults]);
 
   useEffect(() => {
     if (!enabled || !jobId || visibleResults || isLoadingResults) {

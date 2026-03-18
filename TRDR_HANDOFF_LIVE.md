@@ -439,3 +439,36 @@ Still not yet proven in this pass:
 ### Best next move after this commit
 - deploy this extraction-boundary cleanup
 - then run a real LC-first + mixed supporting-doc upload against live/staging to verify the multimodal-first path behaves correctly beyond focused regression coverage
+
+## 2026-03-18 — live results crash follow-up: `terminalResultsTimedOut` runtime regression
+A later live validation run exposed a separate frontend regression after validation completed.
+
+### Live symptom
+Ripon hit a post-validation results crash with runtime error:
+- `ReferenceError: terminalResultsTimedOut is not defined`
+
+This appeared after validation, so it was a **results rendering regression**, not proof that extraction had failed.
+
+### Root cause
+In:
+- `apps/web/src/hooks/use-lcopilot.ts`
+
+`useCanonicalJobResult()` still referenced `terminalResultsTimedOut` inside its returned `isLoading` computation, but the timeout state itself was no longer defined in the hook.
+
+### Follow-up fix prepared
+The local fix restores the missing terminal-results timeout state/logic so that:
+- terminal job + missing canonical results payload + hung `/api/results` path
+- no longer crashes on undefined state
+- no longer keeps pretending the results page is still generically loading forever
+
+Also cleaned another duplicated/corrupted tail fragment in the same hook file while patching.
+
+### Important truth
+This fix addresses the concrete runtime crash Ripon saw live.
+However, focused web tests in this branch are already broadly noisy/red in unrelated areas, so do **not** overstate this as a fully green frontend test pass. Treat it as a source-level runtime fix for the observed crash.
+
+### Immediate next move after push
+- redeploy
+- rerun live validation
+- confirm results page renders instead of crashing on `terminalResultsTimedOut`
+- only then continue performance / multimodal-first proof work
