@@ -553,3 +553,35 @@ Focused API slice passed:
 - redeploy
 - rerun the exact same live validation URL/job
 - confirm completed session now renders results instead of terminal no-results fallback
+
+## 2026-03-18 — production routing seam found: root Vercel config swallowing `/api/*`
+After multiple backend fixes still failed live, direct probing of `https://trdrhub.com/api/results/{job_id}` returned:
+- `{"detail":"Not Found"}`
+
+That proved the live request was **not reaching** the backend results route at all.
+
+### Root cause
+Repo contains two Vercel configs with conflicting behavior:
+- one config correctly rewrites `/api/(.*)` to `https://trdrhub-api.onrender.com/$1`
+- but the **root `vercel.json`** used for the main deploy only rewrote:
+  - `/(.*)` -> `/index.html`
+
+So production `trdrhub.com` swallowed `/api/results/*` into the SPA deployment instead of forwarding it to Render.
+
+### Fix applied
+Patched root `vercel.json` to add the missing API proxy rewrite before the SPA catch-all:
+- `/api/(.*)` -> `https://trdrhub-api.onrender.com/api/$1`
+- then fallback `/(.*)` -> `/index.html`
+
+### Why this matters
+This is the real production fix for the live symptom where:
+- frontend called `/api/results/{job_id}`
+- but `trdrhub.com` returned `{"detail":"Not Found"}`
+
+No backend payload/result fixes can help until this routing seam is deployed.
+
+### Immediate next move after this push
+- redeploy web on Vercel
+- probe `https://trdrhub.com/api/results/{job_id}` directly again
+- verify it now reaches Render instead of 404ing at the web origin
+- then re-open the same live results page
