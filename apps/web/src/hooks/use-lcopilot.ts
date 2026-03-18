@@ -577,13 +577,23 @@ export const useCanonicalJobResult = (
         }
 
         try {
-          const data = await fetchValidationResults(jobId);
-          queryClient.setQueryData(['results', jobId], data);
-          setResults(data);
-          setResultsJobId(jobId);
-          setResultsError(null);
-          setTerminalResultsTimedOut(false);
-          return data;
+          const rawData = await fetchValidationResults(jobId);
+          const data = normalizeValidationResultsResponse(rawData, jobId);
+          queryClient.setQueryData(['results', jobId], data ?? rawData);
+          if (data) {
+            setResults(data);
+            setResultsJobId(jobId);
+            setResultsError(null);
+            setAuthRetryCount(0);
+            setTerminalResultsTimedOut(false);
+            return data;
+          }
+          const validationError = toResultsError({ message: 'Results payload missing structured_result' });
+          if (!suppressError) {
+            setResultsError(validationError);
+            throw validationError;
+          }
+          return null;
         } catch (err: any) {
           const validationError = toResultsError(err);
           const authHydrationFailure = reason === 'auto' && isAuthHydrationError(validationError) && authRetryCount < 3;

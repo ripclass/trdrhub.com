@@ -648,3 +648,35 @@ This is a frontend resilience mitigation for likely auth-hydration races. It doe
 - redeploy web
 - open the in-app results page again (not the raw URL directly)
 - confirm the page either resolves after auth settles or at least no longer falls prematurely into terminal no-results due to an early 401/403 race
+
+## 2026-03-18 — frontend results-shape normalization fix for real API payload
+Live network evidence finally showed the strongest truth yet:
+- in-app request to `https://api.trdrhub.com/api/results/{job_id}` succeeds with a **full valid payload**
+- response shape is `{ job_id, jobId, structured_result, telemetry, ... }`
+- but the page still fell into the terminal no-results state anyway
+
+### Root cause
+The frontend hook/page contract was still too strict about result shape.
+`useCanonicalJobResult()` could store/use results as though a loaded payload had already been transformed into the exact `ValidationResults` object the page expects.
+In reality, the API was returning a valid wrapped payload with `structured_result`, but the hook was not normalizing that shape decisively enough before downstream gating logic.
+
+### Fix applied
+In `apps/web/src/hooks/use-lcopilot.ts`:
+- added explicit `normalizeValidationResultsResponse()`
+- if API returns `{ structured_result, jobId/job_id, ... }`, normalize it into the expected `ValidationResults` shape
+- normalize cached query data the same way
+- normalize fresh fetches before storing them in hook state
+- if payload truly lacks usable structured result, then surface a real results error instead of silently treating it like absent loaded state
+
+### Why this matters
+At this point:
+- routing is fixed
+- auth reaches backend
+- results payload exists
+
+So the remaining blocker became a frontend normalization/render contract bug, not a backend availability issue.
+
+### Immediate next move after this push
+- redeploy web
+- reopen the same in-app results page
+- verify that the successful `/api/results/{job_id}` payload now renders instead of falling into the terminal no-results branch
