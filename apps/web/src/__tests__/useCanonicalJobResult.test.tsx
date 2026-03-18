@@ -50,6 +50,36 @@ describe('useCanonicalJobResult', () => {
     expect(mockedApiGet).toHaveBeenCalledWith('/api/results/job-1');
   });
 
+  it('normalizes a live wrapped results payload instead of falling into terminal no-results state', async () => {
+    const payload = buildValidationResults({ jobId: 'job-live' });
+    mockedApiGet.mockImplementation(async (url: string) => {
+      if (url === '/api/jobs/job-live') {
+        return { data: { jobId: 'job-live', status: 'completed' } } as any;
+      }
+      if (url === '/api/results/job-live') {
+        return {
+          data: {
+            job_id: 'job-live',
+            jobId: 'job-live',
+            structured_result: payload.structured_result,
+            telemetry: { UnifiedStructuredResultServed: true },
+          },
+        } as any;
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const queryClient = new QueryClient();
+    const { result } = renderHook(() => useCanonicalJobResult('job-live'), {
+      wrapper: buildWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.results?.jobId).toBe('job-live'));
+    expect(result.current.results?.structured_result?.version).toBe('structured_result_v1');
+    expect(result.current.resultsError).toBeNull();
+    expect(result.current.isLoading).toBe(false);
+  });
+
   it('clears stale results immediately when the route switches to a different job', async () => {
     const firstPayload = buildValidationResults({ jobId: 'job-1' });
     mockedApiGet.mockImplementation(async (url: string) => {
@@ -107,5 +137,72 @@ describe('useCanonicalJobResult', () => {
     const second = renderHook(() => useCanonicalJobResult('job-cache'), { wrapper });
 
     expect(second.result.current.results?.jobId).toBe('job-cache');
+  });
+
+  it('stops reporting loading when a terminal job cannot load results after timeout', async () => {
+    vi.useFakeTimers();
+    mockedApiGet.mockImplementation(async (url: string) => {
+      if (url === '/api/jobs/job-timeout') {
+        return { data: { jobId: 'job-timeout', status: 'completed' } } as any;
+      }
+      if (url === '/api/results/job-timeout') {
+        throw { response: { status: 404, data: { detail: 'not ready' } } };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const queryClient = new QueryClient();
+    const { result } = renderHook(() => useCanonicalJobResult('job-timeout'), {
+      wrapper: buildWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(mockedApiGet).toHaveBeenCalledWith('/api/results/job-timeout'));
+
+    await act(async () => {
+      vi.advanceTimersByTime(4500);
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.results).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it('retries auth-hydration failures before surfacing terminal results errors', async () => {
+    vi.useFakeTimers();
+    let resultsAttempts = 0;
+    mockedApiGet.mockImplementation(async (url: string) => {
+      if (url === '/api/jobs/job-auth-race') {
+        return { data: { jobId: 'job-auth-race', status: 'completed' } } as any;
+      }
+      if (url === '/api/results/job-auth-race') {
+        resultsAttempts += 1;
+        if (resultsAttempts < 3) {
+          throw { response: { status: 403, data: { detail: 'Not authenticated' } } };
+        }
+        return { data: buildValidationResults({ jobId: 'job-auth-race' }) } as any;
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const queryClient = new QueryClient();
+    const { result } = renderHook(() => useCanonicalJobResult('job-auth-race'), {
+      wrapper: buildWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(resultsAttempts).toBe(1));
+
+    await act(async () => {
+      vi.advanceTimersByTime(1300);
+    });
+    await waitFor(() => expect(resultsAttempts).toBe(2));
+
+    await act(async () => {
+      vi.advanceTimersByTime(1300);
+    });
+    await waitFor(() => expect(result.current.results?.jobId).toBe('job-auth-race'));
+    expect(result.current.resultsError).toBeNull();
+
+    vi.useRealTimers();
   });
 });

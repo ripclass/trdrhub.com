@@ -443,6 +443,26 @@ const mapIssues = (
     const examinerNote = issue?.description ?? issue?.message ?? issue?.note ?? 'Review against LC terms and supporting documents.';
     const nextAction = buildNextAction(bucket, suggestion);
     const workflowLane = getWorkflowLane(bucket);
+    const countClass =
+      workflowLane === 'compliance_review'
+        ? 'compliance_alert'
+        : workflowLane === 'manual_review'
+        ? 'manual_review'
+        : 'documentary_discrepancy';
+    const presentationImpact =
+      workflowLane === 'compliance_review'
+        ? severity === 'critical'
+          ? 'presentation_blocked_pending_compliance'
+          : 'presentation_requires_compliance_review'
+        : workflowLane === 'manual_review'
+        ? severity === 'critical'
+          ? 'presentation_blocked_pending_manual_review'
+          : 'presentation_requires_manual_review'
+        : severity === 'critical'
+        ? 'documentary_blocker'
+        : severity === 'major'
+        ? 'documentary_risk'
+        : 'documentary_review';
     const confidenceRaw = issue?.extraction_confidence ?? issue?.confidence ?? issue?.match_confidence;
     const confidence = typeof confidenceRaw === 'number' ? Math.max(0, Math.min(1, confidenceRaw)) : undefined;
 

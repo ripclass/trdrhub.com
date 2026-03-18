@@ -680,3 +680,33 @@ So the remaining blocker became a frontend normalization/render contract bug, no
 - redeploy web
 - reopen the same in-app results page
 - verify that the successful `/api/results/{job_id}` payload now renders instead of falling into the terminal no-results branch
+
+## 2026-03-18 — Codex-confirmed frontend contract fix for wrapped results payload
+A deeper frontend trace confirmed the results-page failure was a stacked contract bug, not just a page-level branch issue.
+
+### Exact failure chain Codex confirmed
+- backend `/api/results/{job_id}` returns a valid wrapped payload: `{ job_id, jobId, structured_result, telemetry }`
+- `useCanonicalJobResult()` in `apps/web/src/hooks/use-lcopilot.ts` receives that payload
+- payload then hits frontend normalization / mapping seams
+- `resultsMapper.ts` threw on undefined locals (`countClass`, `presentationImpact`) while mapping issues from the wrapped live payload
+- `use-lcopilot.ts` also referenced missing normalization/auth helper functions in the catch/normalization path
+- net result: hook ended up with neither usable `results` nor surfaced `resultsError`
+- `ExporterResults.tsx` therefore fell into the misleading terminal no-results branch even though the network payload was valid
+
+### Fix scope Codex identified
+Files:
+- `apps/web/src/hooks/use-lcopilot.ts`
+- `apps/web/src/lib/exporter/resultsMapper.ts`
+- `apps/web/src/__tests__/useCanonicalJobResult.test.tsx`
+- plus any focused related frontend test updates required by the actual local diff
+
+### Fix intent
+- add explicit normalization for wrapped `/api/results` payloads into canonical `ValidationResults`
+- ensure cached and fresh payloads flow through the same normalization seam
+- define the missing mapper locals so issue mapping no longer throws on live payloads
+- preserve the page contract by fixing the hook/mapper seam instead of only patching the page branch
+
+### Immediate next move after this push
+- redeploy web
+- reopen the same in-app results page
+- confirm wrapped authenticated `/api/results/{job_id}` payload now renders actual results instead of terminal no-results state

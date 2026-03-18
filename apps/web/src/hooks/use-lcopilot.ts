@@ -94,6 +94,67 @@ const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'error']);
 const normalizeJobStatus = (status?: string | null): string =>
   (status || '').toString().toLowerCase();
 
+const hasCanonicalStructuredResult = (value: unknown): value is { structured_result: { version: string } } =>
+  Boolean(
+    value &&
+      typeof value === 'object' &&
+      (value as { structured_result?: { version?: unknown } }).structured_result?.version === 'structured_result_v1',
+  );
+
+const normalizeValidationResultsResponse = (
+  payload: unknown,
+  jobId: string,
+): ValidationResults | null => {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  if (hasCanonicalStructuredResult(payload)) {
+    const candidate = payload as Partial<ValidationResults>;
+    const alreadyNormalized =
+      typeof candidate.jobId === 'string' &&
+      Array.isArray(candidate.documents) &&
+      Array.isArray(candidate.issues) &&
+      Array.isArray(candidate.timeline) &&
+      Boolean(candidate.summary) &&
+      Boolean(candidate.analytics);
+
+    if (alreadyNormalized) {
+      return candidate as ValidationResults;
+    }
+
+    return buildValidationResponse(payload);
+  }
+
+  if ((payload as { version?: unknown }).version === 'structured_result_v1') {
+    return buildValidationResponse({
+      jobId,
+      job_id: jobId,
+      structured_result: payload,
+    });
+  }
+
+  return null;
+};
+
+const isAuthHydrationError = (error: ValidationError | null | undefined): boolean => {
+  if (!error) {
+    return false;
+  }
+
+  if (error.statusCode === 401 || error.statusCode === 403) {
+    return true;
+  }
+
+  const message = String(error.message || '').toLowerCase();
+  return (
+    message.includes('not authenticated') ||
+    message.includes('unauthorized') ||
+    message.includes('forbidden') ||
+    message.includes('auth')
+  );
+};
+
 const toResultsError = (err: any): ValidationError => {
   if (err?.type && err?.message) {
     return err as ValidationError;
@@ -135,7 +196,10 @@ export const fetchValidationResults = async (jobId: string): Promise<ValidationR
 
   lcopilotLogger.debug('API response received', { jobId });
 
-  const normalized: ValidationResults = buildValidationResponse(payload);
+  const normalized = normalizeValidationResultsResponse(payload, jobId);
+  if (!normalized) {
+    throw new Error('Results payload missing structured_result');
+  }
 
   if (isLCopilotFeatureEnabled('schema_validation')) {
     const validationResult = safeValidateApiResponse(
@@ -429,7 +493,10 @@ export const useResults = (currentJobId?: string | null) => {
       return;
     }
 
-    const cached = queryClient.getQueryData<ValidationResults>(['results', currentJobId]) ?? null;
+    const cached = normalizeValidationResultsResponse(
+      queryClient.getQueryData(['results', currentJobId]) ?? null,
+      currentJobId,
+    );
     setResults(cached);
     setResultsJobId(currentJobId);
     setError(null);
@@ -460,7 +527,10 @@ export const useResults = (currentJobId?: string | null) => {
       
       lcopilotLogger.debug('API response received', { jobId });
       
-      const normalized: ValidationResults = buildValidationResponse(payload);
+      const normalized = normalizeValidationResultsResponse(payload, jobId);
+      if (!normalized) {
+        throw new Error('Results payload missing structured_result');
+      }
 
       // Schema-first validation: verify response matches expected contract
       // Controlled by 'schema_validation' feature flag (enabled in dev by default)
@@ -549,7 +619,10 @@ export const useCanonicalJobResult = (
       return;
     }
 
-    const cached = queryClient.getQueryData<ValidationResults>(['results', jobId]) ?? null;
+    const cached = normalizeValidationResultsResponse(
+      queryClient.getQueryData(['results', jobId]) ?? null,
+      jobId,
+    );
     setResults(cached);
     setResultsJobId(jobId);
     setResultsError(null);
