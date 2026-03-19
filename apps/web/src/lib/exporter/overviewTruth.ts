@@ -149,7 +149,7 @@ export const getExporterOverviewTruth = (
       tone: input.warningCount > 0 ? 'warning' : 'default',
     },
     {
-      label: 'LC Compliance',
+      label: 'Validation Score',
       value: `${input.complianceScore}%`,
       tone: toMetricTone(input.complianceScore, { success: 80, warning: 50 }),
     },
@@ -162,11 +162,11 @@ export const getExporterOverviewTruth = (
 
   const progressMetrics: OverviewProgressMetric[] = [
     {
-      label: 'Structured Extraction',
+      label: 'Document Fields Confirmed',
       value: input.extractionAccuracy,
     },
     {
-      label: 'LC Compliance',
+      label: 'Validation Score',
       value: input.complianceScore,
     },
   ];

@@ -122,16 +122,16 @@ export function SummaryStrip({
               <p className="text-xs text-muted-foreground mt-1">Detected discrepancies or review items</p>
             </div>
             <div className="rounded-lg border border-border/60 p-4">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">LC Compliance</p>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Validation Score</p>
               <p className={`text-2xl font-semibold ${complianceRate >= 80 ? 'text-emerald-600' : complianceRate >= 50 ? 'text-amber-600' : 'text-rose-600'}`}>
                 {complianceRate}%
               </p>
-              <p className="text-xs text-muted-foreground mt-1">Canonical validation score</p>
+              <p className="text-xs text-muted-foreground mt-1">Current review score for this validation run</p>
             </div>
             <div className="rounded-lg border border-border/60 p-4">
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Processing Time</p>
               <p className="text-2xl font-semibold">{processingTime}</p>
-              <p className="text-xs text-muted-foreground mt-1">Backend processing duration</p>
+              <p className="text-xs text-muted-foreground mt-1">Backend time for this validation run</p>
             </div>
           </div>
         </div>

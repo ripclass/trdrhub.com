@@ -108,10 +108,10 @@ export function IssuesTab({
         <Card className="border border-success/40 bg-success/5 text-success">
           <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
             <ShieldCheck className="w-8 h-8" />
-            <div>
-              <p className="text-lg font-semibold">All documents comply with LC terms.</p>
+              <div>
+              <p className="text-lg font-semibold">No documentary discrepancies or review items are open.</p>
               <p className="text-sm text-success/80">
-                No discrepancies detected across the submitted document set.
+                This validation run did not generate any discrepancy cards or checklist review findings.
               </p>
             </div>
           </CardContent>
@@ -132,7 +132,7 @@ export function IssuesTab({
               Review findings still need attention
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              No discrepancy cards were generated for this run, but unresolved checklist reviews still prevent the document set from being treated as fully compliant.
+              This run did not create formal discrepancy cards, but unresolved checklist review items still prevent the document set from being treated as clean.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">

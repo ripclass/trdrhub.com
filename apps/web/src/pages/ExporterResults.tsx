@@ -425,6 +425,8 @@ export default function ExporterResults({
     isLoading: resultsLoading,
     resultsError,
     refreshResults,
+    isFinalizingResults = false,
+    terminalResultsTimedOut = false,
   } = useCanonicalJobResult(validationSessionId);
   
   const lcNumberParam = lcNumberProp || searchParams.get('lc') || undefined;
@@ -1160,6 +1162,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const normalizedJobStatus = String(jobStatus?.status ?? '').trim().toLowerCase();
   const isTerminalJobStatus = ['completed', 'failed', 'error'].includes(normalizedJobStatus);
   const isResultsPending = !resultData && resultsLoading && !(jobError || resultsError);
+  const shouldBridgeFinalizingResults =
+    !resultData &&
+    isTerminalJobStatus &&
+    !(jobError || resultsError) &&
+    !terminalResultsTimedOut &&
+    (isFinalizingResults || !isResultsPending);
   const { successCount, warningCount, successRate, extractionRate, extractionSuccessful } = useMemo(() => {
     // Use authoritative document_status from backend (same source as SummaryStrip)
     const statusDistribution = 
@@ -1873,22 +1881,51 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       ? jobStatus.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
       : "Processing";
 
-    if (isTerminalJobStatus && !isResultsPending) {
+    if (shouldBridgeFinalizingResults) {
       return (
         <div className="min-h-[60vh] p-6">
           <Card className="max-w-2xl mx-auto border border-border/60 shadow-soft">
             <CardHeader>
-              <CardTitle>Validation finished, but results are not available yet</CardTitle>
+              <CardTitle>Validation finished. Preparing your results...</CardTitle>
               <CardDescription>
-                The job reached a terminal state ({statusLabel}), but the canonical results payload has not loaded on this route yet.
+                The validation job is complete, and we&apos;re loading the final results package for this case. This usually takes a few seconds.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 p-4">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <div>
+                  <p className="font-medium">Finalizing the review workspace</p>
+                  <p className="text-sm text-muted-foreground">
+                    We&apos;re retrying the canonical results payload automatically so you can land directly in the finished case.
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                If this takes longer than expected, a manual retry option will appear automatically.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (isTerminalJobStatus && terminalResultsTimedOut && !isResultsPending) {
+      return (
+        <div className="min-h-[60vh] p-6">
+          <Card className="max-w-2xl mx-auto border border-border/60 shadow-soft">
+            <CardHeader>
+              <CardTitle>Results are taking longer than expected</CardTitle>
+              <CardDescription>
+                The validation job reached a terminal state ({statusLabel}), but this page still has not received the final results payload.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Alert>
                 <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Route/state mismatch</AlertTitle>
+                <AlertTitle>Automatic loading is still retrying</AlertTitle>
                 <AlertDescription>
-                  Don&apos;t treat this as validation still running. Retry loading the result payload or return to the review shell and reopen this case.
+                  This should not happen for a normal successful run. Retry loading the results now, or return to the dashboard and reopen the case if the payload still does not appear.
                 </AlertDescription>
               </Alert>
               <div className="flex flex-wrap gap-2">
@@ -1903,7 +1940,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     setSearchParams(params, { replace: true });
                   }}
                 >
-                  Return to review shell
+                  Return to dashboard
                 </Button>
               </div>
             </CardContent>
@@ -2403,10 +2440,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <CardHeader className="pb-3">
                     <CardTitle className="text-lg font-semibold flex items-center gap-2">
                       <Clock className="w-5 h-5" />
-                      Export Processing Timeline
+                      Validation Timeline
                     </CardTitle>
                     <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      Real-time processing journey
+                      Recent steps from this validation run
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -2442,9 +2479,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               )}
               <Card className="shadow-soft border border-border/60">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold">Overview Support Metrics</CardTitle>
+                  <CardTitle className="text-lg font-semibold">Case At A Glance</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Secondary metrics that support the readiness state without replacing it
+                    These metrics explain the current review state. They do not replace it.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -2501,11 +2538,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       ))}
                     </div>
                   </div>
-                  <div className="rounded-lg border border-border/60 p-3 bg-muted/20">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium text-primary">Performance Insights</span>
-                    </div>
+                    <div className="rounded-lg border border-border/60 p-3 bg-muted/20">
+                      <div className="flex items-center gap-2 mb-2">
+                        <TrendingUp className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-medium text-primary">What Happened In This Run</span>
+                      </div>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       {overviewTruth.performanceInsights.map((insight, idx) => (
                         <li key={idx}>• {insight}</li>
@@ -2522,7 +2559,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold">Required Document Checklist</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Requirement coverage first, review consequence second
+                    Tracks LC document coverage first, then whether each matched document still needs review
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -2561,7 +2598,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           </div>
                           <div className="grid gap-3 sm:grid-cols-2">
                             <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Requirement coverage</p>
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">LC requirement match</p>
                               <div className="flex items-center justify-between gap-2">
                                 <StatusBadge status={requirementMeta.badgeStatus}>
                                   {requirementMeta.label}
@@ -2576,7 +2613,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               </div>
                             </div>
                             <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Review consequence</p>
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Current review status</p>
                               <div className="flex items-center justify-between gap-2">
                                 <StatusBadge status={reviewMeta.badgeStatus}>
                                   {reviewMeta.label}
@@ -2635,9 +2672,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </Card>
               <Card className="shadow-soft border border-border/60">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold">Action Engine</CardTitle>
+                  <CardTitle className="text-lg font-semibold">What To Do Next</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Escalations and next steps after checklist review
+                    The most important next steps for this case
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -2710,7 +2747,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           ? 'Review needed'
                           : 'Blocked'}
                       </div>
-                      <Badge variant="outline">{customsPackReadiness.source === 'shared' ? 'Shared presentation truth' : 'Derived readiness'}</Badge>
+                      <Badge variant="outline">
+                        {customsPackReadiness.source === 'shared'
+                          ? 'Same readiness across tabs'
+                          : 'Derived readiness'}
+                      </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">{customsPackReadiness.summary}</p>
                   </div>
@@ -2797,7 +2838,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="rounded-lg border border-border/60 p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Review Queue</p>
                       <p className="text-2xl font-semibold">{customsPackReadiness.reviews.length + actionEngine.length}</p>
-                      <p className="text-sm text-muted-foreground mt-2">Items that still need review, amendment, waiver, or compliance handling.</p>
+                      <p className="text-sm text-muted-foreground mt-2">Open review or follow-up items that do not hard-block presentation.</p>
                     </div>
                   </div>
 
@@ -3000,28 +3041,28 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 isOptionalSupportingDocument && discrepancyCount === 0 ? 'ready' : reviewState;
               const extractionLabel =
                 document.status === 'success'
-                  ? 'Extracted'
+                  ? 'Structured read complete'
                   : document.status === 'error'
                   ? 'Extraction blocked'
-                  : 'Extraction warning';
+                  : 'Extraction needs review';
               const requirementMeta =
                 isOptionalSupportingDocument
-                  ? { label: 'Not LC-required', status: 'pending' as const, note: 'Uploaded as supporting evidence, but this LC does not require this document type.' }
+                  ? { label: 'Extra upload', status: 'pending' as const, note: 'Uploaded as supporting evidence, but this LC does not require this document type.' }
                   : requirementStatus === 'matched'
-                  ? { label: 'Requirement matched', status: 'success' as const, note: 'This upload covers the required document type.' }
+                  ? { label: 'Covers LC requirement', status: 'success' as const, note: 'This upload covers the required LC document type.' }
                   : requirementStatus === 'missing'
-                  ? { label: 'Requirement missing', status: 'error' as const, note: 'This upload does not currently satisfy the required document coverage.' }
-                  : { label: 'Requirement partial', status: 'warning' as const, note: 'This upload only partially satisfies the required document coverage.' };
+                  ? { label: 'Does not cover LC requirement', status: 'error' as const, note: 'This upload does not currently satisfy the required LC document coverage.' }
+                  : { label: 'Partially covers requirement', status: 'warning' as const, note: 'This upload only partially satisfies the required LC document coverage.' };
               const reviewMeta =
                 isOptionalSupportingDocument && discrepancyCount === 0
-                  ? { label: 'Informational upload', status: 'pending' as const, note: 'This extra supporting document does not block clean presentation.' }
+                  ? { label: 'Informational only', status: 'pending' as const, note: 'This extra supporting document does not block clean presentation.' }
                   : effectiveReviewState === 'ready'
-                  ? { label: 'Ready for review flow', status: 'success' as const, note: 'No active review hold is attached to this document.' }
+                  ? { label: 'No review hold', status: 'success' as const, note: 'No active review hold is attached to this document.' }
                   : effectiveReviewState === 'blocked'
                   ? { label: 'Review blocked', status: 'error' as const, note: 'This document currently blocks clean presentation.' }
                   : effectiveReviewState === 'needs_review'
-                  ? { label: 'Review required', status: 'warning' as const, note: 'This document needs manual review before clean presentation.' }
-                  : { label: 'Awaiting supporting upload', status: 'warning' as const, note: 'A matching supporting document is still required before clean presentation.' };
+                  ? { label: 'Needs manual review', status: 'warning' as const, note: 'This document needs manual review before clean presentation.' }
+                  : { label: 'Waiting for matching upload', status: 'warning' as const, note: 'A matching supporting document is still required before clean presentation.' };
               
               return (
                 <Card
@@ -3083,12 +3124,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <CardContent>
                     <div className="mb-4 grid gap-3 md:grid-cols-3">
                       <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Extraction truth</p>
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">What we read from this file</p>
                         <div className="flex items-center justify-between gap-2">
                           <StatusBadge status={document.status}>{extractionLabel}</StatusBadge>
                           <span className="text-xs text-muted-foreground text-right">
                             {typeof parseComplete === "boolean"
-                              ? `Parse ${parseComplete ? 'complete' : 'partial'}`
+                              ? `Structured read ${parseComplete ? 'complete' : 'partial'}`
                               : (document.extractionStatus ?? 'unknown').replace(/_/g, ' ')}
                           </span>
                         </div>
@@ -3101,7 +3142,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         ) : null}
                       </div>
                       <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Requirement coverage</p>
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">LC requirement match</p>
                         <div className="flex items-center justify-between gap-2">
                           <StatusBadge status={requirementMeta.status}>{requirementMeta.label}</StatusBadge>
                           <span className="text-xs text-muted-foreground text-right">
@@ -3111,7 +3152,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <p className="mt-2 text-xs text-muted-foreground">{requirementMeta.note}</p>
                       </div>
                       <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Review consequence</p>
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Current review status</p>
                         <div className="flex items-center justify-between gap-2">
                           <StatusBadge status={reviewMeta.status}>{reviewMeta.label}</StatusBadge>
                           <span className="text-xs text-muted-foreground text-right">

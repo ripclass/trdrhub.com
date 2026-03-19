@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -244,6 +245,8 @@ export function buildValidationProgressCopy(fileCount: number): {
   heading: string;
   subheading: string;
   detail: string;
+  statusLabel: string;
+  estimateLabel: string;
 } {
   const docCountLabel =
     fileCount > 0
@@ -255,8 +258,27 @@ export function buildValidationProgressCopy(fileCount: number): {
     ". Multi-document packs often take 1-2 minutes.";
   return {
     heading: "Processing documents...",
-    subheading: "Estimated client-side status",
+    subheading: "Estimated progress",
     detail,
+    statusLabel: `Processing ${docCountLabel}`,
+    estimateLabel: "Estimated client-side progress, not live backend telemetry.",
+  };
+}
+
+function buildLcResolveProgressCopy(): {
+  heading: string;
+  subheading: string;
+  detail: string;
+  statusLabel: string;
+  estimateLabel: string;
+} {
+  return {
+    heading: "Resolving Letter of Credit...",
+    subheading: "Estimated progress",
+    detail:
+      "We're reading the LC, identifying workflow, and preparing the required supporting-document checklist.",
+    statusLabel: "Resolving your LC",
+    estimateLabel: "Estimated client-side progress, not live backend telemetry.",
   };
 }
 
@@ -288,19 +310,133 @@ export function getQuickBadgeDocumentTypes(
   return selected.slice(0, MAX_QUICK_BADGE_COUNT);
 }
 
-function ValidationProgressIndicator({ fileCount }: { fileCount: number }) {
-  const copy = buildValidationProgressCopy(fileCount);
+type ProgressMode = "lc" | "validation";
+
+type ProcessingPhase = {
+  id: string;
+  label: string;
+  duration: number;
+  icon: typeof Upload;
+};
+
+const buildProgressPhases = (fileCount: number, mode: ProgressMode): ProcessingPhase[] => {
+  if (mode === "lc") {
+    return [
+      { id: "upload", label: "Uploading LC file", duration: 3, icon: Upload },
+      { id: "text", label: "Reading LC text", duration: 12, icon: FileText },
+      { id: "classify", label: "Detecting workflow and instrument", duration: 8, icon: Sparkles },
+      { id: "requirements", label: "Preparing required-document checklist", duration: 7, icon: FileCheck },
+    ];
+  }
+
+  const normalizedCount = Math.max(1, fileCount);
+  return [
+    { id: "queue", label: "Preparing supporting documents", duration: 4, icon: Upload },
+    { id: "text", label: "Extracting document text", duration: Math.max(20, normalizedCount * 6), icon: FileText },
+    { id: "review", label: "Checking LC terms and document coverage", duration: Math.max(14, normalizedCount * 3.5), icon: FileCheck },
+    { id: "finalize", label: "Preparing results workspace", duration: 10, icon: Sparkles },
+  ];
+};
+
+const formatEstimatedDuration = (seconds: number): string => {
+  const safeSeconds = Math.max(0, Math.ceil(seconds));
+  if (safeSeconds < 60) {
+    return `~${safeSeconds}s remaining`;
+  }
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return remainder === 0 ? `~${minutes}m remaining` : `~${minutes}m ${remainder}s remaining`;
+};
+
+function ValidationProgressIndicator({
+  fileCount,
+  mode = "validation",
+}: {
+  fileCount: number;
+  mode?: ProgressMode;
+}) {
+  const copy =
+    mode === "lc" ? buildLcResolveProgressCopy() : buildValidationProgressCopy(fileCount);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [startTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  const phases = useMemo(() => buildProgressPhases(fileCount, mode), [fileCount, mode]);
+  const totalEstimated = useMemo(
+    () => phases.reduce((sum, phase) => sum + phase.duration, 0),
+    [phases],
+  );
+
+  let accumulatedTime = 0;
+  let currentPhaseIndex = phases.length - 1;
+  for (let i = 0; i < phases.length; i += 1) {
+    const phase = phases[i];
+    if (elapsedSeconds < accumulatedTime + phase.duration) {
+      currentPhaseIndex = i;
+      break;
+    }
+    accumulatedTime += phase.duration;
+  }
+
+  const currentPhase = phases[currentPhaseIndex];
+  const CurrentIcon = currentPhase.icon;
+  const overallProgress = Math.min(95, (elapsedSeconds / totalEstimated) * 100);
+  const remainingSeconds = Math.max(0, totalEstimated - elapsedSeconds);
 
   return (
     <div className="bg-exporter/5 border border-exporter/20 rounded-lg p-4 space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
-        <div className="flex-1">
-          <span className="font-medium text-exporter">{copy.heading}</span>
-          <p className="text-xs text-muted-foreground">{copy.subheading}</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
+            <CurrentIcon className="absolute inset-0 m-auto h-3 w-3 text-exporter/60" />
+          </div>
+          <div className="flex-1">
+            <span className="font-medium text-exporter">{copy.heading}</span>
+            <p className="text-xs text-muted-foreground">{copy.subheading}</p>
+          </div>
+        </div>
+        <Badge variant="outline">Estimated progress</Badge>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <span>{currentPhase.label}</span>
+          <span>{formatEstimatedDuration(remainingSeconds)}</span>
+        </div>
+        <Progress value={overallProgress} className="h-2" />
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <span>{copy.statusLabel}</span>
+          <span>{Math.max(5, Math.round(overallProgress))}%</span>
         </div>
       </div>
+      <div className="flex gap-1">
+        {phases.map((phase, idx) => {
+          const isComplete = idx < currentPhaseIndex;
+          const isCurrent = idx === currentPhaseIndex;
+          return (
+            <div
+              key={phase.id}
+              className={cn(
+                "flex-1 h-1 rounded-full transition-colors",
+                isComplete
+                  ? "bg-exporter"
+                  : isCurrent
+                  ? "bg-exporter/50"
+                  : "bg-border/70",
+              )}
+              title={phase.label}
+            />
+          );
+        })}
+      </div>
       <p className="text-sm text-muted-foreground">{copy.detail}</p>
+      <p className="text-xs text-muted-foreground">{copy.estimateLabel}</p>
     </div>
   );
 }
@@ -1426,22 +1562,8 @@ export default function ExportLCUpload({
 
         {lcIntake.status === "uploading" && (
           <Card className="mb-6 shadow-soft border-0">
-            <CardContent className="pt-6 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
-                  <div>
-                    <p className="font-medium text-foreground">Resolving Letter of Credit</p>
-                    <p className="text-sm text-muted-foreground">
-                      Checking the LC, identifying workflow, and extracting required supporting documents.
-                    </p>
-                  </div>
-                </div>
-                <Badge variant="outline">Estimated status</Badge>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                This is client-side status messaging, not live backend stage telemetry.
-              </p>
+            <CardContent className="pt-6">
+              <ValidationProgressIndicator fileCount={1} mode="lc" />
             </CardContent>
           </Card>
         )}
@@ -1603,9 +1725,18 @@ export default function ExportLCUpload({
                       </div>
                       
                       {file.status === "uploading" && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <div className="animate-spin w-3.5 h-3.5 border-2 border-exporter border-t-transparent rounded-full"></div>
-                          <p>Preparing file locally before validation...</p>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              <div className="animate-spin w-3.5 h-3.5 border-2 border-exporter border-t-transparent rounded-full"></div>
+                              <p>Preparing file locally before validation...</p>
+                            </div>
+                            <span>{Math.max(5, Math.round(file.progress))}%</span>
+                          </div>
+                          <Progress value={file.progress} className="h-1.5" />
+                          <p className="text-[11px] text-muted-foreground">
+                            Estimated local upload progress before validation starts.
+                          </p>
                         </div>
                       )}
                       

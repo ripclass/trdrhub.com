@@ -101,21 +101,20 @@ describe('ExporterResults', () => {
   it('renders overview metrics from processing summary', async () => {
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
-    expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
+    expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument();
     expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/Processing Summary/i)[0]).toBeInTheDocument();
-    expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument();
+    expect(screen.getByText(/What Happened In This Run/i)).toBeInTheDocument();
     expect(
       screen.getByText(new RegExp(`Documents \\(${totalDocuments}\\)`, 'i')),
     ).toBeInTheDocument();
     expect(
       screen.getByText(new RegExp(`Issues \\(${totalDiscrepancies}\\)`, 'i')),
     ).toBeInTheDocument();
-    expect(screen.getByText(/LC Compliance:/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Validation Score/i).length).toBeGreaterThan(0);
 
-    const statsCard = findCardByTitle(/Export Document Statistics/i);
+    const statsCard = findCardByTitle(/Case At A Glance/i);
     const verifiedLabel = within(statsCard).getByText(/^Verified$/i);
     const verifiedValue = verifiedLabel.previousElementSibling;
     expect(verifiedValue?.textContent).toBe(String(successCount));
@@ -124,16 +123,15 @@ describe('ExporterResults', () => {
     const warningsValue = warningsLabel.previousElementSibling;
     expect(warningsValue?.textContent).toBe(String(warningDocumentCount));
 
-    const complianceRow = screen.getByText(/LC Compliance:/i).parentElement as HTMLElement;
     const expectedCompliance = `${mockValidationResults.analytics.compliance_score}%`;
-    expect(within(complianceRow).getByText(expectedCompliance)).toBeInTheDocument();
+    expect(within(statsCard).getAllByText(expectedCompliance).length).toBeGreaterThan(0);
   });
 
   it('renders documents tab with all trade documents', async () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
     await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
     for (const doc of mockValidationResults.documents) {
@@ -145,7 +143,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
     await user.click(screen.getByRole('tab', { name: /Issues \(3\)/i }));
     const primaryIssue = screen.getByTestId('issue-card-issue-1');
@@ -179,9 +177,9 @@ describe('ExporterResults', () => {
   it('renders merged analytics content in overview', async () => {
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
-    expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
+    expect(screen.getByText(/What Happened In This Run/i)).toBeInTheDocument();
     expect(screen.getAllByText(`${mockValidationResults.analytics.compliance_score}%`).length).toBeGreaterThan(0);
   });
 
@@ -189,12 +187,14 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
-    const statusCard = findCardByTitle(/Document Status/i, 1);
-    expect(within(statusCard).getByText('4 (67%)')).toBeInTheDocument();
-    expect(within(statusCard).getByText('2 (33%)')).toBeInTheDocument();
+    const statusCard = findCardByTitle(/Case At A Glance/i);
+    const verifiedLabel = within(statusCard).getByText(/^Verified$/i);
+    const warningsLabel = within(statusCard).getByText(/^Warnings$/i);
+    expect(verifiedLabel.previousElementSibling?.textContent).toBe('4');
+    expect(warningsLabel.previousElementSibling?.textContent).toBe('2');
 
     await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
     const documentsPanel = screen.getByRole('tabpanel', { name: /documents/i });
@@ -212,7 +212,7 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument(),
     );
     expect(screen.getByRole('tab', { name: /Issues \(3\)/i })).toBeInTheDocument();
 
@@ -228,20 +228,15 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument(),
     );
-
-    const statsCard = findCardByTitle(/Export Document Statistics/i);
-    const readinessRow = within(statsCard).getByText(/Compliance Readiness/i).parentElement as HTMLElement;
-    const readinessValue = readinessRow.querySelector('span.font-medium')?.textContent;
-    expect(readinessValue).toBeTruthy();
 
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
-    expect(within(customsPanel).getByText(readinessValue as string)).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Not ready for presentation|Review before presentation|Ready for presentation/i)).toBeInTheDocument();
   });
 
-  it('shows a terminal no-results state instead of pretending validation is still running', async () => {
+  it('shows a finalizing bridge instead of a dead-end mismatch when terminal results are still hydrating', async () => {
     const refreshResults = vi.fn().mockResolvedValue(null);
     mockUseCanonicalJobResult.mockReturnValue({
       jobStatus: { status: 'completed' },
@@ -250,16 +245,15 @@ describe('ExporterResults', () => {
       resultsError: null,
       jobError: null,
       refreshResults,
+      isFinalizingResults: true,
+      terminalResultsTimedOut: false,
     });
 
-    const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
 
-    expect(screen.getByText(/Validation finished, but results are not available yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/Validation finished\. Preparing your results/i)).toBeInTheDocument();
+    expect(screen.getByText(/Finalizing the review workspace/i)).toBeInTheDocument();
     expect(screen.queryByText(/Validation in progress/i)).toBeNull();
-
-    await user.click(screen.getByRole('button', { name: /Retry loading results/i }));
-    expect(refreshResults).toHaveBeenCalledWith('manual');
   });
 
   it('uses backend submission eligibility as the source of truth for customs readiness status', async () => {
@@ -413,7 +407,7 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
     expect(screen.getByText(/85% workflow confidence/i)).toBeInTheDocument();
@@ -778,7 +772,7 @@ describe('ExporterResults', () => {
 
     await user.click(screen.getByRole('tab', { name: /Issues \(1\)/i }));
     expect(screen.getByText(/Review findings still need attention/i)).toBeInTheDocument();
-    expect(screen.queryByText(/All documents comply with LC terms/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No documentary discrepancies or review items are open/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Complete review for Commercial Invoice/i).length).toBeGreaterThan(0);
   });
 
@@ -822,7 +816,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await user.click(screen.getByRole('tab', { name: /Issues/i }));
-    expect(screen.getByText(/All documents comply with LC terms/i)).toBeInTheDocument();
+    expect(screen.getByText(/No documentary discrepancies or review items are open/i)).toBeInTheDocument();
   });
 
   it('renders non-required insurance uploads as informational instead of failed requirement coverage', async () => {
@@ -861,9 +855,9 @@ describe('ExporterResults', () => {
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
 
     const insuranceCard = findCardByTitle(/Insurance\.pdf/i);
-    expect(within(insuranceCard).getByText(/Not LC-required/i)).toBeInTheDocument();
-    expect(within(insuranceCard).getByText(/Informational upload/i)).toBeInTheDocument();
-    expect(within(insuranceCard).queryByText(/Requirement partial/i)).toBeNull();
+    expect(within(insuranceCard).getByText(/Extra upload/i)).toBeInTheDocument();
+    expect(within(insuranceCard).getByText(/Informational only/i)).toBeInTheDocument();
+    expect(within(insuranceCard).queryByText(/Partially covers requirement/i)).toBeNull();
   });
 
   it('still renders overview when structured_result analytics are missing', async () => {
@@ -873,9 +867,9 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument(),
     );
-    expect(screen.getByText(/Processing Performance/i)).toBeInTheDocument();
+    expect(screen.getByText(/What Happened In This Run/i)).toBeInTheDocument();
   });
 
   it('hides the timeline when no events are provided', async () => {
@@ -887,8 +881,8 @@ describe('ExporterResults', () => {
     activeResults = noTimeline;
 
     render(renderWithProviders(<ExporterResults />));
-    await waitFor(() => expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument());
-    expect(screen.queryByText(/Export Processing Timeline/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument());
+    expect(screen.queryByText(/Validation Timeline/i)).not.toBeInTheDocument();
   });
 
   it('shows document parsing warning when extracted fields are empty', async () => {
@@ -908,8 +902,8 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
-    expect(screen.getAllByText(/Extraction warning/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Requirement coverage/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Extraction needs review/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/LC requirement match/i).length).toBeGreaterThan(0);
   });
 
   it('separates extraction, requirement, and review truth on document cards', async () => {
@@ -924,11 +918,11 @@ describe('ExporterResults', () => {
     render(renderWithProviders(<ExporterResults />));
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
 
-    expect(screen.getAllByText(/Extraction truth/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Requirement coverage/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Review consequence/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Requirement matched/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Review consequence/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/What we read from this file/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/LC requirement match/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Current review status/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Covers LC requirement/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Current review status/i).length).toBeGreaterThan(0);
   });
 
   it('does not show parse-failed messaging for verified documents with no extracted fields', async () => {
@@ -949,8 +943,8 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
-    expect(screen.getAllByText(/Extracted/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Requirement matched/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Structured read complete/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Covers LC requirement/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/could not be fully parsed/i)).not.toBeInTheDocument();
   });
 });

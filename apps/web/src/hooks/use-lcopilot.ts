@@ -645,7 +645,9 @@ export const useCanonicalJobResult = (
       }
 
       const status = normalizeJobStatus(jobStatus?.status);
-      const suppressError = reason !== 'manual' && !TERMINAL_JOB_STATUSES.has(status);
+      const suppressError =
+        reason !== 'manual' &&
+        (!TERMINAL_JOB_STATUSES.has(status) || !terminalResultsTimedOut);
 
       const request = (async () => {
         setIsLoadingResults(true);
@@ -692,7 +694,7 @@ export const useCanonicalJobResult = (
       inFlightRef.current = request;
       return request;
     },
-    [authRetryCount, enabled, jobId, jobStatus?.status, queryClient],
+    [authRetryCount, enabled, jobId, jobStatus?.status, queryClient, terminalResultsTimedOut],
   );
 
   const visibleResults =
@@ -707,17 +709,17 @@ export const useCanonicalJobResult = (
   const isTerminalWithoutResults = enabled && isTerminal && !visibleResults && !isAuthRetrying;
 
   useEffect(() => {
-    if (!enabled || !isTerminalWithoutResults || !isLoadingResults) {
+    if (!enabled || !isTerminalWithoutResults) {
       setTerminalResultsTimedOut(false);
       return;
     }
 
     const timeoutId = setTimeout(() => {
       setTerminalResultsTimedOut(true);
-    }, 4000);
+    }, 8000);
 
     return () => clearTimeout(timeoutId);
-  }, [enabled, isLoadingResults, isTerminalWithoutResults]);
+  }, [enabled, isTerminalWithoutResults]);
 
   useEffect(() => {
     if (!enabled || !jobId || visibleResults || isLoadingResults || !isTerminal) {
@@ -748,6 +750,12 @@ export const useCanonicalJobResult = (
     return () => clearTimeout(timeoutId);
   }, [enabled, fallbackDelayMs, isLoadingResults, jobId, jobStatus?.status, refreshResults, visibleResults]);
 
+  const isFinalizingResults =
+    enabled &&
+    isTerminalWithoutResults &&
+    !terminalResultsTimedOut &&
+    !resultsError;
+
   return {
     jobStatus,
     isPolling,
@@ -757,10 +765,11 @@ export const useCanonicalJobResult = (
       enabled &&
       !visibleResults &&
       !terminalResultsTimedOut &&
-      !isTerminalWithoutResults &&
-      (isLoadingResults || (!isTerminal && isPolling) || isAwaitingInitialState),
+      (isLoadingResults || isFinalizingResults || (!isTerminal && isPolling) || isAwaitingInitialState),
     resultsError: visibleResults ? null : resultsError ?? jobError,
     refreshResults,
+    isFinalizingResults,
+    terminalResultsTimedOut,
   };
 };
 

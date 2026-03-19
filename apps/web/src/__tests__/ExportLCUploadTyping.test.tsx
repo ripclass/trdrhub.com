@@ -107,12 +107,14 @@ describe("ExportLCUpload typing helpers", () => {
     expect(formatWorkflowConfidenceBadgeLabel(0.52)).toBe("Workflow confidence: 52%");
   });
 
-  it("uses estimated client-side wording for validation progress instead of fake exact telemetry", () => {
+  it("uses estimated client-side wording for validation progress without pretending live backend telemetry", () => {
     expect(buildValidationProgressCopy(7)).toEqual({
       heading: "Processing documents...",
-      subheading: "Estimated client-side status",
+      subheading: "Estimated progress",
       detail:
         "We're extracting document text, checking LC terms, and preparing your review for 7 supporting documents. Multi-document packs often take 1-2 minutes.",
+      statusLabel: "Processing 7 supporting documents",
+      estimateLabel: "Estimated client-side progress, not live backend telemetry.",
     });
   });
 
