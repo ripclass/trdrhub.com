@@ -139,6 +139,160 @@ const getTruthfulDocumentTypeLabel = (filename: string | undefined, typeKey: str
   return DOCUMENT_LABELS[typeKey] ?? humanizeLabel(typeKey);
 };
 
+type ReviewReasonContext = {
+  docType?: string;
+  rawText?: string;
+  criticalFieldStates?: Record<string, any>;
+  fieldDiagnostics?: Record<string, any>;
+  missingRequiredFields?: unknown[];
+};
+
+const _normalizeFieldKey = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+const _textHasAny = (text: string, patterns: RegExp[]): boolean =>
+  patterns.some((pattern) => pattern.test(text));
+
+const _isFieldMarkedMissing = (context: ReviewReasonContext, fieldName: string): boolean => {
+  const key = _normalizeFieldKey(fieldName);
+  const missingRequiredFields = Array.isArray(context.missingRequiredFields) ? context.missingRequiredFields : [];
+  if (missingRequiredFields.some((field) => _normalizeFieldKey(field) === key)) {
+    return true;
+  }
+  const criticalState = String((context.criticalFieldStates || {})[key] || '').trim().toLowerCase();
+  if (criticalState === 'missing' || criticalState === 'failed') {
+    return true;
+  }
+  const diagnosticState = String(((context.fieldDiagnostics || {})[key] || {}).state || '').trim().toLowerCase();
+  return diagnosticState === 'missing' || diagnosticState === 'failed';
+};
+
+const _buildSpecificFieldMissingReasons = (context: ReviewReasonContext): string[] => {
+  const docType = _normalizeFieldKey(context.docType);
+  const rawText = String(context.rawText || '');
+  const reasons: string[] = [];
+
+  if (docType === 'commercial_invoice') {
+    const missingIssueDate = _isFieldMarkedMissing(context, 'issue_date');
+    const missingGrossWeight = _isFieldMarkedMissing(context, 'gross_weight');
+    const missingNetWeight = _isFieldMarkedMissing(context, 'net_weight');
+
+    if (missingIssueDate) {
+      reasons.push(
+        _textHasAny(rawText, [/\binvoice\s*date\b/i, /\bdate\b/i, /\bdated\b/i])
+          ? 'Invoice date could not be confirmed from the extracted content.'
+          : 'Source invoice does not show an invoice date.',
+      );
+    }
+
+    if (missingGrossWeight || missingNetWeight) {
+      reasons.push(
+        _textHasAny(rawText, [/\bgross\s*weight\b/i, /\bgross\s*wt\b/i, /\bg\/w\b/i, /\bnet\s*weight\b/i, /\bnet\s*wt\b/i, /\bn\/w\b/i])
+          ? 'Gross or net weight could not be confirmed from the invoice extraction.'
+          : 'Source invoice does not show gross or net weight; confirm weights from the packing list or bill of lading if needed.',
+      );
+    }
+  }
+
+  if (docType === 'packing_list') {
+    if (_isFieldMarkedMissing(context, 'issue_date')) {
+      reasons.push(
+        _textHasAny(rawText, [/\bpacking\s*list\s*date\b/i, /\bdate\b/i, /\bdated\b/i])
+          ? 'Packing-list date could not be confirmed from the extracted content.'
+          : 'Source packing list does not clearly show a document date.',
+      );
+    }
+  }
+
+  if (docType === 'certificate_of_origin') {
+    const missingExporter = _isFieldMarkedMissing(context, 'exporter_name');
+    const missingImporter = _isFieldMarkedMissing(context, 'importer_name');
+    const missingGoods = _isFieldMarkedMissing(context, 'goods_description');
+    if (missingExporter || missingImporter || missingGoods) {
+      const sourceShowsPartyOrGoods = _textHasAny(rawText, [
+        /\bexporter\b/i,
+        /\bimporter\b/i,
+        /\bgoods\s*description\b/i,
+        /\bdescription\s+of\s+goods\b/i,
+        /\bgoods\b/i,
+        /\bcommodity\b/i,
+      ]);
+      reasons.push(
+        sourceShowsPartyOrGoods
+          ? 'Exporter, importer, or goods details were present in the certificate but could not be fully confirmed from extraction.'
+          : 'Certificate of origin is missing one or more core party or goods details required for review.',
+      );
+    }
+  }
+
+  return Array.from(new Set(reasons));
+};
+
+const _humanizeDocumentReviewReason = (reason: string, context: ReviewReasonContext): string | null => {
+  const key = String(reason || '').trim();
+  const normalizedDocType = _normalizeFieldKey(context.docType);
+  const specificMissingReasons = _buildSpecificFieldMissingReasons(context);
+
+  if (!key) {
+    return null;
+  }
+  if (key === 'LOW_CONFIDENCE_CRITICAL') {
+    if (normalizedDocType === 'packing_list') return 'Packing-list detail needs manual review before clean presentation.';
+    if (normalizedDocType === 'beneficiary_certificate') return 'Beneficiary certificate wording was recognized, but structured extraction is incomplete.';
+    if (normalizedDocType === 'weight_list' || normalizedDocType === 'weight_certificate') return 'Weight values were found, but document structure still needs manual confirmation.';
+    if (normalizedDocType === 'certificate_of_origin') return 'Certificate of origin details need manual confirmation before clean presentation.';
+    if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'Insurance coverage details need manual confirmation before clean presentation.';
+    if (normalizedDocType === 'bill_of_lading') return 'Bill of lading details need manual review before clean presentation.';
+    return 'Key required fields need manual review before clean presentation.';
+  }
+  if (key === 'critical_bin_tin_low_confidence') {
+    return 'Exporter BIN/TIN was not confidently confirmed on this document.';
+  }
+  if (key === 'OCR_AUTH_ERROR') {
+    if (normalizedDocType === 'bill_of_lading') return 'Bill of lading text extraction confidence is limited; visually confirm vessel, ports, and shipment wording.';
+    if (normalizedDocType === 'packing_list') return 'Packing-list text extraction confidence is limited; visually confirm package, quantity, and weight details.';
+    if (normalizedDocType === 'certificate_of_origin') return 'Certificate of origin text extraction confidence is limited; visually confirm origin and certifier details.';
+    if (normalizedDocType === 'beneficiary_certificate') return 'Beneficiary certificate text extraction confidence is limited; visually confirm the required declaration wording.';
+    if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'Insurance text extraction confidence is limited; visually confirm coverage amount, risks, and certificate wording.';
+    return 'Text extraction confidence is limited; visually confirm the critical presentation fields.';
+  }
+  if (key === 'LOW_CONFIDENCE') {
+    if (normalizedDocType === 'bill_of_lading') return 'Bill of lading fields were extracted with limited confidence and need manual confirmation.';
+    if (normalizedDocType === 'packing_list') return 'Packing-list fields were extracted with limited confidence and need manual confirmation.';
+    return 'Extraction confidence is limited for this document and needs manual confirmation.';
+  }
+  if (key === 'REVIEW_REQUIRED') {
+    return 'This document requires manual review before clean presentation.';
+  }
+  if (key === 'FIELD_NOT_FOUND') {
+    return specificMissingReasons[0] || 'A required field could not be confirmed from the extracted content.';
+  }
+  if (key === 'critical_issue_date_missing') {
+    return specificMissingReasons.find((entry) => /date/i.test(entry)) || 'Document date could not be confirmed from this file.';
+  }
+  if (key === 'critical_gross_weight_missing' || key === 'critical_net_weight_missing') {
+    return (
+      specificMissingReasons.find((entry) => /gross or net weight|gross weight|net weight/i.test(entry))
+      || 'Weight details could not be confirmed from this document.'
+    );
+  }
+  if (key.startsWith('missing:')) {
+    const fieldName = key.split(':', 2)[1] || '';
+    const fieldSpecific = specificMissingReasons.find((entry) => entry.toLowerCase().includes(fieldName.replace(/_/g, ' ')));
+    if (fieldSpecific) {
+      return fieldSpecific;
+    }
+    return `${humanizeLabel(fieldName)} could not be confirmed from this document.`;
+  }
+  if (/^field not found$/i.test(key)) {
+    return specificMissingReasons[0] || 'A required field could not be confirmed from the extracted content.';
+  }
+  return key.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+};
+
 const buildWarningReasons = ({
   extractionStatus,
   issuesCount,
@@ -146,6 +300,9 @@ const buildWarningReasons = ({
   parseComplete,
   reviewReasons,
   docType,
+  rawText,
+  criticalFieldStates,
+  fieldDiagnostics,
 }: {
   extractionStatus: string;
   issuesCount: number;
@@ -153,17 +310,33 @@ const buildWarningReasons = ({
   parseComplete: boolean | undefined;
   reviewReasons: unknown[];
   docType?: string;
+  rawText?: string;
+  criticalFieldStates?: Record<string, any>;
+  fieldDiagnostics?: Record<string, any>;
 }): string[] => {
   const reasons: string[] = [];
   const normalizedDocType = String(docType || '').toLowerCase();
+  const reasonContext: ReviewReasonContext = {
+    docType,
+    rawText,
+    criticalFieldStates,
+    fieldDiagnostics,
+    missingRequiredFields,
+  };
+  const specificMissingReasons = _buildSpecificFieldMissingReasons(reasonContext);
   const humanizeField = (field: unknown) =>
     String(field || '')
       .replace(/_/g, ' ')
       .replace(/\b\w/g, (c) => c.toUpperCase())
       .trim();
 
+  if (specificMissingReasons.length > 0) {
+    reasons.push(...specificMissingReasons);
+  }
   if (['partial', 'pending', 'text_only'].includes(extractionStatus)) {
-    if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') {
+    if (specificMissingReasons.length > 0) {
+      // Prefer the source-aware reason over generic extraction wording when we can explain the gap.
+    } else if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') {
       reasons.push('Insurance coverage fields are incomplete and need manual confirmation before presentation.');
     } else if (normalizedDocType === 'certificate_of_origin') {
       reasons.push('Certificate of origin details are only partially extracted and need manual confirmation.');
@@ -175,10 +348,10 @@ const buildWarningReasons = ({
       reasons.push(`Document extraction is ${extractionStatus.replace('_', ' ')} and needs manual confirmation.`);
     }
   }
-  if (parseComplete === false) {
+  if (parseComplete === false && specificMissingReasons.length === 0) {
     reasons.push('Structured extraction is incomplete for this document.');
   }
-  if (Array.isArray(missingRequiredFields) && missingRequiredFields.length > 0) {
+  if (specificMissingReasons.length === 0 && Array.isArray(missingRequiredFields) && missingRequiredFields.length > 0) {
     const formattedFields = missingRequiredFields
       .map(humanizeField)
       .filter(Boolean)
@@ -197,9 +370,10 @@ const buildWarningReasons = ({
   }
   if (Array.isArray(reviewReasons)) {
     for (const rawReason of reviewReasons) {
-      const reason = String(rawReason || '').trim();
-      if (!reason) continue;
-      reasons.push(reason.replace(/_/g, ' '));
+      const humanized = _humanizeDocumentReviewReason(String(rawReason || '').trim(), reasonContext);
+      if (humanized) {
+        reasons.push(humanized);
+      }
     }
   }
 
@@ -962,10 +1136,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           parseComplete,
           reviewReasons,
           docType: typeKey,
+          rawText: docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '',
+          criticalFieldStates: docAny.critical_field_states ?? docAny.criticalFieldStates ?? {},
+          fieldDiagnostics: docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {},
         }),
         reviewReasons,
         criticalFieldStates: docAny.critical_field_states ?? docAny.criticalFieldStates ?? {},
         fieldDiagnostics: docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {},
+        rawText: docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '',
         requiredFieldsFound: docAny.required_fields_found,
         requiredFieldsTotal: docAny.required_fields_total,
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
@@ -1334,53 +1512,31 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   }, [lcClassification?.unmapped_requirements, lcData, lcPrimaryExtractedFields]);
 
   const requirementChecklist = useMemo(() => {
-    const humanizeIssueReason = (reason: string, docType?: string): string => {
-      const key = String(reason || '').trim();
-      const normalizedDocType = String(docType || '').toLowerCase();
-      if (key === 'LOW_CONFIDENCE_CRITICAL') {
-        if (normalizedDocType === 'packing_list') return 'Packing-list detail needs manual review before clean presentation.';
-        if (normalizedDocType === 'beneficiary_certificate') return 'Beneficiary certificate wording was recognized, but structured extraction is incomplete.';
-        if (normalizedDocType === 'weight_list' || normalizedDocType === 'weight_certificate') return 'Weight values were found, but document structure still needs manual confirmation.';
-        if (normalizedDocType === 'certificate_of_origin') return 'Certificate of origin details need manual confirmation before clean presentation.';
-        if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'Insurance coverage details need manual confirmation before clean presentation.';
-        if (normalizedDocType === 'bill_of_lading') return 'Bill of lading details need manual review before clean presentation.';
-        return 'Key required fields need manual review before clean presentation.';
-      }
-      if (key === 'critical_bin_tin_low_confidence') {
-        return 'Exporter BIN/TIN was not confidently confirmed on this document.';
-      }
-      if (key === 'OCR_AUTH_ERROR') {
-        if (normalizedDocType === 'bill_of_lading') return 'Bill of lading text extraction confidence is limited; visually confirm vessel, ports, and shipment wording.';
-        if (normalizedDocType === 'packing_list') return 'Packing-list text extraction confidence is limited; visually confirm package, quantity, and weight details.';
-        if (normalizedDocType === 'certificate_of_origin') return 'Certificate of origin text extraction confidence is limited; visually confirm origin and certifier details.';
-        if (normalizedDocType === 'beneficiary_certificate') return 'Beneficiary certificate text extraction confidence is limited; visually confirm the required declaration wording.';
-        if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'Insurance text extraction confidence is limited; visually confirm coverage amount, risks, and certificate wording.';
-        return 'Text extraction confidence is limited; visually confirm the critical presentation fields.';
-      }
-      if (key === 'LOW_CONFIDENCE') {
-        if (normalizedDocType === 'bill_of_lading') return 'Bill of lading fields were extracted with limited confidence and need manual confirmation.';
-        if (normalizedDocType === 'packing_list') return 'Packing-list fields were extracted with limited confidence and need manual confirmation.';
-        return 'Extraction confidence is limited for this document and needs manual confirmation.';
-      }
-      if (key === 'REVIEW_REQUIRED') {
-        return 'This document requires manual review before clean presentation.';
-      }
-      if (/^field not found$/i.test(key)) {
-        if (normalizedDocType === 'certificate_of_origin') return 'A required certificate-of-origin field was not found in the extracted content.';
-        if (normalizedDocType === 'beneficiary_certificate') return 'A required beneficiary-certificate field was not found in the extracted content.';
-        if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'A required insurance field was not found in the extracted content.';
-        if (normalizedDocType === 'packing_list') return 'A required packing-list field was not found in the extracted content.';
-        if (normalizedDocType === 'bill_of_lading') return 'A required bill-of-lading field was not found in the extracted content.';
-        return 'A required field was not found in the extracted content.';
-      }
-      return key.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
-    };
-
     const normalizedDocs = documents.map((doc) => ({
       ...doc,
       normalizedType: String(doc.typeKey || '').toLowerCase(),
-      warningReasons: (((doc as any).warningReasons ?? []) as string[]).map((reason) => humanizeIssueReason(reason, String(doc.typeKey || ''))),
-      reviewReasons: (((doc as any).reviewReasons ?? []) as string[]).map((reason) => humanizeIssueReason(reason, String(doc.typeKey || ''))),
+      warningReasons: (((doc as any).warningReasons ?? []) as string[])
+        .map((reason) =>
+          _humanizeDocumentReviewReason(String(reason), {
+            docType: String(doc.typeKey || ''),
+            rawText: String((doc as any).rawText ?? ''),
+            criticalFieldStates: (doc as any).criticalFieldStates ?? {},
+            fieldDiagnostics: (doc as any).fieldDiagnostics ?? {},
+            missingRequiredFields: (doc as any).missingRequiredFields ?? [],
+          }),
+        )
+        .filter((reason): reason is string => Boolean(reason)),
+      reviewReasons: (((doc as any).reviewReasons ?? []) as string[])
+        .map((reason) =>
+          _humanizeDocumentReviewReason(String(reason), {
+            docType: String(doc.typeKey || ''),
+            rawText: String((doc as any).rawText ?? ''),
+            criticalFieldStates: (doc as any).criticalFieldStates ?? {},
+            fieldDiagnostics: (doc as any).fieldDiagnostics ?? {},
+            missingRequiredFields: (doc as any).missingRequiredFields ?? [],
+          }),
+        )
+        .filter((reason): reason is string => Boolean(reason)),
     }));
 
     type RequirementRowSeed = {
@@ -1472,6 +1628,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           : matchedDoc.reviewState === 'needs_review' || requirementStatus === 'partial'
           ? 'needs_review'
           : 'ready';
+        const synthesizedReviewNotes = matchedDoc
+          ? _buildSpecificFieldMissingReasons({
+              docType: String(matchedDoc.typeKey || ''),
+              rawText: String((matchedDoc as any).rawText ?? ''),
+              criticalFieldStates: (matchedDoc as any).criticalFieldStates ?? {},
+              fieldDiagnostics: (matchedDoc as any).fieldDiagnostics ?? {},
+              missingRequiredFields: (matchedDoc as any).missingRequiredFields ?? [],
+            })
+          : [];
         const reviewNotes = matchedDoc
           ? [...matchedDoc.warningReasons, ...matchedDoc.reviewReasons].filter(Boolean)
           : ['Document not uploaded yet'];
@@ -1483,12 +1648,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           Array.isArray(matchedDoc.missingRequiredFields) &&
           matchedDoc.missingRequiredFields.length > 0
         ) {
-          reviewNotes.push(
-            `Missing required fields: ${matchedDoc.missingRequiredFields
-              .slice(0, 3)
-              .map((field) => humanizeLabel(String(field)))
-              .join(', ')}`,
-          );
+          if (synthesizedReviewNotes.length > 0) {
+            reviewNotes.push(...synthesizedReviewNotes);
+          } else {
+            reviewNotes.push(
+              `Missing required fields: ${matchedDoc.missingRequiredFields
+                .slice(0, 3)
+                .map((field) => humanizeLabel(String(field)))
+                .join(', ')}`,
+            );
+          }
         }
 
         if (matchedDoc && reviewNotes.length === 0) {

@@ -320,6 +320,12 @@ const mapDocuments = (docs: any[] = []) => {
       ? doc.reviewReasons.map((reason: unknown) => String(reason))
       : [];
     const criticalFieldStates = doc?.critical_field_states ?? doc?.criticalFieldStates ?? {};
+    const fieldDiagnostics = doc?.extraction_artifacts_v1?.field_diagnostics ?? doc?.field_diagnostics ?? {};
+    const rawText =
+      doc?.extraction_artifacts_v1?.raw_text ??
+      doc?.raw_text ??
+      doc?.rawText ??
+      '';
     const requirementStatus = deriveRequirementStatus({
       missingRequiredFields,
       requiredFieldsFound,
@@ -351,6 +357,8 @@ const mapDocuments = (docs: any[] = []) => {
       reviewRequired,
       reviewReasons,
       criticalFieldStates,
+      fieldDiagnostics,
+      rawText,
       requirementStatus,
       reviewState,
       extractedFields: doc?.extracted_fields ?? {},

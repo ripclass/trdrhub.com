@@ -1912,6 +1912,21 @@ def _shape_regulatory_payload(payload: Dict[str, Any], *, regulatory_subtype: st
         shaped.get("certificate_number"),
         _extract_label_value(raw_text, ["certificate no", "certificate number"]),
     )
+    shaped["exporter_name"] = _first(
+        shaped.get("exporter_name"),
+        shaped.get("exporter"),
+        _extract_label_value(raw_text, ["exporter", "seller", "consignor"]),
+    )
+    shaped["importer_name"] = _first(
+        shaped.get("importer_name"),
+        shaped.get("importer"),
+        _extract_label_value(raw_text, ["importer", "buyer", "consignee"]),
+    )
+    shaped["goods_description"] = _first(
+        shaped.get("goods_description"),
+        shaped.get("goods"),
+        _extract_label_value(raw_text, ["goods description", "description of goods", "goods", "commodity"]),
+    )
     shaped["country_of_origin"] = _first(
         shaped.get("country_of_origin"),
         shaped.get("origin_country"),
@@ -1934,6 +1949,22 @@ def _shape_regulatory_payload(payload: Dict[str, Any], *, regulatory_subtype: st
         shaped.get("permit_number"),
         _extract_label_value(raw_text, ["permit no", "permit number"]),
     )
+    shaped["lc_reference"] = _first(
+        shaped.get("lc_reference"),
+        shaped.get("lc_number"),
+        _extract_label_value(
+            raw_text,
+            [
+                "lc no",
+                "lc number",
+                "lc ref",
+                "lc reference",
+                "letter of credit no",
+                "letter of credit number",
+            ],
+        ),
+    )
+    shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("lc_reference"))
     return _apply_canonical_normalization(shaped)
 
 

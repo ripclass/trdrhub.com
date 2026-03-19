@@ -560,6 +560,58 @@ def detect_applicable_rules(source: Dict[str, Any]) -> str:
     return "unknown"
 
 
+def _coerce_mt700_date_iso(value: Any) -> Optional[str]:
+    text = clean_string(value)
+    if not text:
+        return None
+    digits = re.sub(r"\D", "", text)
+    if len(digits) < 6:
+        return None
+    yy = digits[:2]
+    mm = digits[2:4]
+    dd = digits[4:6]
+    try:
+        return f"20{yy}-{int(mm):02d}-{int(dd):02d}"
+    except ValueError:
+        return None
+
+
+def _extract_mt700_date_attributes(source: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    mt700 = source.get("mt700") if isinstance(source.get("mt700"), dict) else {}
+    blocks = mt700.get("blocks") if isinstance(mt700.get("blocks"), dict) else {}
+    raw_text = clean_string(mt700.get("raw_text") or source.get("raw_text")) or ""
+
+    def _block_or_text(block_code: str) -> Optional[str]:
+        block_value = clean_string(blocks.get(block_code))
+        if block_value:
+            return block_value
+        if not raw_text:
+            return None
+        match = re.search(rf"(?im)^\s*:{re.escape(block_code)}:\s*([^\r\n]+)", raw_text)
+        if not match:
+            return None
+        value = clean_string(match.group(1))
+        return value or None
+
+    issue_raw = _block_or_text("31C")
+    expiry_raw = _block_or_text("31D")
+    latest_raw = _block_or_text("44C")
+
+    expiry_place = None
+    expiry_match = re.match(r"^\s*\d{6}\s*([A-Za-z][A-Za-z\s\-.]{1,})\s*$", str(expiry_raw or "").strip())
+    if expiry_match:
+        expiry_place = clean_string(expiry_match.group(1))
+        if expiry_place:
+            expiry_place = expiry_place.upper()
+
+    return {
+        "issue_date": _coerce_mt700_date_iso(issue_raw),
+        "expiry_date": _coerce_mt700_date_iso(expiry_raw),
+        "latest_shipment_date": _coerce_mt700_date_iso(latest_raw),
+        "expiry_place": expiry_place,
+    }
+
+
 def build_attribute_payload(
     source: Dict[str, Any],
     applicable_rules: str,
@@ -567,9 +619,10 @@ def build_attribute_payload(
     required_documents: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     text = " ".join(iter_text_blobs(source)).upper()
-    latest_shipment_date = clean_string(source.get("latest_shipment_date")) or clean_string((source.get("dates") or {}).get("latest_shipment")) or clean_string((source.get("timeline") or {}).get("latest_shipment"))
-    expiry_date = clean_string(source.get("expiry_date")) or clean_string((source.get("dates") or {}).get("expiry")) or clean_string((source.get("timeline") or {}).get("expiry_date"))
-    expiry_place = clean_string(source.get("expiry_place")) or clean_string(source.get("place_of_expiry")) or clean_string((source.get("dates") or {}).get("place_of_expiry"))
+    mt700_dates = _extract_mt700_date_attributes(source)
+    latest_shipment_date = mt700_dates.get("latest_shipment_date") or clean_string(source.get("latest_shipment_date")) or clean_string((source.get("dates") or {}).get("latest_shipment")) or clean_string((source.get("timeline") or {}).get("latest_shipment"))
+    expiry_date = mt700_dates.get("expiry_date") or clean_string(source.get("expiry_date")) or clean_string((source.get("dates") or {}).get("expiry")) or clean_string((source.get("timeline") or {}).get("expiry_date"))
+    expiry_place = mt700_dates.get("expiry_place") or clean_string(source.get("expiry_place")) or clean_string(source.get("place_of_expiry")) or clean_string((source.get("dates") or {}).get("place_of_expiry"))
     shipment = source.get("shipment") if isinstance(source.get("shipment"), dict) else {}
     mt700 = source.get("mt700") if isinstance(source.get("mt700"), dict) else {}
     tenor_days = extract_int(source.get("tenor_days") or source.get("deferred_days") or source.get("usance_days") or source.get("drafts_at"))

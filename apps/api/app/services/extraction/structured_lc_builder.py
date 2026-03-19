@@ -245,6 +245,59 @@ def _hydrate_mt700_from_extractor_outputs(extractor_outputs: Dict[str, Any]) -> 
     }
 
 
+def _coerce_mt700_date_iso(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    digits = re.sub(r"\D", "", text)
+    if len(digits) < 6:
+        return None
+    try:
+        return datetime.strptime(digits[:6], "%y%m%d").date().isoformat()
+    except ValueError:
+        return None
+
+
+def _extract_mt700_timeline_dates(mt700_payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(mt700_payload, dict):
+        return {}
+
+    blocks = mt700_payload.get("blocks") if isinstance(mt700_payload.get("blocks"), dict) else {}
+    raw_text = str(mt700_payload.get("raw_text") or "").strip()
+
+    def _block_or_text(block_code: str) -> Optional[str]:
+        block_value = blocks.get(block_code)
+        if block_value not in (None, "", [], {}):
+            return str(block_value).strip() or None
+        if not raw_text:
+            return None
+        match = re.search(rf"(?im)^\s*:{re.escape(block_code)}:\s*([^\r\n]+)", raw_text)
+        if not match:
+            return None
+        value = str(match.group(1) or "").strip()
+        return value or None
+
+    issue_raw = _block_or_text("31C")
+    expiry_raw = _block_or_text("31D")
+    latest_raw = _block_or_text("44C")
+
+    expiry_place = None
+    expiry_match = re.match(r"^\s*\d{6}\s*([A-Za-z][A-Za-z\s\-.]{1,})\s*$", str(expiry_raw or "").strip())
+    if expiry_match:
+        expiry_place = str(expiry_match.group(1) or "").strip().upper() or None
+
+    dates: Dict[str, Any] = {}
+    if issue_date := _coerce_mt700_date_iso(issue_raw):
+        dates["issue_date"] = issue_date
+    if expiry_date := _coerce_mt700_date_iso(expiry_raw):
+        dates["expiry_date"] = expiry_date
+    if latest_shipment_date := _coerce_mt700_date_iso(latest_raw):
+        dates["latest_shipment_date"] = latest_shipment_date
+    if expiry_place:
+        dates["place_of_expiry"] = expiry_place
+    return dates
+
+
 def _default_timeline(count: int) -> List[Dict[str, Any]]:
     return [
         {
@@ -304,6 +357,7 @@ def build_unified_structured_result(
     raw_timeline = extractor_outputs.get("timeline")
     timeline = _normalize_timeline(raw_timeline, len(docs_structured))
     timeline_meta = _timeline_metadata(raw_timeline)
+    mt700_timeline_dates = _extract_mt700_timeline_dates(mt700_block)
     issues = extractor_outputs.get("issues", [])
     lc_classification = extractor_outputs.get("lc_classification")
     if not isinstance(lc_classification, dict):
@@ -325,10 +379,14 @@ def build_unified_structured_result(
 
     # Build dates object from extractor outputs
     dates = {
-        "issue": extractor_outputs.get("issue_date") or timeline_meta.get("issue_date"),
-        "expiry": extractor_outputs.get("expiry_date") or timeline_meta.get("expiry_date"),
-        "latest_shipment": extractor_outputs.get("latest_shipment") or timeline_meta.get("latest_shipment"),
-        "place_of_expiry": extractor_outputs.get("place_of_expiry"),
+        "issue": extractor_outputs.get("issue_date") or timeline_meta.get("issue_date") or mt700_timeline_dates.get("issue_date"),
+        "expiry": extractor_outputs.get("expiry_date") or timeline_meta.get("expiry_date") or mt700_timeline_dates.get("expiry_date"),
+        "latest_shipment": extractor_outputs.get("latest_shipment")
+        or extractor_outputs.get("latest_shipment_date")
+        or timeline_meta.get("latest_shipment")
+        or timeline_meta.get("latest_shipment_date")
+        or mt700_timeline_dates.get("latest_shipment_date"),
+        "place_of_expiry": extractor_outputs.get("place_of_expiry") or mt700_timeline_dates.get("place_of_expiry"),
     }
     # Filter out None values from dates
     dates = {k: v for k, v in dates.items() if v is not None}
@@ -346,6 +404,11 @@ def build_unified_structured_result(
         # Add fields that frontend expects for LC Card rendering
         "number": extractor_outputs.get("number") or extractor_outputs.get("lc_number"),
         "lc_number": extractor_outputs.get("number") or extractor_outputs.get("lc_number"),
+        "issue_date": dates.get("issue"),
+        "expiry_date": dates.get("expiry"),
+        "latest_shipment": dates.get("latest_shipment"),
+        "latest_shipment_date": dates.get("latest_shipment"),
+        "place_of_expiry": dates.get("place_of_expiry"),
         "amount": extractor_outputs.get("amount"),
         "currency": extractor_outputs.get("currency"),
         "incoterm": extractor_outputs.get("incoterm"),

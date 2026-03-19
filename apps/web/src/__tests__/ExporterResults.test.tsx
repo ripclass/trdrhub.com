@@ -860,6 +860,75 @@ describe('ExporterResults', () => {
     expect(within(insuranceCard).queryByText(/Partially covers requirement/i)).toBeNull();
   });
 
+  it('replaces generic invoice and packing review text with source-aware reasons from structured payloads', async () => {
+    const structured = JSON.parse(JSON.stringify(mockValidationResults.structured_result));
+    structured.issues = [];
+    structured.processing_summary = {
+      ...structured.processing_summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+    };
+    structured.lc_structured = {
+      ...(structured.lc_structured ?? {}),
+      lc_classification: {
+        workflow_orientation: 'export',
+        instrument_type: 'documentary_credit',
+        required_documents: [
+          { code: 'commercial_invoice', display_name: 'Commercial Invoice' },
+          { code: 'packing_list', display_name: 'Packing List' },
+        ],
+      },
+    };
+
+    const documentsStructured = [
+      {
+        document_id: 'doc-invoice',
+        document_type: 'commercial_invoice',
+        filename: 'Invoice.pdf',
+        extraction_status: 'success',
+        review_required: true,
+        review_reasons: ['FIELD_NOT_FOUND', 'critical_issue_date_missing'],
+        critical_field_states: { issue_date: 'missing' },
+        extracted_fields: { invoice_number: 'DKEL/EXP/2026/114' },
+        extraction_artifacts_v1: {
+          raw_text: 'Commercial Invoice\nLC No: EXP2026BD001\nTotal Amount: USD 458,750.00\n',
+          field_diagnostics: {
+            issue_date: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+          },
+        },
+      },
+      {
+        document_id: 'doc-pack',
+        document_type: 'packing_list',
+        filename: 'Packing_List.pdf',
+        extraction_status: 'partial',
+        review_required: true,
+        review_reasons: ['FIELD_NOT_FOUND', 'critical_issue_date_missing'],
+        critical_field_states: { issue_date: 'missing' },
+        extracted_fields: { gross_weight: '20400 KG', net_weight: '18950 KG' },
+        extraction_artifacts_v1: {
+          raw_text: 'Packing List\nLC No: EXP2026BD001\nNet Weight: 18,950 kg\nGross Weight: 20,400 kg\n',
+          field_diagnostics: {
+            issue_date: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+          },
+        },
+      },
+    ];
+
+    structured.documents_structured = documentsStructured;
+    structured.lc_structured.documents_structured = documentsStructured;
+    activeResults = buildValidationResponse({ structured_result: structured });
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+    );
+
+    expect(screen.getAllByText(/Source invoice does not show an invoice date/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Source packing list does not clearly show a document date/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^Field not found$/i)).toBeNull();
+  });
+
   it('still renders overview when structured_result analytics are missing', async () => {
     const withoutAnalytics = buildValidationResults();
     (withoutAnalytics.structured_result as any).analytics = undefined;

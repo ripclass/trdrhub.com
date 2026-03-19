@@ -164,6 +164,41 @@ def test_regulatory_coo_completeness_does_not_require_certificate_number() -> No
     assert "missing:certificate_number" not in result["review_reasons"]
 
 
+def test_coo_shaping_recovers_exporter_importer_goods_and_lc_reference_from_raw_text() -> None:
+    symbols = _load_symbols(
+        LAUNCH_PIPELINE_PATH,
+        {
+            "_extract_label_value",
+            "_shape_regulatory_payload",
+        },
+        extra_namespace={"re": re, "_apply_canonical_normalization": lambda payload: payload},
+    )
+    shape = symbols["_shape_regulatory_payload"]
+
+    shaped = shape(
+        {
+            "country_of_origin": "Peoples Republic of Bangladesh",
+            "issuing_authority": "Export Promotion Bureau (EPB)",
+        },
+        regulatory_subtype="certificate_of_origin",
+        raw_text=(
+            "Certificate of Origin\n"
+            "Exporter: Dhaka Knitwear & Exports Ltd.\n"
+            "Importer: Global Importers Inc., USA\n"
+            "LC No: EXP2026BD001\n"
+            "Goods: Knitwear & Woven Garments\n"
+            "Origin: Peoples Republic of Bangladesh\n"
+            "Issued by: Export Promotion Bureau (EPB)\n"
+        ),
+    )
+
+    assert shaped["exporter_name"] == "Dhaka Knitwear & Exports Ltd."
+    assert shaped["importer_name"] == "Global Importers Inc., USA"
+    assert shaped["goods_description"] == "Knitwear & Woven Garments"
+    assert shaped["lc_reference"] == "EXP2026BD001"
+    assert shaped["lc_number"] == "EXP2026BD001"
+
+
 def test_price_verification_skips_when_only_total_invoice_amount_exists() -> None:
     fake_price_module = types.ModuleType("app.services.price_verification")
     service_calls = {"verify_price": 0}

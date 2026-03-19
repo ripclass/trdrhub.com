@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LAUNCH_PIPELINE_PATH = ROOT / "app" / "services" / "extraction" / "launch_pipeline.py"
 VALIDATE_PATH = ROOT / "app" / "routers" / "validate.py"
 STRUCTURED_BUILDER_PATH = ROOT / "app" / "services" / "extraction" / "structured_lc_builder.py"
+LC_TAXONOMY_PATH = ROOT / "app" / "services" / "extraction" / "lc_taxonomy.py"
 
 MT700_SAMPLE_TEXT = (
     "MT700 Export Letter of Credit - MASTER\n"
@@ -60,12 +61,24 @@ def _load_validate_symbols() -> Dict[str, Any]:
     parsed = ast.parse(source)
     selected_nodes: List[ast.AST] = []
     for node in parsed.body:
-        if isinstance(node, ast.FunctionDef) and node.name == "_build_lc_intake_summary":
+        if isinstance(node, ast.FunctionDef) and node.name in {
+            "_coerce_mt700_date_iso",
+            "_extract_mt700_block_value",
+            "_extract_mt700_timeline_fields",
+            "_repair_lc_mt700_dates",
+            "_build_lc_intake_summary",
+        }:
             selected_nodes.append(node)
 
     module_ast = ast.Module(body=selected_nodes, type_ignores=[])
     ast.fix_missing_locations(module_ast)
-    namespace: Dict[str, Any] = {"Dict": Dict}
+    namespace: Dict[str, Any] = {
+        "Any": Any,
+        "Dict": Dict,
+        "Optional": Optional,
+        "datetime": __import__("datetime").datetime,
+        "re": re,
+    }
     exec(compile(module_ast, str(VALIDATE_PATH), "exec"), namespace)
     return namespace
 
@@ -74,6 +87,15 @@ def _load_structured_builder_module():
     spec = importlib.util.spec_from_file_location("structured_lc_builder_mt700_timeline_test", STRUCTURED_BUILDER_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load structured_lc_builder module")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_lc_taxonomy_module():
+    spec = importlib.util.spec_from_file_location("lc_taxonomy_mt700_timeline_test", LC_TAXONOMY_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load lc_taxonomy module")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -135,6 +157,28 @@ def test_lc_intake_summary_accepts_canonical_nested_mt700_dates() -> None:
     assert summary["latest_shipment_date"] == "2026-09-30"
 
 
+def test_validate_mt700_date_repair_reanchors_swapped_flat_dates_from_raw_tags() -> None:
+    ns = _load_validate_symbols()
+    repair_lc_mt700_dates = ns["_repair_lc_mt700_dates"]
+
+    repaired = repair_lc_mt700_dates(
+        {
+            "issue_date": "2026-04-15",
+            "expiry_date": "2026-09-30",
+            "latest_shipment_date": "2026-10-15",
+            "mt700": {"blocks": {}, "raw_text": MT700_SAMPLE_TEXT, "version": "mt700_v1"},
+        }
+    )
+
+    assert repaired["issue_date"] == "2026-04-15"
+    assert repaired["expiry_date"] == "2026-10-15"
+    assert repaired["latest_shipment_date"] == "2026-09-30"
+    assert repaired["latest_shipment"] == "2026-09-30"
+    assert repaired["dates"]["expiry"] == "2026-10-15"
+    assert repaired["dates"]["latest_shipment"] == "2026-09-30"
+    assert repaired["place_of_expiry"] == "USA"
+
+
 def test_structured_builder_preserves_mt700_timeline_dates_after_shaping() -> None:
     launch_ns = _load_launch_pipeline_symbols()
     shape_lc_financial_payload = launch_ns["_shape_lc_financial_payload"]
@@ -159,6 +203,25 @@ def test_structured_builder_preserves_mt700_timeline_dates_after_shaping() -> No
     assert result["dates"]["expiry"] == "2026-10-15"
     assert result["dates"]["latest_shipment"] == "2026-09-30"
     assert result["dates"]["place_of_expiry"] == "USA"
+
+
+def test_lc_taxonomy_attribute_payload_prefers_mt700_dates_over_swapped_flat_values() -> None:
+    lc_taxonomy = _load_lc_taxonomy_module()
+
+    attrs = lc_taxonomy.build_attribute_payload(
+        {
+            "expiry_date": "2026-09-30",
+            "latest_shipment_date": "2026-10-15",
+            "mt700": {"blocks": {}, "raw_text": MT700_SAMPLE_TEXT, "version": "mt700_v1"},
+        },
+        applicable_rules="ucp600",
+        instrument_type="documentary_credit",
+        required_documents=[],
+    )
+
+    assert attrs["expiry_date"] == "2026-10-15"
+    assert attrs["latest_shipment_date"] == "2026-09-30"
+    assert attrs["expiry_place"] == "USA"
 
 
 def test_lc_user_facing_extracted_fields_prefer_canonical_snapshot_values() -> None:
