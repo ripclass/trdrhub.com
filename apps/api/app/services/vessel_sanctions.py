@@ -359,8 +359,16 @@ class VesselSanctionsService:
             # Try to derive code from state name
             flag_code = self._get_flag_code(flag_state)
         
-        if not flag_code:
-            flag_code = "XX"
+        if not flag_code or flag_code.upper() == "XX":
+            return FlagRiskAssessment(
+                flag_state=flag_state or "Unknown",
+                flag_code=(flag_code or "XX").upper(),
+                risk_level="LOW",
+                paris_mou_status="unknown",
+                tokyo_mou_status="unknown",
+                is_flag_of_convenience=False,
+                notes="Flag state unavailable or unrecognized; no flag-risk escalation applied."
+            )
         
         flag_code = flag_code.upper()
         

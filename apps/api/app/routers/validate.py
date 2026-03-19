@@ -831,8 +831,8 @@ def _day1_policy_for_doc(document_type: str) -> Dict[str, Any]:
         "letter_of_credit": {"fields": ["issuer", "doc_date"], "threshold": 2},
         "swift_message": {"fields": ["issuer", "doc_date"], "threshold": 2},
         "lc_application": {"fields": ["issuer", "doc_date"], "threshold": 2},
-        "commercial_invoice": {"fields": ["issuer", "doc_date", "bin", "tin", "gross_weight", "net_weight"], "threshold": 2},
-        "proforma_invoice": {"fields": ["issuer", "doc_date", "bin", "tin", "gross_weight", "net_weight"], "threshold": 2},
+        "commercial_invoice": {"fields": ["issuer", "doc_date", "bin", "tin"], "threshold": 2},
+        "proforma_invoice": {"fields": ["issuer", "doc_date", "bin", "tin"], "threshold": 2},
         "bill_of_lading": {"fields": ["issuer", "voyage", "gross_weight", "net_weight", "doc_date", "bin", "tin"], "threshold": 2},
         "packing_list": {"fields": ["issuer", "doc_date", "gross_weight", "net_weight"], "threshold": 3},
         "certificate_of_origin": {"fields": ["issuer", "doc_date", "bin", "tin"], "threshold": 2},
@@ -3776,7 +3776,6 @@ def _assess_required_field_completeness(
 def _assess_coo_parse_completeness(extracted_fields: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Compute parse completeness signal for COO extraction quality gating."""
     required_fields = [
-        "certificate_number",
         "country_of_origin",
         "exporter_name",
         "importer_name",
@@ -3785,17 +3784,16 @@ def _assess_coo_parse_completeness(extracted_fields: Optional[Dict[str, Any]]) -
     ]
     metrics = _assess_required_field_completeness(extracted_fields, required_fields)
 
-    # COO must at least include country + certificate and a minimally useful set of required fields.
+    # COO must at least include country and a minimally useful set of origin/certifier fields.
     has_country = _is_populated_field_value((extracted_fields or {}).get("country_of_origin"))
-    has_certificate = _is_populated_field_value((extracted_fields or {}).get("certificate_number"))
     min_required_found = 3
-    parse_complete = bool(has_country and has_certificate and metrics["required_found"] >= min_required_found)
+    parse_complete = bool(has_country and metrics["required_found"] >= min_required_found)
 
     metrics.update(
         {
             "min_required_for_verified": min_required_found,
             "has_country_of_origin": has_country,
-            "has_certificate_number": has_certificate,
+            "has_certificate_number": _is_populated_field_value((extracted_fields or {}).get("certificate_number")),
             "parse_complete": parse_complete,
         }
     )

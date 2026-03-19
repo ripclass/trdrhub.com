@@ -81,6 +81,25 @@ def _coerce_decimal(value: Any) -> Optional[Decimal]:
     return None
 
 
+def _coerce_single_numeric_scalar(value: Any) -> Optional[Decimal]:
+    """Return a numeric value only when the input is unambiguously singular."""
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return None
+        matches = re.findall(r"\d[\d,]*(?:\.\d+)?", normalized)
+        if len(matches) != 1:
+            return None
+        return _coerce_decimal(matches[0])
+    return None
+
+
 def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Perform deterministic cross-document checks to create SME-friendly discrepancies.
@@ -493,6 +512,7 @@ async def run_price_verification_checks(
     invoice_amount = invoice_context.get("invoice_amount") or invoice_context.get("amount")
     if isinstance(invoice_amount, dict):
         invoice_amount = invoice_amount.get("value")
+    invoice_amount_value = _coerce_single_numeric_scalar(invoice_amount)
     
     invoice_currency = (
         invoice_context.get("currency") or
@@ -503,10 +523,23 @@ async def run_price_verification_checks(
     # Try to get unit price and quantity
     unit_price = invoice_context.get("unit_price")
     quantity = invoice_context.get("quantity")
+    unit_price_value = _coerce_single_numeric_scalar(unit_price)
+    quantity_value = _coerce_single_numeric_scalar(quantity)
     
     # Skip if no goods description or price
-    if not goods_description or not (invoice_amount or unit_price):
+    if not goods_description or not (invoice_amount_value or unit_price_value):
         logger.debug("No goods or price info for price verification")
+        return issues
+
+    if unit_price_value is None:
+        logger.info(
+            "Skipping price verification because unit price is not available as a safe scalar",
+            extra={
+                "raw_unit_price": unit_price,
+                "raw_quantity": quantity,
+                "has_invoice_amount": invoice_amount_value is not None,
+            },
+        )
         return issues
     
     try:
@@ -534,7 +567,7 @@ async def run_price_verification_checks(
         logger.info(f"Price verification: resolved '{goods_description[:30]}' as '{commodity['name']}' via {source} (confidence: {confidence:.2f})")
         
         # Determine price to verify
-        price_to_verify = unit_price if unit_price else invoice_amount
+        price_to_verify = unit_price_value
         
         # Default unit if not specified
         unit = invoice_context.get("unit") or commodity.get("unit", "kg")
@@ -545,7 +578,7 @@ async def run_price_verification_checks(
             document_price=float(price_to_verify),
             document_unit=unit,
             document_currency=invoice_currency,
-            quantity=float(quantity) if quantity else None,
+            quantity=float(quantity_value) if quantity_value is not None else None,
             document_type="invoice",
             hs_code=hs_code,
         )

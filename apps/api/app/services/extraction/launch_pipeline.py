@@ -1133,7 +1133,6 @@ def _assess_required_field_completeness(extracted_fields: Optional[Dict[str, Any
 
 def _assess_coo_parse_completeness(extracted_fields: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     required_fields = [
-        "certificate_number",
         "country_of_origin",
         "exporter_name",
         "importer_name",
@@ -1141,14 +1140,13 @@ def _assess_coo_parse_completeness(extracted_fields: Optional[Dict[str, Any]]) -
     ]
     metrics = _assess_required_field_completeness(extracted_fields, required_fields)
     has_country = _is_populated_field_value((extracted_fields or {}).get("country_of_origin"))
-    has_certificate = _is_populated_field_value((extracted_fields or {}).get("certificate_number"))
     min_required_found = 3
-    parse_complete = bool(has_country and has_certificate and metrics["required_found"] >= min_required_found)
+    parse_complete = bool(has_country and metrics["required_found"] >= min_required_found)
     metrics.update(
         {
             "min_required_for_verified": min_required_found,
             "has_country_of_origin": has_country,
-            "has_certificate_number": has_certificate,
+            "has_certificate_number": _is_populated_field_value((extracted_fields or {}).get("certificate_number")),
             "parse_complete": parse_complete,
         }
     )
@@ -1712,26 +1710,33 @@ def _build_lc_user_facing_extracted_fields(payload: Optional[Dict[str, Any]]) ->
 
 
 def _assess_insurance_completeness(payload: Optional[Dict[str, Any]], *, insurance_subtype: str) -> Dict[str, Any]:
+    attestation_style_subtypes = {
+        "beneficiary_certificate",
+        "manufacturer_certificate",
+        "manufacturers_certificate",
+        "conformity_certificate",
+        "certificate_of_conformity",
+        "non_manipulation_certificate",
+        "halal_certificate",
+        "kosher_certificate",
+        "organic_certificate",
+    }
     subtype_required = {
         "insurance_policy": ["policy_number", "insured_amount"],
-        "beneficiary_certificate": ["certificate_number"],
-        "manufacturer_certificate": ["certificate_number"],
-        "manufacturers_certificate": ["certificate_number"],
-        "conformity_certificate": ["certificate_number"],
-        "certificate_of_conformity": ["certificate_number"],
-        "non_manipulation_certificate": ["certificate_number"],
-        "halal_certificate": ["certificate_number"],
-        "kosher_certificate": ["certificate_number"],
-        "organic_certificate": ["certificate_number"],
         "insurance_certificate": ["policy_number", "insured_amount"],
     }
-    required_fields = subtype_required.get(insurance_subtype, ["policy_number"])
-    metrics = _assess_required_field_completeness(payload, required_fields)
-    parse_complete = metrics.get("required_found", 0) >= max(1, min(2, metrics.get("required_total", 0)))
+    if insurance_subtype in attestation_style_subtypes:
+        required_fields = ["certificate_number", "issuer_name", "issue_date", "lc_reference"]
+        metrics = _assess_required_field_completeness(payload, required_fields)
+        parse_complete = metrics.get("required_found", 0) >= 1
+    else:
+        required_fields = subtype_required.get(insurance_subtype, ["policy_number"])
+        metrics = _assess_required_field_completeness(payload, required_fields)
+        parse_complete = metrics.get("required_found", 0) >= max(1, min(2, metrics.get("required_total", 0)))
     review_reasons = []
     if not parse_complete:
         review_reasons.append(f"insurance_{insurance_subtype}_missing_critical_fields")
-    if metrics.get("missing_required_fields"):
+    if metrics.get("missing_required_fields") and not (insurance_subtype in attestation_style_subtypes and parse_complete):
         review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
     metrics.update({"parse_complete": parse_complete, "review_reasons": review_reasons})
     return metrics

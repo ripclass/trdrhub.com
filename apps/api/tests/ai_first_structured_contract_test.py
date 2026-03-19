@@ -154,15 +154,17 @@ def test_coo_parse_completeness_requires_minimum_fields_for_verified():
     exec(compile(module_ast, str(module_path), "exec"), namespace)
     assess = namespace["_assess_coo_parse_completeness"]
 
-    shallow = assess({"country_of_origin": "Bangladesh", "certificate_number": "COO-1"})
+    shallow = assess({"country_of_origin": "Bangladesh", "goods_description": "Cotton shirts"})
     assert shallow["parse_complete"] is False
     assert shallow["required_found"] == 2
 
     complete = assess(
         {
             "country_of_origin": "Bangladesh",
-            "certificate_number": "COO-1",
+            "exporter_name": "Dhaka Knitwear & Exports Ltd.",
+            "importer_name": "Global Importers Inc.",
             "goods_description": "Cotton shirts",
+            "certifying_authority": "Export Promotion Bureau (EPB)",
         }
     )
     assert complete["parse_complete"] is True
