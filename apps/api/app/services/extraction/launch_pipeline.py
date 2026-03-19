@@ -1726,9 +1726,19 @@ def _assess_insurance_completeness(payload: Optional[Dict[str, Any]], *, insuran
         "insurance_certificate": ["policy_number", "insured_amount"],
     }
     if insurance_subtype in attestation_style_subtypes:
-        required_fields = ["certificate_number", "issuer_name", "issue_date", "lc_reference"]
-        metrics = _assess_required_field_completeness(payload, required_fields)
-        parse_complete = metrics.get("required_found", 0) >= 1
+        fields = payload or {}
+        core_fields = ["issuer_name", "issue_date", "lc_reference", "certificate_number"]
+        found_core = [field for field in core_fields if _is_populated_field_value(fields.get(field))]
+        required_total = len(core_fields)
+        required_found = len(found_core)
+        parse_complete = required_found >= 1
+        metrics = {
+            "required_fields": list(core_fields),
+            "required_total": required_total,
+            "required_found": required_found,
+            "missing_required_fields": [] if parse_complete else ["issuer_name", "issue_date", "lc_reference"],
+            "required_ratio": round((required_found / required_total), 4) if required_total else 0.0,
+        }
     else:
         required_fields = subtype_required.get(insurance_subtype, ["policy_number"])
         metrics = _assess_required_field_completeness(payload, required_fields)
@@ -1792,6 +1802,23 @@ def _shape_insurance_payload(payload: Dict[str, Any], *, insurance_subtype: str,
         ),
     )
     shaped["certificate_number"] = _first(shaped.get("certificate_number"), shaped.get("policy_number"))
+    shaped["lc_reference"] = _first(
+        shaped.get("lc_reference"),
+        shaped.get("lc_number"),
+        _extract_label_value(
+            raw_text,
+            [
+                "lc no",
+                "lc number",
+                "lc ref",
+                "lc reference",
+                "letter of credit no",
+                "letter of credit number",
+                "credit number",
+            ],
+        ),
+    )
+    shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("lc_reference"))
     shaped["insured_amount"] = _first(
         shaped.get("insured_amount"),
         _extract_amount_value(raw_text, ["insured amount", "sum insured", "coverage amount"]),
@@ -1806,6 +1833,18 @@ def _shape_insurance_payload(payload: Dict[str, Any], *, insurance_subtype: str,
 
 
 def _assess_regulatory_completeness(payload: Optional[Dict[str, Any]], *, regulatory_subtype: str) -> Dict[str, Any]:
+    if regulatory_subtype == "certificate_of_origin":
+        metrics = _assess_coo_parse_completeness(payload)
+        if metrics.get("parse_complete"):
+            metrics["missing_required_fields"] = []
+        review_reasons = []
+        if not metrics.get("parse_complete"):
+            review_reasons.append("regulatory_certificate_of_origin_missing_critical_fields")
+        if metrics.get("missing_required_fields"):
+            review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
+        metrics.update({"review_reasons": review_reasons})
+        return metrics
+
     subtype_required = {
         "gsp_form_a": ["certificate_number", "country_of_origin"],
         "eur1_movement_certificate": ["certificate_number", "country_of_origin"],
@@ -1819,7 +1858,6 @@ def _assess_regulatory_completeness(payload: Optional[Dict[str, Any]], *, regula
         "sanitary_certificate": ["certificate_number", "issuing_authority"],
         "cites_permit": ["permit_number"],
         "radiation_certificate": ["certificate_number"],
-        "certificate_of_origin": ["certificate_number", "country_of_origin"],
     }
     required_fields = subtype_required.get(regulatory_subtype, ["certificate_number"])
     metrics = _assess_required_field_completeness(payload, required_fields)

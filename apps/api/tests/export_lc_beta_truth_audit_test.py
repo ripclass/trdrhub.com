@@ -88,7 +88,33 @@ def test_beneficiary_certificate_completeness_does_not_require_certificate_numbe
 
     assert result["parse_complete"] is True
     assert result["required_found"] >= 1
+    assert result["missing_required_fields"] == []
     assert "missing:certificate_number" not in result["review_reasons"]
+
+
+def test_beneficiary_certificate_shaping_recovers_lc_reference_from_raw_text() -> None:
+    symbols = _load_symbols(
+        LAUNCH_PIPELINE_PATH,
+        {
+            "_extract_label_value",
+            "_extract_amount_value",
+            "_shape_insurance_payload",
+        },
+        extra_namespace={"re": re, "_apply_canonical_normalization": lambda payload: payload},
+    )
+    shape = symbols["_shape_insurance_payload"]
+
+    shaped = shape(
+        {
+            "issuer_name": "BENEFICIARY CERTIFICATE",
+            "issue_date": "2026-04-20",
+        },
+        insurance_subtype="beneficiary_certificate",
+        raw_text="BENEFICIARY CERTIFICATE\nLC No: EXP2026BD001\nBUYER PO NO. GBE-44592\n",
+    )
+
+    assert shaped["lc_reference"] == "EXP2026BD001"
+    assert shaped["lc_number"] == "EXP2026BD001"
 
 
 def test_coo_completeness_accepts_useful_origin_fields_without_certificate_number() -> None:
@@ -109,6 +135,33 @@ def test_coo_completeness_accepts_useful_origin_fields_without_certificate_numbe
 
     assert result["parse_complete"] is True
     assert result["has_certificate_number"] is False
+
+
+def test_regulatory_coo_completeness_does_not_require_certificate_number() -> None:
+    symbols = _load_symbols(
+        LAUNCH_PIPELINE_PATH,
+        {
+            "_is_populated_field_value",
+            "_assess_required_field_completeness",
+            "_assess_coo_parse_completeness",
+            "_assess_regulatory_completeness",
+        },
+    )
+    assess = symbols["_assess_regulatory_completeness"]
+
+    result = assess(
+        {
+            "country_of_origin": "Bangladesh",
+            "exporter_name": "Dhaka Knitwear & Exports Ltd.",
+            "importer_name": "Global Importers Inc.",
+            "goods_description": "Knitwear & Woven Garments",
+        },
+        regulatory_subtype="certificate_of_origin",
+    )
+
+    assert result["parse_complete"] is True
+    assert result["missing_required_fields"] == []
+    assert "missing:certificate_number" not in result["review_reasons"]
 
 
 def test_price_verification_skips_when_only_total_invoice_amount_exists() -> None:

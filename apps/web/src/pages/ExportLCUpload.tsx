@@ -3,7 +3,6 @@ import { useDropzone } from "react-dropzone";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -241,6 +240,26 @@ export function formatWorkflowConfidenceBadgeLabel(confidence?: number | null): 
   return `Workflow confidence: ${Math.round(confidence * 100)}%`;
 }
 
+export function buildValidationProgressCopy(fileCount: number): {
+  heading: string;
+  subheading: string;
+  detail: string;
+} {
+  const docCountLabel =
+    fileCount > 0
+      ? `${fileCount} supporting document${fileCount === 1 ? "" : "s"}`
+      : "your supporting documents";
+  const detail =
+    "We're extracting document text, checking LC terms, and preparing your review for " +
+    docCountLabel +
+    ". Multi-document packs often take 1-2 minutes.";
+  return {
+    heading: "Processing documents...",
+    subheading: "Estimated client-side status",
+    detail,
+  };
+}
+
 export function getQuickBadgeDocumentTypes(
   allTypes: UploadDocumentTypeOption[],
   requiredDocumentTypes: string[],
@@ -269,107 +288,19 @@ export function getQuickBadgeDocumentTypes(
   return selected.slice(0, MAX_QUICK_BADGE_COUNT);
 }
 
-// Processing phases with estimated durations (based on typical timing data)
-const PROCESSING_PHASES = [
-  { id: 'upload', label: 'Uploading documents', duration: 2, icon: Upload },
-  { id: 'ocr', label: 'Extracting text (OCR)', duration: 35, icon: FileText },
-  { id: 'validation', label: 'Running compliance checks', duration: 5, icon: FileCheck },
-  { id: 'sanctions', label: 'Screening parties', duration: 10, icon: AlertTriangle },
-  { id: 'complete', label: 'Building results', duration: 3, icon: CheckCircle },
-];
-
 function ValidationProgressIndicator({ fileCount }: { fileCount: number }) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [startTime] = useState(() => Date.now());
-  
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
-    }, 500);
-    return () => clearInterval(interval);
-  }, [startTime]);
-  
-  // Calculate which phase we're in based on elapsed time
-  let accumulatedTime = 0;
-  let currentPhaseIndex = 0;
-  let phaseProgress = 0;
-  
-  for (let i = 0; i < PROCESSING_PHASES.length; i++) {
-    const phase = PROCESSING_PHASES[i];
-    // Scale OCR phase duration by file count
-    const phaseDuration = phase.id === 'ocr' 
-      ? phase.duration * Math.max(1, fileCount * 0.7) 
-      : phase.duration;
-    
-    if (elapsedSeconds < accumulatedTime + phaseDuration) {
-      currentPhaseIndex = i;
-      phaseProgress = ((elapsedSeconds - accumulatedTime) / phaseDuration) * 100;
-      break;
-    }
-    accumulatedTime += phaseDuration;
-    currentPhaseIndex = i;
-    phaseProgress = 100;
-  }
-  
-  // Overall progress (capped at 95% to avoid false completion)
-  const totalEstimated = PROCESSING_PHASES.reduce((sum, p) => 
-    sum + (p.id === 'ocr' ? p.duration * Math.max(1, fileCount * 0.7) : p.duration), 0
-  );
-  const overallProgress = Math.min(95, (elapsedSeconds / totalEstimated) * 100);
-  
-  const currentPhase = PROCESSING_PHASES[currentPhaseIndex];
-  const CurrentIcon = currentPhase.icon;
-  
+  const copy = buildValidationProgressCopy(fileCount);
+
   return (
     <div className="bg-exporter/5 border border-exporter/20 rounded-lg p-4 space-y-4">
-      {/* Current phase */}
       <div className="flex items-center gap-3">
-        <div className="relative">
-          <div className="animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
-          <CurrentIcon className="absolute inset-0 w-3 h-3 m-auto text-exporter/60" />
-        </div>
+        <div className="animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
         <div className="flex-1">
-          <span className="font-medium text-exporter">
-            {currentPhase.label}...
-          </span>
-          <span className="text-sm text-muted-foreground ml-2">
-            ({elapsedSeconds}s)
-          </span>
+          <span className="font-medium text-exporter">{copy.heading}</span>
+          <p className="text-xs text-muted-foreground">{copy.subheading}</p>
         </div>
       </div>
-      
-      {/* Overall progress bar */}
-      <div className="space-y-2">
-        <Progress value={overallProgress} className="h-2" />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>Processing {fileCount} document{fileCount !== 1 ? 's' : ''}</span>
-          <span>~{Math.max(0, Math.ceil(totalEstimated - elapsedSeconds))}s remaining</span>
-        </div>
-      </div>
-      
-      {/* Phase indicators */}
-      <div className="flex gap-1">
-        {PROCESSING_PHASES.map((phase, idx) => {
-          const PhaseIcon = phase.icon;
-          const isComplete = idx < currentPhaseIndex;
-          const isCurrent = idx === currentPhaseIndex;
-          
-          return (
-            <div 
-              key={phase.id}
-              className={cn(
-                "flex-1 h-1 rounded-full transition-colors",
-                isComplete ? "bg-exporter" : isCurrent ? "bg-exporter/50" : "bg-gray-200"
-              )}
-              title={phase.label}
-            />
-          );
-        })}
-      </div>
-      
-      <p className="text-xs text-muted-foreground">
-        Analyzing LC terms, checking compliance with UCP600 & ISBP745, and screening parties.
-      </p>
+      <p className="text-sm text-muted-foreground">{copy.detail}</p>
     </div>
   );
 }
@@ -1497,15 +1428,20 @@ export default function ExportLCUpload({
           <Card className="mb-6 shadow-soft border-0">
             <CardContent className="pt-6 space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-foreground">Resolving Letter of Credit</p>
-                  <p className="text-sm text-muted-foreground">
-                    Checking the LC, identifying workflow, and extracting required supporting documents.
-                  </p>
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 animate-spin w-5 h-5 border-2 border-exporter border-t-transparent rounded-full"></div>
+                  <div>
+                    <p className="font-medium text-foreground">Resolving Letter of Credit</p>
+                    <p className="text-sm text-muted-foreground">
+                      Checking the LC, identifying workflow, and extracting required supporting documents.
+                    </p>
+                  </div>
                 </div>
-                <Badge variant="outline">LC upload in progress</Badge>
+                <Badge variant="outline">Estimated status</Badge>
               </div>
-              <Progress value={70} className="h-2" />
+              <p className="text-xs text-muted-foreground">
+                This is client-side status messaging, not live backend stage telemetry.
+              </p>
             </CardContent>
           </Card>
         )}
@@ -1667,9 +1603,9 @@ export default function ExportLCUpload({
                       </div>
                       
                       {file.status === "uploading" && (
-                        <div className="space-y-2">
-                          <Progress value={file.progress} className="h-1" />
-                          <p className="text-xs text-muted-foreground">Uploading... {Math.round(file.progress)}%</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="animate-spin w-3.5 h-3.5 border-2 border-exporter border-t-transparent rounded-full"></div>
+                          <p>Preparing file locally before validation...</p>
                         </div>
                       )}
                       

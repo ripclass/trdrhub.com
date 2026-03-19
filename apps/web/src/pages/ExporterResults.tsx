@@ -262,6 +262,44 @@ const REVIEW_STATE_META: Record<
   awaiting_document: { label: 'Awaiting document', badgeStatus: 'warning' },
 };
 
+type RequirementReviewFinding = {
+  key: string;
+  title: string;
+  detail: string;
+  severity: 'critical' | 'major';
+};
+
+const REQUIREMENT_TYPE_EQUIVALENTS: Record<string, string[]> = {
+  bill_of_lading: ['ocean_bill_of_lading', 'charter_party_bill_of_lading'],
+  ocean_bill_of_lading: ['bill_of_lading', 'charter_party_bill_of_lading'],
+  charter_party_bill_of_lading: ['bill_of_lading', 'ocean_bill_of_lading'],
+  insurance_certificate: ['insurance_policy'],
+  insurance_policy: ['insurance_certificate'],
+  beneficiary_certificate: ['beneficiary_statement'],
+  beneficiary_statement: ['beneficiary_certificate'],
+  courier_or_post_receipt_or_certificate_of_posting: ['courier_receipt', 'post_receipt', 'certificate_of_posting'],
+  courier_receipt: ['courier_or_post_receipt_or_certificate_of_posting'],
+};
+
+const normalizeRequirementCode = (value: unknown): string | null => {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return normalized.length > 0 ? normalized : null;
+};
+
+const buildRequirementTypeCandidates = (code: string | null): string[] => {
+  if (!code) return [];
+  const candidates = new Set<string>([code]);
+  const equivalent = REQUIREMENT_TYPE_EQUIVALENTS[code] || [];
+  equivalent.forEach((item) => candidates.add(item));
+  for (const [base, aliases] of Object.entries(REQUIREMENT_TYPE_EQUIVALENTS)) {
+    if (aliases.includes(code)) {
+      candidates.add(base);
+      aliases.forEach((item) => candidates.add(item));
+    }
+  }
+  return Array.from(candidates);
+};
+
 const buildCanonicalLcDrawerFields = (lcStructured: Record<string, any> | null): Record<string, any> => {
   if (!lcStructured || typeof lcStructured !== "object") {
     return {};
@@ -938,9 +976,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
-  // Use the higher of summary.total_issues or actual issueCards.length
-  // This ensures we show the correct count even if backend summary is stale
-  const totalDiscrepancies = Math.max(summary?.total_issues ?? 0, issueCards.length);
+  const backendIssueCount = Math.max(summary?.total_issues ?? 0, issueCards.length);
   const severityBreakdown = summary?.severity_breakdown ?? {
     critical: 0,
     major: 0,
@@ -1289,14 +1325,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return [] as string[];
   }, [lcClassification?.unmapped_requirements, lcData, lcPrimaryExtractedFields]);
 
-  const performanceInsights = useMemo(
-    () => [
-      extractionSuccessful + "/" + (totalDocuments || 0) + " documents extracted successfully",
-      totalDiscrepancies + " issue" + (totalDiscrepancies === 1 ? "" : "s") + " detected",
-      "Compliance score " + complianceScore + "%",
-    ],
-    [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
-  );
   const requirementChecklist = useMemo(() => {
     const humanizeIssueReason = (reason: string, docType?: string): string => {
       const key = String(reason || '').trim();
@@ -1347,37 +1375,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       reviewReasons: (((doc as any).reviewReasons ?? []) as string[]).map((reason) => humanizeIssueReason(reason, String(doc.typeKey || ''))),
     }));
 
-    const normalizeRequirementCode = (value: unknown): string | null => {
-      const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-      return normalized.length > 0 ? normalized : null;
-    };
-
-    const typeEquivalents: Record<string, string[]> = {
-      bill_of_lading: ['ocean_bill_of_lading', 'charter_party_bill_of_lading'],
-      ocean_bill_of_lading: ['bill_of_lading', 'charter_party_bill_of_lading'],
-      charter_party_bill_of_lading: ['bill_of_lading', 'ocean_bill_of_lading'],
-      insurance_certificate: ['insurance_policy'],
-      insurance_policy: ['insurance_certificate'],
-      beneficiary_certificate: ['beneficiary_statement'],
-      beneficiary_statement: ['beneficiary_certificate'],
-      courier_or_post_receipt_or_certificate_of_posting: ['courier_receipt', 'post_receipt', 'certificate_of_posting'],
-      courier_receipt: ['courier_or_post_receipt_or_certificate_of_posting'],
-    };
-
-    const buildTypeCandidates = (code: string | null): string[] => {
-      if (!code) return [];
-      const candidates = new Set<string>([code]);
-      const equivalent = typeEquivalents[code] || [];
-      equivalent.forEach((item) => candidates.add(item));
-      for (const [base, aliases] of Object.entries(typeEquivalents)) {
-        if (aliases.includes(code)) {
-          candidates.add(base);
-          aliases.forEach((item) => candidates.add(item));
-        }
-      }
-      return Array.from(candidates);
-    };
-
     type RequirementRowSeed = {
       key: string;
       label: string;
@@ -1409,7 +1406,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         label,
         requirementText,
         code,
-        typeCandidates: buildTypeCandidates(code),
+        typeCandidates: buildRequirementTypeCandidates(code),
       });
     });
 
@@ -1422,7 +1419,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           label: humanizeLabel(code),
           requirementText: humanizeLabel(code),
           code,
-          typeCandidates: buildTypeCandidates(code),
+          typeCandidates: buildRequirementTypeCandidates(code),
         });
       });
     }
@@ -1537,6 +1534,78 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       },
     );
   }, [requirementChecklist]);
+  const lcRequiredDocumentTypeSet = useMemo(() => {
+    const requiredTypes = new Set<string>(['letter_of_credit']);
+    canonicalRequiredDocs.forEach((doc) => {
+      buildRequirementTypeCandidates(normalizeRequirementCode(doc?.code)).forEach((candidate) => requiredTypes.add(candidate));
+    });
+    if (canonicalRequiredDocs.length === 0) {
+      lcRequirementTypes.forEach((rawType) => {
+        buildRequirementTypeCandidates(normalizeRequirementCode(rawType)).forEach((candidate) => requiredTypes.add(candidate));
+      });
+    }
+    return requiredTypes;
+  }, [canonicalRequiredDocs, lcRequirementTypes]);
+  const checklistReviewFindings = useMemo<RequirementReviewFinding[]>(() => {
+    return requirementChecklist.flatMap((item) => {
+      if (item.requirementStatus === 'missing') {
+        return [
+          {
+            key: `${item.key}-missing`,
+            title: item.matchedDoc ? `Complete ${item.label} requirement coverage` : `Upload ${item.label}`,
+            detail:
+              item.matchedDoc
+                ? item.reviewNotes[0] || 'A matching file exists, but the required declaration or clause coverage is still unresolved.'
+                : item.requirementText,
+            severity: 'critical',
+          },
+        ];
+      }
+      if (item.reviewState === 'blocked') {
+        return [
+          {
+            key: `${item.key}-blocked`,
+            title: `Clear ${item.label} review block`,
+            detail:
+              item.reviewNotes[0] || 'This document is blocked from clean presentation until the review issue is cleared.',
+            severity: 'critical',
+          },
+        ];
+      }
+      if (item.requirementStatus === 'partial') {
+        return [
+          {
+            key: `${item.key}-partial`,
+            title: `Complete ${item.label} requirement coverage`,
+            detail:
+              item.reviewNotes[0] || 'This matched document still has missing required elements against the LC requirement.',
+            severity: 'major',
+          },
+        ];
+      }
+      if (item.reviewState === 'needs_review') {
+        return [
+          {
+            key: `${item.key}-review`,
+            title: `Complete review for ${item.label}`,
+            detail: item.reviewNotes[0] || 'This document requires manual review before submission.',
+            severity: 'major',
+          },
+        ];
+      }
+      return [];
+    });
+  }, [requirementChecklist]);
+  const surfaceFindingsCount = issueCards.length > 0 ? backendIssueCount : checklistReviewFindings.length;
+  const totalDiscrepancies = surfaceFindingsCount;
+  const performanceInsights = useMemo(
+    () => [
+      extractionSuccessful + "/" + (totalDocuments || 0) + " documents extracted successfully",
+      totalDiscrepancies + " issue" + (totalDiscrepancies === 1 ? "" : "s") + " detected",
+      "Compliance score " + complianceScore + "%",
+    ],
+    [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
+  );
   const exporterPresentationTruth = useMemo(
     () =>
       getExporterPresentationTruth({
@@ -1548,47 +1617,19 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           reviewRequired: requirementChecklistSummary.needsReview,
           awaitingDocuments: requirementChecklistSummary.awaitingDocument,
         },
-        totalIssues: issueCards.length,
+        totalIssues: surfaceFindingsCount,
       }),
-    [canonicalResultTruth, requirementChecklistSummary, issueCards.length],
+    [canonicalResultTruth, requirementChecklistSummary, surfaceFindingsCount],
   );
   const actionEngine = useMemo(() => {
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
 
-    requirementChecklist.forEach((item) => {
-      if (item.requirementStatus === 'missing') {
-        actions.push({
-          priority: 'critical',
-          title: item.matchedDoc ? `Complete ${item.label} requirement coverage` : `Upload ${item.label}`,
-          detail: item.matchedDoc
-            ? item.reviewNotes[0] || 'A matching file exists, but the required declaration or clause coverage is still unresolved.'
-            : item.requirementText,
-        });
-        return;
-      }
-      if (item.reviewState === 'blocked') {
-        actions.push({
-          priority: 'critical',
-          title: `Clear ${item.label} review block`,
-          detail: item.reviewNotes[0] || 'This document is blocked from clean presentation until the review issue is cleared.',
-        });
-        return;
-      }
-      if (item.requirementStatus === 'partial') {
-        actions.push({
-          priority: 'major',
-          title: `Complete ${item.label} requirement coverage`,
-          detail: item.reviewNotes[0] || 'This matched document still has missing required elements against the LC requirement.',
-        });
-        return;
-      }
-      if (item.reviewState === 'needs_review') {
-        actions.push({
-          priority: 'major',
-          title: `Complete review for ${item.label}`,
-          detail: item.reviewNotes[0] || 'This document requires manual review before submission.',
-        });
-      }
+    checklistReviewFindings.forEach((finding) => {
+      actions.push({
+        priority: finding.severity,
+        title: finding.title,
+        detail: finding.detail,
+      });
     });
 
     issueCards.slice(0, 5).forEach((issue) => {
@@ -1616,7 +1657,65 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const rank = { critical: 0, major: 1, minor: 2 };
       return rank[a.priority] - rank[b.priority];
     });
-  }, [requirementChecklist, issueCards]);
+  }, [checklistReviewFindings, issueCards]);
+  const displayBankVerdict = useMemo<BankVerdict | null>(() => {
+    const baseVerdict = (structuredResult?.bank_verdict as BankVerdict | null) ?? null;
+    const normalizedVerdict = String(baseVerdict?.verdict ?? '').trim().toUpperCase();
+
+    if (exporterPresentationTruth.presentationStatus === 'ready') {
+      return baseVerdict;
+    }
+
+    if (baseVerdict && normalizedVerdict && normalizedVerdict !== 'SUBMIT') {
+      return baseVerdict;
+    }
+
+    const checklistCriticalCount = checklistReviewFindings.filter((finding) => finding.severity === 'critical').length;
+    const checklistMajorCount = checklistReviewFindings.length - checklistCriticalCount;
+    const actionItems: BankVerdictActionItem[] = actionEngine.slice(0, 5).map((action) => ({
+      priority: action.priority === 'critical' ? 'critical' : action.priority === 'major' ? 'high' : 'medium',
+      issue: action.title,
+      action: action.detail,
+    }));
+
+    if (exporterPresentationTruth.presentationStatus === 'not_ready') {
+      return {
+        verdict: 'HOLD',
+        verdict_color: 'orange',
+        verdict_message: 'Review is blocking clean presentation',
+        recommendation: 'Resolve missing or blocked checklist items before treating this case as submission-ready.',
+        can_submit: false,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: baseVerdict?.estimated_discrepancy_fee ?? 0,
+        issue_summary: {
+          critical: checklistCriticalCount,
+          major: checklistMajorCount,
+          minor: 0,
+          total: checklistReviewFindings.length,
+        },
+        action_items: actionItems,
+        action_items_count: actionEngine.length,
+      };
+    }
+
+    return {
+      verdict: 'CAUTION',
+      verdict_color: 'yellow',
+      verdict_message: 'Review required before bank submission',
+      recommendation: 'Complete the unresolved checklist reviews before treating this case as submission-ready.',
+      can_submit: false,
+      will_be_rejected: false,
+      estimated_discrepancy_fee: baseVerdict?.estimated_discrepancy_fee ?? 0,
+      issue_summary: {
+        critical: checklistCriticalCount,
+        major: checklistMajorCount,
+        minor: 0,
+        total: checklistReviewFindings.length,
+      },
+      action_items: actionItems,
+      action_items_count: actionEngine.length,
+    };
+  }, [actionEngine, checklistReviewFindings, exporterPresentationTruth.presentationStatus, structuredResult?.bank_verdict]);
   const customsPackReadiness = useMemo(() => {
     const derivedBlockers = requirementChecklist.filter(
       (item) => item.requirementStatus === 'missing' || item.reviewState === 'blocked',
@@ -1650,10 +1749,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       source: 'shared',
     };
   }, [requirementChecklist, issueCards, exporterPresentationTruth]);
-  const overallStatus = canonicalResultTruth.overallStatus;
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = Boolean(manifestData?.documents?.length);
-  const bankReadyLabel = canonicalResultTruth.readinessLabel;
   const processingSummaryExtras =
     (structuredResult as any)?.processing_summary_v2 ??
     (structuredResult?.processing_summary as Record<string, any> | undefined);
@@ -1666,7 +1763,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     () =>
       getExporterOverviewTruth({
         totalDocuments,
-        totalIssues: issueCards.length,
+        totalIssues: surfaceFindingsCount,
         complianceScore,
         extractionAccuracy,
         processingTime,
@@ -1685,7 +1782,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       }),
     [
       totalDocuments,
-      issueCards.length,
+      surfaceFindingsCount,
       complianceScore,
       extractionAccuracy,
       processingTime,
@@ -1698,7 +1795,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     ],
   );
   const submissionEligibility = canonicalResultTruth.submissionEligibility;
-  const bankVerdict = canonicalResultTruth.bankVerdict as { can_submit?: boolean } | null;
   const canSubmitFromValidation = canonicalResultTruth.canSubmitFromValidation;
   const canGenerateCustomsPack = exporterPresentationTruth.presentationStatus !== 'not_ready';
   const isReadyToSubmit = useMemo(() => {
@@ -2167,7 +2263,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             lcTypeConfidence={lcTypeConfidenceValue}
             packGenerated={overviewTruth.packGenerated}
             overallStatus={overviewTruth.overallStatus}
-            actualIssuesCount={issueCards.length}
+            actualIssuesCount={surfaceFindingsCount}
             complianceScore={complianceScore}
             readinessLabel={overviewTruth.readinessLabel}
             readinessSummary={overviewTruth.readinessSummary}
@@ -2195,8 +2291,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           )}
           
           {/* Bank Submission Verdict Card */}
-          {structuredResult?.bank_verdict && (
-            <BankVerdictCard verdict={structuredResult.bank_verdict as BankVerdict} />
+          {displayBankVerdict && (
+            <BankVerdictCard verdict={displayBankVerdict} />
           )}
           
           {/* OCR Confidence Warning */}
@@ -2888,10 +2984,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               const requiredFieldsFound = (document as any).requiredFieldsFound;
               const requiredFieldsTotal = (document as any).requiredFieldsTotal;
               const discrepancyCount = document.issuesCount ?? 0;
+              const normalizedDocumentType = String(document.typeKey || '').toLowerCase();
               const warningReasons = ((document as any).warningReasons ?? []) as string[];
               const reviewReasons = ((document as any).reviewReasons ?? []) as string[];
               const requirementStatus = document.requirementStatus ?? 'matched';
               const reviewState = document.reviewState ?? 'ready';
+              const isLcRequiredDocument = lcRequiredDocumentTypeSet.has(normalizedDocumentType);
+              const isOptionalSupportingDocument =
+                normalizedDocumentType !== 'letter_of_credit' && !isLcRequiredDocument;
+              const effectiveWarningReasons =
+                isOptionalSupportingDocument && discrepancyCount === 0 ? [] : warningReasons;
+              const effectiveReviewReasons =
+                isOptionalSupportingDocument && discrepancyCount === 0 ? [] : reviewReasons;
+              const effectiveReviewState: typeof reviewState =
+                isOptionalSupportingDocument && discrepancyCount === 0 ? 'ready' : reviewState;
               const extractionLabel =
                 document.status === 'success'
                   ? 'Extracted'
@@ -2899,17 +3005,21 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   ? 'Extraction blocked'
                   : 'Extraction warning';
               const requirementMeta =
-                requirementStatus === 'matched'
+                isOptionalSupportingDocument
+                  ? { label: 'Not LC-required', status: 'pending' as const, note: 'Uploaded as supporting evidence, but this LC does not require this document type.' }
+                  : requirementStatus === 'matched'
                   ? { label: 'Requirement matched', status: 'success' as const, note: 'This upload covers the required document type.' }
                   : requirementStatus === 'missing'
                   ? { label: 'Requirement missing', status: 'error' as const, note: 'This upload does not currently satisfy the required document coverage.' }
                   : { label: 'Requirement partial', status: 'warning' as const, note: 'This upload only partially satisfies the required document coverage.' };
               const reviewMeta =
-                reviewState === 'ready'
+                isOptionalSupportingDocument && discrepancyCount === 0
+                  ? { label: 'Informational upload', status: 'pending' as const, note: 'This extra supporting document does not block clean presentation.' }
+                  : effectiveReviewState === 'ready'
                   ? { label: 'Ready for review flow', status: 'success' as const, note: 'No active review hold is attached to this document.' }
-                  : reviewState === 'blocked'
+                  : effectiveReviewState === 'blocked'
                   ? { label: 'Review blocked', status: 'error' as const, note: 'This document currently blocks clean presentation.' }
-                  : reviewState === 'needs_review'
+                  : effectiveReviewState === 'needs_review'
                   ? { label: 'Review required', status: 'warning' as const, note: 'This document needs manual review before clean presentation.' }
                   : { label: 'Awaiting supporting upload', status: 'warning' as const, note: 'A matching supporting document is still required before clean presentation.' };
               
@@ -3005,23 +3115,23 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <div className="flex items-center justify-between gap-2">
                           <StatusBadge status={reviewMeta.status}>{reviewMeta.label}</StatusBadge>
                           <span className="text-xs text-muted-foreground text-right">
-                            {reviewReasons.length > 0 ? `${reviewReasons.length} review note${reviewReasons.length > 1 ? 's' : ''}` : 'No review notes'}
+                            {effectiveReviewReasons.length > 0 ? `${effectiveReviewReasons.length} review note${effectiveReviewReasons.length > 1 ? 's' : ''}` : 'No review notes'}
                           </span>
                         </div>
                         <p className="mt-2 text-xs text-muted-foreground">{reviewMeta.note}</p>
                       </div>
                     </div>
-                    {warningReasons.length > 0 && (
+                    {effectiveWarningReasons.length > 0 && (
                       <div className="mb-3 space-y-2">
                         <div className="flex flex-wrap gap-2">
-                          {warningReasons.map((reason, idx) => (
+                          {effectiveWarningReasons.map((reason, idx) => (
                             <Badge key={`${document.id}-reason-${idx}`} variant="outline" className="text-xs border-amber-500/30 text-amber-700 bg-amber-500/5">
                               {reason}
                             </Badge>
                           ))}
                         </div>
                         <p className="text-xs text-amber-700">
-                          {warningReasons[0]}
+                          {effectiveWarningReasons[0]}
                         </p>
                       </div>
                     )}
@@ -3124,6 +3234,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               hasIssueCards={hasIssueCards}
               issueCards={issueCards}
               filteredIssueCards={filteredIssueCards}
+              reviewFindings={checklistReviewFindings}
               severityCounts={severityCounts}
               laneCounts={laneCounts}
               issueFilter={issueFilter}

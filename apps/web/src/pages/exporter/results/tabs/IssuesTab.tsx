@@ -6,7 +6,7 @@
 import { ReactNode, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck } from "lucide-react";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 import { type EmailDraftContext } from "@/components/exporter/HowToFixSection";
 import { normalizeDiscrepancySeverity } from "../utils";
@@ -24,11 +24,20 @@ interface LaneCounts {
   manual: number;
 }
 
+interface ReviewFinding {
+  key: string;
+  title: string;
+  detail: string;
+  severity: "critical" | "major";
+}
+
 interface IssuesTabProps {
   hasIssueCards: boolean;
   issueCards: IssueCard[];
   filteredIssueCards: IssueCard[];
+  reviewFindings: ReviewFinding[];
   severityCounts: SeverityCounts;
+  laneCounts: LaneCounts;
   issueFilter: "all" | "critical" | "major" | "minor";
   setIssueFilter: (filter: "all" | "critical" | "major" | "minor") => void;
   documentStatusMap: Map<string, { status?: string; type?: string }>;
@@ -50,6 +59,7 @@ export function IssuesTab({
   hasIssueCards,
   issueCards,
   filteredIssueCards,
+  reviewFindings,
   severityCounts,
   laneCounts,
   issueFilter,
@@ -79,18 +89,20 @@ export function IssuesTab({
     return { documentary, complianceRisk };
   }, [filteredIssueCards]);
 
-  const bucketCounts = useMemo<BucketCounts>(() => {
-    let compliance = 0;
-    let documentary = 0;
-    issueCards.forEach((card) => {
-      const bucket = (card as any).bucket || "Document-Level Discrepancies";
-      if (bucket === "Compliance / Risk Review") compliance += 1;
-      else documentary += 1;
-    });
-    return { compliance, documentary };
-  }, [issueCards]);
+  const reviewFindingCounts = useMemo<SeverityCounts>(
+    () =>
+      reviewFindings.reduce(
+        (acc, finding) => {
+          if (finding.severity === "critical") acc.critical += 1;
+          else acc.major += 1;
+          return acc;
+        },
+        { critical: 0, major: 0, minor: 0 },
+      ),
+    [reviewFindings],
+  );
 
-  if (!hasIssueCards) {
+  if (!hasIssueCards && reviewFindings.length === 0) {
     return (
       <>
         <Card className="border border-success/40 bg-success/5 text-success">
@@ -101,6 +113,68 @@ export function IssuesTab({
               <p className="text-sm text-success/80">
                 No discrepancies detected across the submitted document set.
               </p>
+            </div>
+          </CardContent>
+        </Card>
+        {renderAIInsightsCard()}
+        {renderReferenceIssuesCard()}
+      </>
+    );
+  }
+
+  if (!hasIssueCards && reviewFindings.length > 0) {
+    return (
+      <>
+        <Card className="shadow-soft border border-warning/40 bg-warning/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base text-warning">
+              <AlertTriangle className="w-5 h-5" />
+              Review findings still need attention
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              No discrepancy cards were generated for this run, but unresolved checklist reviews still prevent the document set from being treated as fully compliant.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-4">
+              <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Blocking review items</p>
+                <p className="text-2xl font-bold text-destructive">{reviewFindingCounts.critical}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Review required</p>
+                <p className="text-2xl font-bold text-warning">{reviewFindingCounts.major}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Compliance alerts</p>
+                <p className="text-2xl font-bold text-foreground">{laneCounts.compliance}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total review findings</p>
+                <p className="text-2xl font-bold text-foreground">{reviewFindings.length}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {reviewFindings.map((finding) => (
+                <div key={finding.key} className="rounded-lg border border-border/60 bg-card/50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{finding.title}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{finding.detail}</p>
+                    </div>
+                    <span
+                      className={
+                        finding.severity === "critical"
+                          ? "inline-flex rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive"
+                          : "inline-flex rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning"
+                      }
+                    >
+                      {finding.severity === "critical" ? "Blocking review" : "Review required"}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

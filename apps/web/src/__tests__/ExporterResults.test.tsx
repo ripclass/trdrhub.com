@@ -708,6 +708,80 @@ describe('ExporterResults', () => {
     );
   });
 
+  it('downgrades ready-to-submit surfaces when checklist review is still unresolved', async () => {
+    const reviewResults = buildValidationResults();
+    reviewResults.issues = [];
+    reviewResults.summary = {
+      ...reviewResults.summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+    };
+    reviewResults.documents = reviewResults.documents.map((doc) => {
+      if (doc.typeKey === 'commercial_invoice') {
+        return {
+          ...doc,
+          issuesCount: 0,
+          requirementStatus: 'matched',
+          reviewState: 'needs_review',
+          reviewReasons: ['Invoice totals need manual review'],
+        };
+      }
+      return {
+        ...doc,
+        issuesCount: 0,
+        requirementStatus: 'matched',
+        reviewState: 'ready',
+        reviewReasons: [],
+      };
+    });
+    reviewResults.structured_result = {
+      ...reviewResults.structured_result,
+      issues: [],
+      processing_summary: {
+        ...reviewResults.structured_result?.processing_summary,
+        total_issues: 0,
+        severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+      },
+      submission_eligibility: { can_submit: true, reasons: [] },
+      effective_submission_eligibility: { can_submit: true, reasons: [] },
+      bank_verdict: {
+        verdict: 'SUBMIT',
+        verdict_color: 'green',
+        verdict_message: 'Documents appear compliant',
+        recommendation: 'Documents are ready for bank submission.',
+        can_submit: true,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: 0,
+        issue_summary: { critical: 0, major: 0, minor: 0, total: 0 },
+        action_items: [],
+        action_items_count: 0,
+      },
+      lc_structured: {
+        ...(reviewResults.structured_result?.lc_structured ?? {}),
+        lc_classification: {
+          workflow_orientation: 'export',
+          instrument_type: 'documentary_credit',
+          required_documents: [{ code: 'commercial_invoice', display_name: 'Commercial Invoice' }],
+        },
+      },
+    } as typeof reviewResults.structured_result;
+    activeResults = reviewResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Review needed/i)).toBeInTheDocument(),
+    );
+
+    expect(screen.queryByText(/READY TO SUBMIT/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Issues \(1\)/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /Issues \(1\)/i }));
+    expect(screen.getByText(/Review findings still need attention/i)).toBeInTheDocument();
+    expect(screen.queryByText(/All documents comply with LC terms/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Complete review for Commercial Invoice/i).length).toBeGreaterThan(0);
+  });
+
   it('renders UI when only structured_result payload is provided', async () => {
     const user = userEvent.setup();
     const structuredOnly = buildValidationResponse({
@@ -749,6 +823,47 @@ describe('ExporterResults', () => {
     render(renderWithProviders(<ExporterResults />));
     await user.click(screen.getByRole('tab', { name: /Issues/i }));
     expect(screen.getByText(/All documents comply with LC terms/i)).toBeInTheDocument();
+  });
+
+  it('renders non-required insurance uploads as informational instead of failed requirement coverage', async () => {
+    const insuranceResults = buildValidationResults();
+    insuranceResults.documents = insuranceResults.documents.map((doc) => {
+      if (doc.typeKey === 'insurance_certificate') {
+        return {
+          ...doc,
+          issuesCount: 0,
+          requirementStatus: 'partial',
+          reviewState: 'needs_review',
+          warningReasons: ['Insurance coverage details need manual confirmation before presentation.'],
+          reviewReasons: ['Insurance coverage details need manual confirmation before presentation.'],
+        };
+      }
+      return doc;
+    });
+    insuranceResults.structured_result = {
+      ...insuranceResults.structured_result,
+      lc_structured: {
+        ...(insuranceResults.structured_result?.lc_structured ?? {}),
+        lc_classification: {
+          workflow_orientation: 'export',
+          instrument_type: 'documentary_credit',
+          required_documents: [
+            { code: 'commercial_invoice', display_name: 'Commercial Invoice' },
+            { code: 'bill_of_lading', display_name: 'Bill of Lading' },
+          ],
+        },
+      },
+    } as typeof insuranceResults.structured_result;
+    activeResults = insuranceResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+
+    const insuranceCard = findCardByTitle(/Insurance\.pdf/i);
+    expect(within(insuranceCard).getByText(/Not LC-required/i)).toBeInTheDocument();
+    expect(within(insuranceCard).getByText(/Informational upload/i)).toBeInTheDocument();
+    expect(within(insuranceCard).queryByText(/Requirement partial/i)).toBeNull();
   });
 
   it('still renders overview when structured_result analytics are missing', async () => {

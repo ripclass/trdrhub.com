@@ -57,6 +57,7 @@ vi.mock("@/api/sme-templates", () => ({
 }));
 
 import {
+  buildValidationProgressCopy,
   detectDocumentTypeFromFilename,
   formatWorkflowBadgeLabel,
   formatWorkflowConfidenceBadgeLabel,
@@ -104,6 +105,15 @@ describe("ExportLCUpload typing helpers", () => {
 
   it("labels intake confidence as workflow confidence instead of generic confidence", () => {
     expect(formatWorkflowConfidenceBadgeLabel(0.52)).toBe("Workflow confidence: 52%");
+  });
+
+  it("uses estimated client-side wording for validation progress instead of fake exact telemetry", () => {
+    expect(buildValidationProgressCopy(7)).toEqual({
+      heading: "Processing documents...",
+      subheading: "Estimated client-side status",
+      detail:
+        "We're extracting document text, checking LC terms, and preparing your review for 7 supporting documents. Multi-document packs often take 1-2 minutes.",
+    });
   });
 
   it("retains required beneficiary and weight classes in quick badges without silent truncation", () => {
