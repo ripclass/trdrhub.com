@@ -1,42 +1,22 @@
-# How to Run TRDR Hub Locally
+# How to Run LCopilot Locally
 
-This guide walks through spinning up the LCopilot backend and frontend on a developer workstation.
+This guide focuses on the beta-critical LCopilot surfaces in the monorepo.
 
----
-
-## 1. Prerequisites
-
-- **Python 3.11+**
-- **Node.js 18+** (npm 10+)
-- **PostgreSQL 15** running locally or via Docker
-- (Optional) **Redis** for background tasks
-- Google DocAI / AWS credentials if you plan to leave stub mode
-
----
-
-## 2. Install Dependencies
+## 1. Install dependencies
 
 ```bash
-git clone https://github.com/ripclass/trdrhub.com.git
-cd trdrhub.com
-
-# Root workspace deps
 npm install
 
-# Backend deps
 cd apps/api
 pip install -r requirements.txt
 
-# Frontend deps
 cd ../web
 npm install
 ```
 
----
+## 2. Configure environment
 
-## 3. Configure Environment Variables
-
-Templates include all required keys. Copy and edit as needed:
+Copy the repo templates and fill in the values you need:
 
 ```bash
 cp .env.example .env
@@ -44,86 +24,66 @@ cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 ```
 
-Key values to update:
+For local beta-focused work, the important values are:
 
-- `DATABASE_URL` (PostgreSQL)
-- `SECRET_KEY` / `JWT_SECRET_KEY`
-- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (optional AI assist)
-- `STRIPE_*`, `SSLCOMMERZ_*` and URLs for billing callbacks
-- `VITE_API_URL` (defaults to `http://localhost:8000`)
+- database connection
+- Supabase auth values
+- `VITE_API_URL`
+- OCR and storage credentials if you want non-stub validation
 
-To enable live cloud services, set `USE_STUBS=false` and provide AWS/GCP credentials (`S3_BUCKET_NAME`, `GOOGLE_DOCUMENTAI_*`).
-
----
-
-## 4. Prepare the Database
+## 3. Prepare the database
 
 ```bash
-createdb lcopilot_dev
 cd apps/api
 alembic upgrade head
 ```
 
-This applies the schema defined in `apps/api/alembic/versions`.
-
----
-
-## 5. Run the Backend
+## 4. Start the backend
 
 ```bash
 cd apps/api
 uvicorn main:app --reload
 ```
 
-Key endpoints:
+Useful checks:
 
-- API root: `http://localhost:8000/`
-- OpenAPI docs: `http://localhost:8000/docs`
-- Health checks: `/health/live`, `/health/ready`
+- `http://localhost:8000/docs`
+- `http://localhost:8000/healthz`
+- `http://localhost:8000/health/live`
+- `http://localhost:8000/health/ready`
 
-Stub mode (default) uses local storage under `apps/api/stubs`.
-
----
-
-## 6. Run the Frontend
+## 5. Start the frontend
 
 ```bash
 cd apps/web
 npm run dev
 ```
 
-Visit `http://localhost:5173`. The app automatically calls the backend using `VITE_API_URL`.
+Primary beta pages to exercise:
 
-The new Axios client lives in `src/api/client.ts` and injects JWT tokens stored under `VITE_TOKEN_STORAGE_KEY` (default `lcopilot_token`).
+- `/login`
+- `/lcopilot/exporter-dashboard`
+- `/lcopilot/importer-dashboard`
 
----
+## 6. Useful local tests
 
-## 7. Run Tests
+```bash
+npm run build
+npm run test
 
-| Area      | Command                     |
-|-----------|-----------------------------|
-| Backend   | `cd apps/api && pytest`     |
-| Frontend  | `cd apps/web && npm run build` (smoke) |
-| Migrations | `cd apps/api && alembic check` |
+cd apps/web && npm run test && npm run build
+cd apps/api && pytest
+```
 
-Ensure tests pass before opening a pull request or deploying.
+## 7. What to verify first
 
----
+For beta-critical local work, verify this order:
 
-## 8. Deployment Cheatsheet
+1. login and logout
+2. dashboard routing
+3. exporter upload and results
+4. importer upload and results
+5. history and reopen path
+6. quota or paywall behavior
 
-- **Render (API):** `render.yaml` configures build/start commands and automatically runs `alembic upgrade head`.
-- **Vercel (Web):** `vercel.json` builds the Vite app from `apps/web`. Set `VITE_API_URL` to the Render URL.
-
-For production, set `ENVIRONMENT=production`, point to managed Postgres/S3, and disable stub mode.
-
----
-
-## Troubleshooting
-
-- Missing tables? Re-run `alembic upgrade head`.
-- DocAI errors? Confirm `GOOGLE_APPLICATION_CREDENTIALS` and project/processor IDs.
-- Billing endpoints returning 401? Verify JWT secret consistency (`JWT_SECRET_KEY`) across API and frontend.
-- Unexpected UI crash? The global error boundary surfaces the error and you can reload from the fallback screen.
-
-Refer to `TROUBLESHOOTING.md` and `apps/api/MONITORING.md` for deeper diagnostics.
+If a change does not improve one of those loops, it is probably not first-priority beta work.

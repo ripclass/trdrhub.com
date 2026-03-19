@@ -1,13 +1,33 @@
 # Constraints & Assumptions
 
-## Constraints
+## Execution constraints
 
-- **Budget & Resources**: Bootstrapped by a solo founder, requiring extreme capital efficiency.
-- **Timeline**: An 8-10 week target for the MVP launch.
-- **Audience**: SMEs only for the MVP.
+- Beta execution is being optimized for an aggressive 4-week sprint.
+- Exporter must stay the gold path throughout the sprint.
+- Importer must reuse the same auth, validation, and result machinery.
+- Bank is parked from launch-critical scope.
+- Docs must reflect current repo truth, not aspirational architecture.
 
-## Key Assumptions & Impact Analysis
+## Product assumptions
 
-- **Market Assumption (Highest Risk)**: That SMEs will pay for this service. If false, the business model breaks. Mitigate by testing pricing early and exploring channel partnerships.
-- **Technical Assumption**: That OCR will be accurate enough. If false, trust is eroded. Mitigate with a manual correction mode and transparent confidence scores.
-- **Trust Assumption**: That SMEs/banks will respect an AI report. If false, adoption flatlines. Mitigate by citing official rules in every flag and co-designing the "Bank View" PDF with officers.
+- Public beta can launch in English only.
+- A hard paywall is acceptable if users receive a small free-entry allowance first.
+- Self-serve guided onboarding is acceptable, but wrong-dashboard or stale-session behavior is not.
+- Trust in the results loop matters more than breadth of features.
+
+## Technical assumptions
+
+- `structured_result` remains the canonical backend truth for exporter and importer results.
+- `GET /api/results/{jobId}` remains the canonical read path for persisted results.
+- Frontend compatibility layers may still exist, but they should not redefine product truth.
+- Shared types must stay aligned with the runtime contract.
+
+## Scope discipline
+
+The sprint should favor blocker removal over feature expansion.
+
+Cut first:
+
+- secondary surfaces that fork auth or result logic
+- parallel importer behavior
+- non-essential polish that does not improve trust in login, validation, results, history, or paywall behavior

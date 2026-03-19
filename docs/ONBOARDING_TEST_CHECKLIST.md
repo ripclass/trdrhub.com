@@ -1,3 +1,5 @@
+> Historical note: this checklist reflects an older onboarding and dashboard test frame. It is not the canonical LCopilot Public Beta release checklist. Use `docs/AUTH_ONBOARDING_ROUTING_CURRENT_STATE.md`, `docs/CURRENT_STATUS.md`, and `apps/api/docs/REGRESSION_TEST_PLAN.md` for current beta guidance.
+
 # Onboarding & Dashboard Regression Checklist
 
 **Updated:** 2025-01-12  

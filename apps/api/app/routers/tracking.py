@@ -31,7 +31,6 @@ from app.routers.auth import get_current_user
 from app.services.notifications import notification_service
 from app.services.vessel_sanctions import get_sanctions_service, SanctionsResult
 from app.services.ais_gap_detection import get_ais_service, AISAnalysisResult
-from app.services.compliance_report import get_report_generator
 from app.utils.usage_tracker import track_usage
 import logging
 
@@ -795,6 +794,7 @@ async def generate_compliance_report(
     """
     from fastapi.responses import StreamingResponse
     import io
+    from app.services.compliance_report import get_report_generator
     
     generator = get_report_generator()
     
@@ -834,6 +834,7 @@ async def generate_compliance_report_by_id(
     """
     from fastapi.responses import StreamingResponse
     import io
+    from app.services.compliance_report import get_report_generator
     
     # Get vessel details
     vessel_data = await _track_vessel_internal(identifier, "name")

@@ -1,16 +1,39 @@
 # Target Users
 
-## Primary User Segment: The Bangladeshi SME Exporter/Importer
+## Primary beta users
 
-Our primary user is the owner or operations manager of an SME in Bangladesh's export/import sector (e.g., garments, seafood, jute).
+### Exporters
 
-- **Profile**: Typically employs 20-200 people and lacks a dedicated trade finance or legal department. LC validation is a high-stress, manual task handled by non-specialists.
-- **Needs & Pains**: Their core need is certainty. Their primary pains are the fear of rejection, the financial hit from fees and delays, and a feeling of being powerless against complex rules.
-- **Goals**: To get paid quickly and predictably (exporters) and ensure terms are correct from the start to avoid amendments (importers).
+Exporter operations staff, owners, and document teams are the primary beta users.
 
-## User Journeys (Before vs. After)
+Why they are first:
 
-- **Exporter's Journey**: Transforms from a multi-day, high-anxiety process of manual checks and waiting for bank feedback into a 15-minute, high-confidence process of uploading, fixing flagged issues, and submitting a compliant report.
-- **Importer's Journey**: Transforms from a reactive process of discovering problematic LC terms after issuance (leading to costly amendments and supplier friction) into a proactive one of validating draft LCs before they are finalized, ensuring smoother transactions.
+- the exporter journey is the deepest and most mature in the repo
+- exporter users are closest to the current product value loop
+- exporter reliability is the fastest path to trust and revenue
 
-**Note**: The MVP is optimized to solve the primary pain points of exporters. While importers will find value in the core checks, full feature support for the importer journey is planned for a post-MVP release.
+### Importers
+
+Importers are in scope for beta, but as a shared-spine journey rather than a separate product line.
+
+Why they are second:
+
+- importer value is real, especially for pre-issuance or draft LC review
+- importer currently trails exporter in maturity
+- beta quality depends on convergence, not importer-specific expansion
+
+## Secondary beta audiences
+
+- SMEs and MSMEs handling LC-driven trade
+- small trade houses or trade operations teams using English-language workflows
+- mixed exporter/importer companies only if they can stay on the same shared auth and result spine
+
+## Not a primary beta audience
+
+- banks and bank operations teams
+
+Bank remains in the codebase, but it is not the primary audience for this public beta sprint.
+
+## Geographic posture
+
+The beta is not limited to one country, but it is English only. The product should stay understandable to trade-finance users across major trade corridors without introducing multilingual beta scope.

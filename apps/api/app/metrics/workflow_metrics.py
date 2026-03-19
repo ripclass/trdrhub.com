@@ -7,6 +7,8 @@ try:
 except ImportError:
     # Fallback if prometheus_client is not available
     class _MockMetric:
+        def __init__(self, *args, **kwargs):
+            pass
         def labels(self, **kwargs):
             return self
         def inc(self, value=1):

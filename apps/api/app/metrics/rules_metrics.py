@@ -6,6 +6,8 @@ try:
     from prometheus_client import Counter
 except ImportError:  # pragma: no cover
     class _MockCounter:
+        def __init__(self, *args, **kwargs):
+            pass
         def labels(self, **kwargs):
             return self
 

@@ -1,67 +1,62 @@
 # LCopilot Deployment Guide
 
-This document captures the minimum steps required to run the LCopilot stack locally and promote it to the hosted environments (Render for the API, Vercel for the UI).
+This guide covers the beta-critical deployment path for LCopilot.
 
-## 1. Environment Variables
+## Deployment targets
 
-Use the repo level `.env.example` as the source of truth. Copy it to `.env` (or per-service `.env` files) and fill in:
+### Backend
 
-- `DATABASE_URL` – Postgres/Supabase connection string.
-- `SECRET_KEY` – FastAPI session/JWT secret.
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWKS_URL` – Supabase Auth.
-- `GOOGLE_*` – Document AI configuration (or set `USE_DEEPSEEK_OCR=true` and configure DeepSeek).
-- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` – Optional LLM providers.
-- Frontend values (`VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, etc.).
+- platform: Render
+- config: `render.yaml`
+- root dir: `apps/api`
+- build command: `pip install --upgrade pip && pip install -r requirements.txt`
+- start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+- post-deploy migration: `alembic upgrade head`
+- health check path: `/healthz`
 
-## 2. Running Locally
+### Frontend
 
-```bash
-# Backend
-cd apps/api
-cp env.example .env  # fill in secrets
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn main:app --reload
+- platform: Vercel
+- config: `vercel.json`
+- build command: `cd apps/web && npm install && npm run build`
+- output directory: `apps/web/dist`
 
-# Frontend
-cd apps/web
-npm install
-cp .env.example .env
-npm run dev
-```
+## Required environment truth
 
-API health check: `curl http://localhost:8000/healthz`  
-UI served at: `http://localhost:5173`
+Minimum launch-critical configuration:
 
-## 3. Deploying the Backend (Render)
+- database connection
+- Supabase auth values
+- API and frontend environment values
+- OCR provider credentials for non-stub operation
+- storage configuration
+- billing and quota configuration
 
-- Render reads `render.yaml`:
-  - Builds with `pip install -r requirements.txt`
-  - Runs migrations via `alembic upgrade head`
-  - Starts `uvicorn main:app --host 0.0.0.0 --port $PORT`
-  - Health probe: `GET /healthz`
-- Configure secrets inside the Render dashboard or via environment groups (match `.env.example` keys).
+## Health endpoints
 
-## 4. Deploying the Frontend (Vercel)
+- `/healthz` - lightweight deploy health check
+- `/health/live` - liveness
+- `/health/ready` - readiness
 
-- `apps/web/vercel.json` instructs Vercel to:
-  - Install dependencies (`npm install`)
-  - Run `npm run build`
-  - Serve from `apps/web/dist`
-  - Proxy `/api/*` to the Render API
-- Set the VITE_* variables inside the Vercel project settings (they are baked into the build).
+## Beta release checks
 
-## 5. Continuous Integration
+A deployment is not beta-ready unless the following work on the deployed environment:
 
-`.github/workflows/ci.yml` runs on push/PR:
+- `/auth/me`
+- `/onboarding/status`
+- `POST /api/validate`
+- `GET /api/results/{jobId}`
+- exporter dashboard flow
+- importer dashboard flow
+- quota or paywall enforcement path
 
-1. **Backend job** – installs Python deps, lint, type-check, pytest suites.
-2. **Frontend job** – installs Node deps, runs lint, `npm run type-check`, `npm run test`, and `npm run build`.
-3. Additional jobs (E2E, security scans, container builds) run on the appropriate branches and gate deployments.
+## Release discipline
 
-## 6. Observability
+Before promoting a release:
 
-- `/healthz` – lightweight probe for load balancers (returns `{ "status": "ok" }`).
-- `/health/live` and `/health/ready` – detailed health/readiness checks.
-- Logs: Uvicorn/FastAPI logs are emitted to stdout; Render/Vercel ingest them automatically.
+1. run frontend tests and build
+2. run backend tests that cover launch-critical flows
+3. verify migrations
+4. run manual smoke checks on auth, validation, results, history, and gating
+
+Bank-specific deployment checks are not part of the LCopilot public beta gate.

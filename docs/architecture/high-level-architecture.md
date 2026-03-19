@@ -1,38 +1,61 @@
 # High-Level Architecture
 
-## Technical Summary
+## Launch spine
 
-The architecture will be a serverless fullstack application in a monorepo. The frontend will be a React Single-Page Application (SPA) hosted on Vercel. The backend will be a monolithic FastAPI (Python) service deployed as a serverless function on AWS. An asynchronous, queue-based processing model will be used for long-running tasks like OCR to ensure API responsiveness. This approach prioritizes rapid development, low operational overhead, and scalability.
+LCopilot Public Beta is built around one shared application spine:
 
-## Platform and Infrastructure Choice
+1. the web app authenticates the user and resolves the correct dashboard
+2. the user uploads documents through the exporter or importer flow
+3. `POST /api/validate` runs the validation pipeline
+4. the backend persists a `structured_result`
+5. `GET /api/results/{jobId}` returns that same persisted result contract
+6. the frontend renders review state from the canonical payload
 
-**Platform**: A combination of Vercel for the frontend and AWS for the backend.
+In short:
 
-**Key Services:**
-- **Vercel**: Hosting, CI/CD, and CDN for the React frontend.
-- **AWS Lambda + API Gateway**: For hosting the serverless FastAPI backend.
-- **Amazon S3**: For direct, secure file uploads and report storage.
-- **Amazon SQS**: For decoupling the API from the asynchronous worker.
-- **Amazon RDS (PostgreSQL)**: For the managed relational database.
+`Auth -> Upload -> Validate -> Persist structured_result -> Fetch results -> Review -> History -> Paywall/quota -> Repeat`
 
-## High-Level Architecture Diagram
+## Core system components
 
-This diagram shows the asynchronous flow, which solves file size limits and timeouts by keeping the API thin and fast.
+### Web app
 
-```mermaid
-graph TD
-    A[User (SPA on Vercel)] -->|Auth + UI| B[Vercel CDN]
-    B --> C[React SPA]
-    C -->|GET pre-signed URL| D[API Gateway]
-    D --> E[Lambda: FastAPI API]
-    C -->|PUT file| S3[(S3 Uploads - KMS)]
-    E -->|Enqueue job meta| Q[(SQS Jobs)]
-    W[Worker (Lambda or ECS Fargate)]
-    Q --> W
-    W -->|Get file| S3
-    W -->|OCR DocAI/Textract| O[[OCR Vendors]]
-    W -->|Rules Engine + Report| RDS[(Amazon RDS Postgres)]
-    W -->|Write PDF| SP[(S3 Reports - KMS)]
-    C -->|Poll/WS for status| E
-    E -->|Return report link| C
-```
+- React + Vite frontend in `apps/web`
+- login, onboarding, exporter/importer dashboards, upload flows, results pages
+- `use-lcopilot` fetches validation and results data
+- `resultsMapper` normalizes the backend payload for the UI
+
+### API
+
+- FastAPI backend in `apps/api`
+- owns auth, onboarding, validation, persistence, and results serving
+- `POST /api/validate` is the canonical write path
+- `GET /api/results/{jobId}` is the canonical read path
+
+### Shared contract
+
+- `packages/shared-types` defines shared result schemas and types
+- `structured_result` is the runtime contract that exporter and importer must share
+
+## Current strengths
+
+- The validation core is already richer than the rest of the product.
+- The backend persists a structured result rather than forcing the frontend to reconstruct state.
+- Exporter already uses the strongest end-to-end path in the repo.
+
+## Current weaknesses
+
+- Auth, onboarding, and routing are still fragmented.
+- Some frontend surfaces still rely on compatibility or fallback logic that can hide backend truth drift.
+- Importer maturity still trails exporter.
+- Combined, enterprise, and bank surfaces increase surface area without improving the launch-critical loop.
+
+## Secondary-surface rule
+
+A secondary surface can stay visible in beta only if it rides the same:
+
+- auth system
+- route resolution logic
+- validation contract
+- result-rendering path
+
+If it forks any of those, it is not part of the launch spine.

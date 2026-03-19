@@ -1,23 +1,37 @@
-# MVP Scope
+# Public Beta Scope
 
-## Core Features (Must-Have for v1)
+## In scope
 
-- **Document Ingestion**: Upload LC, Commercial Invoice, and Bill of Lading (BL/AWB).
-- **Core Rules Engine**: Checks for the "fatal four": Dates, Amounts, Parties, and Ports.
-- **Simple Cross-Check Matrix**: Side-by-side comparison of key fields across uploaded documents.
-- **Bank-Ready Report**: Downloadable PDF with a Discrepancy Summary, Document Checklist, and deadlines.
-- **Basic UI Flow**: A simple, linear journey: Upload docs -> View issues -> Download report.
+- exporter upload, validation, results, history, and repeat-use loop
+- importer upload and review flow on the same backend and frontend result spine
+- one canonical validation payload and one canonical results contract
+- deterministic login, onboarding, and dashboard routing
+- hard paywall with an initial free-check or free-token allowance
+- English-only public beta operations
 
-## Out of Scope for MVP
+## Conditional secondary scope
 
-Complex advisory insights, full ISBP library coverage, advanced document matching (Insurance, Certs), holiday calendars, and advanced usability features (Excel exports, dashboards).
+The following surfaces may remain visible only if they reuse the same stabilized auth, validation, and result spine:
 
-## MVP Success Criteria
+- combined dashboard
+- enterprise dashboard
+- workspace and side-productivity surfaces
 
-The MVP is successful when we have validated that:
+If any of these introduce conflicting auth or result behavior, they should be hidden or deprioritized before beta.
 
-- **Accuracy is Validated**: The engine meets our internal accuracy benchmarks.
-- **Trust is Established**: Pilot users report feeling more confident and in control.
-- **Value is Confirmed**: A target percentage of users convert from free to paid.
+## Parked for this beta
 
-**Note**: The MVP is optimized for exporters first; full importer support is planned for a post-MVP release.
+- bank as a launch-critical user journey
+- bank launch readiness and bank-specific release criteria
+- separate importer-only architecture or payload logic
+- broad feature expansion that does not improve trust in the core loop
+
+## Beta success criteria
+
+The beta is ready to open when:
+
+- exporter is trustworthy end to end
+- importer rides the same shared core without forking behavior
+- auth, onboarding, and routing no longer send users to the wrong place
+- `structured_result` is stable enough that the frontend can render without contradictory fallback state
+- paywall and quota behavior are predictable

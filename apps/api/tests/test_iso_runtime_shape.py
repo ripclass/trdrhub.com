@@ -159,8 +159,9 @@ def _load_launch_supporting_pipeline():
         "extract_packing_list_ai_first": _failed_ai,
         "extract_coo_ai_first": _failed_ai,
         "detect_iso20022_schema": lambda _text: (None, 0.0),
+        "detect_lc_format": lambda _text: "mt700",
         "_apply_canonical_normalization": lambda payload: dict(payload or {}),
-        "_detect_lc_financial_subtype": lambda **kwargs: "letter_of_credit",
+        "_detect_lc_financial_subtype": lambda **kwargs: str(kwargs.get("document_type") or "letter_of_credit"),
         "_shape_lc_financial_payload": lambda payload, **kwargs: dict(payload or {}),
         "_assess_lc_financial_completeness": lambda payload, **kwargs: {
             "parse_complete": False,
@@ -366,6 +367,58 @@ def test_weight_certificate_dispatch_stays_weight_certificate() -> None:
     assert result["doc_info_patch"]["extraction_status"] in {"success", "partial"}
 
 
+def test_bank_guarantee_dispatch_uses_lc_like_boundary() -> None:
+    pipeline_cls = _load_launch_supporting_pipeline()
+    pipeline = pipeline_cls()
+
+    guarantee_text = """
+    BANK GUARANTEE
+    GUARANTEE NUMBER: BG-022
+    APPLICANT: XYZ Imports Ltd
+    BENEFICIARY: ABC Exports Ltd
+    GUARANTEE AMOUNT: USD 25000
+    """.strip()
+
+    result = asyncio.run(
+        pipeline.process_document(
+            extracted_text=guarantee_text,
+            document_type="bank_guarantee",
+            filename="Bank_Guarantee.pdf",
+            extraction_artifacts_v1={},
+        )
+    )
+
+    assert result["handled"] is True
+    assert result["context_key"] == "lc"
+    assert result["doc_info_patch"]["lc_subtype"] == "bank_guarantee"
+
+
+def test_standby_lc_dispatch_uses_lc_like_boundary() -> None:
+    pipeline_cls = _load_launch_supporting_pipeline()
+    pipeline = pipeline_cls()
+
+    standby_text = """
+    STANDBY LETTER OF CREDIT
+    LC NUMBER: SBLC-022
+    APPLICANT: XYZ Imports Ltd
+    BENEFICIARY: ABC Exports Ltd
+    CREDIT AMOUNT: USD 18000
+    """.strip()
+
+    result = asyncio.run(
+        pipeline.process_document(
+            extracted_text=standby_text,
+            document_type="standby_letter_of_credit",
+            filename="SBLC.pdf",
+            extraction_artifacts_v1={},
+        )
+    )
+
+    assert result["handled"] is True
+    assert result["context_key"] == "lc"
+    assert result["doc_info_patch"]["lc_subtype"] == "standby_letter_of_credit"
+
+
 def test_inspection_certificate_dispatch_extracts_plain_result_labels() -> None:
     pipeline_cls = _load_launch_supporting_pipeline()
     pipeline = pipeline_cls()
@@ -392,3 +445,4 @@ def test_inspection_certificate_dispatch_extracts_plain_result_labels() -> None:
     assert result["doc_info_patch"]["inspection_subtype"] == "inspection_certificate"
     assert result["doc_info_patch"]["extraction_status"] in {"success", "partial"}
     assert result["context_payload"]["inspection_result"] == "SATISFACTORY"
+

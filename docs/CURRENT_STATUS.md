@@ -1,213 +1,75 @@
-# TRDR Hub - Current Status
+# TRDR Hub / LCopilot Current Status
 
-> **Last Updated:** December 5, 2024
+> Last updated: 2026-03-15
 
-## Platform Overview
+## Current beta position
 
-TRDR Hub is a comprehensive trade compliance platform serving SME exporters, trade banks, and compliance teams. Built on a foundation of 4,000+ trade finance rules covering UCP600, ISBP745, and 160+ countries.
+LCopilot Public Beta is the current ship target for this repository.
 
-**Production URL:** https://trdrhub.com  
-**API URL:** https://trdrhub-api.onrender.com
+- Exporter is the primary launch path.
+- Importer is in scope, but it must reuse the same shared core rather than become a second product.
+- Bank is parked from launch-critical scope.
+- Other TRDR Hub tools remain in the repo, but they are not the focus of the LCopilot beta sprint.
 
----
+## Launch-critical scope
 
-## 🟢 LIVE Tools
+In scope for beta:
 
-### 1. LCopilot - LC Validation
-**Status:** ✅ Production  
-**URL:** `/lcopilot`
+- signup, login, onboarding, and deterministic dashboard routing
+- exporter upload -> validate -> results -> history -> quota/paywall -> repeat
+- importer on the same validation and results spine
+- one canonical backend payload and one canonical frontend result contract
+- hard paywall with an initial free-check or free-token allowance
+- English-only public beta operations
 
-| Feature | Status |
-|---------|--------|
-| Document upload (up to 6 PDFs) | ✅ Live |
-| OCR extraction (DocAI + Textract) | ✅ Live |
-| UCP600/ISBP deterministic validation | ✅ Live |
-| AI cross-document analysis | ✅ Live |
-| Discrepancy reporting (Expected/Found/Fix) | ✅ Live |
-| Export submission flow | ✅ Live |
-| Bank review flow | ✅ Live |
-| Customs pack generation | ✅ Live |
+Secondary only if they ride the same stabilized spine:
 
-**Metrics:**
-- 94% accuracy on LC validation
-- 47-second average processing time
-- 4,000+ rules covering 160 countries
+- combined and enterprise dashboards
+- workspace and side-surface productivity features
 
----
+Parked for this beta:
 
-### 2. Price Verify - Commodity Price Verification
-**Status:** ✅ Production  
-**URL:** `/price-verify/dashboard`
+- bank workflow completion and bank launch readiness
+- bank-specific beta criteria
+- any parallel product lane that forks auth or results from exporter/importer
 
-| Feature | Status |
-|---------|--------|
-| Single price verification | ✅ Live |
-| Batch verification (CSV) | ✅ Live |
-| Commodity database (50+ commodities) | ✅ Live |
-| Market price tracking | ✅ Live |
-| Dashboard with sidebar | ✅ Live |
-| PDF report generation | ✅ Live |
-| TBML risk flagging | ✅ Live |
-| Historical price charts | ✅ Live |
+## Current strengths
 
-**Use Case:** Banks use this to detect over/under-invoicing (TBML) in trade finance.
+- The validation core is the strongest asset in the repo.
+- The backend already persists a rich `structured_result` payload.
+- The frontend already has a shared results fetch and mapping path through `use-lcopilot` and `resultsMapper`.
+- Exporter has the deepest end-to-end surface and the most recent hardening.
 
----
+## Current blockers
 
-### 3. Container & Vessel Tracker
-**Status:** ✅ Production  
-**URL:** `/tracking/dashboard`
+- Auth, onboarding, and routing trust remain the largest launch risk.
+- Legacy auth contexts and dashboard-specific auth behavior still create wrong-dashboard and stale-session risk.
+- Result-contract drift is still possible because the frontend contains compatibility and fallback logic.
+- Importer maturity still trails exporter and must converge on the same shared spine rather than expand independently.
 
-| Feature | Status |
-|---------|--------|
-| Container number tracking | ✅ Live |
-| Vessel tracking (IMO/MMSI/Name) | ✅ Live |
-| Search by B/L number | ✅ Live |
-| Dashboard with sidebar | ✅ Live |
-| Active shipments overview | ✅ Live |
-| ETA display | ✅ Live |
-| Alert creation (email/SMS) | ✅ Live |
-| Mock data fallback | ✅ Live |
+## Canonical runtime truth
 
-| Feature | Status |
-|---------|--------|
-| Real carrier API integration | 🔄 In Progress |
-| Live vessel map | ✅ Live |
-| Port congestion data | 📅 Planned |
-| Vessel sanctions screening | ✅ Live |
-| AIS gap detection | ✅ Live |
-| PDF compliance reports | ✅ Live |
+- `POST /api/validate` is the canonical validation entrypoint.
+- Validation results are persisted as `structured_result` on the backend.
+- `GET /api/results/{jobId}` is the canonical results fetch path for the web app.
+- `structured_result` is the source of truth for summary, documents, issues, analytics, timeline, and secondary intelligence surfaces such as `bank_profile` and `amendments_available`.
+- The frontend should render from that payload directly and should not fabricate contradictory state.
 
----
+## Beta release gate
 
-### 4. Shipping Doc Generator
-**Status:** ✅ Production  
-**URL:** `/doc-generator/dashboard`
+The beta should not open until the following are true:
 
-| Feature | Status |
-|---------|--------|
-| Commercial Invoice generation | ✅ Live |
-| Packing List generation | ✅ Live |
-| Beneficiary Certificate | ✅ Live |
-| Bill of Exchange (Draft) | ✅ Live |
-| Multi-step wizard | ✅ Live |
-| Line items management | ✅ Live |
-| PDF download (ZIP) | ✅ Live |
-| Document preview | ✅ Live |
+- exporter auth and routing are trustworthy
+- importer uses the same auth and results spine
+- `structured_result` invariants are frozen and documented
+- paywall and quota behavior are deterministic
+- release smoke checks cover login, upload, validation, results, history, and gating
 
-| Feature | Status |
-|---------|--------|
-| Certificate of Origin | 📅 Planned |
-| LCopilot integration | 📅 Planned |
-| MT700 parser | 📅 Planned |
-| Custom templates | 📅 Planned |
+## Immediate execution order
 
----
-
-## 🟡 Hub Infrastructure
-
-### Hub System
-**Status:** ✅ Production  
-**URL:** `/hub`
-
-| Feature | Status |
-|---------|--------|
-| Unified dashboard | ✅ Live |
-| Role-based access (RBAC) | ✅ Live |
-| Team management | ✅ Live |
-| Billing page | ✅ Live |
-| Localized pricing (BDT/INR/PKR/USD) | ✅ Live |
-| Usage tracking | ✅ Live |
-| Settings page | ✅ Live |
-
----
-
-## 📋 Landing Pages (Live)
-
-All tool landing pages are live with marketing content:
-
-| Tool | URL | CTA Status |
-|------|-----|------------|
-| LCopilot | `/lcopilot` | → Live tool |
-| Price Verify | `/price-verify` | → Live tool |
-| Container Tracker | `/tracking` | → Live tool |
-| Doc Generator | `/doc-generator` | → Live tool |
-| HS Code Lookup | `/hs-lookup` | Coming Soon |
-| Sanctions Screening | `/sanctions` | Coming Soon |
-| LC Builder | `/lc-builder` | Coming Soon |
-| Counterparty Risk | `/counterparty-risk` | Coming Soon |
-| Dual-Use Checker | `/dual-use` | Coming Soon |
-| Customs Mate | `/customs-mate` | Coming Soon |
-| Duty Calculator | `/duty-calculator` | Coming Soon |
-| Route Optimizer | `/route-optimizer` | Coming Soon |
-| Trade Analytics | `/analytics` | Coming Soon |
-
----
-
-## 📅 Planned Tools (Not Started)
-
-| Tool | Priority | Est. Dev Time | Notes |
-|------|----------|---------------|-------|
-| Sanctions Screener | ⭐ HIGH | 2-3 weeks | Rules exist, need UI |
-| HS Code Calculator | HIGH | 3-4 weeks | Data exists |
-| Trade Finance Calculator | HIGH | 1-2 weeks | Free lead-gen tool |
-| SWIFT Decoder | HIGH | 1 week | Free SEO tool |
-| LC Application Builder | MEDIUM | 3-4 weeks | |
-| Export Control Checker | MEDIUM | 3-4 weeks | |
-| Shipping Doc Generator | MEDIUM | 4-5 weeks | |
-| CustomsMate | MEDIUM | 6-8 weeks | |
-
----
-
-## 🏗️ Technical Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | React 18 + TypeScript + Vite + Tailwind + shadcn/ui |
-| Backend | FastAPI + SQLAlchemy + Pydantic |
-| Database | PostgreSQL (Supabase) |
-| Auth | Supabase Auth + JWT |
-| OCR | Google Document AI + AWS Textract |
-| AI | OpenAI GPT-4 / Anthropic Claude |
-| Hosting | Vercel (frontend) + Render (backend) |
-| Storage | S3-compatible |
-
----
-
-## 📊 Key Metrics
-
-| Metric | Value |
-|--------|-------|
-| Total Rules | 4,000+ |
-| Countries Covered | 160+ |
-| LC Validation Accuracy | 94% |
-| Average Processing Time | 47 seconds |
-| Tools Live | 4 |
-| Tools Planned | 12 |
-
----
-
-## 🎯 Current Sprint Focus
-
-1. ~~Fix Container Tracker React Error #310~~ ✅ Done
-2. Real tracking API integration (Searates, Portcast)
-3. Alert notifications (email/SMS)
-4. Documentation update
-
----
-
-## 📁 Documentation Index
-
-| Document | Location | Description |
-|----------|----------|-------------|
-| PRD | `docs/prd/index.md` | Product requirements |
-| Architecture | `docs/architecture/index.md` | Technical architecture |
-| Product Specs | `docs/product_specs/` | Individual tool specs |
-| Compliance | `docs/compliance/` | UCP600/ISBP mappings |
-| Runbooks | `docs/runbooks/` | Operational procedures |
-| Memory Bank | `memory-bank/` | AI context persistence |
-
----
-
-*This document reflects the actual production state as of December 2024.*
-
+1. Freeze documentation and canonical repo truth.
+2. Consolidate auth, onboarding, and routing.
+3. Freeze the result contract and frontend consumption path.
+4. Productionize exporter as the reference loop.
+5. Converge importer onto the same spine.
+6. Harden paywall, release checks, and telemetry.

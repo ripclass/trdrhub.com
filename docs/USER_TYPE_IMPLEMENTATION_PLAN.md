@@ -1,3 +1,5 @@
+> Historical note: this file reflects an earlier user-type implementation plan. It is not the canonical LCopilot Public Beta flow definition. Use `docs/USER_TYPE_FLOWS.md` for current beta user-flow truth.
+
 # User Type Flow Implementation Plan
 
 **Date**: 2025-01-12  

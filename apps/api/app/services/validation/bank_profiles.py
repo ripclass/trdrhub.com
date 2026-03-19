@@ -327,6 +327,11 @@ def get_bank_profile(bank_code: Optional[str] = None) -> BankProfile:
     
     # Normalize code
     code_upper = bank_code.upper().strip()
+
+    # Common OCR / extraction alias: ICBK* should resolve to ICBC*
+    # We have seen live LC payloads emit ICBKCNBJ400 / ICBKUS33XXX.
+    if code_upper.startswith("ICBK"):
+        code_upper = "ICBC" + code_upper[4:]
     
     # Direct match
     if code_upper in BANK_PROFILES:

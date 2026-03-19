@@ -1,195 +1,77 @@
-# TRDR Hub
+# TRDR Hub Monorepo
 
-**Enterprise-grade trade compliance tools for SME exporters, trade banks, and compliance teams.**
+LCopilot is the primary ship target in this repository. The current sprint is preparing the LCopilot Public Beta, not a broad multi-product launch.
 
-TRDR Hub provides a suite of AI-powered tools to validate Letters of Credit, verify commodity prices, track shipments, and ensure trade compliance - all powered by 4,000+ rules covering UCP600, ISBP745, and 160+ countries.
+## LCopilot Public Beta
 
-**Production:** https://trdrhub.com  
-**API:** https://trdrhub-api.onrender.com
+- Exporter is the gold path and the deepest surface in the repo today.
+- Importer is a real beta journey, but it must converge onto the same auth, validation, and result spine as exporter.
+- Bank exists in the codebase but is parked from launch-critical scope for this beta.
+- The strongest asset is the validation core.
+- The biggest blocker is auth, onboarding, and routing trust.
+- The canonical result truth is persisted `structured_result` served by `GET /api/results/{jobId}`.
+- The frontend must render from that payload and must not fabricate contradictory state.
+- Beta assumptions: public beta, English only, hard paywall with an initial free-check or free-token allowance.
 
----
+## Product Truth
 
-## 🚀 Live Tools
+- `POST /api/validate` is the canonical validation entrypoint.
+- Validation results are persisted on the backend and served again through `GET /api/results/{jobId}`.
+- `structured_result` is the canonical backend contract for exporter and importer review pages.
+- Exporter and importer should share the same backend payload, shared types, and frontend result-mapping spine.
 
-| Tool | Description | Status |
-|------|-------------|--------|
-| **LCopilot** | AI-assisted LC validation with UCP600/ISBP rules | ✅ Live |
-| **Price Verify** | Commodity price verification for TBML detection | ✅ Live |
-| **Container Tracker** | Multi-carrier shipment tracking with alerts | ✅ Live |
+## Monorepo Layout
 
----
+| Path | Purpose |
+| --- | --- |
+| `apps/api` | FastAPI backend: auth, onboarding, validation pipeline, result persistence, result serving |
+| `apps/web` | React + Vite frontend: login, dashboards, upload flows, results pages |
+| `packages/shared-types` | Shared TypeScript and Python types, including LCopilot result schemas |
+| `docs` | Canonical beta docs plus supporting historical references |
 
-## Repository Layout
+## Canonical Docs
 
-```
-trdrhub.com/
-├── apps/
-│   ├── api/            # FastAPI backend (Python 3.11)
-│   └── web/            # React + Vite frontend (TypeScript)
-├── Data/               # Trade finance rules (4,000+ rulesets)
-│   ├── icc_core/       # UCP600, ISBP745, eUCP
-│   ├── country_rules/  # 160+ country-specific rules
-│   ├── sanctions/      # OFAC, EU, UN sanctions data
-│   └── commodities/    # Commodity pricing data
-├── docs/               # Product, architecture, and process documentation
-├── memory-bank/        # AI context persistence
-├── packages/
-│   └── shared-types/   # Shared TypeScript/Python types
-├── render.yaml         # Render deployment (API)
-└── vercel.json         # Vercel deployment (Web)
-```
-
----
-
-## Technology Stack
-
-| Area | Tech |
-|------|------|
-| **Frontend** | React 18 + Vite + TypeScript + Tailwind + shadcn/ui |
-| **Backend** | FastAPI + SQLAlchemy + Alembic + Pydantic |
-| **Database** | PostgreSQL (Supabase) |
-| **Auth** | Supabase Auth + JWT + RBAC |
-| **OCR / AI** | Google Document AI, AWS Textract, OpenAI/Anthropic |
-| **Storage** | Amazon S3 |
-| **Monitoring** | Structured logging, health checks |
-
----
+| Topic | Canonical doc |
+| --- | --- |
+| Current beta truth | `docs/CURRENT_STATUS.md` |
+| Product brief | `docs/brief/index.md` |
+| Architecture | `docs/architecture/index.md` |
+| Auth, onboarding, routing | `docs/AUTH_ONBOARDING_ROUTING_CURRENT_STATE.md` |
+| Local development | `HOW-TO-RUN.md` |
+| Deployment and release | `docs/DEPLOYMENT.md` |
 
 ## Quick Start
 
-### 1. Prerequisites
-
-- Python 3.11+
-- Node.js 18+ (npm 10+)
-- PostgreSQL 15
-- (Optional) Redis for background tasks
-
-### 2. Install Dependencies
-
 ```bash
-git clone https://github.com/ripclass/trdrhub.com.git
-cd trdrhub.com
-
-# Root workspace
 npm install
 
-# Backend
 cd apps/api
 pip install -r requirements.txt
+alembic upgrade head
+uvicorn main:app --reload
 
-# Frontend
 cd ../web
 npm install
-```
-
-### 3. Configure Environment
-
-```bash
-# Copy templates
-cp .env.example .env
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
-```
-
-Key variables:
-- `DATABASE_URL` – PostgreSQL connection
-- `VITE_API_URL` – API endpoint for frontend
-- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` – Supabase auth
-- `GOOGLE_DOCUMENTAI_*` – OCR credentials
-- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` – AI assist
-
-### 4. Database Setup
-
-```bash
-cd apps/api
-alembic upgrade head
-```
-
-### 5. Run Locally
-
-```bash
-# Backend (terminal 1)
-cd apps/api
-uvicorn main:app --reload --port 8000
-
-# Frontend (terminal 2)
-cd apps/web
 npm run dev
 ```
 
-- Backend: http://localhost:8000/docs
-- Frontend: http://localhost:5173
+Useful endpoints:
 
----
+- API docs: `http://localhost:8000/docs`
+- Health: `/healthz`, `/health/live`, `/health/ready`
+- Frontend: `http://localhost:5173`
 
-## Deployment
-
-### Backend (Render)
-
-```bash
-render blueprint deploy
-```
-
-- Uses `render.yaml` configuration
-- Auto-runs Alembic migrations on deploy
-- Health check: `/health/live`
-
-### Frontend (Vercel)
+## Build and Test
 
 ```bash
-vercel --prod
-```
+npm run build
+npm run test
 
-- Uses `vercel.json` configuration
-- Set `VITE_API_URL` environment variable
-
----
-
-## Documentation
-
-| Document | Location |
-|----------|----------|
-| **Current Status** | `docs/CURRENT_STATUS.md` |
-| **Product Requirements** | `docs/prd/index.md` |
-| **Architecture** | `docs/architecture/index.md` |
-| **Product Specs** | `docs/product_specs/` |
-| **Compliance Mappings** | `docs/compliance/` |
-| **Runbooks** | `docs/runbooks/` |
-
----
-
-## Key Metrics
-
-| Metric | Value |
-|--------|-------|
-| Total Rules | 4,000+ |
-| Countries Covered | 160+ |
-| LC Validation Accuracy | 94% |
-| Processing Time | ~47 seconds |
-
----
-
-## Testing
-
-```bash
-# Backend tests
 cd apps/api && pytest
-
-# Frontend build check
-cd apps/web && npm run build
-
-# Migration check
-cd apps/api && alembic check
+cd apps/web && npm run test && npm run build
 ```
 
----
+Note:
 
-## Support
-
-- **Documentation:** `docs/` directory
-- **Troubleshooting:** `TROUBLESHOOTING.md`
-- **Stub Mode:** `STUB_MODE.md` (for local dev without cloud services)
-
----
-
-*Built with ❤️ for trade finance professionals*
+- Some older docs in the repo describe broader platform ambitions or historical launch tracks. Use the canonical docs above for the current LCopilot beta truth.
+- Other TRDR Hub tools remain in the repository, but they are secondary to this LCopilot beta sprint.

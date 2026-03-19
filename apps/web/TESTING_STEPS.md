@@ -1,3 +1,5 @@
+> Historical note: this file documents an older component-demo testing flow. It is not the canonical LCopilot Public Beta test guide. Use `apps/api/docs/REGRESSION_TEST_PLAN.md` and the rewritten beta docs for current launch-critical verification.
+
 # Testing the New DiscrepancyList Component
 
 ## 🔧 Development Server

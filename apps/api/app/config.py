@@ -55,7 +55,8 @@ class Settings(BaseSettings):
     OCR_MAX_PAGES: int = 50  # Maximum pages for OCR processing
     OCR_TIMEOUT_SEC: int = 120  # Timeout for OCR operations (increased for 30+ page docs)
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR
-    OCR_MIN_TEXT_CHARS_FOR_SKIP: int = 1200  # If extracted text is shorter, still run OCR providers
+    OCR_MIN_TEXT_CHARS_FOR_SKIP: int = 1200  # Hard skip OCR when native text is already rich enough
+    OCR_NATIVE_TEXT_SOFT_SKIP_CHARS: int = 250  # For file-native PDFs, skip OCR when native text is already usable support text
     OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
     OCR_RUNTIME_DIAGNOSTICS_ENABLED: bool = True  # Track bounded OCR runtime diagnostics
     OCR_DIAGNOSTICS_MAX_ERRORS: int = 10  # Max recent OCR errors exposed by diagnostics endpoint

@@ -1,3 +1,5 @@
+> Historical note: this file records an earlier fix pass. It is not the canonical LCopilot Public Beta auth document. Use `docs/AUTH_ONBOARDING_ROUTING_CURRENT_STATE.md` for current beta auth, onboarding, and routing truth.
+
 # Authentication & Routing Fixes Applied
 
 **Date**: 2025-01-13  

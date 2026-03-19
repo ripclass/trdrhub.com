@@ -1,0 +1,145 @@
+===== setTimeout =====
+tive",
+      });
+      return;
+    }
+
+    if (!lcNumber.trim()) {
+      toast({
+        title: "LC Number Required",
+        description: "Please enter the LC number before processing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+
+    // Simulate processing
+    try {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      toast({
+        title: "Processing Started",
+        description: "Your export documents are being validated. You'll be redirected to results.",
+      });
+
+      // Redirect to results page
+      setTimeout(() => {
+        window.location.href = `/results?lc=${encodeURIComponent(lcNumber)}&type=export`;
+      }, 1500);
+    } catch (error) {
+      toast({
+        title: "Processing Failed",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const completedFiles = uploadedFiles.filter(f => f.status === "completed");
+  const isReadyToProcess = completedFiles.length > 0 && lcNumber.trim();
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="bg-card border-b border-border">
+        <di
+
+===== useState( =====
+const exportDocumentTypes = [
+  "Letter of Credit",
+  "Commercial Invoice", 
+  "Packing List",
+  "Bill of Lading",
+  "Certificate of Origin",
+  "Insurance Certificate",
+  "Other Trade Documents"
+];
+
+export default function ExportLCUpload() {
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [lcNumber, setLcNumber] = useState("");
+  const [notes, setNotes] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const { toast } = useToast();
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const newFiles: UploadedFile[] = acceptedFiles.map(file => ({
+      id: Math.random().toString(36).substr(2, 9),
+      file,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      status: "pending" as const,
+      progress: 0
+    }));
+
+    setUploadedFiles(prev => [...prev, ...newFiles]);
+
+    // Simulate file upload
+    newFiles.forEach(file => {
+      simulateUpload(file.id);
+    });
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png']
+    },
+    maxFiles: 10,
+    maxSize: 10 * 1024 * 1024, // 10MB
+  });
+
+ 
+
+===== handle =====
+> prev.filter(file => file.id !== fileId));
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleProcessLC = async () => {
+    if (uploadedFiles.length === 0) {
+      toast({
+        title: "No Files Selected",
+        description: "Please upload at least one document to proceed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!lcNumber.trim()) {
+      toast({
+        title: "LC Number Required",
+        description: "Please enter the LC number before processing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+
+    // Simulate processing
+    try {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      toast({
+        title: "Processing Started",
+        description: "Your export documents are being validated. You'll be redirected to results.",
+      });
+
+      // Redirect to results page
+      setTimeout(() => {
+        window.location.href = `/results?lc=${encodeURIComponent(lcNumber)}&t

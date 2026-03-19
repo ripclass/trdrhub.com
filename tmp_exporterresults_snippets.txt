@@ -1,0 +1,170 @@
+===== mock =====
+igger } from "@/components/ui/tabs";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { 
+  FileText, 
+  Download, 
+  ArrowLeft, 
+  CheckCircle, 
+  XCircle, 
+  AlertTriangle,
+  Eye,
+  RefreshCw,
+  Share2,
+  PrinterIcon,
+  Clock,
+  Package,
+  BarChart3,
+  TrendingUp,
+  PieChart
+} from "lucide-react";
+
+// Mock exporter results
+const mockExporterResults = {
+  lcNumber: "EXP-BD-2024-001",
+  status: "completed",
+  processedAt: "2024-01-15T14:30:00Z",
+  processingTime: "1.8 minutes",
+  totalDocuments: 6,
+  totalDiscrepancies: 1,
+  overallStatus: "warning" as "success" | "error" | "warning",
+  packGenerated: true,
+  documents: [
+    {
+      id: "1",
+      name: "Letter_of_Credit.pdf",
+      type: "Letter of Credit",
+      status: "success" as const,
+      discrepancies: 0,
+      extractedFields: {
+        lcNumber: "LC-2024-BD-001",
+        beneficiary: "Bangladesh Exports Ltd",
+        amount: "USD 50,000",
+        expiryDate: "2024-02-15"
+      }
+    },
+    {
+      id: "2", 
+      name: "Commercial_Invoice.pdf",
+      type: "Commercial Invoice",
+      status: "warning" as const,
+      discrepancies: 1,
+      extractedFields: {
+        invoiceNumber: "INV-2024-001",
+        invoiceDate: "2024-01-08",
+        totalAmount: "USD 50,000",
+        buyer: "German Import GmbH"
+      }
+    },
+    {
+      id: "3",
+      name: "Packing_List.pdf", 
+      type: "Packing List",
+      status: "success" as const,
+      discrepancies: 0,
+      extractedFields: {
+        totalPackages: "100 cartons",
+        grossWeight: "2500 KG"
+
+===== const  =====
+TabsTrigger } from "@/components/ui/tabs";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { 
+  FileText, 
+  Download, 
+  ArrowLeft, 
+  CheckCircle, 
+  XCircle, 
+  AlertTriangle,
+  Eye,
+  RefreshCw,
+  Share2,
+  PrinterIcon,
+  Clock,
+  Package,
+  BarChart3,
+  TrendingUp,
+  PieChart
+} from "lucide-react";
+
+// Mock exporter results
+const mockExporterResults = {
+  lcNumber: "EXP-BD-2024-001",
+  status: "completed",
+  processedAt: "2024-01-15T14:30:00Z",
+  processingTime: "1.8 minutes",
+  totalDocuments: 6,
+  totalDiscrepancies: 1,
+  overallStatus: "warning" as "success" | "error" | "warning",
+  packGenerated: true,
+  documents: [
+    {
+      id: "1",
+      name: "Letter_of_Credit.pdf",
+      type: "Letter of Credit",
+      status: "success" as const,
+      discrepancies: 0,
+      extractedFields: {
+        lcNumber: "LC-2024-BD-001",
+        beneficiary: "Bangladesh Exports Ltd",
+        amount: "USD 50,000",
+        expiryDate: "2024-02-15"
+      }
+    },
+    {
+      id: "2", 
+      name: "Commercial_Invoice.pdf",
+      type: "Commercial Invoice",
+      status: "warning" as const,
+      discrepancies: 1,
+      extractedFields: {
+        invoiceNumber: "INV-2024-001",
+        invoiceDate: "2024-01-08",
+        totalAmount: "USD 50,000",
+        buyer: "German Import GmbH"
+      }
+    },
+    {
+      id: "3",
+      name: "Packing_List.pdf", 
+      type: "Packing List",
+      status: "success" as const,
+      discrepancies: 0,
+      extractedFields: {
+        totalPackages: "100 cartons",
+        grossWeight: "25
+
+===== return ( =====
+nst successCount = mockExporterResults.documents.filter(d => d.status === "success").length;
+  const warningCount = mockExporterResults.documents.filter(d => d.status === "warning").length;
+  const errorCount = 0; // No error status in current mock data
+  const successRate = Math.round((successCount / mockExporterResults.totalDocuments) * 100);
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="bg-card border-b border-border">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link to="/exporter-dashboard">
+                <Button variant="outline" size="sm">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Dashboard
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="bg-gradient-primary p-2 rounded-lg">
+                  <Package className="w-6 h-6 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-foreground">Export Document Results</h1>
+                  <p className="text-sm text-muted-foreground">LC Number: {lcNumber}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm">
+                <Share2 className="w-4 h-4 mr-2" />
+  

@@ -1,3 +1,5 @@
+> Historical note: this file is bank-specific launch material. Bank is parked from LCopilot Public Beta launch-critical scope, so this document is not canonical beta guidance.
+
 # Bank Dashboard Launch Tests - Execution Guide
 
 ## Prerequisites

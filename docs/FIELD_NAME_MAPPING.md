@@ -1,3 +1,5 @@
+> Supporting note: this file is a field-drift reference, not the canonical LCopilot Public Beta result-contract specification. Use `docs/architecture/api-specification.md` plus shared runtime schemas for current contract truth.
+
 # Field Name Mapping Document
 
 ## Purpose

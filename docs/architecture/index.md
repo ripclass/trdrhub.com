@@ -1,19 +1,19 @@
-# Fullstack Architecture Document: LCopilot
+# LCopilot Architecture Hub
 
-## Sections
+This folder documents the current LCopilot Public Beta architecture.
 
-- [Introduction](./introduction.md)
-- [High-Level Architecture](./high-level-architecture.md)
-- [Tech Stack](./tech-stack.md)
-- [Data Models](./data-models.md)
-- [API Specification](./api-specification.md)
-- [Components](./components.md)
-- [External APIs](./external-apis.md)
-- [Core Workflows](./core-workflows.md)
-- [Database Schema](./database-schema.md)
-- [Source Tree](./source-tree.md)
-- [Infrastructure and Deployment](./infrastructure-and-deployment.md)
-- [Error Handling Strategy](./error-handling-strategy.md)
-- [Coding Standards](./coding-standards.md)
-- [Checklist Results](./checklist-results.md)
-- [Next Steps](./next-steps.md)
+Use the files below as canonical launch architecture truth:
+
+- `high-level-architecture.md`
+- `core-workflows.md`
+- `api-specification.md`
+- `source-tree.md`
+- `next-steps.md`
+
+Supporting files such as components, data models, database schema, external APIs, and infrastructure notes remain useful reference material, but they are not the first-read source of truth for beta execution unless linked from this index.
+
+For repo-wide launch truth, use this folder together with:
+
+- `docs/CURRENT_STATUS.md`
+- `docs/brief/index.md`
+- `docs/AUTH_ONBOARDING_ROUTING_CURRENT_STATE.md`
