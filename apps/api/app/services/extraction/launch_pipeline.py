@@ -1643,6 +1643,10 @@ def _build_lc_user_facing_extracted_fields(payload: Optional[Dict[str, Any]]) ->
     dates = shaped.get("dates") if isinstance(shaped.get("dates"), dict) else {}
     ports = shaped.get("ports") if isinstance(shaped.get("ports"), dict) else {}
     lc_classification = shaped.get("lc_classification") if isinstance(shaped.get("lc_classification"), dict) else {}
+    mt700_payload = shaped.get("mt700") if isinstance(shaped.get("mt700"), dict) else {}
+    mt700_timeline = _extract_mt700_timeline_fields(
+        str(mt700_payload.get("raw_text") or shaped.get("raw_text") or "")
+    )
 
     required_documents = _normalize_text_list(
         _first(
@@ -1666,15 +1670,30 @@ def _build_lc_user_facing_extracted_fields(payload: Optional[Dict[str, Any]]) ->
 
     user_facing_fields = {
         "lc_number": _first(shaped.get("lc_number"), shaped.get("number"), shaped.get("reference")),
-        "issue_date": _first(shaped.get("issue_date"), dates.get("issue"), dates.get("issue_date")),
-        "expiry_date": _first(shaped.get("expiry_date"), dates.get("expiry"), dates.get("expiry_date")),
+        "issue_date": _first(
+            mt700_timeline.get("issue_date"),
+            shaped.get("issue_date"),
+            dates.get("issue"),
+            dates.get("issue_date"),
+        ),
+        "expiry_date": _first(
+            mt700_timeline.get("expiry_date"),
+            shaped.get("expiry_date"),
+            dates.get("expiry"),
+            dates.get("expiry_date"),
+        ),
         "latest_shipment_date": _first(
+            mt700_timeline.get("latest_shipment_date"),
             shaped.get("latest_shipment_date"),
             shaped.get("latest_shipment"),
             dates.get("latest_shipment"),
             dates.get("latest_shipment_date"),
         ),
-        "place_of_expiry": _first(shaped.get("place_of_expiry"), dates.get("place_of_expiry")),
+        "place_of_expiry": _first(
+            mt700_timeline.get("place_of_expiry"),
+            shaped.get("place_of_expiry"),
+            dates.get("place_of_expiry"),
+        ),
         "applicant": shaped.get("applicant"),
         "beneficiary": shaped.get("beneficiary"),
         "issuing_bank": shaped.get("issuing_bank"),

@@ -43,6 +43,8 @@ export interface DocumentForDrawer {
   reviewReasons?: string[];
   criticalFieldStates?: Record<string, any>;
   fieldDiagnostics?: Record<string, any>;
+  missingRequiredFields?: string[];
+  rawText?: string;
   ocrConfidence?: number;
   sourceFormat?: string;
   isElectronicBL?: boolean;
@@ -239,6 +241,190 @@ const humanizeFieldName = (key: string): string => {
     .join(" ");
 };
 
+type ReviewReasonContext = {
+  docType?: string;
+  rawText?: string;
+  criticalFieldStates?: Record<string, any>;
+  fieldDiagnostics?: Record<string, any>;
+  missingRequiredFields?: string[];
+};
+
+const normalizeReviewFieldKey = (value: unknown): string =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const textHasAnyPattern = (text: string, patterns: RegExp[]): boolean =>
+  patterns.some((pattern) => pattern.test(text));
+
+const isFieldMarkedMissing = (context: ReviewReasonContext, fieldName: string): boolean => {
+  const key = normalizeReviewFieldKey(fieldName);
+  const missingRequiredFields = Array.isArray(context.missingRequiredFields) ? context.missingRequiredFields : [];
+  if (missingRequiredFields.some((field) => normalizeReviewFieldKey(field) === key)) {
+    return true;
+  }
+  const criticalState = String((context.criticalFieldStates || {})[key] || "").trim().toLowerCase();
+  if (criticalState === "missing" || criticalState === "failed") {
+    return true;
+  }
+  const diagnosticState = String(((context.fieldDiagnostics || {})[key] || {}).state || "")
+    .trim()
+    .toLowerCase();
+  return diagnosticState === "missing" || diagnosticState === "failed";
+};
+
+const buildSpecificFieldMissingReasons = (context: ReviewReasonContext): string[] => {
+  const docType = normalizeReviewFieldKey(context.docType);
+  const rawText = String(context.rawText || "");
+  const reasons: string[] = [];
+
+  if (docType === "commercial_invoice") {
+    const missingIssueDate = isFieldMarkedMissing(context, "issue_date");
+    const missingGrossWeight = isFieldMarkedMissing(context, "gross_weight");
+    const missingNetWeight = isFieldMarkedMissing(context, "net_weight");
+
+    if (missingIssueDate) {
+      reasons.push(
+        textHasAnyPattern(rawText, [/\binvoice\s*date\b/i, /\bdate\b/i, /\bdated\b/i])
+          ? "Invoice date could not be confirmed from the extracted content."
+          : "Source invoice does not show an invoice date.",
+      );
+    }
+
+    if (missingGrossWeight || missingNetWeight) {
+      reasons.push(
+        textHasAnyPattern(rawText, [/\bgross\s*weight\b/i, /\bgross\s*wt\b/i, /\bg\/w\b/i, /\bnet\s*weight\b/i, /\bnet\s*wt\b/i, /\bn\/w\b/i])
+          ? "Gross or net weight could not be confirmed from the invoice extraction."
+          : "This workflow confirms gross/net weight from the packing list or bill of lading, not from the invoice.",
+      );
+    }
+  }
+
+  if (docType === "packing_list" && isFieldMarkedMissing(context, "issue_date")) {
+    reasons.push(
+      textHasAnyPattern(rawText, [/\bpacking\s*list\s*date\b/i, /\bdate\b/i, /\bdated\b/i])
+        ? "Packing-list date could not be confirmed from the extracted content."
+        : "Source packing list does not clearly show a document date.",
+    );
+  }
+
+  if (docType === "certificate_of_origin") {
+    const missingExporter = isFieldMarkedMissing(context, "exporter_name");
+    const missingImporter = isFieldMarkedMissing(context, "importer_name");
+    const missingGoods = isFieldMarkedMissing(context, "goods_description");
+    if (missingExporter || missingImporter || missingGoods) {
+      const sourceShowsPartyOrGoods = textHasAnyPattern(rawText, [
+        /\bexporter\b/i,
+        /\bimporter\b/i,
+        /\bgoods\s*description\b/i,
+        /\bdescription\s+of\s+goods\b/i,
+        /\bgoods\b/i,
+        /\bcommodity\b/i,
+      ]);
+      reasons.push(
+        sourceShowsPartyOrGoods
+          ? "Exporter, importer, or goods details were present in the certificate but could not be fully confirmed from extraction."
+          : "Certificate of origin is missing one or more core party or goods details required for review.",
+      );
+    }
+  }
+
+  return Array.from(new Set(reasons));
+};
+
+const humanizeReviewReason = (reason: string, context: ReviewReasonContext): string | null => {
+  const key = String(reason || "").trim();
+  const normalizedDocType = normalizeReviewFieldKey(context.docType);
+  const specificMissingReasons = buildSpecificFieldMissingReasons(context);
+
+  if (!key) {
+    return null;
+  }
+  if (key === "LOW_CONFIDENCE_CRITICAL") {
+    if (normalizedDocType === "packing_list") return "Packing-list detail needs manual review before clean presentation.";
+    if (normalizedDocType === "beneficiary_certificate") return "Beneficiary certificate wording was recognized, but structured extraction is incomplete.";
+    if (normalizedDocType === "weight_list" || normalizedDocType === "weight_certificate") return "Weight values were found, but document structure still needs manual confirmation.";
+    if (normalizedDocType === "certificate_of_origin") return "Certificate of origin details need manual confirmation before clean presentation.";
+    if (normalizedDocType === "insurance_certificate" || normalizedDocType === "insurance_policy") return "Insurance coverage details need manual confirmation before clean presentation.";
+    if (normalizedDocType === "bill_of_lading") return "Bill of lading details need manual review before clean presentation.";
+    return "Key required fields need manual review before clean presentation.";
+  }
+  if (key === "OCR_AUTH_ERROR") {
+    if (normalizedDocType === "bill_of_lading") return "Bill of lading text extraction confidence is limited; visually confirm vessel, ports, and shipment wording.";
+    if (normalizedDocType === "packing_list") return "Packing-list text extraction confidence is limited; visually confirm package, quantity, and weight details.";
+    if (normalizedDocType === "certificate_of_origin") return "Certificate of origin text extraction confidence is limited; visually confirm origin and certifier details.";
+    if (normalizedDocType === "beneficiary_certificate") return "Beneficiary certificate text extraction confidence is limited; visually confirm the required declaration wording.";
+    if (normalizedDocType === "insurance_certificate" || normalizedDocType === "insurance_policy") return "Insurance text extraction confidence is limited; visually confirm coverage amount, risks, and certificate wording.";
+    return "Text extraction confidence is limited; visually confirm the critical presentation fields.";
+  }
+  if (key === "LOW_CONFIDENCE") {
+    if (normalizedDocType === "bill_of_lading") return "Bill of lading fields were extracted with limited confidence and need manual confirmation.";
+    if (normalizedDocType === "packing_list") return "Packing-list fields were extracted with limited confidence and need manual confirmation.";
+    return "Extraction confidence is limited for this document and needs manual confirmation.";
+  }
+  if (key === "REVIEW_REQUIRED") {
+    return "This document requires manual review before clean presentation.";
+  }
+  if (key === "FIELD_NOT_FOUND" || /^field not found$/i.test(key)) {
+    return specificMissingReasons[0] || "A required field could not be confirmed from the extracted content.";
+  }
+  if (key === "critical_issue_date_missing") {
+    return specificMissingReasons.find((entry) => /date/i.test(entry)) || "Document date could not be confirmed from this file.";
+  }
+  if (key === "critical_gross_weight_missing" || key === "critical_net_weight_missing") {
+    return (
+      specificMissingReasons.find((entry) => /gross\/net weight|gross or net weight|gross weight|net weight/i.test(entry))
+      || "Weight details could not be confirmed from this document."
+    );
+  }
+  if (key.startsWith("missing:")) {
+    const fieldName = key.split(":", 2)[1] || "";
+    const fieldSpecific = specificMissingReasons.find((entry) =>
+      entry.toLowerCase().includes(fieldName.replace(/_/g, " ")),
+    );
+    if (fieldSpecific) {
+      return fieldSpecific;
+    }
+    return `${humanizeFieldName(fieldName)} could not be confirmed from this document.`;
+  }
+  return key.replace(/_/g, " ").toLowerCase().replace(/^./, (c) => c.toUpperCase());
+};
+
+const buildDisplayFieldChecks = (
+  criticalFieldStates: Record<string, any>,
+  context: ReviewReasonContext,
+): Array<[string, string]> => {
+  const docType = normalizeReviewFieldKey(context.docType);
+
+  return Object.entries(criticalFieldStates).flatMap(([key, value]) => {
+    const normalizedKey = normalizeReviewFieldKey(key);
+    const normalizedState = normalizeReviewFieldKey(value);
+
+    if (!normalizedState) {
+      return [];
+    }
+
+    if (docType === "commercial_invoice" && ["gross_weight", "net_weight", "issue_date"].includes(normalizedKey) && normalizedState === "missing") {
+      return [];
+    }
+    if (docType === "packing_list" && normalizedKey === "issue_date" && normalizedState === "missing") {
+      return [];
+    }
+
+    const label =
+      normalizedState === "found"
+        ? "confirmed"
+        : normalizedState === "parse_failed"
+        ? "needs review"
+        : normalizedState === "missing" || normalizedState === "failed"
+        ? "not confirmed"
+        : String(value).replace(/_/g, " ");
+
+    return [[key, label]];
+  });
+};
+
 // Filter out internal/technical fields
 const shouldShowField = (key: string): boolean => {
   const hiddenFields = [
@@ -283,6 +469,21 @@ export function DocumentDetailsDrawer({
   const reviewReasons = (document.reviewReasons || []).filter(Boolean);
   const criticalFieldStates = document.criticalFieldStates || {};
   const fieldDiagnostics = document.fieldDiagnostics || {};
+  const reasonContext: ReviewReasonContext = {
+    docType: document.typeKey || document.type,
+    rawText: document.rawText,
+    criticalFieldStates,
+    fieldDiagnostics,
+    missingRequiredFields: document.missingRequiredFields,
+  };
+  const reviewNotes = Array.from(
+    new Set(
+      [...warningReasons, ...reviewReasons]
+        .map((reason) => humanizeReviewReason(String(reason), reasonContext))
+        .filter((reason): reason is string => Boolean(reason)),
+    ),
+  );
+  const displayFieldChecks = buildDisplayFieldChecks(criticalFieldStates, reasonContext);
 
   const extractionStatus = (document.extractionStatus ?? '').toLowerCase();
   const extractionModeLabel = (() => {
@@ -469,71 +670,33 @@ export function DocumentDetailsDrawer({
 
         <ScrollArea className="flex-1 -mx-6 px-6">
           <div className="space-y-6 pb-6">
-            {(warningReasons.length > 0 || reviewReasons.length > 0) && (
+            {reviewNotes.length > 0 && (
               <div className="space-y-3">
                 <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                  Warning & Review Reasons
+                  Review Notes
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                  {Array.from(new Set([...warningReasons, ...reviewReasons])).map((reason, idx) => (
+                  {reviewNotes.map((reason, idx) => (
                     <Badge key={`reason-${idx}`} variant="outline" className="border-amber-500/30 text-amber-700 bg-amber-500/5">
-                      {String(reason).replace(/_/g, ' ')}
+                      {reason}
                     </Badge>
                   ))}
                 </div>
               </div>
             )}
 
-            {Object.keys(criticalFieldStates).length > 0 && (
+            {displayFieldChecks.length > 0 && (
               <div className="space-y-2">
                 <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                  Critical Field States
+                  Field Checks
                 </h4>
                 <div className="space-y-2">
-                  {Object.entries(criticalFieldStates).map(([key, value]) => (
+                  {displayFieldChecks.map(([key, value]) => (
                     <div key={key} className="flex items-center justify-between p-3 rounded-md bg-muted/30">
                       <span className="text-sm font-medium">{humanizeFieldName(key)}</span>
                       <Badge variant="outline" className="text-xs">{String(value)}</Badge>
                     </div>
                   ))}
-                </div>
-              </div>
-            )}
-
-            {Object.keys(fieldDiagnostics).length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                  Field Diagnostics
-                </h4>
-                <div className="space-y-3">
-                  {Object.entries(fieldDiagnostics).map(([key, diag]) => {
-                    const d = (diag && typeof diag === 'object') ? (diag as Record<string, any>) : {};
-                    const state = d.state ? String(d.state) : 'unknown';
-                    const evidence = d.evidence_snippet ? String(d.evidence_snippet) : '';
-                    const reasonCodes = Array.isArray(d.reason_codes) ? d.reason_codes : [];
-                    return (
-                      <div key={key} className="p-3 rounded-md bg-muted/30 space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-medium">{humanizeFieldName(key)}</span>
-                          <Badge variant="outline" className="text-xs">{state.replace(/_/g, ' ')}</Badge>
-                        </div>
-                        {reasonCodes.length > 0 && (
-                          <div className="flex flex-wrap gap-2">
-                            {reasonCodes.map((code: any, idx: number) => (
-                              <Badge key={`${key}-code-${idx}`} variant="outline" className="text-xs">
-                                {String(code).replace(/_/g, ' ')}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                        {evidence && (
-                          <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
-                            {evidence}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
             )}

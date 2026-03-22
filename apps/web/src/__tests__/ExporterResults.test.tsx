@@ -519,6 +519,39 @@ describe('ExporterResults', () => {
     expect(screen.queryByText(/^MADE$/i)).toBeNull();
   });
 
+  it('shows canonical LC dates on the results card from the structured LC payload', async () => {
+    const lcDateResults = buildValidationResults();
+    lcDateResults.structured_result = {
+      ...lcDateResults.structured_result,
+      lc_structured: {
+        ...(lcDateResults.structured_result?.lc_structured ?? {}),
+        issue_date: '2026-04-15',
+        expiry_date: '2026-10-15',
+        latest_shipment_date: '2026-09-30',
+        dates: {
+          issue: '2026-04-15',
+          expiry: '2026-10-15',
+          latest_shipment: '2026-09-30',
+          place_of_expiry: 'USA',
+        },
+      },
+    } as typeof lcDateResults.structured_result;
+    activeResults = lcDateResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+    const lcCard = findCardByTitle(/^LC\.pdf$/i);
+    expect(within(lcCard).getByText(/Key Dates/i)).toBeInTheDocument();
+    expect(within(lcCard).getByText('2026-10-15')).toBeInTheDocument();
+    expect(within(lcCard).getByText('2026-09-30')).toBeInTheDocument();
+    expect(within(lcCard).getByText('USA')).toBeInTheDocument();
+  });
+
   it('does not present generic 47A placeholders as extracted condition detail', async () => {
     const placeholderResults = buildValidationResults();
     placeholderResults.structured_result = {
@@ -927,6 +960,82 @@ describe('ExporterResults', () => {
     expect(screen.getAllByText(/Source invoice does not show an invoice date/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Source packing list does not clearly show a document date/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^Field not found$/i)).toBeNull();
+  });
+
+  it('uses source-aware review notes in the invoice and packing detail drawers instead of raw diagnostic codes', async () => {
+    const structured = buildValidationResults().structured_result!;
+    const documentsStructured = [
+      {
+        document_id: 'doc-invoice',
+        document_type: 'commercial_invoice',
+        filename: 'Invoice.pdf',
+        extraction_status: 'success',
+        review_required: true,
+        review_reasons: ['FIELD_NOT_FOUND', 'critical_issue_date_missing', 'critical_gross_weight_missing', 'critical_net_weight_missing'],
+        critical_field_states: {
+          issue_date: 'missing',
+          gross_weight: 'missing',
+          net_weight: 'missing',
+          issuer: 'found',
+        },
+        extracted_fields: { invoice_number: 'DKEL/EXP/2026/114', issuer: 'Dhaka Knitwear & Exports Ltd.' },
+        extraction_artifacts_v1: {
+          raw_text: 'Commercial Invoice\nLC No: EXP2026BD001\nTotal Amount: USD 458,750.00\n',
+          field_diagnostics: {
+            issue_date: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+            gross_weight: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+            net_weight: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+          },
+        },
+      },
+      {
+        document_id: 'doc-pack',
+        document_type: 'packing_list',
+        filename: 'Packing_List.pdf',
+        extraction_status: 'partial',
+        review_required: true,
+        review_reasons: ['FIELD_NOT_FOUND', 'critical_issue_date_missing'],
+        critical_field_states: { issue_date: 'missing', gross_weight: 'found', net_weight: 'found' },
+        extracted_fields: { gross_weight: '20,400 kg', net_weight: '18,950 kg' },
+        extraction_artifacts_v1: {
+          raw_text: 'Packing List\nLC No: EXP2026BD001\nNet Weight: 18,950 kg\nGross Weight: 20,400 kg\n',
+          field_diagnostics: {
+            issue_date: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+          },
+        },
+      },
+    ];
+
+    structured.documents_structured = documentsStructured;
+    structured.lc_structured.documents_structured = documentsStructured;
+    activeResults = buildValidationResponse({ structured_result: structured });
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+
+    const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
+    await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
+    const invoiceDrawer = screen.getByRole('dialog');
+    expect(within(invoiceDrawer).getByText(/Source invoice does not show an invoice date\./i)).toBeInTheDocument();
+    expect(within(invoiceDrawer).getByText(/This workflow confirms gross\/net weight from the packing list or bill of lading, not from the invoice\./i)).toBeInTheDocument();
+    expect(within(invoiceDrawer).queryByText(/^Field not found$/i)).toBeNull();
+    expect(within(invoiceDrawer).queryByText(/Field Diagnostics/i)).toBeNull();
+    expect(within(invoiceDrawer).queryByText(/^Gross Weight$/i)).toBeNull();
+    expect(within(invoiceDrawer).queryByText(/^Net Weight$/i)).toBeNull();
+    expect(within(invoiceDrawer).queryByText(/^Issue Date$/i)).toBeNull();
+
+    await user.keyboard('{Escape}');
+
+    const packingCard = findCardByTitle(/^Packing_List\.pdf$/i);
+    await user.click(within(packingCard).getByRole('button', { name: /View Details/i }));
+    const packingDrawer = screen.getByRole('dialog');
+    expect(within(packingDrawer).getByText(/Source packing list does not clearly show a document date\./i)).toBeInTheDocument();
+    expect(within(packingDrawer).queryByText(/^Field not found$/i)).toBeNull();
   });
 
   it('still renders overview when structured_result analytics are missing', async () => {

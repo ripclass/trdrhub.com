@@ -192,7 +192,7 @@ const _buildSpecificFieldMissingReasons = (context: ReviewReasonContext): string
       reasons.push(
         _textHasAny(rawText, [/\bgross\s*weight\b/i, /\bgross\s*wt\b/i, /\bg\/w\b/i, /\bnet\s*weight\b/i, /\bnet\s*wt\b/i, /\bn\/w\b/i])
           ? 'Gross or net weight could not be confirmed from the invoice extraction.'
-          : 'Source invoice does not show gross or net weight; confirm weights from the packing list or bill of lading if needed.',
+          : 'This workflow confirms gross/net weight from the packing list or bill of lading, not from the invoice.',
       );
     }
   }
@@ -3277,6 +3277,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               reviewReasons: (document as any).reviewReasons ?? [],
                               criticalFieldStates: (document as any).criticalFieldStates ?? {},
                               fieldDiagnostics: (document as any).fieldDiagnostics ?? {},
+                              missingRequiredFields: (document as any).missingRequiredFields ?? [],
+                              rawText: (document as any).rawText ?? '',
                               ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
                               sourceFormat: (document.extractedFields as any)?._source_format,
                               isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,
