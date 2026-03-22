@@ -60,6 +60,7 @@ import type {
 } from "@/types/lcopilot";
 import { isExporterFeatureEnabled } from "@/config/exporterFeatureFlags";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
+import { ReviewFindingCard, type ReviewFindingCardData } from "@/components/exporter/ReviewFindingCard";
 // LcHeader removed - LC info now shown inline in SummaryStrip
 // RiskPanel removed - action items now only in Issues tab
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
@@ -436,12 +437,7 @@ const REVIEW_STATE_META: Record<
   awaiting_document: { label: 'Awaiting document', badgeStatus: 'warning' },
 };
 
-type RequirementReviewFinding = {
-  key: string;
-  title: string;
-  detail: string;
-  severity: 'critical' | 'major';
-};
+type RequirementReviewFinding = ReviewFindingCardData;
 
 const REQUIREMENT_TYPE_EQUIVALENTS: Record<string, string[]> = {
   bill_of_lading: ['ocean_bill_of_lading', 'charter_party_bill_of_lading'],
@@ -1724,7 +1720,150 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return requiredTypes;
   }, [canonicalRequiredDocs, lcRequirementTypes]);
   const checklistReviewFindings = useMemo<RequirementReviewFinding[]>(() => {
+    const classifyFindingCategory = ({
+      matchedDoc,
+      requirementStatus,
+      reviewState,
+      reviewNotes,
+    }: {
+      matchedDoc?: (typeof requirementChecklist)[number]['matchedDoc'];
+      requirementStatus: RequirementChecklistStatus;
+      reviewState: RequirementChecklistReviewState;
+      reviewNotes: string[];
+    }): string => {
+      if (!matchedDoc) return 'Missing required document';
+      const combined = reviewNotes.join(' ').toLowerCase();
+      if (combined.includes('does not show') || combined.includes('does not clearly show') || combined.includes('missing one or more core')) {
+        return 'Source-document absence';
+      }
+      if (combined.includes('could not be confirmed') || combined.includes('confidence') || combined.includes('extraction')) {
+        return 'Extraction uncertainty';
+      }
+      if (reviewState === 'blocked') {
+        return 'Presentation block';
+      }
+      if (requirementStatus === 'partial') {
+        return 'Requirement coverage gap';
+      }
+      return 'Manual review';
+    };
+
+    const buildWhyItMatters = ({
+      category,
+      matchedDoc,
+      label,
+      reviewState,
+    }: {
+      category: string;
+      matchedDoc?: (typeof requirementChecklist)[number]['matchedDoc'];
+      label: string;
+      reviewState: RequirementChecklistReviewState;
+    }): string => {
+      if (!matchedDoc) {
+        return `This LC-required ${label.toLowerCase()} is not currently available in the document set, so the case cannot be treated as presentation-ready.`;
+      }
+      if (category === 'Presentation block') {
+        return `This matched ${label.toLowerCase()} is currently blocked from clean presentation until the review issue is cleared.`;
+      }
+      if (category === 'Source-document absence') {
+        return `The ${label.toLowerCase()} is uploaded, but the required information does not appear clearly enough in the source document to treat coverage as complete.`;
+      }
+      if (category === 'Extraction uncertainty') {
+        return `The ${label.toLowerCase()} may contain the required information, but extraction could not confirm it strongly enough to clear the review.`;
+      }
+      if (reviewState === 'needs_review') {
+        return `The ${label.toLowerCase()} is present, but the workflow still requires human review before it can be treated as clean for presentation.`;
+      }
+      return `The uploaded ${label.toLowerCase()} does not yet satisfy the full LC-required coverage.`;
+    };
+
+    const buildRecommendedAction = ({
+      category,
+      matchedDoc,
+      label,
+      requirementText,
+      reviewNote,
+    }: {
+      category: string;
+      matchedDoc?: (typeof requirementChecklist)[number]['matchedDoc'];
+      label: string;
+      requirementText: string;
+      reviewNote: string;
+    }): string => {
+      if (!matchedDoc) {
+        return `Upload a ${label.toLowerCase()} that satisfies this LC requirement: ${requirementText}`;
+      }
+      if (category === 'Source-document absence') {
+        return `Confirm whether the bank will accept the current ${label.toLowerCase()} as presented, or obtain an amended document that shows the missing information clearly.`;
+      }
+      if (category === 'Extraction uncertainty') {
+        return `Visually review the ${label.toLowerCase()} and confirm the required content before presentation.`;
+      }
+      if (category === 'Presentation block') {
+        return `Clear the blocking review on the ${label.toLowerCase()} before treating the set as presentation-ready.`;
+      }
+      if (category === 'Manual review') {
+        return `Review the ${label.toLowerCase()} against the LC wording before presentation.`;
+      }
+      if (/missing required fields/i.test(reviewNote)) {
+        return `Amend or reissue the ${label.toLowerCase()} so it includes the missing required wording or fields, then revalidate.`;
+      }
+      return `Complete the ${label.toLowerCase()} review and confirm it fully covers the LC requirement before presentation.`;
+    };
+
+    const buildSourceBasis = ({
+      category,
+      matchedDoc,
+    }: {
+      category: string;
+      matchedDoc?: (typeof requirementChecklist)[number]['matchedDoc'];
+    }): string => {
+      if (!matchedDoc) return 'LC required-document checklist';
+      if (category === 'Source-document absence') return 'Source document content review';
+      if (category === 'Extraction uncertainty') return 'Extraction review note';
+      if (category === 'Presentation block') return 'Document review block';
+      return 'LC requirement coverage + document review';
+    };
+
     return requirementChecklist.flatMap((item) => {
+      const reviewNote =
+        item.reviewNotes[0] ||
+        (item.matchedDoc
+          ? 'This document still needs review before it can be treated as clean for presentation.'
+          : item.requirementText);
+      const category = classifyFindingCategory({
+        matchedDoc: item.matchedDoc,
+        requirementStatus: item.requirementStatus,
+        reviewState: item.reviewState,
+        reviewNotes: item.reviewNotes,
+      });
+      const baseFinding = {
+        category,
+        whyItMatters: buildWhyItMatters({
+          category,
+          matchedDoc: item.matchedDoc,
+          label: item.label,
+          reviewState: item.reviewState,
+        }),
+        evidence: item.matchedDoc
+          ? `Matched file: ${item.matchedDoc.name}. ${reviewNote}`
+          : `LC requirement: ${item.requirementText}`,
+        recommendedAction: buildRecommendedAction({
+          category,
+          matchedDoc: item.matchedDoc,
+          label: item.label,
+          requirementText: item.requirementText,
+          reviewNote,
+        }),
+        sourceBasis: buildSourceBasis({
+          category,
+          matchedDoc: item.matchedDoc,
+        }),
+        documentName: item.matchedDoc?.name,
+        documentType: item.matchedDoc?.type,
+        requirementText: item.requirementText,
+      } satisfies Omit<RequirementReviewFinding, 'key' | 'title' | 'detail' | 'severity'>;
+
       if (item.requirementStatus === 'missing') {
         return [
           {
@@ -1735,6 +1874,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 ? item.reviewNotes[0] || 'A matching file exists, but the required declaration or clause coverage is still unresolved.'
                 : item.requirementText,
             severity: 'critical',
+            ...baseFinding,
           },
         ];
       }
@@ -1746,6 +1886,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             detail:
               item.reviewNotes[0] || 'This document is blocked from clean presentation until the review issue is cleared.',
             severity: 'critical',
+            ...baseFinding,
           },
         ];
       }
@@ -1757,6 +1898,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             detail:
               item.reviewNotes[0] || 'This matched document still has missing required elements against the LC requirement.',
             severity: 'major',
+            ...baseFinding,
           },
         ];
       }
@@ -1767,6 +1909,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             title: `Complete review for ${item.label}`,
             detail: item.reviewNotes[0] || 'This document requires manual review before submission.',
             severity: 'major',
+            ...baseFinding,
           },
         ];
       }
@@ -1835,6 +1978,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       return rank[a.priority] - rank[b.priority];
     });
   }, [checklistReviewFindings, issueCards]);
+  const additionalActionItems = useMemo(() => {
+    const reviewFindingTitles = new Set(checklistReviewFindings.map((finding) => finding.title));
+    return actionEngine.filter((action) => !reviewFindingTitles.has(action.title));
+  }, [actionEngine, checklistReviewFindings]);
   const displayBankVerdict = useMemo<BankVerdict | null>(() => {
     const baseVerdict = (structuredResult?.bank_verdict as BankVerdict | null) ?? null;
     const normalizedVerdict = String(baseVerdict?.verdict ?? '').trim().toUpperCase();
@@ -2855,17 +3002,33 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   {actionEngine.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No immediate actions generated from the current validation state.</p>
                   ) : (
-                    actionEngine.slice(0, 6).map((action, idx) => (
-                      <div key={`${action.title}-${idx}`} className="rounded-lg border border-border/60 p-3 flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-sm">{action.title}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{action.detail}</p>
+                    <div className="space-y-3">
+                      {checklistReviewFindings.slice(0, 3).map((finding) => (
+                        <ReviewFindingCard
+                          key={`overview-finding-${finding.key}`}
+                          finding={finding}
+                          variant="compact"
+                        />
+                      ))}
+                      {additionalActionItems.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Additional discrepancy actions
+                          </p>
+                          {additionalActionItems.slice(0, 3).map((action, idx) => (
+                            <div key={`${action.title}-${idx}`} className="rounded-lg border border-border/60 p-3 flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-sm">{action.title}</p>
+                                <p className="text-xs text-muted-foreground mt-1">{action.detail}</p>
+                              </div>
+                              <Badge variant={action.priority === 'critical' ? 'destructive' : 'outline'} className={action.priority === 'major' ? 'border-amber-500/30 text-amber-700 bg-amber-500/5' : ''}>
+                                {action.priority}
+                              </Badge>
+                            </div>
+                          ))}
                         </div>
-                        <Badge variant={action.priority === 'critical' ? 'destructive' : 'outline'} className={action.priority === 'major' ? 'border-amber-500/30 text-amber-700 bg-amber-500/5' : ''}>
-                          {action.priority}
-                        </Badge>
-                      </div>
-                    ))
+                      )}
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -3073,17 +3236,33 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       {actionEngine.length === 0 ? (
                         <p className="text-sm text-muted-foreground">No action items currently blocking the customs pack.</p>
                       ) : (
-                        <ul className="space-y-2 text-sm">
-                          {actionEngine.slice(0, 5).map((action, idx) => (
-                            <li key={`customs-action-${idx}`} className="flex items-start gap-2">
-                              <AlertTriangle className={cn('w-4 h-4 mt-0.5 shrink-0', action.priority === 'critical' ? 'text-destructive' : 'text-amber-500')} />
-                              <div>
-                                <p className="font-medium">{action.title}</p>
-                                <p className="text-xs text-muted-foreground">{action.detail}</p>
-                              </div>
-                            </li>
+                        <div className="space-y-3">
+                          {checklistReviewFindings.slice(0, 4).map((finding) => (
+                            <ReviewFindingCard
+                              key={`customs-finding-${finding.key}`}
+                              finding={finding}
+                              variant="compact"
+                            />
                           ))}
-                        </ul>
+                          {additionalActionItems.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                Additional discrepancy actions
+                              </p>
+                              <ul className="space-y-2 text-sm">
+                                {additionalActionItems.slice(0, 3).map((action, idx) => (
+                                  <li key={`customs-action-${idx}`} className="flex items-start gap-2">
+                                    <AlertTriangle className={cn('w-4 h-4 mt-0.5 shrink-0', action.priority === 'critical' ? 'text-destructive' : 'text-amber-500')} />
+                                    <div>
+                                      <p className="font-medium">{action.title}</p>
+                                      <p className="text-xs text-muted-foreground">{action.detail}</p>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

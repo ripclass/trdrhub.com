@@ -308,6 +308,165 @@ describe('ExporterResults', () => {
     ).toBeInTheDocument();
   });
 
+  it('renders structured review-finding cards in the issues tab when checklist review stays open without discrepancy cards', async () => {
+    const user = userEvent.setup();
+    const reviewOnlyResults = buildValidationResults({
+      issues: [],
+      documents: [
+        {
+          id: 'doc-pack',
+          documentId: 'doc-pack',
+          name: 'Packing_List.pdf',
+          filename: 'Packing_List.pdf',
+          type: 'Packing List',
+          typeKey: 'packing_list',
+          extractionStatus: 'partial',
+          status: 'warning',
+          issuesCount: 0,
+          extractedFields: { gross_weight: '20,400 kg' },
+          missingRequiredFields: ['issue_date'],
+          requirementStatus: 'partial',
+          reviewRequired: true,
+          reviewState: 'needs_review',
+          reviewReasons: ['FIELD_NOT_FOUND'],
+          criticalFieldStates: { issue_date: 'missing' },
+          rawText: 'Packing list showing gross weight 20,400 kg and net weight 18,950 kg.',
+        },
+      ] as any,
+      structured_result: {
+        ...mockValidationResults.structured_result,
+        issues: [],
+        documents_structured: [
+          {
+            document_id: 'doc-pack',
+            document_type: 'packing_list',
+            filename: 'Packing_List.pdf',
+            extraction_status: 'partial',
+            extracted_fields: { gross_weight: '20,400 kg' },
+            missing_required_fields: ['issue_date'],
+            review_required: true,
+            review_reasons: ['FIELD_NOT_FOUND'],
+            critical_field_states: { issue_date: 'missing' },
+            extraction_artifacts_v1: {
+              raw_text: 'Packing list showing gross weight 20,400 kg and net weight 18,950 kg.',
+              field_diagnostics: { issue_date: { state: 'missing' } },
+            },
+          } as any,
+        ],
+        lc_structured: {
+          ...(mockValidationResults.structured_result?.lc_structured ?? {}),
+          required_documents_detailed: [
+            {
+              code: 'packing_list',
+              label: 'Packing List',
+              requirement_text: 'Detailed packing list showing carton-wise breakdown.',
+            },
+          ],
+        } as any,
+      } as any,
+      summary: {
+        ...mockValidationResults.summary,
+        total_issues: 0,
+      },
+    });
+    activeResults = reviewOnlyResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Issues \(1\)/i }));
+    expect(screen.getByText(/Review findings still need attention/i)).toBeInTheDocument();
+    expect(screen.getByText(/Review Findings Workspace/i)).toBeInTheDocument();
+    expect(screen.getByText(/Why it matters/i)).toBeInTheDocument();
+    expect(screen.getByText(/Evidence \/ basis/i)).toBeInTheDocument();
+    expect(screen.getByText(/Recommended action/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Source packing list does not clearly show a document date\./i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Source basis: Source document content review/i)).toBeInTheDocument();
+  });
+
+  it('reuses structured review-finding content in overview and customs action surfaces', async () => {
+    const user = userEvent.setup();
+    const reviewOnlyResults = buildValidationResults({
+      issues: [],
+      documents: [
+        {
+          id: 'doc-pack',
+          documentId: 'doc-pack',
+          name: 'Packing_List.pdf',
+          filename: 'Packing_List.pdf',
+          type: 'Packing List',
+          typeKey: 'packing_list',
+          extractionStatus: 'partial',
+          status: 'warning',
+          issuesCount: 0,
+          extractedFields: { gross_weight: '20,400 kg' },
+          missingRequiredFields: ['issue_date'],
+          requirementStatus: 'partial',
+          reviewRequired: true,
+          reviewState: 'needs_review',
+          reviewReasons: ['FIELD_NOT_FOUND'],
+          criticalFieldStates: { issue_date: 'missing' },
+          rawText: 'Packing list showing gross weight 20,400 kg and net weight 18,950 kg.',
+        },
+      ] as any,
+      structured_result: {
+        ...mockValidationResults.structured_result,
+        issues: [],
+        documents_structured: [
+          {
+            document_id: 'doc-pack',
+            document_type: 'packing_list',
+            filename: 'Packing_List.pdf',
+            extraction_status: 'partial',
+            extracted_fields: { gross_weight: '20,400 kg' },
+            missing_required_fields: ['issue_date'],
+            review_required: true,
+            review_reasons: ['FIELD_NOT_FOUND'],
+            critical_field_states: { issue_date: 'missing' },
+            extraction_artifacts_v1: {
+              raw_text: 'Packing list showing gross weight 20,400 kg and net weight 18,950 kg.',
+              field_diagnostics: { issue_date: { state: 'missing' } },
+            },
+          } as any,
+        ],
+        lc_structured: {
+          ...(mockValidationResults.structured_result?.lc_structured ?? {}),
+          required_documents_detailed: [
+            {
+              code: 'packing_list',
+              label: 'Packing List',
+              requirement_text: 'Detailed packing list showing carton-wise breakdown.',
+            },
+          ],
+        } as any,
+      } as any,
+      summary: {
+        ...mockValidationResults.summary,
+        total_issues: 0,
+      },
+    });
+    activeResults = reviewOnlyResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/What To Do Next/i)).toBeInTheDocument(),
+    );
+
+    const nextStepsCard = findCardByTitle(/What To Do Next/i);
+    expect(within(nextStepsCard).getByText(/Why it matters/i)).toBeInTheDocument();
+    expect(within(nextStepsCard).getByText(/Evidence \/ basis/i)).toBeInTheDocument();
+    expect(within(nextStepsCard).getByText(/Recommended action/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    expect(within(customsPanel).getByText(/Action Queue/i)).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Why it matters/i)).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Evidence \/ basis/i)).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Recommended action/i)).toBeInTheDocument();
+  });
+
   it('separates requirement coverage from review readiness in checklist rows', async () => {
     const checklistResults = buildValidationResults();
     checklistResults.documents = checklistResults.documents.map((doc) => {

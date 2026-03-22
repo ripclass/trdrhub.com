@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
+import { ReviewFindingCard, type ReviewFindingCardData } from "@/components/exporter/ReviewFindingCard";
 import { type EmailDraftContext } from "@/components/exporter/HowToFixSection";
 import { normalizeDiscrepancySeverity } from "../utils";
 import type { IssueCard } from "@/types/lcopilot";
@@ -24,18 +25,11 @@ interface LaneCounts {
   manual: number;
 }
 
-interface ReviewFinding {
-  key: string;
-  title: string;
-  detail: string;
-  severity: "critical" | "major";
-}
-
 interface IssuesTabProps {
   hasIssueCards: boolean;
   issueCards: IssueCard[];
   filteredIssueCards: IssueCard[];
-  reviewFindings: ReviewFinding[];
+  reviewFindings: ReviewFindingCardData[];
   severityCounts: SeverityCounts;
   laneCounts: LaneCounts;
   issueFilter: "all" | "critical" | "major" | "minor";
@@ -54,6 +48,19 @@ const BUCKETS = [
   "Cross-Document Conditions",
   "Extraction / Manual Review",
 ] as const;
+
+const renderReviewFindingCards = (reviewFindings: ReviewFindingCardData[]) => (
+  <section className="space-y-3">
+    <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+      Review Findings Workspace
+    </h3>
+    <div className="space-y-4">
+      {reviewFindings.map((finding) => (
+        <ReviewFindingCard key={finding.key} finding={finding} />
+      ))}
+    </div>
+  </section>
+);
 
 export function IssuesTab({
   hasIssueCards,
@@ -156,25 +163,7 @@ export function IssuesTab({
             </div>
 
             <div className="space-y-3">
-              {reviewFindings.map((finding) => (
-                <div key={finding.key} className="rounded-lg border border-border/60 bg-card/50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{finding.title}</p>
-                      <p className="text-sm text-muted-foreground mt-1">{finding.detail}</p>
-                    </div>
-                    <span
-                      className={
-                        finding.severity === "critical"
-                          ? "inline-flex rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive"
-                          : "inline-flex rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning"
-                      }
-                    >
-                      {finding.severity === "critical" ? "Blocking review" : "Review required"}
-                    </span>
-                  </div>
-                </div>
-              ))}
+              {renderReviewFindingCards(reviewFindings)}
             </div>
           </CardContent>
         </Card>
@@ -294,6 +283,8 @@ export function IssuesTab({
               })}
             </section>
           )}
+
+          {reviewFindings.length > 0 && renderReviewFindingCards(reviewFindings)}
         </div>
       )}
       {renderAIInsightsCard()}
