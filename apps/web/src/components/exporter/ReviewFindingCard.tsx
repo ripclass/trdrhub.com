@@ -8,6 +8,8 @@ export type ReviewFindingCardData = {
   detail: string;
   severity: "critical" | "major";
   category: string;
+  currentState?: string;
+  expectedState?: string;
   whyItMatters: string;
   evidence: string;
   recommendedAction: string;
@@ -46,6 +48,10 @@ export function ReviewFindingCard({
   className,
 }: ReviewFindingCardProps) {
   const compact = variant === "compact";
+  const actionLabel =
+    finding.category.toLowerCase().includes("extraction") || finding.category.toLowerCase().includes("manual")
+      ? "Review guidance"
+      : "How to fix";
 
   return (
     <Card className={cn("shadow-sm border border-border/70 bg-card", compact && "shadow-none", className)}>
@@ -85,6 +91,12 @@ export function ReviewFindingCard({
       <CardContent className={cn("space-y-4", compact && "space-y-3")}>
         {compact ? (
           <div className="space-y-2 text-sm">
+            {finding.expectedState ? (
+              <div className="rounded-md border p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Expected state</p>
+                <p className="mt-1">{finding.expectedState}</p>
+              </div>
+            ) : null}
             <div className="rounded-md border p-3">
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why it matters</p>
               <p className="mt-1">{finding.whyItMatters}</p>
@@ -94,12 +106,22 @@ export function ReviewFindingCard({
               <p className="mt-1">{finding.evidence}</p>
             </div>
             <div className="rounded-md border p-3">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recommended action</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{actionLabel}</p>
               <p className="mt-1">{finding.recommendedAction}</p>
             </div>
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-md border p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Current state</p>
+              <p className="text-sm mt-1">{finding.currentState || finding.detail}</p>
+            </div>
+            {finding.expectedState ? (
+              <div className="rounded-md border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Expected state</p>
+                <p className="text-sm mt-1">{finding.expectedState}</p>
+              </div>
+            ) : null}
             <div className="rounded-md border p-3">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Why it matters</p>
               <p className="text-sm mt-1">{finding.whyItMatters}</p>
@@ -109,7 +131,7 @@ export function ReviewFindingCard({
               <p className="text-sm mt-1">{finding.evidence}</p>
             </div>
             <div className="rounded-md border p-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Recommended action</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">{actionLabel}</p>
               <p className="text-sm mt-1">{finding.recommendedAction}</p>
             </div>
           </div>

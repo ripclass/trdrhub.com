@@ -121,6 +121,8 @@ def test_live_route_detector_classifies_export_from_exporter_lane_and_raw_port_s
 
     assert guess["lc_type"] == "export"
     assert guess["confidence"] > 0.5
+    assert guess["confidence_mode"] == "estimated"
+    assert guess["detection_basis"] == "lane_only_context"
 
 
 def test_live_route_detector_classifies_export_from_flat_lc_ports_without_shipment_context() -> None:
@@ -139,6 +141,8 @@ def test_live_route_detector_classifies_export_from_flat_lc_ports_without_shipme
 
     assert guess["lc_type"] == "export"
     assert guess["confidence"] > 0.5
+    assert guess["confidence_mode"] == "estimated"
+    assert guess["detection_basis"] == "lane_only_context"
 
 
 def test_live_route_response_builder_keeps_export_workflow_for_live_shaped_payload() -> None:

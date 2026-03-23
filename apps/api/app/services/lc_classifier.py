@@ -149,7 +149,14 @@ def detect_lc_type(
         )
     )
 
-    def _guess(lc_type_value: str, reason_text: str, confidence_value: float) -> LCTypeGuess:
+    def _guess(
+        lc_type_value: str,
+        reason_text: str,
+        confidence_value: float,
+        *,
+        confidence_mode: str = "scored",
+        detection_basis: str = "rule_based",
+    ) -> LCTypeGuess:
         source = "auto-detected" if lc_family == "unknown" else f"auto-detected:{lc_family}"
         payload: LCTypeGuess = {
             "lc_type": lc_type_value,
@@ -160,7 +167,27 @@ def detect_lc_type(
         payload["family"] = lc_family
         payload["family_confidence"] = family_signal.get("confidence", 0.0)
         payload["family_evidence"] = family_signal.get("evidence", [])
+        payload["confidence_mode"] = confidence_mode
+        payload["detection_basis"] = detection_basis
         return payload
+
+    def _lane_only_confidence(
+        *,
+        aligned_party_country: str | None,
+        other_party_country: str | None,
+    ) -> float:
+        confidence = 0.5
+        if lc_family != "unknown":
+            confidence += 0.04
+        if aligned_party_country and pol_country and aligned_party_country == pol_country:
+            confidence += 0.05
+        if other_party_country and pod_country and other_party_country == pod_country:
+            confidence += 0.05
+        elif pod_country:
+            confidence += 0.03
+        if issuing_country and aligned_party_country and issuing_country == aligned_party_country:
+            confidence += 0.03
+        return min(confidence, 0.67)
 
     flow_export = (
         applicant_country
@@ -366,7 +393,12 @@ def detect_lc_type(
                 "loading-to-discharge shipment flow. Treating this as an export LC unless stronger contrary "
                 "evidence appears."
             ),
-            0.52,
+            _lane_only_confidence(
+                aligned_party_country=beneficiary_country,
+                other_party_country=applicant_country,
+            ),
+            confidence_mode="estimated",
+            detection_basis="lane_only_context",
         )
 
     lane_only_import = (
@@ -388,7 +420,12 @@ def detect_lc_type(
                 "loading-to-discharge shipment flow. Treating this as an import LC unless stronger contrary "
                 "evidence appears."
             ),
-            0.52,
+            _lane_only_confidence(
+                aligned_party_country=applicant_country,
+                other_party_country=beneficiary_country,
+            ),
+            confidence_mode="estimated",
+            detection_basis="lane_only_context",
         )
 
     if lc_family == "iso":

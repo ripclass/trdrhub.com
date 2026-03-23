@@ -3,6 +3,11 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AlertTriangle, FileX, ArrowRight, Upload, HelpCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import {
+  formatWorkflowConfidenceBadgeLabel,
+  getWorkflowDetectionStatusBadge,
+  type WorkflowDetectionSummary,
+} from '@/lib/exporter/workflowDetection'
 
 /**
  * BlockedUploadModal - Shows clear error messages when document upload is blocked
@@ -39,6 +44,9 @@ interface BlockedUploadModalProps {
     confidence?: number
     reason?: string
     is_draft?: boolean
+    source?: string
+    confidence_mode?: string
+    detection_basis?: string
   }
 }
 
@@ -134,7 +142,15 @@ export function BlockedUploadModal({
                     Detected: {lcDetection.lc_type.toUpperCase()} LC
                     {lcDetection.confidence && (
                       <Badge variant="outline" className="ml-2 text-xs">
-                        {Math.round(lcDetection.confidence * 100)}% confidence
+                        {formatWorkflowConfidenceBadgeLabel(
+                          lcDetection.confidence,
+                          lcDetection as WorkflowDetectionSummary,
+                        )}
+                      </Badge>
+                    )}
+                    {getWorkflowDetectionStatusBadge(lcDetection as WorkflowDetectionSummary) && (
+                      <Badge variant="outline" className="ml-2 text-xs">
+                        {getWorkflowDetectionStatusBadge(lcDetection as WorkflowDetectionSummary)}
                       </Badge>
                     )}
                   </div>

@@ -27,6 +27,11 @@ import {
   summarizeSpecialConditions,
 } from "@/lib/exporter/specialConditions";
 import { getUploadRequirementsModel } from "@/lib/exporter/uploadRequirements";
+import {
+  formatWorkflowConfidenceBadgeLabel,
+  getWorkflowDetectionStatusBadge,
+  type WorkflowDetectionSummary,
+} from "@/lib/exporter/workflowDetection";
 import type { LcClassificationRequiredDocument } from "@/types/lcopilot";
 // Shared document types - SINGLE SOURCE OF TRUTH
 import { 
@@ -84,6 +89,8 @@ interface LCIntakeState {
     reason?: string;
     is_draft?: boolean;
     source?: string;
+    confidence_mode?: string;
+    detection_basis?: string;
   };
   requiredDocumentTypes?: string[];
   documentsRequired?: string[];
@@ -234,12 +241,7 @@ export function formatWorkflowBadgeLabel(workflowType?: string): string {
   return `${humanized} Workflow`;
 }
 
-export function formatWorkflowConfidenceBadgeLabel(confidence?: number | null): string {
-  if (typeof confidence !== "number" || Number.isNaN(confidence) || confidence <= 0) {
-    return "Workflow confidence unavailable";
-  }
-  return `Workflow confidence: ${Math.round(confidence * 100)}%`;
-}
+export { formatWorkflowConfidenceBadgeLabel };
 
 export function buildValidationProgressCopy(fileCount: number): {
   heading: string;
@@ -493,6 +495,9 @@ export default function ExportLCUpload({
       confidence?: number;
       reason?: string;
       is_draft?: boolean;
+      source?: string;
+      confidence_mode?: string;
+      detection_basis?: string;
     };
   }>({ open: false });
 
@@ -1300,6 +1305,22 @@ export default function ExportLCUpload({
       lcIntake.specialConditions,
     ],
   );
+  const requirementUploadStatus = useMemo(() => {
+    const found: typeof uploadRequirements.documentRequirements = [];
+    const missing: typeof uploadRequirements.documentRequirements = [];
+
+    uploadRequirements.documentRequirements.forEach((requirement) => {
+      const normalizedType = normalizeDocumentType(requirement.type);
+      const isFound = completedFiles.some(
+        (file) =>
+          normalizeDocumentType(file.documentType) === normalizedType ||
+          normalizeDocumentType(file.detectedType) === normalizedType,
+      );
+      (isFound ? found : missing).push(requirement);
+    });
+
+    return { found, missing };
+  }, [completedFiles, uploadRequirements.documentRequirements]);
   const hiddenQuickBadgeCount = Math.max(0, exportDocumentTypes.length - quickBadgeTypes.length);
 
   const wrapperClass = embedded
@@ -1537,9 +1558,18 @@ export default function ExportLCUpload({
                 {lcIntake.lcDetection && (
                   <div className="flex flex-wrap gap-2 text-xs">
                     <Badge variant="outline">{formatWorkflowBadgeLabel(lcIntake.lcDetection.lc_type)}</Badge>
-                    <Badge variant="outline">Workflow lane only</Badge>
+                    {getWorkflowDetectionStatusBadge(lcIntake.lcDetection as WorkflowDetectionSummary) && (
+                      <Badge variant="outline">
+                        {getWorkflowDetectionStatusBadge(lcIntake.lcDetection as WorkflowDetectionSummary)}
+                      </Badge>
+                    )}
                     {typeof lcIntake.lcDetection.confidence === 'number' && (
-                      <Badge variant="outline">{formatWorkflowConfidenceBadgeLabel(lcIntake.lcDetection.confidence)}</Badge>
+                      <Badge variant="outline">
+                        {formatWorkflowConfidenceBadgeLabel(
+                          lcIntake.lcDetection.confidence,
+                          lcIntake.lcDetection as WorkflowDetectionSummary,
+                        )}
+                      </Badge>
                     )}
                     {lcIntake.lcDetection.is_draft && <Badge variant="outline">Draft LC</Badge>}
                   </div>
@@ -1586,6 +1616,40 @@ export default function ExportLCUpload({
               </div>
             ) : (
               <div className="space-y-4">
+                {requirementUploadStatus.missing.length > 0 && (
+                  <div className="rounded-lg border border-amber-400/40 bg-amber-50/50 p-4">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">
+                          Still missing LC-required uploads ({requirementUploadStatus.missing.length})
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          You can validate a partial set, but these missing uploads will keep the case in review until they are provided.
+                        </p>
+                      </div>
+                      <Badge variant="outline">Missing uploads</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {requirementUploadStatus.missing.map((requirement) => (
+                        <Badge
+                          key={`missing-upload-${requirement.key}`}
+                          variant="outline"
+                          className="border-amber-500/40 text-amber-700 bg-amber-500/5"
+                        >
+                          {requirement.label}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {requirementUploadStatus.missing.length === 0 && uploadRequirements.documentRequirements.length > 0 && (
+                  <div className="rounded-lg border border-success/30 bg-success/5 p-4">
+                    <p className="text-sm font-semibold text-foreground">All LC-required document types are uploaded</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Continue with validation to confirm field coverage, review requirements, and presentation readiness.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   {uploadRequirements.documentRequirements.length > 0 || uploadRequirements.additionalRequirements.length > 0 ? (
                     <>
@@ -1859,7 +1923,12 @@ export default function ExportLCUpload({
               {/* Process Button */}
               <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
                 <div className="text-sm text-muted-foreground">
-                  {isReadyToProcess ? (
+                  {isLCResolved && requirementUploadStatus.missing.length > 0 && completedFiles.length > 0 ? (
+                    <span>
+                      Missing LC-required uploads: {requirementUploadStatus.missing.map((item) => item.label).join(', ')}.
+                      You can still validate the current set, but readiness will stay open until they are uploaded.
+                    </span>
+                  ) : isReadyToProcess ? (
                     <span className="text-success">✓ Ready to validate your export documents</span>
                   ) : isLCResolved && completedFiles.length === 0 ? (
                     <span>LC resolved. Upload at least one supporting document to start validation.</span>

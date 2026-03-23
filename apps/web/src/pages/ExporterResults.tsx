@@ -1839,6 +1839,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
       const baseFinding = {
         category,
+        currentState: reviewNote,
+        expectedState: item.requirementText,
         whyItMatters: buildWhyItMatters({
           category,
           matchedDoc: item.matchedDoc,
@@ -1982,6 +1984,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     const reviewFindingTitles = new Set(checklistReviewFindings.map((finding) => finding.title));
     return actionEngine.filter((action) => !reviewFindingTitles.has(action.title));
   }, [actionEngine, checklistReviewFindings]);
+  const customsFollowUpItems = useMemo(() => actionEngine.slice(0, 5), [actionEngine]);
   const displayBankVerdict = useMemo<BankVerdict | null>(() => {
     const baseVerdict = (structuredResult?.bank_verdict as BankVerdict | null) ?? null;
     const normalizedVerdict = String(baseVerdict?.verdict ?? '').trim().toUpperCase();
@@ -2873,88 +2876,65 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             <div className="grid gap-6 md:grid-cols-2">
               <Card className="shadow-soft border border-border/60">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold">Required Document Checklist</CardTitle>
+                  <CardTitle className="text-lg font-semibold">LC Requirement Coverage</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Tracks LC document coverage first, then whether each matched document still needs review
+                    Exact LC-required documents and whether a matching upload is present
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     <div className="rounded-lg border border-border/60 p-3">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Matched</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Covered</p>
                       <p className="text-xl font-semibold text-success">{requirementChecklistSummary.matched}</p>
                     </div>
                     <div className="rounded-lg border border-border/60 p-3">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Partial</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Needs Review</p>
                       <p className="text-xl font-semibold text-warning">{requirementChecklistSummary.partial}</p>
                     </div>
                     <div className="rounded-lg border border-border/60 p-3 col-span-2 sm:col-span-1">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Missing</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Missing Upload</p>
                       <p className="text-xl font-semibold text-destructive">{requirementChecklistSummary.missing}</p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Ready: <span className="font-medium text-foreground">{requirementChecklistSummary.ready}</span></span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Review: <span className="font-medium text-foreground">{requirementChecklistSummary.needsReview}</span></span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Blocked: <span className="font-medium text-foreground">{requirementChecklistSummary.blocked}</span></span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Awaiting doc: <span className="font-medium text-foreground">{requirementChecklistSummary.awaitingDocument}</span></span>
-                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    This checklist is requirement-first. Detailed review evidence, remediation, and citations live in <span className="font-medium text-foreground">What To Do Next</span> and the <span className="font-medium text-foreground">Issues</span> tab.
+                  </p>
                   {requirementChecklist.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No explicit LC requirements were parsed into checklist items yet.</p>
                   ) : (
                     requirementChecklist.map((item) => {
-                      const requirementMeta = REQUIREMENT_STATUS_META[item.requirementStatus];
-                      const reviewMeta = REVIEW_STATE_META[item.reviewState];
+                      const uploadStatusLabel = item.matchedDoc ? `Matched upload: ${item.matchedDoc.name}` : 'Missing upload';
+                      const coverageLabel =
+                        item.requirementStatus === 'matched'
+                          ? 'Covered'
+                          : item.requirementStatus === 'partial'
+                          ? 'Needs review'
+                          : 'Missing upload';
+                      const coverageStatus: 'success' | 'warning' | 'error' =
+                        item.requirementStatus === 'matched'
+                          ? 'success'
+                          : item.requirementStatus === 'partial'
+                          ? 'warning'
+                          : 'error';
 
                       return (
                         <div key={item.key} className="rounded-lg border border-border/60 p-4 space-y-3">
-                          <div className="space-y-1">
-                            <p className="font-medium text-sm">{item.label}</p>
-                            <p className="text-xs text-muted-foreground">{item.requirementText}</p>
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">LC requirement match</p>
-                              <div className="flex items-center justify-between gap-2">
-                                <StatusBadge status={requirementMeta.badgeStatus}>
-                                  {requirementMeta.label}
-                                </StatusBadge>
-                                <span className="text-xs text-muted-foreground text-right">
-                                  {item.matchedDoc ? (
-                                    <>Matched to <span className="font-medium text-foreground">{item.matchedDoc.name}</span></>
-                                  ) : (
-                                    'No matching upload yet'
-                                  )}
-                                </span>
-                              </div>
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="space-y-1">
+                              <p className="font-medium text-sm">{item.label}</p>
+                              <p className="text-xs text-muted-foreground">{item.requirementText}</p>
                             </div>
-                            <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Current review status</p>
-                              <div className="flex items-center justify-between gap-2">
-                                <StatusBadge status={reviewMeta.badgeStatus}>
-                                  {reviewMeta.label}
-                                </StatusBadge>
-                                <span className="text-xs text-muted-foreground text-right">
-                                  {item.reviewState === 'ready'
-                                    ? 'No current review hold'
-                                    : item.reviewState === 'awaiting_document'
-                                    ? 'Needs supporting upload'
-                                    : item.reviewState === 'blocked'
-                                    ? 'Blocks clean presentation'
-                                    : 'Manual review still required'}
-                                </span>
-                              </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <StatusBadge status={coverageStatus}>
+                                {coverageLabel}
+                              </StatusBadge>
+                              <Badge variant="outline">{uploadStatusLabel}</Badge>
                             </div>
                           </div>
-                          {item.reviewNotes.length > 0 && (
-                            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-                              <p className="text-[10px] uppercase tracking-wide text-amber-700 mb-2">Why this still matters</p>
-                              <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
-                                {item.reviewNotes.slice(0, 2).map((issue, idx) => (
-                                  <li key={`${item.key}-issue-${idx}`}>{issue}</li>
-                                ))}
-                              </ul>
-                            </div>
+                          {item.matchedDoc && item.reviewState !== 'ready' && (
+                            <p className="text-xs text-muted-foreground">
+                              Review continues in <span className="font-medium text-foreground">What To Do Next</span> and <span className="font-medium text-foreground">Issues</span>.
+                            </p>
                           )}
                         </div>
                       );
@@ -3043,7 +3023,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   Customs Pack
                 </CardTitle>
                 <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Manifest, readiness, and downloads
+                  Presentation readiness, manifest, and downloads
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -3081,7 +3061,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </div>
                       <Badge variant="outline">
                         {customsPackReadiness.source === 'shared'
-                          ? 'Same readiness across tabs'
+                          ? 'Shared presentation truth'
                           : 'Derived readiness'}
                       </Badge>
                     </div>
@@ -3169,8 +3149,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </div>
                     <div className="rounded-lg border border-border/60 p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Review Queue</p>
-                      <p className="text-2xl font-semibold">{customsPackReadiness.reviews.length + actionEngine.length}</p>
-                      <p className="text-sm text-muted-foreground mt-2">Open review or follow-up items that do not hard-block presentation.</p>
+                      <p className="text-2xl font-semibold">{customsFollowUpItems.length}</p>
+                      <p className="text-sm text-muted-foreground mt-2">Open presentation follow-ups that still need operator attention.</p>
                     </div>
                   </div>
 
@@ -3198,10 +3178,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold">Submission Checklist</p>
+                      <p className="text-sm font-semibold">Presentation Checklist</p>
                       <Badge variant="outline">{requirementChecklist.length} tracked</Badge>
                     </div>
                     <div className="rounded-lg border border-border/60 p-4 space-y-3">
@@ -3232,37 +3212,29 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       )}
                     </div>
                     <div className="rounded-lg border border-border/60 p-4 space-y-2">
-                      <p className="text-sm font-semibold">Action Queue</p>
-                      {actionEngine.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No action items currently blocking the customs pack.</p>
-                      ) : (
-                        <div className="space-y-3">
-                          {checklistReviewFindings.slice(0, 4).map((finding) => (
-                            <ReviewFindingCard
-                              key={`customs-finding-${finding.key}`}
-                              finding={finding}
-                              variant="compact"
-                            />
-                          ))}
-                          {additionalActionItems.length > 0 && (
-                            <div className="space-y-2">
-                              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                                Additional discrepancy actions
-                              </p>
-                              <ul className="space-y-2 text-sm">
-                                {additionalActionItems.slice(0, 3).map((action, idx) => (
-                                  <li key={`customs-action-${idx}`} className="flex items-start gap-2">
-                                    <AlertTriangle className={cn('w-4 h-4 mt-0.5 shrink-0', action.priority === 'critical' ? 'text-destructive' : 'text-amber-500')} />
-                                    <div>
-                                      <p className="font-medium">{action.title}</p>
-                                      <p className="text-xs text-muted-foreground">{action.detail}</p>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div>
+                          <p className="text-sm font-semibold">Presentation Work Queue</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            This is the customs-pack view of open presentation work. Use the Issues tab for full evidence, citations, and remediation detail.
+                          </p>
                         </div>
+                        <Badge variant="outline">{customsFollowUpItems.length} open</Badge>
+                      </div>
+                      {customsFollowUpItems.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No open presentation tasks are currently blocking the customs pack.</p>
+                      ) : (
+                        <ul className="space-y-2 text-sm">
+                          {customsFollowUpItems.map((action, idx) => (
+                            <li key={`customs-action-${idx}`} className="flex items-start gap-2">
+                              <AlertTriangle className={cn('w-4 h-4 mt-0.5 shrink-0', action.priority === 'critical' ? 'text-destructive' : 'text-amber-500')} />
+                              <div>
+                                <p className="font-medium">{action.title}</p>
+                                <p className="text-xs text-muted-foreground">{action.detail}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
                       )}
                     </div>
                   </div>

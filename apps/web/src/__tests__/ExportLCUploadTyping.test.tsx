@@ -103,8 +103,14 @@ describe("ExportLCUpload typing helpers", () => {
     expect(formatWorkflowBadgeLabel("export")).toBe("Export Workflow");
   });
 
-  it("labels intake confidence as workflow confidence instead of generic confidence", () => {
-    expect(formatWorkflowConfidenceBadgeLabel(0.52)).toBe("Workflow confidence: 52%");
+  it("labels lane-only workflow fallback as an estimate instead of a fixed numeric confidence", () => {
+    expect(
+      formatWorkflowConfidenceBadgeLabel(0.52, {
+        confidence_mode: "estimated",
+        detection_basis: "lane_only_context",
+      } as any),
+    ).toBe("Estimated workflow match");
+    expect(formatWorkflowConfidenceBadgeLabel(0.72)).toBe("Workflow confidence: 72%");
   });
 
   it("uses estimated client-side wording for validation progress without pretending live backend telemetry", () => {

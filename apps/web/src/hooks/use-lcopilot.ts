@@ -44,6 +44,8 @@ export interface ValidationResponse {
     reason?: string;
     is_draft?: boolean;
     source?: string;
+    confidence_mode?: string;
+    detection_basis?: string;
   };
   continuation_allowed?: boolean;
   intake_mode?: boolean;

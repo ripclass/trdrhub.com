@@ -21,6 +21,8 @@ class LCTypeGuess(TypedDict, total=False):
     reason: str
     confidence: float
     source: str
+    confidence_mode: str
+    detection_basis: str
 
 
 def normalize_lc_type(value: Optional[str]) -> Optional[str]:

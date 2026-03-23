@@ -27,12 +27,21 @@ const expectedSeverityCounts = mockValidationResults.issues.reduce(
 );
 
 const findCardByTitle = (title: RegExp | string, index = 0): HTMLElement => {
-  const heading = screen.getAllByText(title)[index];
+  const heading =
+    screen.queryAllByRole('heading', { name: title }).at(index) ??
+    screen.getAllByText(title)[index];
   let current: HTMLElement | null = heading as HTMLElement;
   while (current && !current.className.toString().includes('shadow-soft')) {
     current = current.parentElement as HTMLElement | null;
   }
   return current ?? (heading as HTMLElement);
+};
+
+const getMetricValueFromCard = (card: HTMLElement, label: RegExp | string): string | undefined => {
+  const labelNode = within(card).getByText(label);
+  const metricCard = labelNode.parentElement as HTMLElement | null;
+  const metricLines = metricCard?.querySelectorAll('p') ?? [];
+  return metricLines.length > 1 ? metricLines[1]?.textContent ?? undefined : undefined;
 };
 
 const mockUseCanonicalJobResult = vi.fn();
@@ -104,7 +113,7 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
     expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument();
-    expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument();
+    expect(screen.getByText(/LC Requirement Coverage/i)).toBeInTheDocument();
     expect(screen.getByText(/What Happened In This Run/i)).toBeInTheDocument();
     expect(
       screen.getByText(new RegExp(`Documents \\(${totalDocuments}\\)`, 'i')),
@@ -115,13 +124,8 @@ describe('ExporterResults', () => {
     expect(screen.getAllByText(/Validation Score/i).length).toBeGreaterThan(0);
 
     const statsCard = findCardByTitle(/Case At A Glance/i);
-    const verifiedLabel = within(statsCard).getByText(/^Verified$/i);
-    const verifiedValue = verifiedLabel.previousElementSibling;
-    expect(verifiedValue?.textContent).toBe(String(successCount));
-
-    const warningsLabel = within(statsCard).getByText(/^Warnings$/i);
-    const warningsValue = warningsLabel.previousElementSibling;
-    expect(warningsValue?.textContent).toBe(String(warningDocumentCount));
+    expect(getMetricValueFromCard(statsCard, /^Verified$/i)).toBe(String(successCount));
+    expect(getMetricValueFromCard(statsCard, /^Warnings$/i)).toBe(String(warningDocumentCount));
 
     const expectedCompliance = `${mockValidationResults.analytics.compliance_score}%`;
     expect(within(statsCard).getAllByText(expectedCompliance).length).toBeGreaterThan(0);
@@ -190,15 +194,22 @@ describe('ExporterResults', () => {
     );
 
     const statusCard = findCardByTitle(/Case At A Glance/i);
-    const verifiedLabel = within(statusCard).getByText(/^Verified$/i);
-    const warningsLabel = within(statusCard).getByText(/^Warnings$/i);
-    expect(verifiedLabel.previousElementSibling?.textContent).toBe('4');
-    expect(warningsLabel.previousElementSibling?.textContent).toBe('2');
+    expect(getMetricValueFromCard(statusCard, /^Verified$/i)).toBe('4');
+    expect(getMetricValueFromCard(statusCard, /^Warnings$/i)).toBe('2');
 
     await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
-    const documentsPanel = screen.getByRole('tabpanel', { name: /documents/i });
-    expect(within(documentsPanel).getAllByText('Verified')).toHaveLength(4);
-    expect(within(documentsPanel).getAllByText('With Warnings')).toHaveLength(2);
+    const structuredReadCards = mockValidationResults.documents.filter((doc) => doc.status === 'success');
+    const warningCards = mockValidationResults.documents.filter((doc) => doc.status === 'warning');
+    expect(
+      structuredReadCards.filter((doc) =>
+        within(findCardByTitle(new RegExp(`^${doc.name.replace('.', '\\.')}$`, 'i'))).queryAllByText('Structured read complete').length > 0,
+      ),
+    ).toHaveLength(4);
+    expect(
+      warningCards.filter((doc) =>
+        within(findCardByTitle(new RegExp(`^${doc.name.replace('.', '\\.')}$`, 'i'))).queryAllByText('Extraction needs review').length > 0,
+      ),
+    ).toHaveLength(2);
   });
 
   it('keeps issue counts aligned when summary totals are stale', async () => {
@@ -295,16 +306,13 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument(),
     );
 
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getAllByText(/Ready for presentation/i).length).toBeGreaterThan(0);
-    expect(within(customsPanel).queryByText(/Not ready for presentation/i)).toBeNull();
-    expect(
-      within(customsPanel).getByText(/Submission readiness follows backend validation eligibility/i),
-    ).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Shared presentation truth/i)).toBeInTheDocument();
   });
 
   it('renders structured review-finding cards in the issues tab when checklist review stays open without discrepancy cards', async () => {
@@ -378,9 +386,11 @@ describe('ExporterResults', () => {
     await user.click(screen.getByRole('tab', { name: /Issues \(1\)/i }));
     expect(screen.getByText(/No formal discrepancy cards were generated, but unresolved review findings still need operator attention/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^Review Findings$/i })).toBeInTheDocument();
+    expect(screen.getByText(/Current state/i)).toBeInTheDocument();
+    expect(screen.getByText(/Expected state/i)).toBeInTheDocument();
     expect(screen.getByText(/Why it matters/i)).toBeInTheDocument();
     expect(screen.getByText(/Evidence \/ basis/i)).toBeInTheDocument();
-    expect(screen.getByText(/Recommended action/i)).toBeInTheDocument();
+    expect(screen.getByText(/How to fix/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Source packing list does not clearly show a document date\./i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Source basis: Source document content review/i)).toBeInTheDocument();
   });
@@ -450,20 +460,17 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/What To Do Next/i)).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /What To Do Next/i })).toBeInTheDocument(),
     );
 
     const nextStepsCard = findCardByTitle(/What To Do Next/i);
     expect(within(nextStepsCard).getByText(/Why it matters/i)).toBeInTheDocument();
-    expect(within(nextStepsCard).getByText(/Evidence \/ basis/i)).toBeInTheDocument();
-    expect(within(nextStepsCard).getByText(/Recommended action/i)).toBeInTheDocument();
+    expect(within(nextStepsCard).getByText(/How to fix/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
-    expect(within(customsPanel).getByText(/Action Queue/i)).toBeInTheDocument();
-    expect(within(customsPanel).getByText(/Why it matters/i)).toBeInTheDocument();
-    expect(within(customsPanel).getByText(/Evidence \/ basis/i)).toBeInTheDocument();
-    expect(within(customsPanel).getByText(/Recommended action/i)).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Presentation Work Queue/i)).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Use the Issues tab for full evidence, citations, and remediation detail/i)).toBeInTheDocument();
   });
 
   it('separates requirement coverage from review readiness in checklist rows', async () => {
@@ -490,14 +497,13 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/LC Requirement Coverage/i)).toBeInTheDocument(),
     );
 
-    const checklistCard = findCardByTitle(/Required Document Checklist/i);
-    expect(within(checklistCard).getByText(/Requirement: Matched/i)).toBeInTheDocument();
-    expect(within(checklistCard).getByText(/Review: Review required/i)).toBeInTheDocument();
-    expect(within(checklistCard).getByText(/Requirement: Missing/i)).toBeInTheDocument();
-    expect(within(checklistCard).getByText(/Review: Awaiting document/i)).toBeInTheDocument();
+    const checklistCard = findCardByTitle(/LC Requirement Coverage/i);
+    expect(within(checklistCard).getAllByText(/Covered/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Needs review/i).length).toBeGreaterThan(0);
+    expect(within(checklistCard).getAllByText(/Missing upload/i).length).toBeGreaterThan(0);
   });
 
   it('builds checklist rows from canonical MT required document types and keeps export lc label', async () => {
@@ -534,13 +540,13 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/LC Requirement Coverage/i)).toBeInTheDocument(),
     );
 
     expect(screen.getAllByText(/Export LC/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Workflow: Export LC/i)).toBeInTheDocument();
     expect(screen.getByText(/Instrument: Documentary Credit/i)).toBeInTheDocument();
-    const checklistCard = findCardByTitle(/Required Document Checklist/i);
+    const checklistCard = findCardByTitle(/LC Requirement Coverage/i);
     expect(within(checklistCard).getAllByText(/Commercial Invoice/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).getAllByText(/Ocean Bill of Lading/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).getAllByText(/Packing List/i).length).toBeGreaterThan(0);
@@ -611,10 +617,10 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/LC Requirement Coverage/i)).toBeInTheDocument(),
     );
 
-    const checklistCard = findCardByTitle(/Required Document Checklist/i);
+    const checklistCard = findCardByTitle(/LC Requirement Coverage/i);
     expect(within(checklistCard).getAllByText(/Beneficiary Certificate/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).queryByText(/Required Document 1/i)).toBeNull();
     expect(within(checklistCard).queryByText(/Other Specified Document/i)).toBeNull();
@@ -662,7 +668,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
@@ -672,7 +678,7 @@ describe('ExporterResults', () => {
     expect(screen.getByText(/Issue Date/i)).toBeInTheDocument();
     expect(screen.getByText('2026-04-15')).toBeInTheDocument();
     expect(screen.getAllByText(/Required Documents/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND MANUFACTURED IN 2026\./i)).toBeInTheDocument();
+    expect(screen.getAllByText(/BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND MANUFACTURED IN 2026\./i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/B\/L Number/i)).toBeNull();
     expect(screen.queryByText(/^MADE$/i)).toBeNull();
   });
@@ -728,7 +734,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument(),
     );
 
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
@@ -768,12 +774,12 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/LC Requirement Coverage/i)).toBeInTheDocument(),
     );
 
     expect(screen.getByText(/Workflow: Export LC/i)).toBeInTheDocument();
     expect(screen.getByText(/Instrument: Standby Letter of Credit/i)).toBeInTheDocument();
-    const checklistCard = findCardByTitle(/Required Document Checklist/i);
+    const checklistCard = findCardByTitle(/LC Requirement Coverage/i);
     expect(within(checklistCard).getAllByText(/Commercial Invoice/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).getAllByText(/Beneficiary (Certificate|Statement)/i).length).toBeGreaterThan(0);
     expect(within(checklistCard).getAllByText(/Insurance Certificate/i).length).toBeGreaterThan(0);
@@ -796,7 +802,7 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/LC Requirement Coverage/i)).toBeInTheDocument(),
     );
 
     expect(screen.queryByText(/Workflow: Export LC/i)).not.toBeInTheDocument();
@@ -822,10 +828,10 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Action Engine/i)).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /What To Do Next/i })).toBeInTheDocument(),
     );
 
-    const actionCard = findCardByTitle(/Action Engine/i);
+    const actionCard = findCardByTitle(/What To Do Next/i);
     expect(within(actionCard).getByText(/Route Potential sanctions match to internal compliance review/i)).toBeInTheDocument();
     expect(within(actionCard).getByText(/keep submission on hold until cleared/i)).toBeInTheDocument();
   });
@@ -841,7 +847,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument(),
     );
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
@@ -884,7 +890,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Document Statistics/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Case At A Glance/i)).toBeInTheDocument(),
     );
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
@@ -976,7 +982,7 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
@@ -985,7 +991,7 @@ describe('ExporterResults', () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /Issues/i }));
-    expect(screen.getByText(structuredOnly.issues[0]?.title ?? 'Review Required')).toBeInTheDocument();
+    expect(screen.getAllByText(structuredOnly.issues[0]?.title ?? 'Review Required').length).toBeGreaterThan(0);
   });
 
   it('shows success state when there are no issues', async () => {
@@ -1112,7 +1118,7 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Document Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/LC Requirement Coverage/i)).toBeInTheDocument(),
     );
 
     expect(screen.getAllByText(/Source invoice does not show an invoice date/i).length).toBeGreaterThan(0);

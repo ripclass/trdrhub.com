@@ -2110,6 +2110,8 @@ async def validate_doc(
             "auto": lc_type_guess,
             "lc_type": lc_type,
             "source": lc_type_source,
+            "confidence_mode": lc_type_guess.get("confidence_mode"),
+            "detection_basis": lc_type_guess.get("detection_basis"),
         }
         logger.info(
             "LC type detection: auto=%s override=%s final=%s confidence=%.2f reason=%s",
@@ -2175,6 +2177,8 @@ async def validate_doc(
                     "reason": lc_type_reason,
                     "is_draft": is_draft_lc,
                     "source": lc_type_source,
+                    "confidence_mode": lc_type_guess.get("confidence_mode"),
+                    "detection_basis": lc_type_guess.get("detection_basis"),
                 },
                 "message": dashboard_lc_mismatch["message"],
                 "action_required": dashboard_lc_mismatch["action"],
@@ -2213,6 +2217,8 @@ async def validate_doc(
                     "reason": lc_type_reason,
                     "is_draft": is_draft_lc,
                     "source": lc_type_source,
+                    "confidence_mode": lc_type_guess.get("confidence_mode"),
+                    "detection_basis": lc_type_guess.get("detection_basis"),
                 },
                 "lc_summary": lc_summary,
                 "required_document_types": required_document_types,
