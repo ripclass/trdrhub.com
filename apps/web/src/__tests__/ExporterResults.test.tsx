@@ -161,13 +161,12 @@ describe('ExporterResults', () => {
     expect(expectedValueNodes[0]).toBeInTheDocument();
     expect(actualValueNodes[0]).toBeInTheDocument();
 
-    const summaryCard = findCardByTitle(/Issue Review Summary/i);
-    const criticalLabel = within(summaryCard).getByText(/High-likelihood discrepancy/i);
-    const majorLabel = within(summaryCard).getByText(/Likely discrepancy/i);
-    const minorLabel = within(summaryCard).getByText(/^Review required$/i);
-    expect(criticalLabel.nextElementSibling?.textContent).toBe(expectedSeverityCounts.critical.toString());
-    expect(majorLabel.nextElementSibling?.textContent).toBe(expectedSeverityCounts.major.toString());
-    expect(minorLabel.nextElementSibling?.textContent).toBe(expectedSeverityCounts.minor.toString());
+    const noteCard = findCardByTitle(/Overall Validation Note/i);
+    expect(within(noteCard).getByText(/^Discrepancy findings$/i)).toBeInTheDocument();
+    expect(within(noteCard).getByText(/^Total findings$/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(`High-likelihood \\(${expectedSeverityCounts.critical}\\)`, 'i') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(`Likely \\(${expectedSeverityCounts.major}\\)`, 'i') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(`Review required \\(${expectedSeverityCounts.minor}\\)`, 'i') })).toBeInTheDocument();
 
     const severityBadge = screen.getByTestId('severity-issue-1');
     expect(severityBadge.dataset.icon).toBe('critical');
@@ -219,9 +218,9 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: /Issues \(3\)/i }));
     expect(screen.getAllByTestId(/issue-card-/)).toHaveLength(3);
-    const summaryCard = findCardByTitle(/Issue Review Summary/i);
-    const totalIssuesLabel = within(summaryCard).getByText(/Total Issues/i);
-    expect(totalIssuesLabel.nextElementSibling?.textContent).toBe('3');
+    const noteCard = findCardByTitle(/Overall Validation Note/i);
+    const totalFindingsLabel = within(noteCard).getByText(/Total findings/i);
+    expect(totalFindingsLabel.nextElementSibling?.textContent).toBe('3');
   });
 
   it('keeps customs readiness aligned between overview and customs tab', async () => {
@@ -377,8 +376,8 @@ describe('ExporterResults', () => {
     );
 
     await user.click(screen.getByRole('tab', { name: /Issues \(1\)/i }));
-    expect(screen.getByText(/Review findings still need attention/i)).toBeInTheDocument();
-    expect(screen.getByText(/Review Findings Workspace/i)).toBeInTheDocument();
+    expect(screen.getByText(/No formal discrepancy cards were generated, but unresolved review findings still need operator attention/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Review Findings$/i })).toBeInTheDocument();
     expect(screen.getByText(/Why it matters/i)).toBeInTheDocument();
     expect(screen.getByText(/Evidence \/ basis/i)).toBeInTheDocument();
     expect(screen.getByText(/Recommended action/i)).toBeInTheDocument();
@@ -963,8 +962,8 @@ describe('ExporterResults', () => {
     expect(screen.getByRole('tab', { name: /Issues \(1\)/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /Issues \(1\)/i }));
-    expect(screen.getByText(/Review findings still need attention/i)).toBeInTheDocument();
-    expect(screen.queryByText(/No documentary discrepancies or review items are open/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/No formal discrepancy cards were generated, but unresolved review findings still need operator attention/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No documentary discrepancies, review findings, or compliance alerts are open for this run/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Complete review for Commercial Invoice/i).length).toBeGreaterThan(0);
   });
 
@@ -1008,7 +1007,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await user.click(screen.getByRole('tab', { name: /Issues/i }));
-    expect(screen.getByText(/No documentary discrepancies or review items are open/i)).toBeInTheDocument();
+    expect(screen.getByText(/No documentary discrepancies, review findings, or compliance alerts are open for this run/i)).toBeInTheDocument();
   });
 
   it('renders non-required insurance uploads as informational instead of failed requirement coverage', async () => {

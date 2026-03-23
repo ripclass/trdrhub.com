@@ -4,9 +4,9 @@
  */
 
 import { ReactNode, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ShieldAlert, ShieldCheck, FileWarning } from "lucide-react";
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 import { ReviewFindingCard, type ReviewFindingCardData } from "@/components/exporter/ReviewFindingCard";
 import { type EmailDraftContext } from "@/components/exporter/HowToFixSection";
@@ -52,7 +52,7 @@ const BUCKETS = [
 const renderReviewFindingCards = (reviewFindings: ReviewFindingCardData[]) => (
   <section className="space-y-3">
     <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-      Review Findings Workspace
+      Review Findings
     </h3>
     <div className="space-y-4">
       {reviewFindings.map((finding) => (
@@ -68,7 +68,6 @@ export function IssuesTab({
   filteredIssueCards,
   reviewFindings,
   severityCounts,
-  laneCounts,
   issueFilter,
   setIssueFilter,
   documentStatusMap,
@@ -95,6 +94,11 @@ export function IssuesTab({
 
     return { documentary, complianceRisk };
   }, [filteredIssueCards]);
+  const totalComplianceAlerts = useMemo(
+    () => issueCards.filter((card) => ((card as any).bucket || "Document-Level Discrepancies") === "Compliance / Risk Review").length,
+    [issueCards],
+  );
+  const totalDiscrepancyFindings = useMemo(() => Math.max(issueCards.length - totalComplianceAlerts, 0), [issueCards, totalComplianceAlerts]);
 
   const reviewFindingCounts = useMemo<SeverityCounts>(
     () =>
@@ -108,185 +112,192 @@ export function IssuesTab({
       ),
     [reviewFindings],
   );
+  const overallValidationNote = useMemo(() => {
+    if (issueCards.length === 0 && reviewFindings.length === 0) {
+      return {
+        tone: "success" as const,
+        title: "Overall Validation Note",
+        summary: "No documentary discrepancies, review findings, or compliance alerts are open for this run.",
+        nextStep: "The submitted document set appears in order for the checks performed in this validation run.",
+        Icon: ShieldCheck,
+      };
+    }
 
-  if (!hasIssueCards && reviewFindings.length === 0) {
-    return (
-      <>
-        <Card className="border border-success/40 bg-success/5 text-success">
-          <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
-            <ShieldCheck className="w-8 h-8" />
-              <div>
-              <p className="text-lg font-semibold">No documentary discrepancies or review items are open.</p>
-              <p className="text-sm text-success/80">
-                This validation run did not generate any discrepancy cards or checklist review findings.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        {renderAIInsightsCard()}
-        {renderReferenceIssuesCard()}
-      </>
-    );
-  }
+    if (issueCards.length === 0 && reviewFindings.length > 0) {
+      return {
+        tone: "warning" as const,
+        title: "Overall Validation Note",
+        summary: "No formal discrepancy cards were generated, but unresolved review findings still need operator attention before this set should be treated as clean.",
+        nextStep: "Work through the review findings below and confirm whether each item is a source-document gap, extraction uncertainty, or policy review step.",
+        Icon: AlertTriangle,
+      };
+    }
 
-  if (!hasIssueCards && reviewFindings.length > 0) {
-    return (
-      <>
-        <Card className="shadow-soft border border-warning/40 bg-warning/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base text-warning">
-              <AlertTriangle className="w-5 h-5" />
-              Review findings still need attention
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              This run did not create formal discrepancy cards, but unresolved checklist review items still prevent the document set from being treated as clean.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-4">
-              <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Blocking review items</p>
-                <p className="text-2xl font-bold text-destructive">{reviewFindingCounts.critical}</p>
-              </div>
-              <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Review required</p>
-                <p className="text-2xl font-bold text-warning">{reviewFindingCounts.major}</p>
-              </div>
-              <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Compliance alerts</p>
-                <p className="text-2xl font-bold text-foreground">{laneCounts.compliance}</p>
-              </div>
-              <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total review findings</p>
-                <p className="text-2xl font-bold text-foreground">{reviewFindings.length}</p>
-              </div>
-            </div>
+    if (totalComplianceAlerts > 0 && totalDiscrepancyFindings === 0) {
+      return {
+        tone: "warning" as const,
+        title: "Overall Validation Note",
+        summary: "Compliance alerts were generated for this run and need internal review before the case should be treated as submission-ready.",
+        nextStep: reviewFindings.length > 0
+          ? "Resolve the review findings below and route the compliance alerts for disposition."
+          : "Route the compliance alerts below and document the disposition before proceeding.",
+        Icon: ShieldAlert,
+      };
+    }
 
-            <div className="space-y-3">
-              {renderReviewFindingCards(reviewFindings)}
-            </div>
-          </CardContent>
-        </Card>
-        {renderAIInsightsCard()}
-        {renderReferenceIssuesCard()}
-      </>
-    );
-  }
+    return {
+      tone: "warning" as const,
+      title: "Overall Validation Note",
+      summary: reviewFindings.length > 0
+        ? "Documentary discrepancies and review findings are both open for this run."
+        : "Documentary discrepancies were generated in this run and should be resolved before submission.",
+      nextStep: reviewFindings.length > 0
+        ? "Resolve the discrepancy findings below first, then clear the remaining review findings before treating the case as clean."
+        : "Resolve the discrepancy findings below before treating the case as ready for submission.",
+      Icon: FileWarning,
+    };
+  }, [issueCards.length, reviewFindings.length, totalComplianceAlerts, totalDiscrepancyFindings]);
+  const noteToneClass =
+    overallValidationNote.tone === "success"
+      ? "border-success/40 bg-success/5 text-success"
+      : "border-warning/40 bg-warning/5";
 
   return (
     <>
-      <Card className="shadow-soft border border-border/60">
+      <Card className={`shadow-soft ${noteToneClass}`}>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Issue Review Summary</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Documentary findings are separated from compliance/risk alerts. Resolve documentary discrepancies before presentation and route compliance alerts to internal review instead of treating them as ordinary LC discrepancies.
-          </p>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <overallValidationNote.Icon className={overallValidationNote.tone === "success" ? "w-5 h-5 text-success" : "w-5 h-5 text-warning"} />
+            {overallValidationNote.title}
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">{overallValidationNote.summary}</p>
+          <p className="text-sm text-muted-foreground">{overallValidationNote.nextStep}</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-4">
             <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">High-likelihood discrepancy</p>
-              <p className="text-2xl font-bold text-destructive">{severityCounts.critical}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Discrepancy findings</p>
+              <p className="text-2xl font-bold text-destructive">{totalDiscrepancyFindings}</p>
             </div>
             <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Likely discrepancy</p>
-              <p className="text-2xl font-bold text-warning">{severityCounts.major}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-muted/30 border border-muted">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Review required</p>
-              <p className="text-2xl font-bold text-foreground">{severityCounts.minor}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Review findings</p>
+              <p className="text-2xl font-bold text-warning">{reviewFindings.length}</p>
             </div>
             <div className="p-3 rounded-lg bg-sky-500/5 border border-sky-500/20">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Compliance alerts</p>
-              <p className="text-2xl font-bold text-sky-700">{laneCounts.compliance}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Manual review items</p>
-              <p className="text-2xl font-bold text-violet-700">{laneCounts.manual}</p>
+              <p className="text-2xl font-bold text-sky-700">{totalComplianceAlerts}</p>
             </div>
             <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Issues</p>
-              <p className="text-2xl font-bold text-foreground">{issueCards.length}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total findings</p>
+              <p className="text-2xl font-bold text-foreground">{issueCards.length + reviewFindings.length}</p>
             </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { value: "all" as const, label: `All (${issueCards.length})` },
-              { value: "critical" as const, label: `High-likelihood (${severityCounts.critical})` },
-              { value: "major" as const, label: `Likely (${severityCounts.major})` },
-              { value: "minor" as const, label: `Review required (${severityCounts.minor})` },
-            ].map((option) => (
-              <Button
-                key={option.value}
-                size="sm"
-                variant={issueFilter === option.value ? "default" : "outline"}
-                onClick={() => setIssueFilter(option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
           </div>
         </CardContent>
       </Card>
 
-      {filteredIssueCards.length === 0 ? (
-        <Card className="shadow-soft border border-dashed">
-          <CardContent className="py-6 text-center text-sm text-muted-foreground">
-            No issues match this severity filter.
+      {issueCards.length > 0 && (
+        <Card className="shadow-soft border border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Discrepancy Filter</CardTitle>
+            <CardDescription>
+              Filter formal discrepancy cards by severity. Review findings stay visible separately because they are not discrepancy cards.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: "all" as const, label: `All (${issueCards.length})` },
+                { value: "critical" as const, label: `High-likelihood (${severityCounts.critical})` },
+                { value: "major" as const, label: `Likely (${severityCounts.major})` },
+                { value: "minor" as const, label: `Review required (${severityCounts.minor})` },
+              ].map((option) => (
+                <Button
+                  key={option.value}
+                  size="sm"
+                  variant={issueFilter === option.value ? "default" : "outline"}
+                  onClick={() => setIssueFilter(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
           </CardContent>
         </Card>
-      ) : (
-        <div className="space-y-6">
-          {Array.from(grouped.documentary.entries()).map(([bucket, cards]) => {
-            if (!cards.length) return null;
-            return (
-              <section key={bucket} className="space-y-3">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">{bucket}</h3>
-                {cards.map((card, index) => {
-                  const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
-                  const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
-                  return (
-                    <ExporterIssueCard
-                      key={fallbackId}
-                      issue={card}
-                      normalizedSeverity={normalizedSeverity}
-                      documentStatusMap={documentStatusMap}
-                      fallbackId={fallbackId}
-                      lcNumber={lcNumber}
-                      companyName={companyName}
-                      onDraftEmail={onDraftEmail}
-                    />
-                  );
-                })}
-              </section>
-            );
-          })}
-
-          {grouped.complianceRisk.length > 0 && (
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Compliance / Risk Review</h3>
-              {grouped.complianceRisk.map((card, index) => {
-                const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
-                const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
-                return (
-                  <ExporterIssueCard
-                    key={fallbackId}
-                    issue={card}
-                    normalizedSeverity={normalizedSeverity}
-                    documentStatusMap={documentStatusMap}
-                    fallbackId={fallbackId}
-                    lcNumber={lcNumber}
-                    companyName={companyName}
-                    onDraftEmail={onDraftEmail}
-                  />
-                );
-              })}
-            </section>
-          )}
-
-          {reviewFindings.length > 0 && renderReviewFindingCards(reviewFindings)}
-        </div>
       )}
+
+      <div className="space-y-6">
+        {Array.from(grouped.documentary.values()).some((cards) => cards.length > 0) && (
+          <section className="space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Discrepancy Findings</h3>
+              <p className="text-sm text-muted-foreground">
+                Formal documentary findings backed by rule or discrepancy-card logic.
+              </p>
+            </div>
+            {Array.from(grouped.documentary.entries()).map(([bucket, cards]) => {
+              if (!cards.length) return null;
+              return (
+                <section key={bucket} className="space-y-3">
+                  <h4 className="text-sm font-semibold text-foreground">{bucket}</h4>
+                  {cards.map((card, index) => {
+                    const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
+                    const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
+                    return (
+                      <ExporterIssueCard
+                        key={fallbackId}
+                        issue={card}
+                        normalizedSeverity={normalizedSeverity}
+                        documentStatusMap={documentStatusMap}
+                        fallbackId={fallbackId}
+                        lcNumber={lcNumber}
+                        companyName={companyName}
+                        onDraftEmail={onDraftEmail}
+                      />
+                    );
+                  })}
+                </section>
+              );
+            })}
+          </section>
+        )}
+
+        {reviewFindings.length > 0 && renderReviewFindingCards(reviewFindings)}
+
+        {grouped.complianceRisk.length > 0 && (
+          <section className="space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Compliance Alerts</h3>
+              <p className="text-sm text-muted-foreground">
+                Findings that should be routed through compliance or internal risk review rather than treated as ordinary documentary discrepancies.
+              </p>
+            </div>
+            {grouped.complianceRisk.map((card, index) => {
+              const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
+              const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}`;
+              return (
+                <ExporterIssueCard
+                  key={fallbackId}
+                  issue={card}
+                  normalizedSeverity={normalizedSeverity}
+                  documentStatusMap={documentStatusMap}
+                  fallbackId={fallbackId}
+                  lcNumber={lcNumber}
+                  companyName={companyName}
+                  onDraftEmail={onDraftEmail}
+                />
+              );
+            })}
+          </section>
+        )}
+
+        {filteredIssueCards.length === 0 && issueCards.length > 0 && (
+          <Card className="shadow-soft border border-dashed">
+            <CardContent className="py-6 text-center text-sm text-muted-foreground">
+              No discrepancy cards match this severity filter.
+            </CardContent>
+          </Card>
+        )}
+      </div>
       {renderAIInsightsCard()}
       {renderReferenceIssuesCard()}
     </>
