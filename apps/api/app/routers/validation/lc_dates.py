@@ -40,7 +40,10 @@ def extract_mt700_block_value(payload: Optional[Dict[str, Any]], block_code: str
     if not raw_text:
         return None
 
-    match = re.search(rf"(?im)^\s*:{re.escape(block_code)}:\s*([^\r\n]+)", raw_text)
+    match = re.search(
+        rf"(?im)^\s*:?\s*{re.escape(block_code)}\s*:\s*([^\r\n]+)",
+        raw_text,
+    )
     if not match:
         return None
     value = str(match.group(1) or "").strip()

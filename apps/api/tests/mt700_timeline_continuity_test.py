@@ -26,6 +26,16 @@ MT700_SAMPLE_TEXT = (
     ":44C: 260930\n"
 )
 
+MT700_SAMPLE_TEXT_NO_LEADING_COLON = (
+    "MT700 Export Letter of Credit - MASTER\n"
+    "20: EXP2026BD001\n"
+    "31C: 260415\n"
+    "31D: 261015USA\n"
+    "44E: CHITTAGONG SEA PORT, BANGLADESH\n"
+    "44F: NEW YORK, USA\n"
+    "44C: 260930\n"
+)
+
 
 def _load_launch_pipeline_symbols() -> Dict[str, Any]:
     source = LAUNCH_PIPELINE_PATH.read_text(encoding="utf-8")
@@ -248,6 +258,27 @@ def test_validate_mt700_date_repair_accepts_mt700_raw_block_map() -> None:
     assert repaired["dates"]["latest_shipment"] == "2026-09-30"
 
 
+def test_validate_mt700_date_repair_accepts_raw_text_without_leading_colon_tags() -> None:
+    ns = _load_validate_symbols()
+    repair_lc_mt700_dates = ns["_repair_lc_mt700_dates"]
+
+    repaired = repair_lc_mt700_dates(
+        {
+            "issue_date": "2026-04-15",
+            "expiry_date": "2026-09-30",
+            "latest_shipment_date": "2026-10-15",
+            "raw_text": MT700_SAMPLE_TEXT_NO_LEADING_COLON,
+        }
+    )
+
+    assert repaired["issue_date"] == "2026-04-15"
+    assert repaired["expiry_date"] == "2026-10-15"
+    assert repaired["latest_shipment_date"] == "2026-09-30"
+    assert repaired["latest_shipment"] == "2026-09-30"
+    assert repaired["dates"]["expiry"] == "2026-10-15"
+    assert repaired["dates"]["latest_shipment"] == "2026-09-30"
+
+
 def test_backfill_lc_mt700_sources_uses_extracted_context_lc_text_for_intake_repair() -> None:
     ns = _load_validate_symbols()
     backfill_lc_mt700_sources = ns["backfill_lc_mt700_sources"]
@@ -260,11 +291,11 @@ def test_backfill_lc_mt700_sources_uses_extracted_context_lc_text_for_intake_rep
             "expiry_date": "2026-09-30",
             "latest_shipment_date": "2026-10-15",
         },
-        {"lc_text": MT700_SAMPLE_TEXT},
+        {"lc_text": MT700_SAMPLE_TEXT_NO_LEADING_COLON},
     )
 
-    assert enriched["raw_text"] == MT700_SAMPLE_TEXT.strip()
-    assert enriched["mt700"]["raw_text"] == MT700_SAMPLE_TEXT.strip()
+    assert enriched["raw_text"] == MT700_SAMPLE_TEXT_NO_LEADING_COLON.strip()
+    assert enriched["mt700"]["raw_text"] == MT700_SAMPLE_TEXT_NO_LEADING_COLON.strip()
 
     repaired = repair_lc_mt700_dates(enriched)
     summary = build_lc_intake_summary(repaired)
