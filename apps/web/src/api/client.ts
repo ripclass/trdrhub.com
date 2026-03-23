@@ -271,7 +271,7 @@ api.interceptors.response.use(
         // CSRF token error - try to refresh token and retry
         const { fetchCsrfToken } = await import('@/lib/csrf')
         try {
-          const newToken = await fetchCsrfToken(API_BASE_URL_VALUE)
+          const newToken = await fetchCsrfToken(API_BASE_URL_VALUE, { forceRefresh: true })
           // Retry the original request
           const config = error.config
           if (config && newToken) {
