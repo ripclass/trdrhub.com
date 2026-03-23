@@ -7,6 +7,17 @@ import { renderWithProviders } from './testUtils';
 
 vi.mock('@/hooks/use-lcopilot', () => {
   return {
+    useCanonicalJobResult: () => ({
+      results: mockValidationResults,
+      resultsJobId: 'session',
+      isLoadingResults: false,
+      resultsError: null,
+      refreshResults: vi.fn(),
+      jobStatus: { status: 'completed' },
+      isPolling: false,
+      isFinalizingResults: false,
+      terminalResultsTimedOut: false,
+    }),
     useJob: () => ({
       jobStatus: { status: 'completed' },
       isPolling: false,
@@ -67,13 +78,14 @@ describe('Document cards', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Export Processing Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
     await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
 
     const invoiceCard = screen.getByText('Invoice.pdf');
     expect(invoiceCard).toBeInTheDocument();
     expect(screen.getByText(/Commercial Invoice/i)).toBeInTheDocument();
-    expect(screen.getByText(/Minor Issues/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/LC requirement match/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Current review status/i).length).toBeGreaterThan(0);
   });
 });

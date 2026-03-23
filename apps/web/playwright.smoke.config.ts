@@ -19,7 +19,7 @@ export default defineConfig({
   reporter: 'list',
   
   use: {
-    baseURL: process.env.BASE_URL || 'http://localhost:5173',
+    baseURL: process.env.BASE_URL || 'http://localhost:3000',
     trace: 'off',
     screenshot: 'off',
     video: 'off',
@@ -39,7 +39,7 @@ export default defineConfig({
   // Auto-start dev server
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5173',
+    url: 'http://localhost:3000',
     reuseExistingServer: true,
     timeout: 120000,
   },

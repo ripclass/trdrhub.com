@@ -48,6 +48,7 @@ const AUTH_FREE_PATHS = ['/auth/login', '/auth/register']
 
 const DEFAULT_TIMEOUT_MS = 30000
 const LONG_REQUEST_TIMEOUT_MS = 300000 // 5 minutes for large uploads
+const SESSION_FETCH_TIMEOUT_MS = 3000
 const LONG_REQUEST_PATHS = [
   '/api/validate', 
   '/api/legacy_validate', 
@@ -61,6 +62,71 @@ const api = axios.create({
   timeout: DEFAULT_TIMEOUT_MS,
   withCredentials: true, // Include cookies for CSRF token
 })
+
+type StoredSupabaseSession = {
+  access_token?: string
+  expires_at?: number
+}
+
+const getStoredSupabaseAccessToken = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const candidateKeys = new Set<string>()
+  const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_REF
+  if (projectRef) {
+    candidateKeys.add(`sb-${projectRef}-auth-token`)
+  }
+
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+      candidateKeys.add(key)
+    }
+  }
+
+  for (const key of candidateKeys) {
+    const raw = localStorage.getItem(key)
+    if (!raw) continue
+
+    try {
+      const parsed = JSON.parse(raw) as StoredSupabaseSession
+      const accessToken = parsed?.access_token
+      const expiresAt = Number(parsed?.expires_at ?? 0)
+      const hasFreshExpiry =
+        Number.isFinite(expiresAt) && expiresAt > Math.floor(Date.now() / 1000) + 30
+
+      if (accessToken && (hasFreshExpiry || !expiresAt)) {
+        return accessToken
+      }
+    } catch {
+      // Ignore malformed localStorage entries and continue scanning.
+    }
+  }
+
+  return null
+}
+
+const getSupabaseAccessToken = async (): Promise<string | null> => {
+  const storedToken = getStoredSupabaseAccessToken()
+  if (storedToken) {
+    return storedToken
+  }
+
+  try {
+    const { data } = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Session check timeout')), SESSION_FETCH_TIMEOUT_MS),
+      ),
+    ])
+
+    return (data as { session?: { access_token?: string | null } })?.session?.access_token || getStoredSupabaseAccessToken()
+  } catch (error) {
+    console.warn('Supabase session lookup timed out; falling back to stored token.', error)
+    return getStoredSupabaseAccessToken()
+  }
+}
 
 api.interceptors.request.use(
   async (config) => {
@@ -97,13 +163,11 @@ api.interceptors.request.use(
           token = apiToken
         } else {
           // Fallback to Supabase token if backend token not available
-          const session = await supabase.auth.getSession()
-          token = session.data.session?.access_token || null
+          token = await getSupabaseAccessToken()
         }
       } else {
-        // For non-admin endpoints, try Supabase first, then backend token
-        const session = await supabase.auth.getSession()
-        token = session.data.session?.access_token || null
+        // For non-admin endpoints, use the fastest valid Supabase token path first.
+        token = await getSupabaseAccessToken()
         
         if (!token) {
           const apiToken = localStorage.getItem('trdrhub_api_token')
@@ -238,3 +302,7 @@ api.interceptors.response.use(
 
 export { api }
 export const API_BASE_URL = api.defaults.baseURL || API_BASE_URL_VALUE
+export const __internal = {
+  getStoredSupabaseAccessToken,
+  getSupabaseAccessToken,
+}

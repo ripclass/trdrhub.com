@@ -22,10 +22,9 @@ test.describe('Smoke Tests - No Auth Required', () => {
   });
 
   test('login page loads', async ({ page }) => {
-    await page.goto('/login');
-    
-    // Check for login form elements
-    await expect(page.locator('body')).toBeVisible();
+    const response = await page.goto('/login');
+    expect(response?.status()).toBeLessThan(500);
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('exporter upload page loads', async ({ page }) => {

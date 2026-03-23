@@ -193,7 +193,7 @@ export class AuthService {
         cookies: [],
         origins: [
           {
-            origin: process.env.BASE_URL || 'http://localhost:5173',
+            origin: process.env.BASE_URL || 'http://localhost:3000',
             localStorage: [
               {
                 name: 'auth_token',

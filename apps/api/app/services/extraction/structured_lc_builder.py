@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 import ast
 import re
 from typing import Any, Dict, List, Optional
@@ -25,7 +25,7 @@ LEGACY_WORKFLOW_LC_TYPES = {"import", "export", "draft", "unknown"}
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _safe(value: Any, default: Any = None) -> Any:

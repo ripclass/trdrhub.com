@@ -144,6 +144,22 @@ from .ocr_runtime import (
     _try_ocr_providers,
 )
 
+from .request_parsing import (
+    ParsedValidationRequest,
+    bind_shared as bind_request_parsing_shared,
+    extract_lc_type_override,
+    extract_request_user_type,
+    parse_validate_request,
+    resolve_shipment_context,
+    should_force_json_rules,
+)
+
+from .pipeline_runner import (
+    bind_stage_modules,
+    bind_shared as bind_pipeline_runner_shared,
+    run_validate_pipeline,
+)
+
 __all__ = [
     # Utilities
     "severity_rank",
@@ -253,5 +269,16 @@ __all__ = [
     "_extract_text_from_upload",
     "_try_secondary_ocr_adapter",
     "_try_ocr_providers",
+    # Validation run orchestration split
+    "ParsedValidationRequest",
+    "bind_request_parsing_shared",
+    "extract_lc_type_override",
+    "extract_request_user_type",
+    "parse_validate_request",
+    "resolve_shipment_context",
+    "should_force_json_rules",
+    "bind_stage_modules",
+    "bind_pipeline_runner_shared",
+    "run_validate_pipeline",
 ]
 

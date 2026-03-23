@@ -23,7 +23,7 @@ async function globalSetup(config: FullConfig) {
     const page = await context.newPage();
 
     console.log('🌐 Warming up application...');
-    await page.goto(config.projects[0].use?.baseURL || 'http://localhost:5173');
+    await page.goto(config.projects[0].use?.baseURL || 'http://localhost:3000');
 
     // Wait for application to be ready
     await page.waitForSelector('[data-testid="app-ready"]', { timeout: 30000 });
