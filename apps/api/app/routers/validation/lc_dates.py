@@ -26,7 +26,13 @@ def extract_mt700_block_value(payload: Optional[Dict[str, Any]], block_code: str
 
     mt700 = payload.get("mt700") if isinstance(payload.get("mt700"), dict) else {}
     blocks = mt700.get("blocks") if isinstance(mt700.get("blocks"), dict) else {}
+    raw_blocks = mt700.get("raw") if isinstance(mt700.get("raw"), dict) else {}
+    if not raw_blocks and isinstance(payload.get("mt700_raw"), dict):
+        raw_blocks = payload.get("mt700_raw") or {}
     raw_value = blocks.get(block_code)
+    if raw_value not in (None, "", [], {}):
+        return str(raw_value).strip() or None
+    raw_value = raw_blocks.get(block_code)
     if raw_value not in (None, "", [], {}):
         return str(raw_value).strip() or None
 

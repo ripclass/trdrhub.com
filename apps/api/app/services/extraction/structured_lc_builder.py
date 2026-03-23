@@ -169,6 +169,7 @@ def _default_mt700() -> Dict[str, Any]:
     blocks = {
         "27": None,
         "31C": None,
+        "31D": None,
         "40E": None,
         "32B": None,
         "41A": None,
@@ -195,7 +196,13 @@ def _hydrate_mt700_from_extractor_outputs(extractor_outputs: Dict[str, Any]) -> 
     mt700_payload = dict(mt700_source) if isinstance(mt700_source, dict) else {}
     default_blocks = _default_mt700()["blocks"]
     source_blocks = mt700_payload.get("blocks") if isinstance(mt700_payload.get("blocks"), dict) else {}
-    hydrated_blocks: Dict[str, Any] = {key: source_blocks.get(key) for key in default_blocks}
+    source_raw_blocks = mt700_payload.get("raw") if isinstance(mt700_payload.get("raw"), dict) else {}
+    if not source_raw_blocks and isinstance(extractor_outputs.get("mt700_raw"), dict):
+        source_raw_blocks = extractor_outputs.get("mt700_raw") or {}
+    hydrated_blocks: Dict[str, Any] = {
+        key: source_blocks.get(key) if source_blocks.get(key) not in (None, "", [], {}) else source_raw_blocks.get(key)
+        for key in default_blocks
+    }
     raw_text = mt700_payload.get("raw_text") or extractor_outputs.get("raw_text")
 
     for key in default_blocks:
@@ -206,6 +213,9 @@ def _hydrate_mt700_from_extractor_outputs(extractor_outputs: Dict[str, Any]) -> 
             continue
         if mt700_payload.get(key) not in (None, "", [], {}):
             hydrated_blocks[key] = mt700_payload.get(key)
+            continue
+        if source_raw_blocks.get(key) not in (None, "", [], {}):
+            hydrated_blocks[key] = source_raw_blocks.get(key)
 
     # Recover block values from raw SWIFT text when mt700 metadata is sparse.
     if raw_text and all(value in (None, "", [], {}) for value in hydrated_blocks.values()):
@@ -263,10 +273,14 @@ def _extract_mt700_timeline_dates(mt700_payload: Dict[str, Any]) -> Dict[str, An
         return {}
 
     blocks = mt700_payload.get("blocks") if isinstance(mt700_payload.get("blocks"), dict) else {}
+    raw_blocks = mt700_payload.get("raw") if isinstance(mt700_payload.get("raw"), dict) else {}
     raw_text = str(mt700_payload.get("raw_text") or "").strip()
 
     def _block_or_text(block_code: str) -> Optional[str]:
         block_value = blocks.get(block_code)
+        if block_value not in (None, "", [], {}):
+            return str(block_value).strip() or None
+        block_value = raw_blocks.get(block_code)
         if block_value not in (None, "", [], {}):
             return str(block_value).strip() or None
         if not raw_text:
@@ -379,14 +393,19 @@ def build_unified_structured_result(
 
     # Build dates object from extractor outputs
     dates = {
-        "issue": extractor_outputs.get("issue_date") or timeline_meta.get("issue_date") or mt700_timeline_dates.get("issue_date"),
-        "expiry": extractor_outputs.get("expiry_date") or timeline_meta.get("expiry_date") or mt700_timeline_dates.get("expiry_date"),
-        "latest_shipment": extractor_outputs.get("latest_shipment")
+        "issue": mt700_timeline_dates.get("issue_date")
+        or extractor_outputs.get("issue_date")
+        or timeline_meta.get("issue_date"),
+        "expiry": mt700_timeline_dates.get("expiry_date")
+        or extractor_outputs.get("expiry_date")
+        or timeline_meta.get("expiry_date"),
+        "latest_shipment": mt700_timeline_dates.get("latest_shipment_date")
+        or extractor_outputs.get("latest_shipment")
         or extractor_outputs.get("latest_shipment_date")
         or timeline_meta.get("latest_shipment")
-        or timeline_meta.get("latest_shipment_date")
-        or mt700_timeline_dates.get("latest_shipment_date"),
-        "place_of_expiry": extractor_outputs.get("place_of_expiry") or mt700_timeline_dates.get("place_of_expiry"),
+        or timeline_meta.get("latest_shipment_date"),
+        "place_of_expiry": mt700_timeline_dates.get("place_of_expiry")
+        or extractor_outputs.get("place_of_expiry"),
     }
     # Filter out None values from dates
     dates = {k: v for k, v in dates.items() if v is not None}

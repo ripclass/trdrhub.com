@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 
 _SHARED_NAMES = ['Any', 'AuditAction', 'AuditResult', 'AuditService', 'Company', 'CompanyStatus', 'ComplianceScorer', 'CrossDocValidator', 'Decimal', 'Depends', 'Dict', 'Document', 'EntitlementError', 'EntitlementService', 'HTTPException', 'IssueEngine', 'LCType', 'List', 'Optional', 'PlanType', 'Request', 'Session', 'SessionStatus', 'UsageAction', 'User', 'ValidationGate', 'ValidationSessionService', '_apply_cycle2_runtime_recovery', '_augment_doc_field_details_with_decisions', '_augment_issues_with_field_decisions', '_backfill_hybrid_secondary_surfaces', '_build_bank_submission_verdict', '_build_blocked_structured_result', '_build_day1_relay_debug', '_build_document_context', '_build_document_extraction_v1', '_build_document_summaries', '_build_extraction_core_bundle', '_build_issue_dedup_key', '_build_issue_provenance_v1', '_build_lc_baseline_from_context', '_build_lc_intake_summary', '_build_processing_summary', '_build_processing_summary_v2', '_build_submission_eligibility_context', '_build_validation_contract', '_coerce_text_list', '_compute_invoice_amount_bounds', '_count_issue_severity', '_determine_company_size', '_empty_extraction_artifacts_v1', '_extract_field_decisions_from_payload', '_extract_intake_only', '_extract_lc_type_override', '_extract_request_user_type', '_extract_workflow_lc_type', '_infer_required_document_types_from_lc', '_normalize_lc_payload_structures', '_prepare_extractor_outputs_for_structured_result', '_resolve_shipment_context', '_response_shaping', '_run_validation_arbitration_escalation', '_sync_structured_result_collections', 'adapt_from_structured_result', 'apply_bank_policy', 'batch_lookup_descriptions', 'build_customs_manifest_from_option_e', 'build_issue_cards', 'build_lc_classification', 'build_unified_structured_result', 'calculate_overall_extraction_confidence', 'calculate_total_amendment_cost', 'compute_customs_risk_from_option_e', 'context', 'copy', 'country_str', 'create_audit_context', 'detect_bank_from_lc', 'detect_lc_type', 'detect_lc_type_ai', 'enforce_day1_response_contract', 'extract_requirement_conditions', 'extract_unmapped_requirements', 'func', 'generate_amendments_for_issues', 'get_bank_profile', 'get_db', 'get_user_optional', 'json', 'logger', 'logging', 'name', 'normalize_required_documents', 'parse_lc_requirements_sync_v2', 'record_usage_manual', 'ref', 'run_ai_validation', 'run_price_verification_checks', 'run_sanctions_screening_for_validation', 'settings', 'status', 'time', 'traceback', 'uuid4', 'validate_and_annotate_response', 'validate_doc', 'validate_document_async', 'validate_document_set_completeness', 'validate_upload_file']
+
+SANCTIONS_TIMEOUT_SECONDS = 25.0
+ARBITRATION_TIMEOUT_SECONDS = 15.0
+USAGE_RECORD_TIMEOUT_SECONDS = 10.0
 
 
 def _shared_get(shared: Any, name: str) -> Any:
@@ -23,6 +28,18 @@ def bind_shared(shared: Any) -> None:
             namespace[name] = _shared_get(shared, name)
         except (KeyError, AttributeError):
             continue
+
+
+async def _await_with_timeout(stage_label: str, coro, timeout_seconds: float, default: Any):
+    try:
+        return await asyncio.wait_for(coro, timeout_seconds), False
+    except asyncio.TimeoutError:
+        logger.warning(
+            "%s timed out after %.1fs; continuing with degraded fallback",
+            stage_label,
+            timeout_seconds,
+        )
+        return default, True
 
 
 async def finalize_validation_result(
@@ -52,6 +69,7 @@ async def finalize_validation_result(
     bank_profile = execution_state["bank_profile"]
     requirement_graph = execution_state["requirement_graph"]
     extraction_confidence_summary = execution_state["extraction_confidence_summary"]
+    ai_validation_summary = execution_state.get("ai_validation_summary")
     request_user_type = execution_state["request_user_type"]
     results = execution_state["results"]
     failed_results = execution_state["failed_results"]
@@ -80,6 +98,8 @@ async def finalize_validation_result(
             legacy_payload=None,
         )
         structured_result = option_e_payload["structured_result"]
+        if isinstance(ai_validation_summary, dict):
+            structured_result["ai_validation"] = ai_validation_summary
         checkpoint("structured_result_built")
     except Exception as e:
         import traceback
@@ -320,9 +340,26 @@ async def finalize_validation_result(
     try:
         current_issues = structured_result.get("issues") or []
 
-        updated_issues, sanctions_should_block, sanctions_summary = await run_sanctions_screening_for_validation(
-            payload=payload,
-            existing_issues=current_issues,
+        (
+            updated_issues,
+            sanctions_should_block,
+            sanctions_summary,
+        ), sanctions_timed_out = await _await_with_timeout(
+            "Sanctions screening",
+            run_sanctions_screening_for_validation(
+                payload=payload,
+                existing_issues=current_issues,
+            ),
+            SANCTIONS_TIMEOUT_SECONDS,
+            (
+                current_issues,
+                False,
+                {
+                    "screened": False,
+                    "timed_out": True,
+                    "error": "sanctions screening timed out",
+                },
+            ),
         )
 
         # Update issues with sanctions results
@@ -330,6 +367,8 @@ async def finalize_validation_result(
 
         # Add sanctions summary to result
         structured_result["sanctions_screening"] = sanctions_summary
+        if sanctions_timed_out and isinstance(structured_result["sanctions_screening"], dict):
+            structured_result["sanctions_screening"]["timed_out"] = True
 
         if sanctions_should_block:
             logger.warning(
@@ -715,12 +754,20 @@ async def finalize_validation_result(
             structured_result.get("effective_submission_eligibility") or structured_result.get("submission_eligibility") or {},
             issues=structured_result.get("issues") or [],
         )
-        structured_result["validation_contract_v1"] = await _run_validation_arbitration_escalation(
+        contract_payload, arbitration_timed_out = await _await_with_timeout(
+            "Validation arbitration escalation",
+            _run_validation_arbitration_escalation(
+                structured_result.get("validation_contract_v1") or {},
+                structured_result.get("ai_validation") or {},
+                bank_verdict,
+                structured_result.get("effective_submission_eligibility") or structured_result.get("submission_eligibility") or {},
+            ),
+            ARBITRATION_TIMEOUT_SECONDS,
             structured_result.get("validation_contract_v1") or {},
-            structured_result.get("ai_validation") or {},
-            bank_verdict,
-            structured_result.get("effective_submission_eligibility") or structured_result.get("submission_eligibility") or {},
         )
+        structured_result["validation_contract_v1"] = contract_payload
+        if arbitration_timed_out and isinstance(structured_result["validation_contract_v1"], dict):
+            structured_result["validation_contract_v1"]["timed_out"] = True
     except Exception as contract_err:
         logger.warning("Failed to build Phase A contracts: %s", contract_err, exc_info=True)
 
@@ -778,21 +825,28 @@ async def finalize_validation_result(
     if current_user and hasattr(current_user, 'company_id') and current_user.company_id:
         try:
             doc_count = len(payload.get("files", [])) if isinstance(payload.get("files"), list) else len(files_list)
-            await record_usage_manual(
-                db=db,
-                company_id=current_user.company_id,
-                user_id=current_user.id if hasattr(current_user, 'id') else None,
-                operation="lc_validation",
-                tool="lcopilot",
-                quantity=1,  # One validation session
-                log_data={
-                    "job_id": str(job_id),
-                    "document_count": doc_count,
-                    "rules_evaluated": len(results),
-                    "discrepancies": len(failed_results),
-                },
-                description=f"LC validation: {doc_count} documents, {len(failed_results)} issues"
+            _, usage_record_timed_out = await _await_with_timeout(
+                "Usage recording",
+                record_usage_manual(
+                    db=db,
+                    company_id=current_user.company_id,
+                    user_id=current_user.id if hasattr(current_user, 'id') else None,
+                    operation="lc_validation",
+                    tool="lcopilot",
+                    quantity=1,  # One validation session
+                    log_data={
+                        "job_id": str(job_id),
+                        "document_count": doc_count,
+                        "rules_evaluated": len(results),
+                        "discrepancies": len(failed_results),
+                    },
+                    description=f"LC validation: {doc_count} documents, {len(failed_results)} issues"
+                ),
+                USAGE_RECORD_TIMEOUT_SECONDS,
+                None,
             )
+            if usage_record_timed_out:
+                logger.warning("Usage tracking timed out for validation job %s", job_id)
         except Exception as usage_err:
             logger.warning(f"Failed to track usage: {usage_err}")
 

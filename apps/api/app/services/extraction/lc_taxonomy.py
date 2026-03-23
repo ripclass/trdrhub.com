@@ -579,10 +579,16 @@ def _coerce_mt700_date_iso(value: Any) -> Optional[str]:
 def _extract_mt700_date_attributes(source: Dict[str, Any]) -> Dict[str, Optional[str]]:
     mt700 = source.get("mt700") if isinstance(source.get("mt700"), dict) else {}
     blocks = mt700.get("blocks") if isinstance(mt700.get("blocks"), dict) else {}
+    raw_blocks = mt700.get("raw") if isinstance(mt700.get("raw"), dict) else {}
+    if not raw_blocks and isinstance(source.get("mt700_raw"), dict):
+        raw_blocks = source.get("mt700_raw") or {}
     raw_text = clean_string(mt700.get("raw_text") or source.get("raw_text")) or ""
 
     def _block_or_text(block_code: str) -> Optional[str]:
         block_value = clean_string(blocks.get(block_code))
+        if block_value:
+            return block_value
+        block_value = clean_string(raw_blocks.get(block_code))
         if block_value:
             return block_value
         if not raw_text:

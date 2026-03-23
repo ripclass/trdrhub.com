@@ -225,6 +225,27 @@ def test_validate_mt700_date_repair_reanchors_swapped_flat_dates_from_raw_tags()
     assert repaired["place_of_expiry"] == "USA"
 
 
+def test_validate_mt700_date_repair_accepts_mt700_raw_block_map() -> None:
+    ns = _load_validate_symbols()
+    repair_lc_mt700_dates = ns["_repair_lc_mt700_dates"]
+
+    repaired = repair_lc_mt700_dates(
+        {
+            "issue_date": "2026-04-15",
+            "expiry_date": "2026-09-30",
+            "latest_shipment_date": "2026-10-15",
+            "mt700": {"raw": {"31C": "260415", "31D": "261015USA", "44C": "260930"}},
+        }
+    )
+
+    assert repaired["issue_date"] == "2026-04-15"
+    assert repaired["expiry_date"] == "2026-10-15"
+    assert repaired["latest_shipment_date"] == "2026-09-30"
+    assert repaired["latest_shipment"] == "2026-09-30"
+    assert repaired["dates"]["expiry"] == "2026-10-15"
+    assert repaired["dates"]["latest_shipment"] == "2026-09-30"
+
+
 def test_structured_builder_preserves_mt700_timeline_dates_after_shaping() -> None:
     launch_ns = _load_launch_pipeline_symbols()
     shape_lc_financial_payload = launch_ns["_shape_lc_financial_payload"]
@@ -251,6 +272,30 @@ def test_structured_builder_preserves_mt700_timeline_dates_after_shaping() -> No
     assert result["dates"]["place_of_expiry"] == "USA"
 
 
+def test_structured_builder_hydrates_mt700_raw_blocks_when_blocks_are_missing() -> None:
+    structured_builder = _load_structured_builder_module()
+
+    result = structured_builder.build_unified_structured_result(
+        [],
+        {
+            "lc_number": "EXP2026BD001",
+            "issue_date": "2026-04-15",
+            "expiry_date": "2026-09-30",
+            "latest_shipment_date": "2026-10-15",
+            "mt700": {
+                "raw": {"31C": "260415", "31D": "261015USA", "44C": "260930"},
+                "version": "mt700_v1",
+            },
+        },
+        None,
+    )["structured_result"]["lc_structured"]
+
+    assert result["expiry_date"] == "2026-10-15"
+    assert result["latest_shipment_date"] == "2026-09-30"
+    assert result["dates"]["expiry"] == "2026-10-15"
+    assert result["dates"]["latest_shipment"] == "2026-09-30"
+
+
 def test_lc_taxonomy_attribute_payload_prefers_mt700_dates_over_swapped_flat_values() -> None:
     lc_taxonomy = _load_lc_taxonomy_module()
 
@@ -268,6 +313,24 @@ def test_lc_taxonomy_attribute_payload_prefers_mt700_dates_over_swapped_flat_val
     assert attrs["expiry_date"] == "2026-10-15"
     assert attrs["latest_shipment_date"] == "2026-09-30"
     assert attrs["expiry_place"] == "USA"
+
+
+def test_lc_taxonomy_attribute_payload_accepts_mt700_raw_block_map() -> None:
+    lc_taxonomy = _load_lc_taxonomy_module()
+
+    attrs = lc_taxonomy.build_attribute_payload(
+        {
+            "expiry_date": "2026-09-30",
+            "latest_shipment_date": "2026-10-15",
+            "mt700": {"raw": {"31C": "260415", "31D": "261015USA", "44C": "260930"}},
+        },
+        applicable_rules="ucp600",
+        instrument_type="documentary_credit",
+        required_documents=[],
+    )
+
+    assert attrs["expiry_date"] == "2026-10-15"
+    assert attrs["latest_shipment_date"] == "2026-09-30"
 
 
 def test_lc_user_facing_extracted_fields_prefer_canonical_snapshot_values() -> None:
