@@ -41,6 +41,7 @@ def _load_launch_pipeline_symbols() -> Dict[str, Any]:
     source = LAUNCH_PIPELINE_PATH.read_text(encoding="utf-8")
     parsed = ast.parse(source)
     target_functions = {
+        "detect_lc_format",
         "_build_lc_user_facing_extracted_fields",
         "_coerce_mt700_date_iso",
         "_extract_mt700_timeline_fields",
@@ -60,6 +61,7 @@ def _load_launch_pipeline_symbols() -> Dict[str, Any]:
         "Optional": Optional,
         "date": date,
         "re": re,
+        "detect_iso20022_schema": lambda raw_text: (None, None),
         "_extract_label_value": lambda raw_text, labels: None,
         "_extract_amount_value": lambda raw_text, labels: None,
         "_apply_canonical_normalization": lambda payload: payload,
@@ -71,6 +73,21 @@ def _load_launch_pipeline_symbols() -> Dict[str, Any]:
 def _load_validate_symbols() -> Dict[str, Any]:
     lc_dates = _load_lc_dates_symbols()
     lc_intake = _load_lc_intake_symbols(lc_dates)
+    validate_source = (ROOT / "app" / "routers" / "validate.py").read_text(encoding="utf-8")
+    validate_parsed = ast.parse(validate_source)
+    validate_nodes = [
+        node
+        for node in validate_parsed.body
+        if isinstance(node, ast.FunctionDef) and node.name == "detect_lc_format"
+    ]
+    validate_ast = ast.Module(body=validate_nodes, type_ignores=[])
+    ast.fix_missing_locations(validate_ast)
+    validate_namespace: Dict[str, Any] = {
+        "Optional": Optional,
+        "re": re,
+        "detect_iso20022_schema": lambda raw_text: (None, None),
+    }
+    exec(compile(validate_ast, str(ROOT / "app" / "routers" / "validate.py"), "exec"), validate_namespace)
     return {
         "backfill_lc_mt700_sources": lc_dates["backfill_lc_mt700_sources"],
         "_coerce_mt700_date_iso": lc_dates["coerce_mt700_date_iso"],
@@ -78,6 +95,7 @@ def _load_validate_symbols() -> Dict[str, Any]:
         "_extract_mt700_timeline_fields": lc_dates["extract_mt700_timeline_fields"],
         "_repair_lc_mt700_dates": lc_dates["repair_lc_mt700_dates"],
         "_build_lc_intake_summary": lc_intake["build_lc_intake_summary"],
+        "detect_lc_format": validate_namespace["detect_lc_format"],
     }
 
 
@@ -192,6 +210,13 @@ def test_mt700_shape_reanchors_swapped_ai_dates_from_raw_tags() -> None:
     assert shaped["dates"]["place_of_expiry"] == "USA"
 
 
+def test_launch_pipeline_detects_mt700_without_leading_colons() -> None:
+    ns = _load_launch_pipeline_symbols()
+    detect_lc_format = ns["detect_lc_format"]
+
+    assert detect_lc_format(MT700_SAMPLE_TEXT_NO_LEADING_COLON) == "mt700"
+
+
 def test_lc_intake_summary_accepts_canonical_nested_mt700_dates() -> None:
     ns = _load_validate_symbols()
     build_lc_intake_summary = ns["_build_lc_intake_summary"]
@@ -213,6 +238,13 @@ def test_lc_intake_summary_accepts_canonical_nested_mt700_dates() -> None:
     assert summary["issue_date"] == "2026-04-15"
     assert summary["expiry_date"] == "2026-10-15"
     assert summary["latest_shipment_date"] == "2026-09-30"
+
+
+def test_validate_detects_mt700_without_leading_colons() -> None:
+    ns = _load_validate_symbols()
+    detect_lc_format = ns["detect_lc_format"]
+
+    assert detect_lc_format(MT700_SAMPLE_TEXT_NO_LEADING_COLON) == "mt700"
 
 
 def test_validate_mt700_date_repair_reanchors_swapped_flat_dates_from_raw_tags() -> None:

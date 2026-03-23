@@ -2177,9 +2177,12 @@ def detect_lc_format(raw_lc_text: Optional[str]) -> str:
     if stripped.startswith("<?xml") or stripped.startswith("<Document"):
         return "xml_other"
     lowered = raw_lc_text.lower()
-    if ":20:" in raw_lc_text and (":40a:" in lowered or ":40e:" in lowered or ":32b:" in lowered):
+    if re.search(r"(?im)^\s*:?\s*20\s*:\s*", raw_lc_text) and re.search(
+        r"(?im)^\s*:?\s*(40A|40E|32B)\s*:\s*",
+        raw_lc_text,
+    ):
         return "mt700"
-    if any(tag in raw_lc_text for tag in (":27:", ":31C:", ":45A:", ":46A:", ":47A:")):
+    if re.search(r"(?im)^\s*:?\s*(27|31C|45A|46A|47A)\s*:\s*", raw_lc_text):
         return "mt700"
     if any(token in lowered for token in ("letter of credit", "documentary credit", "standby letter of credit")):
         return "pdf_text"

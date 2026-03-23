@@ -78,38 +78,17 @@ def detect_lc_format(content: str, filename: Optional[str] = None) -> str:
             return "iso20022"
         return "xml_other"
     
-    # Check for MT700 SWIFT format indicators
-    mt700_indicators = [
-        ":27:",  # Sequence of Total
-        ":40A:", # Form of Documentary Credit
-        ":20:",  # Documentary Credit Number
-        ":31C:", # Date of Issue
-        ":40E:", # Applicable Rules
-        ":31D:", # Date and Place of Expiry
-        ":50:",  # Applicant
-        ":59:",  # Beneficiary
-        ":32B:", # Currency Code, Amount
-        ":39A:", # Percentage Credit Amount Tolerance
-        ":41D:", # Available With...By...
-        ":42C:", # Drafts at...
-        ":43P:", # Partial Shipments
-        ":43T:", # Transhipment
-        ":44A:", # Place of Taking in Charge
-        ":44E:", # Port of Loading
-        ":44F:", # Port of Discharge
-        ":44B:", # Place of Final Destination
-        ":44C:", # Latest Date of Shipment
-        ":45A:", # Description of Goods
-        ":46A:", # Documents Required
-        ":47A:", # Additional Conditions
-        ":71D:", # Charges
-        ":48:",  # Period for Presentation
-        ":49:",  # Confirmation Instructions
-        ":78:",  # Instructions to Paying/Accepting/Negotiating Bank
+    # Count MT700 indicators while accepting both `:31D:` and `31D:` OCR/PDF styles.
+    mt700_tags = [
+        "27", "40A", "20", "31C", "40E", "31D", "50", "59", "32B", "39A", "41D",
+        "42C", "43P", "43T", "44A", "44E", "44F", "44B", "44C", "45A", "46A",
+        "47A", "71D", "48", "49", "78",
     ]
-    
-    # Count MT700 indicators
-    mt700_count = sum(1 for ind in mt700_indicators if ind in content)
+    mt700_count = sum(
+        1
+        for tag in mt700_tags
+        if re.search(rf"(?im)^\\s*:?\\s*{re.escape(tag)}\\s*:\\s*", content)
+    )
     if mt700_count >= 3:
         return "mt700"
     
