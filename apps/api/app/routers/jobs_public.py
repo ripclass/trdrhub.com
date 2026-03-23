@@ -23,6 +23,9 @@ from app.config import settings
 from app.middleware.audit_middleware import create_audit_context
 from app.models.audit_log import AuditResult
 from app.services.audit_service import AuditService
+from app.routers.validation import (
+    refresh_structured_result_after_field_override as _refresh_structured_result_after_field_override,
+)
 
 
 router = APIRouter(tags=["validation-jobs"])
@@ -596,7 +599,60 @@ def _apply_field_override_to_structured_result(
                 next_collection.append(entry)
         lc_structured["documents_structured"] = next_collection
 
+    for parent_key, collection_key in (
+        ("document_extraction_v1", "documents"),
+        ("processing_summary", "documents"),
+        ("processing_summary_v2", "documents"),
+    ):
+        parent = structured_result.get(parent_key)
+        if not isinstance(parent, dict):
+            continue
+        collection = parent.get(collection_key)
+        if not isinstance(collection, list):
+            continue
+        next_collection = []
+        for entry in collection:
+            if not isinstance(entry, dict):
+                next_collection.append(entry)
+                continue
+            entry_id = str(entry.get("document_id") or entry.get("id") or "")
+            if entry_id == document_id:
+                patched = _apply_field_override_to_document(
+                    entry,
+                    field_name=field_name,
+                    override_value=override_value,
+                    note=note,
+                    actor_email=actor_email,
+                    applied_at_iso=applied_at_iso,
+                )
+                next_collection.append(patched)
+                updated_document = patched
+            else:
+                next_collection.append(entry)
+        parent[collection_key] = next_collection
+
     return updated_document
+
+
+def _get_document_from_structured_result(
+    structured_result: Dict[str, Any],
+    document_id: str,
+) -> Optional[Dict[str, Any]]:
+    for collection_name in ("document_extraction_v1", "documents", "documents_structured"):
+        if collection_name == "document_extraction_v1":
+            parent = structured_result.get(collection_name)
+            collection = parent.get("documents") if isinstance(parent, dict) else None
+        else:
+            collection = structured_result.get(collection_name)
+        if not isinstance(collection, list):
+            continue
+        for entry in collection:
+            if not isinstance(entry, dict):
+                continue
+            entry_id = str(entry.get("document_id") or entry.get("id") or "")
+            if entry_id == document_id:
+                return copy.deepcopy(entry)
+    return None
 
 
 def _record_operator_field_override(
@@ -753,7 +809,7 @@ def get_job_results(
 
 
 @router.post("/api/results/{job_id}/field-overrides")
-def save_job_field_override(
+async def save_job_field_override(
     job_id: str,
     payload: FieldOverrideRequestBody,
     request: Request,
@@ -808,6 +864,15 @@ def save_job_field_override(
             detail={"error_code": "document_not_found", "message": "Document not found in structured results"},
         )
 
+    structured_result = await _refresh_structured_result_after_field_override(
+        structured_result,
+        document_id=document_id,
+        field_name=field_name,
+    )
+    refreshed_document = _get_document_from_structured_result(structured_result, document_id)
+    if refreshed_document:
+        updated_document = refreshed_document
+
     if isinstance(stored_payload, dict) and stored_payload.get("version") == "structured_result_v1":
         session.validation_results = structured_result
     else:
@@ -853,6 +918,7 @@ def save_job_field_override(
             audit_metadata={
                 "override_scope": "session_structured_result",
                 "applied_at": applied_at_iso,
+                "downstream_refresh_applied": True,
             },
         )
     except Exception as audit_error:

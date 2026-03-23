@@ -117,6 +117,42 @@ def test_apply_field_override_updates_top_level_and_lc_structured_document_colle
                 "critical_field_states": {"issue_date": "missing"},
             }
         ],
+        "document_extraction_v1": {
+            "documents": [
+                {
+                    "document_id": "doc-pack",
+                    "extracted_fields": {},
+                    "field_details": {"issue_date": {"verification": "not_found"}},
+                    "missing_required_fields": ["issue_date"],
+                    "review_reasons": ["FIELD_NOT_FOUND", "critical_issue_date_missing"],
+                    "critical_field_states": {"issue_date": "missing"},
+                }
+            ]
+        },
+        "processing_summary": {
+            "documents": [
+                {
+                    "document_id": "doc-pack",
+                    "extracted_fields": {},
+                    "field_details": {"issue_date": {"verification": "not_found"}},
+                    "missing_required_fields": ["issue_date"],
+                    "review_reasons": ["FIELD_NOT_FOUND", "critical_issue_date_missing"],
+                    "critical_field_states": {"issue_date": "missing"},
+                }
+            ]
+        },
+        "processing_summary_v2": {
+            "documents": [
+                {
+                    "document_id": "doc-pack",
+                    "extracted_fields": {},
+                    "field_details": {"issue_date": {"verification": "not_found"}},
+                    "missing_required_fields": ["issue_date"],
+                    "review_reasons": ["FIELD_NOT_FOUND", "critical_issue_date_missing"],
+                    "critical_field_states": {"issue_date": "missing"},
+                }
+            ]
+        },
         "lc_structured": {
             "documents_structured": [
                 {
@@ -144,6 +180,9 @@ def test_apply_field_override_updates_top_level_and_lc_structured_document_colle
     assert updated_document is not None
     assert structured_result["documents"][0]["extracted_fields"]["issue_date"] == "2026-04-20"
     assert structured_result["documents_structured"][0]["field_details"]["issue_date"]["verification"] == "operator_confirmed"
+    assert structured_result["document_extraction_v1"]["documents"][0]["field_details"]["issue_date"]["verification"] == "operator_confirmed"
+    assert structured_result["processing_summary"]["documents"][0]["critical_field_states"]["issue_date"] == "found"
+    assert structured_result["processing_summary_v2"]["documents"][0]["critical_field_states"]["issue_date"] == "found"
     assert structured_result["lc_structured"]["documents_structured"][0]["critical_field_states"]["issue_date"] == "found"
 
 

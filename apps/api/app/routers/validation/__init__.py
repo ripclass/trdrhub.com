@@ -108,6 +108,13 @@ from .presentation_contract import (
     _build_submission_eligibility_context,
 )
 
+from .session_refresh import (
+    sync_structured_result_collections,
+    apply_cycle2_runtime_recovery,
+    backfill_hybrid_secondary_surfaces,
+    refresh_structured_result_after_field_override,
+)
+
 from .ocr_runtime import (
     _empty_extraction_artifacts_v1,
     _extraction_fallback_hotfix_enabled,
@@ -236,6 +243,10 @@ __all__ = [
     "_build_validation_contract",
     "_run_validation_arbitration_escalation",
     "_build_submission_eligibility_context",
+    "sync_structured_result_collections",
+    "apply_cycle2_runtime_recovery",
+    "backfill_hybrid_secondary_surfaces",
+    "refresh_structured_result_after_field_override",
     # OCR runtime
     "_empty_extraction_artifacts_v1",
     "_extraction_fallback_hotfix_enabled",

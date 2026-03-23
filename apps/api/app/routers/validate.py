@@ -106,6 +106,9 @@ from app.routers.validation import (
     _build_validation_contract,
     _run_validation_arbitration_escalation,
     _build_submission_eligibility_context,
+    sync_structured_result_collections as _sync_structured_result_collections,
+    apply_cycle2_runtime_recovery as _apply_cycle2_runtime_recovery,
+    backfill_hybrid_secondary_surfaces as _backfill_hybrid_secondary_surfaces,
     # OCR runtime
     _empty_extraction_artifacts_v1,
     _extraction_fallback_hotfix_enabled,
@@ -274,26 +277,6 @@ def _get_two_stage_extractor() -> TwoStageExtractor:
     if _two_stage_extractor is None:
         _two_stage_extractor = TwoStageExtractor()
     return _two_stage_extractor
-
-
-def _sync_structured_result_collections(structured_result: Dict[str, Any]) -> None:
-    """Keep top-level document/timeline aliases aligned for downstream consumers."""
-    if not isinstance(structured_result, dict):
-        return
-
-    lc_structured = structured_result.get("lc_structured") or {}
-    documents = structured_result.get("documents") or structured_result.get("documents_structured")
-    if not documents and isinstance(lc_structured, dict):
-        documents = lc_structured.get("documents_structured")
-
-    if isinstance(documents, list):
-        structured_result.setdefault("documents", documents)
-        structured_result.setdefault("documents_structured", documents)
-
-    if "timeline" not in structured_result and isinstance(lc_structured, dict):
-        timeline = lc_structured.get("timeline")
-        if isinstance(timeline, list):
-            structured_result["timeline"] = timeline
 
 
 def _build_issue_dedup_key(issue: Dict[str, Any]) -> str:
@@ -481,175 +464,6 @@ def _log_document_extraction_telemetry(
 
 
 
-
-
-def _apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[str, Any]:
-    """Runtime-only recovery calibration without changing extraction-core profiles."""
-    if not isinstance(structured_result, dict):
-        return structured_result
-
-    if not bool(getattr(settings, "CYCLE2_RUNTIME_RECOVERY_ENABLED", True)):
-        return structured_result
-
-    eligibility = structured_result.get("submission_eligibility")
-    if not isinstance(eligibility, dict):
-        return structured_result
-
-    if "raw_submission_eligibility" not in structured_result:
-        structured_result["raw_submission_eligibility"] = copy.deepcopy(eligibility)
-
-    unresolved = eligibility.get("unresolved_critical_fields")
-    if not isinstance(unresolved, list):
-        return structured_result
-
-    relaxed_fields = {
-        "bin_tin",
-        "gross_weight",
-        "net_weight",
-        "amount",
-        "currency",
-        "lc_number",
-        "issue_date",
-        "issuer",
-        "voyage",
-    }
-
-    kept: List[Any] = []
-    removed: List[str] = []
-    for item in unresolved:
-        if isinstance(item, dict):
-            field_name = str(item.get("field") or "").strip().lower()
-            if field_name in relaxed_fields:
-                removed.append(field_name)
-                continue
-        elif isinstance(item, str):
-            if item.strip().lower() in relaxed_fields:
-                removed.append(item.strip().lower())
-                continue
-        kept.append(item)
-
-    eligibility["unresolved_critical_fields"] = kept
-
-    reason_codes = eligibility.get("missing_reason_codes")
-    if isinstance(reason_codes, list):
-        drop_reason_codes = {
-            "FIELD_NOT_FOUND",
-            "FORMAT_INVALID",
-            "critical_bin_tin_missing",
-            "critical_gross_weight_missing",
-            "critical_net_weight_missing",
-            "critical_net_weight_parse_failed",
-        }
-        eligibility["missing_reason_codes"] = [
-            code for code in reason_codes if str(code) not in drop_reason_codes
-        ]
-
-    force_pass_enabled = bool(getattr(settings, "CYCLE2_RUNTIME_FORCE_PASS_ENABLED", True))
-
-    bank_verdict = structured_result.get("bank_verdict") if isinstance(structured_result.get("bank_verdict"), dict) else {}
-    validation_contract = structured_result.get("validation_contract_v1") if isinstance(structured_result.get("validation_contract_v1"), dict) else {}
-
-    bank_reject = str(bank_verdict.get("verdict") or "").strip().upper() == "REJECT"
-    final_reject = str(validation_contract.get("final_verdict") or "").strip().lower() == "reject"
-    rules_veto = str(validation_contract.get("arbitration_mode") or "").strip().lower() == "rules_veto" or bool(validation_contract.get("immediate_rules_veto"))
-    locked_not_submittable = bank_reject or final_reject or rules_veto
-
-    if not kept:
-        if not locked_not_submittable:
-            eligibility["can_submit"] = True
-            eligibility["review_required"] = False
-        if force_pass_enabled and not locked_not_submittable:
-            current_status = str(structured_result.get("validation_status") or "").lower()
-            if current_status in {"review", "partial", "blocked", "unknown", ""}:
-                structured_result["validation_status"] = "pass"
-            if str(structured_result.get("status") or "").lower() in {"review", "partial", "blocked", "unknown", ""}:
-                structured_result["status"] = "pass"
-
-    structured_result["effective_submission_eligibility"] = copy.deepcopy(eligibility)
-    structured_result["_cycle2_runtime_recovery"] = {
-        "enabled": True,
-        "force_pass_enabled": force_pass_enabled,
-        "removed_fields": sorted(set(removed)),
-        "remaining_unresolved_count": len(kept),
-        "can_submit": bool(eligibility.get("can_submit")),
-        "validation_status": structured_result.get("validation_status"),
-        "locked_not_submittable": locked_not_submittable,
-        "bank_reject": bank_reject,
-        "final_reject": final_reject,
-        "rules_veto": rules_veto,
-    }
-    return structured_result
-
-
-def _backfill_hybrid_secondary_surfaces(structured_result: Dict[str, Any]) -> Dict[str, Any]:
-    """Late response-shaping backfill for bank profile + amendment surfaces.
-
-    This protects persisted/final payloads when the earlier hybrid block did not
-    survive response shaping or when bank identifiers arrive in slightly dirty
-    extracted forms.
-    """
-    if not isinstance(structured_result, dict):
-        return structured_result
-
-    lc_doc = None
-    for candidate in (structured_result.get("documents") or []):
-        if isinstance(candidate, dict) and str(candidate.get("document_type") or "").strip().lower() == "letter_of_credit":
-            lc_doc = candidate
-            break
-    if not lc_doc:
-        for candidate in (structured_result.get("documents_structured") or []):
-            if isinstance(candidate, dict) and str(candidate.get("document_type") or "").strip().lower() == "letter_of_credit":
-                lc_doc = candidate
-                break
-
-    extracted_fields = lc_doc.get("extracted_fields") if isinstance(lc_doc, dict) and isinstance(lc_doc.get("extracted_fields"), dict) else {}
-    extraction_artifacts = lc_doc.get("extraction_artifacts_v1") if isinstance(lc_doc, dict) and isinstance(lc_doc.get("extraction_artifacts_v1"), dict) else {}
-    raw_text = extraction_artifacts.get("raw_text") if isinstance(extraction_artifacts.get("raw_text"), str) else ""
-
-    if not isinstance(structured_result.get("bank_profile"), dict):
-        try:
-            detected_profile = detect_bank_from_lc({
-                "issuing_bank": extracted_fields.get("issuing_bank") or "",
-                "advising_bank": extracted_fields.get("advising_bank") or "",
-                "raw_text": raw_text,
-            })
-            if detected_profile:
-                structured_result["bank_profile"] = {
-                    "bank_code": detected_profile.bank_code,
-                    "bank_name": detected_profile.bank_name,
-                    "strictness": detected_profile.strictness.value,
-                    "country": getattr(detected_profile, "country", "") or "",
-                    "region": getattr(detected_profile, "region", "") or "",
-                    "source_issuing_bank": extracted_fields.get("issuing_bank") or "",
-                    "source_advising_bank": extracted_fields.get("advising_bank") or "",
-                    "special_requirements": list(getattr(detected_profile, "special_requirements", []) or []),
-                    "blocked_conditions": list(getattr(detected_profile, "blocked_conditions", []) or []),
-                }
-        except Exception as backfill_bank_err:
-            logger.warning(f"Late bank-profile backfill failed: {backfill_bank_err}")
-
-    if not isinstance(structured_result.get("amendments_available"), dict):
-        try:
-            amendments = generate_amendments_for_issues(
-                issues=[issue for issue in (structured_result.get("issues") or []) if isinstance(issue, dict)],
-                lc_data={
-                    "lc_number": structured_result.get("lc_number") or structured_result.get("number") or extracted_fields.get("lc_number") or "UNKNOWN",
-                    "amount": structured_result.get("amount") or extracted_fields.get("amount") or 0,
-                    "currency": structured_result.get("currency") or extracted_fields.get("currency") or "USD",
-                    "expiry_date": ((structured_result.get("dates") or {}).get("expiry") if isinstance(structured_result.get("dates"), dict) else None) or extracted_fields.get("expiry_date") or "",
-                },
-            )
-            if amendments:
-                amendment_cost = calculate_total_amendment_cost(amendments)
-                structured_result["amendments_available"] = {
-                    "count": len(amendments),
-                    "total_estimated_fee_usd": amendment_cost.get("total_estimated_fee_usd", 0),
-                    "amendments": [a.to_dict() for a in amendments],
-                }
-        except Exception as backfill_amendment_err:
-            logger.warning(f"Late amendment backfill failed: {backfill_amendment_err}")
-
-    return structured_result
 
 
 def _build_day1_relay_debug(structured_result: Dict[str, Any]) -> Dict[str, Any]:
