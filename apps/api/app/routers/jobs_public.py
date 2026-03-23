@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 
+from fastapi.encoders import jsonable_encoder
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
@@ -686,6 +687,30 @@ def _record_operator_field_override(
     return updated
 
 
+def _build_field_override_response(
+    *,
+    session_id: str,
+    document_id: str,
+    field_name: str,
+    override_value: Any,
+    applied_at_iso: str,
+    updated_document: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Return a JSON-safe field-override response payload."""
+    return jsonable_encoder(
+        {
+            "job_id": session_id,
+            "jobId": session_id,
+            "document_id": document_id,
+            "field_name": field_name,
+            "override_value": override_value,
+            "verification": "operator_confirmed",
+            "applied_at": applied_at_iso,
+            "updated_document": updated_document,
+        }
+    )
+
+
 @router.get("/api/jobs/{job_id}")
 def get_job_status(
     job_id: str,  # Accept string to handle 'job_' prefix
@@ -924,16 +949,14 @@ async def save_job_field_override(
     except Exception as audit_error:
         logger.warning("Field override saved but audit logging failed: %s", audit_error)
 
-    return {
-        "job_id": str(session.id),
-        "jobId": str(session.id),
-        "document_id": document_id,
-        "field_name": field_name,
-        "override_value": payload.override_value,
-        "verification": "operator_confirmed",
-        "applied_at": applied_at_iso,
-        "updated_document": updated_document,
-    }
+    return _build_field_override_response(
+        session_id=str(session.id),
+        document_id=document_id,
+        field_name=field_name,
+        override_value=payload.override_value,
+        applied_at_iso=applied_at_iso,
+        updated_document=updated_document,
+    )
 
 
 @router.get("/api/jobs")

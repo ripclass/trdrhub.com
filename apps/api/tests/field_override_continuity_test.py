@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import ast
 import copy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from decimal import Decimal
+from fastapi.encoders import jsonable_encoder
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +31,11 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "List": List,
         "Optional": Optional,
         "copy": copy,
+        "datetime": datetime,
+        "timezone": timezone,
+        "uuid4": uuid4,
+        "Decimal": Decimal,
+        "jsonable_encoder": jsonable_encoder,
     }
     exec(compile(module_ast, str(JOBS_PUBLIC_PATH), "exec"), namespace)
     return namespace
@@ -205,3 +215,36 @@ def test_record_operator_field_override_persists_session_override_metadata() -> 
     assert override["value"] == "Dhaka Knitwear & Exports Ltd."
     assert override["verification"] == "operator_confirmed"
     assert override["confirmed_by"] == "imran@iec.com"
+
+
+def test_build_field_override_response_coerces_nested_non_json_types() -> None:
+    symbols = _load_symbols({"_build_field_override_response"})
+    build_field_override_response = symbols["_build_field_override_response"]
+
+    updated_document = {
+        "document_id": uuid4(),
+        "field_details": {
+            "issue_date": {
+                "operator_confirmed_at": datetime(2026, 3, 23, 15, 0, tzinfo=timezone.utc),
+                "confidence": Decimal("1.0"),
+            }
+        },
+    }
+
+    response = build_field_override_response(
+        session_id=str(uuid4()),
+        document_id=str(uuid4()),
+        field_name="issue_date",
+        override_value="2026-04-20",
+        applied_at_iso="2026-03-23T15:00:00+00:00",
+        updated_document=updated_document,
+    )
+
+    assert isinstance(response["updated_document"]["document_id"], str)
+    assert (
+        response["updated_document"]["field_details"]["issue_date"]["operator_confirmed_at"]
+        == "2026-03-23T15:00:00+00:00"
+    )
+    assert (
+        response["updated_document"]["field_details"]["issue_date"]["confidence"] == 1.0
+    )
