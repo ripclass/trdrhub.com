@@ -68,6 +68,7 @@ from app.routers.validation import (
     format_duration as _format_duration,
     filter_user_facing_fields as _filter_user_facing_fields,
     # LC dates / intake
+    backfill_lc_mt700_sources as _backfill_lc_mt700_sources,
     coerce_mt700_date_iso as _coerce_mt700_date_iso,
     extract_mt700_block_value as _extract_mt700_block_value,
     extract_mt700_timeline_fields as _extract_mt700_timeline_fields,
@@ -2148,7 +2149,11 @@ async def _build_document_context(
         "hook_filenames": [str(doc.get("filename") or doc.get("name") or "") for doc in hook_docs if bool((doc.get("_day1_runtime_hook") or {}).get("callsite_reached"))],
     }
     if context.get("lc"):
-        context["lc"] = _normalize_lc_payload_structures(context["lc"])
+        context["lc"] = _backfill_lc_mt700_sources(
+            _normalize_lc_payload_structures(context["lc"]),
+            context,
+        )
+        context["lc"] = _repair_lc_mt700_dates(context["lc"]) or context["lc"]
         if not isinstance(context["lc"].get("lc_classification"), dict):
             context["lc"]["lc_classification"] = build_lc_classification(context["lc"], context)
 

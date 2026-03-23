@@ -58,6 +58,7 @@ from .response_builder import (
 )
 
 from .lc_dates import (
+    backfill_lc_mt700_sources,
     coerce_mt700_date_iso,
     extract_mt700_block_value,
     extract_mt700_timeline_fields,
@@ -197,6 +198,7 @@ __all__ = [
     "build_document_processing_analytics",
     "summarize_document_statuses",
     # LC dates / intake
+    "backfill_lc_mt700_sources",
     "coerce_mt700_date_iso",
     "extract_mt700_block_value",
     "extract_mt700_timeline_fields",

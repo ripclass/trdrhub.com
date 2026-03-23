@@ -62,6 +62,7 @@ def _load_validate_symbols() -> Dict[str, Any]:
     lc_dates = _load_lc_dates_symbols()
     lc_intake = _load_lc_intake_symbols(lc_dates)
     return {
+        "backfill_lc_mt700_sources": lc_dates["backfill_lc_mt700_sources"],
         "_coerce_mt700_date_iso": lc_dates["coerce_mt700_date_iso"],
         "_extract_mt700_block_value": lc_dates["extract_mt700_block_value"],
         "_extract_mt700_timeline_fields": lc_dates["extract_mt700_timeline_fields"],
@@ -91,6 +92,7 @@ def _load_lc_dates_symbols() -> Dict[str, Any]:
         if isinstance(node, ast.FunctionDef)
         and node.name
         in {
+            "backfill_lc_mt700_sources",
             "coerce_mt700_date_iso",
             "extract_mt700_block_value",
             "extract_mt700_timeline_fields",
@@ -244,6 +246,37 @@ def test_validate_mt700_date_repair_accepts_mt700_raw_block_map() -> None:
     assert repaired["latest_shipment"] == "2026-09-30"
     assert repaired["dates"]["expiry"] == "2026-10-15"
     assert repaired["dates"]["latest_shipment"] == "2026-09-30"
+
+
+def test_backfill_lc_mt700_sources_uses_extracted_context_lc_text_for_intake_repair() -> None:
+    ns = _load_validate_symbols()
+    backfill_lc_mt700_sources = ns["backfill_lc_mt700_sources"]
+    repair_lc_mt700_dates = ns["_repair_lc_mt700_dates"]
+    build_lc_intake_summary = ns["_build_lc_intake_summary"]
+
+    enriched = backfill_lc_mt700_sources(
+        {
+            "issue_date": "2026-04-15",
+            "expiry_date": "2026-09-30",
+            "latest_shipment_date": "2026-10-15",
+        },
+        {"lc_text": MT700_SAMPLE_TEXT},
+    )
+
+    assert enriched["raw_text"] == MT700_SAMPLE_TEXT.strip()
+    assert enriched["mt700"]["raw_text"] == MT700_SAMPLE_TEXT.strip()
+
+    repaired = repair_lc_mt700_dates(enriched)
+    summary = build_lc_intake_summary(repaired)
+
+    assert summary["issue_date"] == "2026-04-15"
+    assert summary["expiry_date"] == "2026-10-15"
+    assert summary["latest_shipment_date"] == "2026-09-30"
+
+
+def test_validate_source_backfills_lc_mt700_sources_before_repair() -> None:
+    source = (ROOT / "app" / "routers" / "validate.py").read_text(encoding="utf-8")
+    assert "_backfill_lc_mt700_sources(" in source
 
 
 def test_structured_builder_preserves_mt700_timeline_dates_after_shaping() -> None:

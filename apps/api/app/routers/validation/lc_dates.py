@@ -77,6 +77,56 @@ def extract_mt700_timeline_fields(payload: Optional[Dict[str, Any]]) -> Dict[str
     return timeline
 
 
+def backfill_lc_mt700_sources(
+    payload: Optional[Dict[str, Any]],
+    extracted_context: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return payload
+
+    enriched = dict(payload)
+    context = extracted_context if isinstance(extracted_context, dict) else {}
+
+    candidate_raw_texts = [
+        enriched.get("raw_text"),
+        ((enriched.get("mt700") or {}).get("raw_text") if isinstance(enriched.get("mt700"), dict) else None),
+        context.get("lc_text"),
+        ((context.get("lc_structured_output") or {}).get("raw_text") if isinstance(context.get("lc_structured_output"), dict) else None),
+        ((((context.get("lc_structured_output") or {}).get("mt700") or {}).get("raw_text")) if isinstance(((context.get("lc_structured_output") or {}).get("mt700")), dict) else None),
+    ]
+    raw_text = next(
+        (str(value).strip() for value in candidate_raw_texts if isinstance(value, str) and str(value).strip()),
+        None,
+    )
+
+    mt700 = dict(enriched.get("mt700") or {}) if isinstance(enriched.get("mt700"), dict) else {}
+    raw_blocks = dict(mt700.get("raw") or {}) if isinstance(mt700.get("raw"), dict) else {}
+    context_mt700_raw = context.get("mt700_raw") if isinstance(context.get("mt700_raw"), dict) else {}
+    structured_output = context.get("lc_structured_output") if isinstance(context.get("lc_structured_output"), dict) else {}
+    structured_mt700 = structured_output.get("mt700") if isinstance(structured_output.get("mt700"), dict) else {}
+    structured_raw_blocks = structured_mt700.get("raw") if isinstance(structured_mt700.get("raw"), dict) else {}
+    structured_blocks = structured_mt700.get("blocks") if isinstance(structured_mt700.get("blocks"), dict) else {}
+
+    for source in (context_mt700_raw, structured_raw_blocks, structured_blocks):
+        for key, value in source.items():
+            if value not in (None, "", [], {}) and raw_blocks.get(key) in (None, "", [], {}):
+                raw_blocks[key] = value
+
+    if raw_text and enriched.get("raw_text") in (None, "", [], {}):
+        enriched["raw_text"] = raw_text
+    if raw_text and mt700.get("raw_text") in (None, "", [], {}):
+        mt700["raw_text"] = raw_text
+    if raw_blocks and mt700.get("raw") in (None, "", [], {}):
+        mt700["raw"] = raw_blocks
+    if raw_blocks and mt700.get("blocks") in (None, "", [], {}):
+        mt700["blocks"] = raw_blocks
+    if mt700:
+        mt700["version"] = mt700.get("version") or "mt700_v1"
+        enriched["mt700"] = mt700
+
+    return enriched
+
+
 def repair_lc_mt700_dates(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not isinstance(payload, dict):
         return payload
@@ -162,6 +212,7 @@ def repair_lc_mt700_dates(payload: Optional[Dict[str, Any]]) -> Optional[Dict[st
 
 
 __all__ = [
+    "backfill_lc_mt700_sources",
     "coerce_mt700_date_iso",
     "extract_mt700_block_value",
     "extract_mt700_timeline_fields",
