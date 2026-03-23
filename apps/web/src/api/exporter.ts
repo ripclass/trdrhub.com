@@ -94,6 +94,24 @@ export interface GuardrailCheckResponse {
   policy_checks_passed: boolean;
 }
 
+export interface FieldOverrideRequest {
+  document_id: string;
+  field_name: string;
+  override_value: string;
+  note?: string;
+}
+
+export interface FieldOverrideResponse {
+  job_id: string;
+  jobId: string;
+  document_id: string;
+  field_name: string;
+  override_value: unknown;
+  verification: 'operator_confirmed';
+  applied_at: string;
+  updated_document?: Record<string, any>;
+}
+
 export const exporterApi = {
   /**
    * Generate a customs pack ZIP file with all documents, manifest, and coversheet.
@@ -156,6 +174,11 @@ export const exporterApi = {
    */
   async checkGuardrails(data: GuardrailCheckRequest): Promise<GuardrailCheckResponse> {
     const response = await api.post('/api/exporter/guardrails/check', data);
+    return response.data;
+  },
+
+  async saveFieldOverride(jobId: string, data: FieldOverrideRequest): Promise<FieldOverrideResponse> {
+    const response = await api.post(`/api/results/${jobId}/field-overrides`, data);
     return response.data;
   },
 };

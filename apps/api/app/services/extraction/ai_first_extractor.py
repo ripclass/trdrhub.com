@@ -139,6 +139,8 @@ class ExtractedFieldResult:
     status: FieldStatus = FieldStatus.NOT_FOUND
     issues: List[str] = field(default_factory=list)
     source: str = "ai"  # "ai", "regex", "merged"
+    verification: str = "not_found"
+    evidence: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -149,7 +151,127 @@ class ExtractedFieldResult:
             "validator_agrees": self.validator_agrees,
             "issues": self.issues,
             "source": self.source,
+            "verification": self.verification,
+            "evidence": self.evidence,
         }
+
+
+def _derive_field_verification(
+    *,
+    status: FieldStatus,
+    validator_agrees: bool,
+    issues: List[str],
+    evidence: Optional[Dict[str, Any]],
+) -> str:
+    if status == FieldStatus.NOT_FOUND:
+        return "not_found"
+    if evidence and validator_agrees and not issues:
+        return "confirmed"
+    if evidence and (validator_agrees or status == FieldStatus.REVIEW):
+        return "text_supported"
+    return "model_suggested"
+
+
+def _build_text_evidence(
+    raw_text: str,
+    value: Any,
+    *,
+    source: str,
+    strategy: str,
+) -> Optional[Dict[str, Any]]:
+    candidate = str(value or "").strip()
+    text = str(raw_text or "")
+    if not candidate or not text:
+        return None
+
+    escaped = re.escape(candidate)
+    match = re.search(escaped, text, re.IGNORECASE)
+    snippet: Optional[str] = None
+    if match:
+        start = max(0, match.start() - 40)
+        end = min(len(text), match.end() + 40)
+        snippet = text[start:end].replace("\n", " ").strip()
+    elif len(candidate) >= 5:
+        normalized_candidate = re.sub(r"[\s,:\-\/]+", "", candidate).lower()
+        for line in text.splitlines():
+            normalized_line = re.sub(r"[\s,:\-\/]+", "", line).lower()
+            if normalized_candidate and normalized_candidate in normalized_line:
+                snippet = line.strip()
+                break
+
+    if not snippet:
+        return None
+
+    return {
+        "source": source,
+        "snippet": snippet[:240],
+        "strategy": strategy,
+    }
+
+
+def _build_default_field_details_from_wrapped_result(
+    result: Dict[str, Any],
+    *,
+    source: str,
+    raw_text: str = "",
+) -> Dict[str, Dict[str, Any]]:
+    field_details: Dict[str, Dict[str, Any]] = {}
+    for key, value in (result or {}).items():
+        if not isinstance(key, str) or key.startswith("_"):
+            continue
+
+        wrapped_value = value
+        confidence = 0.0
+        raw_value = value
+        if isinstance(value, dict) and "value" in value:
+            wrapped_value = value.get("value")
+            raw_value = value.get("value")
+            confidence = float(value.get("confidence", 0.0) or 0.0)
+        elif value is not None:
+            confidence = float(result.get("_extraction_confidence", 0.0) or 0.0)
+
+        evidence = _build_text_evidence(
+            raw_text,
+            wrapped_value,
+            source=source,
+            strategy="support_text_match",
+        )
+        status = "trusted" if evidence and confidence >= 0.8 else "review"
+        verification = "confirmed" if evidence else "model_suggested"
+
+        field_details[key] = {
+            "value": wrapped_value,
+            "raw_value": raw_value,
+            "confidence": round(confidence, 3),
+            "status": status,
+            "validator_agrees": bool(evidence),
+            "issues": [] if evidence else ["support_text_not_confirmed"],
+            "source": source,
+            "verification": verification,
+            "evidence": evidence,
+        }
+
+    return field_details
+
+
+def _summarize_field_detail_statuses(field_details: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
+    counts = {"trusted": 0, "review": 0, "untrusted": 0, "not_found": 0}
+    for detail in (field_details or {}).values():
+        status = str((detail or {}).get("status") or "").strip().lower()
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+def _derive_overall_status_from_field_details(field_details: Dict[str, Dict[str, Any]]) -> str:
+    counts = _summarize_field_detail_statuses(field_details)
+    if counts["untrusted"] > 0:
+        return "needs_review"
+    if counts["review"] > 0:
+        return "review_advised"
+    if counts["not_found"] > 2:
+        return "incomplete"
+    return "confident"
 
 
 class AIFirstExtractor:
@@ -431,6 +553,7 @@ class AIFirstExtractor:
                 value=None,
                 ai_confidence=0.0,
                 status=FieldStatus.NOT_FOUND,
+                verification="not_found",
             )
         
         # Clean string values
@@ -468,9 +591,21 @@ class AIFirstExtractor:
         
         # Step 3: Normalize with reference data
         normalized_value = self._normalize_field(field_name, value)
-        
+
         # Step 4: Determine status
         status = self._determine_status(ai_confidence, validator_agrees, issues)
+        evidence = _build_text_evidence(
+            raw_text,
+            normalized_value or value,
+            source="native_text",
+            strategy="regex_text_match" if regex_value else "text_match",
+        )
+        verification = _derive_field_verification(
+            status=status,
+            validator_agrees=validator_agrees,
+            issues=issues,
+            evidence=evidence,
+        )
         
         return ExtractedFieldResult(
             name=field_name,
@@ -481,6 +616,8 @@ class AIFirstExtractor:
             status=status,
             issues=issues,
             source="ai",
+            verification=verification,
+            evidence=evidence,
         )
     
     def _regex_extract_field(self, field_name: str, raw_text: str) -> Optional[str]:
@@ -633,7 +770,7 @@ class AIFirstExtractor:
             value = (field.normalized_value or field.value) if field else None
             extracted_fields[key] = value
             field_confidence[key] = round(field.ai_confidence, 3) if field else 0.0
-            field_evidence_spans[key] = []
+            field_evidence_spans[key] = [field.evidence] if field and field.evidence else []
 
             if field and field.issues:
                 conflicts.append({"field": key, "issues": list(field.issues)})

@@ -45,12 +45,19 @@ const getMetricValueFromCard = (card: HTMLElement, label: RegExp | string): stri
 };
 
 const mockUseCanonicalJobResult = vi.fn();
+const mockToast = vi.fn();
 
 vi.mock('@/hooks/use-lcopilot', () => {
   return {
     useCanonicalJobResult: () => mockUseCanonicalJobResult(),
   };
 });
+
+vi.mock('@/hooks/use-toast', () => ({
+  useToast: () => ({
+    toast: mockToast,
+  }),
+}));
 
 vi.mock('@/api/exporter', () => ({
   exporterApi: {
@@ -87,6 +94,15 @@ vi.mock('@/api/exporter', () => ({
       created_at: new Date().toISOString(),
     }),
     getSubmissionEvents: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+    saveFieldOverride: vi.fn().mockResolvedValue({
+      job_id: 'job-123',
+      jobId: 'job-123',
+      document_id: 'doc-invoice',
+      field_name: 'invoice_date',
+      override_value: '2026-04-20',
+      verification: 'operator_confirmed',
+      applied_at: new Date().toISOString(),
+    }),
   },
 }));
 
@@ -97,6 +113,7 @@ vi.mock('@/config/exporterFeatureFlags', () => ({
 describe('ExporterResults', () => {
   beforeEach(() => {
     activeResults = buildValidationResults();
+    mockToast.mockReset();
     mockUseCanonicalJobResult.mockImplementation(() => ({
       jobStatus: { status: 'completed' },
       results: activeResults,
@@ -1122,6 +1139,7 @@ describe('ExporterResults', () => {
     ];
 
     structured.documents_structured = documentsStructured;
+    structured.documents = documentsStructured as any;
     structured.lc_structured.documents_structured = documentsStructured;
     activeResults = buildValidationResponse({ structured_result: structured });
 
@@ -1151,6 +1169,22 @@ describe('ExporterResults', () => {
           net_weight: 'missing',
           issuer: 'found',
         },
+        field_details: {
+          invoice_number: {
+            value: 'DKEL/EXP/2026/114',
+            confidence: 0.93,
+            verification: 'confirmed',
+            evidence: {
+              source: 'native_text',
+              snippet: 'Commercial Invoice Invoice Number: DKEL/EXP/2026/114',
+            },
+          },
+          issuer: {
+            value: 'Dhaka Knitwear & Exports Ltd.',
+            confidence: 0.88,
+            verification: 'model_suggested',
+          },
+        },
         extracted_fields: { invoice_number: 'DKEL/EXP/2026/114', issuer: 'Dhaka Knitwear & Exports Ltd.' },
         extraction_artifacts_v1: {
           raw_text: 'Commercial Invoice\nLC No: EXP2026BD001\nTotal Amount: USD 458,750.00\n',
@@ -1169,6 +1203,17 @@ describe('ExporterResults', () => {
         review_required: true,
         review_reasons: ['FIELD_NOT_FOUND', 'critical_issue_date_missing'],
         critical_field_states: { issue_date: 'missing', gross_weight: 'found', net_weight: 'found' },
+        field_details: {
+          gross_weight: {
+            value: '20,400 kg',
+            confidence: 0.9,
+            verification: 'confirmed',
+            evidence: {
+              source: 'native_text',
+              snippet: 'Gross Weight: 20,400 kg',
+            },
+          },
+        },
         extracted_fields: { gross_weight: '20,400 kg', net_weight: '18,950 kg' },
         extraction_artifacts_v1: {
           raw_text: 'Packing List\nLC No: EXP2026BD001\nNet Weight: 18,950 kg\nGross Weight: 20,400 kg\n',
@@ -1196,11 +1241,10 @@ describe('ExporterResults', () => {
     const invoiceDrawer = screen.getByRole('dialog');
     expect(within(invoiceDrawer).getByText(/Source invoice does not show an invoice date\./i)).toBeInTheDocument();
     expect(within(invoiceDrawer).getByText(/This workflow confirms gross\/net weight from the packing list or bill of lading, not from the invoice\./i)).toBeInTheDocument();
+    expect(within(invoiceDrawer).getByText(/Confirmed from native_text: Commercial Invoice Invoice Number: DKEL\/EXP\/2026\/114/i)).toBeInTheDocument();
+    expect(within(invoiceDrawer).getByText(/Model suggested this value, but the source text did not confirm it directly\./i)).toBeInTheDocument();
     expect(within(invoiceDrawer).queryByText(/^Field not found$/i)).toBeNull();
     expect(within(invoiceDrawer).queryByText(/Field Diagnostics/i)).toBeNull();
-    expect(within(invoiceDrawer).queryByText(/^Gross Weight$/i)).toBeNull();
-    expect(within(invoiceDrawer).queryByText(/^Net Weight$/i)).toBeNull();
-    expect(within(invoiceDrawer).queryByText(/^Issue Date$/i)).toBeNull();
 
     await user.keyboard('{Escape}');
 
@@ -1208,7 +1252,85 @@ describe('ExporterResults', () => {
     await user.click(within(packingCard).getByRole('button', { name: /View Details/i }));
     const packingDrawer = screen.getByRole('dialog');
     expect(within(packingDrawer).getByText(/Source packing list does not clearly show a document date\./i)).toBeInTheDocument();
+    expect(within(packingDrawer).getByText(/Confirmed from native_text: Gross Weight: 20,400 kg/i)).toBeInTheDocument();
     expect(within(packingDrawer).queryByText(/^Field not found$/i)).toBeNull();
+  });
+
+  it('saves an operator-confirmed field override from the document detail drawer and refreshes the same session results', async () => {
+    const structured = buildValidationResults().structured_result!;
+    const refreshResults = vi.fn().mockResolvedValue(activeResults);
+    const { exporterApi } = await import('@/api/exporter');
+    const saveFieldOverride = vi.mocked(exporterApi.saveFieldOverride);
+
+    const documentsStructured = [
+      {
+        document_id: 'doc-invoice',
+        document_type: 'commercial_invoice',
+        filename: 'Invoice.pdf',
+        extraction_status: 'success',
+        review_required: true,
+        review_reasons: ['FIELD_NOT_FOUND', 'critical_issue_date_missing'],
+        critical_field_states: { issue_date: 'missing' },
+        field_details: {
+          invoice_date: {
+            verification: 'not_found',
+            status: 'missing',
+          },
+        },
+        extracted_fields: { invoice_number: 'DKEL/EXP/2026/114' },
+        extraction_artifacts_v1: {
+          raw_text: 'Commercial Invoice\nLC No: EXP2026BD001\nTotal Amount: USD 458,750.00\n',
+          field_diagnostics: {
+            issue_date: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+          },
+        },
+      },
+    ];
+
+    structured.documents_structured = documentsStructured;
+    structured.documents = documentsStructured as any;
+    structured.lc_structured.documents_structured = documentsStructured;
+    activeResults = buildValidationResponse({ structured_result: structured });
+    refreshResults.mockResolvedValue(activeResults);
+    mockUseCanonicalJobResult.mockReturnValue({
+      jobStatus: { status: 'completed' },
+      results: activeResults,
+      isLoading: false,
+      resultsError: null,
+      jobError: null,
+      refreshResults,
+    });
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults jobId="job-123" />));
+    await waitFor(() =>
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
+    const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
+    await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
+
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByText(/Resolve Extraction Fields/i)).toBeInTheDocument();
+    await user.type(within(drawer).getByLabelText(/Resolved value/i), '2026-04-20');
+    await user.type(within(drawer).getByLabelText(/Operator note/i), 'Confirmed from invoice header');
+    await user.click(within(drawer).getByRole('button', { name: /Save field override/i }));
+
+    await waitFor(() =>
+      expect(saveFieldOverride).toHaveBeenCalledWith('job-123', {
+        document_id: 'doc-invoice',
+        field_name: 'invoice_date',
+        override_value: '2026-04-20',
+        note: 'Confirmed from invoice header',
+      }),
+    );
+    await waitFor(() => expect(refreshResults).toHaveBeenCalledWith('manual'));
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Field saved for this session',
+      }),
+    );
   });
 
   it('still renders overview when structured_result analytics are missing', async () => {

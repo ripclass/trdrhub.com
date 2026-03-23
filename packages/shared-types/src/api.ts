@@ -246,6 +246,34 @@ export const ProcessingSummaryV2Schema = z.object({
 }).passthrough();
 export type ProcessingSummaryV2 = z.infer<typeof ProcessingSummaryV2Schema>;
 
+export const ExtractionFieldEvidenceSchema = z.object({
+  source: z.string(),
+  snippet: z.string().nullable().optional(),
+  strategy: z.string().optional(),
+}).passthrough();
+export type ExtractionFieldEvidence = z.infer<typeof ExtractionFieldEvidenceSchema>;
+
+export const ExtractionFieldDetailSchema = z.object({
+  value: z.unknown().optional(),
+  raw_value: z.unknown().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  status: z.string().optional(),
+  validator_agrees: z.boolean().optional(),
+  issues: z.array(z.string()).optional(),
+  source: z.string().optional(),
+  verification: z.string().optional(),
+  evidence: ExtractionFieldEvidenceSchema.nullable().optional(),
+}).passthrough();
+export type ExtractionFieldDetail = z.infer<typeof ExtractionFieldDetailSchema>;
+
+export const FieldOverrideRequestSchema = z.object({
+  document_id: z.string(),
+  field_name: z.string(),
+  override_value: z.unknown(),
+  note: z.string().trim().max(1000).optional(),
+});
+export type FieldOverrideRequest = z.infer<typeof FieldOverrideRequestSchema>;
+
 export const DocumentExtractionDocumentSchema = z.object({
   document_id: z.string().optional(),
   document_type: z.string().optional(),
@@ -253,6 +281,8 @@ export const DocumentExtractionDocumentSchema = z.object({
   status: z.enum(['success', 'warning', 'error']).optional(),
   extraction_status: z.string().optional(),
   extracted_fields: z.record(z.unknown()).optional(),
+  field_details: z.record(ExtractionFieldDetailSchema).optional(),
+  fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
   issues_count: z.number().nonnegative().optional(),
   ocr_confidence: z.number().optional(),
   review_required: z.boolean().optional(),
@@ -303,6 +333,8 @@ export const StructuredResultDocumentSchema = z.object({
   filename: z.string().optional(),
   extraction_status: z.string().optional(),
   extracted_fields: z.record(z.unknown()).optional(),
+  field_details: z.record(ExtractionFieldDetailSchema).optional(),
+  fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
   issues_count: z.number().nonnegative().optional(),
   review_required: z.boolean().optional(),
   review_reasons: z.array(z.string()).optional(),
@@ -319,6 +351,18 @@ export const StructuredResultDocumentSchema = z.object({
   issues: z.number().nonnegative().optional(),
 }).passthrough();
 export type StructuredResultDocument = z.infer<typeof StructuredResultDocumentSchema>;
+
+export const FieldOverrideResponseSchema = z.object({
+  job_id: z.string(),
+  jobId: z.string(),
+  document_id: z.string(),
+  field_name: z.string(),
+  override_value: z.unknown(),
+  verification: z.literal('operator_confirmed'),
+  applied_at: z.string().datetime(),
+  updated_document: StructuredResultDocumentSchema.optional(),
+}).passthrough();
+export type FieldOverrideResponse = z.infer<typeof FieldOverrideResponseSchema>;
 
 export const StructuredResultIssueSchema = z.object({
   id: z.string(),
@@ -785,6 +829,7 @@ export const ValidationDocumentSchema = z.object({
   status: z.enum(['success', 'warning', 'error']),
   issuesCount: z.number(),
   extractedFields: z.record(z.unknown()),
+  fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
   missingRequiredFields: z.array(z.string()).optional(),
   requiredFieldsFound: z.number().optional(),
   requiredFieldsTotal: z.number().optional(),

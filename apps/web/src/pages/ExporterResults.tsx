@@ -1011,6 +1011,55 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     },
   });
 
+  const saveFieldOverrideMutation = useMutation({
+    mutationFn: async (payload: {
+      documentId: string;
+      fieldName: string;
+      overrideValue: string;
+      note?: string;
+    }) => {
+      if (!validationSessionId) {
+        throw new Error('Missing validation session id');
+      }
+      return exporterApi.saveFieldOverride(validationSessionId, {
+        document_id: payload.documentId,
+        field_name: payload.fieldName,
+        override_value: payload.overrideValue,
+        note: payload.note,
+      });
+    },
+  });
+
+  const handleSaveFieldOverride = useCallback(
+    async (payload: {
+      documentId: string;
+      fieldName: string;
+      overrideValue: string;
+      note?: string;
+    }) => {
+      try {
+        await saveFieldOverrideMutation.mutateAsync(payload);
+        await refreshResults('manual');
+        toast({
+          title: 'Field saved for this session',
+          description: `${humanizeLabel(payload.fieldName)} was saved as an operator-confirmed value.`,
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Could not save field value',
+          description:
+            error?.response?.data?.detail?.message ||
+            error?.response?.data?.detail ||
+            error?.message ||
+            'The field override could not be saved.',
+          variant: 'destructive',
+        });
+        throw error;
+      }
+    },
+    [refreshResults, saveFieldOverrideMutation, toast, validationSessionId],
+  );
+
   // Define variables with safe defaults BEFORE any early returns to ensure hooks are always called
   const structuredDocumentsPayload =
     structuredResult?.documents_structured ??
@@ -1123,6 +1172,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         rawText: docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '',
         requiredFieldsFound: docAny.required_fields_found,
         requiredFieldsTotal: docAny.required_fields_total,
+        fieldDetails: docAny.field_details ?? docAny.fieldDetails ?? {},
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
       };
     });
@@ -3341,6 +3391,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               fieldDiagnostics: (document as any).fieldDiagnostics ?? {},
                               missingRequiredFields: (document as any).missingRequiredFields ?? [],
                               rawText: (document as any).rawText ?? '',
+                              fieldDetails: (document as any).fieldDetails ?? {},
                               ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
                               sourceFormat: (document.extractedFields as any)?._source_format,
                               isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,
@@ -3527,6 +3578,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           document={selectedDocumentForDrawer}
           open={isDrawerOpen}
           onOpenChange={setIsDrawerOpen}
+          onSaveFieldOverride={handleSaveFieldOverride}
+          isSavingFieldOverride={saveFieldOverrideMutation.isPending}
         />
 
         {/* Bank Selector Dialog (Phase 3) */}

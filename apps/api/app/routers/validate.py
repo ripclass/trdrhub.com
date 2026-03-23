@@ -1182,6 +1182,8 @@ def _build_document_summaries(
             "status": status,
             "discrepancyCount": discrepancy_count,
             "extractedFields": _filter_user_facing_fields(detail.get("extracted_fields") or {}),
+            "field_details": detail.get("field_details") or detail.get("fieldDetails") or detail.get("_field_details") or {},
+            "fieldDetails": detail.get("fieldDetails") or detail.get("field_details") or detail.get("_field_details") or {},
             "ocrConfidence": detail.get("ocr_confidence"),
             "extractionStatus": detail.get("extraction_status"),
             "parse_complete": parse_complete_flag,

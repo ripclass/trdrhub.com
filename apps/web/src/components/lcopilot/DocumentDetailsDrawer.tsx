@@ -5,7 +5,7 @@
  * Used when clicking "View Details" on a document card.
  */
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Sheet,
   SheetContent,
@@ -15,8 +15,11 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import {
   FileText,
   CheckCircle,
@@ -39,6 +42,7 @@ export interface DocumentForDrawer {
   extractionStatus?: string;
   issuesCount: number;
   extractedFields: Record<string, any>;
+  fieldDetails?: Record<string, any>;
   warningReasons?: string[];
   reviewReasons?: string[];
   criticalFieldStates?: Record<string, any>;
@@ -54,6 +58,13 @@ interface DocumentDetailsDrawerProps {
   document: DocumentForDrawer | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSaveFieldOverride?: (payload: {
+    documentId: string;
+    fieldName: string;
+    overrideValue: string;
+    note?: string;
+  }) => Promise<void>;
+  isSavingFieldOverride?: boolean;
 }
 
 const StatusIcon = ({ status }: { status: string }) => {
@@ -255,6 +266,33 @@ const normalizeReviewFieldKey = (value: unknown): string =>
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
 
+const resolvePreferredOverrideFieldKey = (
+  docType: string | undefined,
+  fieldName: string,
+  extractedFields: Record<string, any>,
+  fieldDetails: Record<string, any>,
+): string => {
+  const normalizedDocType = normalizeReviewFieldKey(docType);
+  const normalizedField = normalizeReviewFieldKey(fieldName);
+  const hasField = (candidate: string) =>
+    Object.prototype.hasOwnProperty.call(fieldDetails || {}, candidate) ||
+    Object.prototype.hasOwnProperty.call(extractedFields || {}, candidate);
+
+  if (normalizedField === "issue_date") {
+    if (normalizedDocType === "commercial_invoice" && hasField("invoice_date")) {
+      return "invoice_date";
+    }
+    if (normalizedDocType === "packing_list" && hasField("document_date")) {
+      return "document_date";
+    }
+    if (normalizedDocType === "bill_of_lading" && hasField("bl_date")) {
+      return "bl_date";
+    }
+  }
+
+  return normalizedField;
+};
+
 const textHasAnyPattern = (text: string, patterns: RegExp[]): boolean =>
   patterns.some((pattern) => pattern.test(text));
 
@@ -451,30 +489,86 @@ const shouldShowField = (key: string): boolean => {
   return !hiddenFields.includes(key) && !key.startsWith("_");
 };
 
+const buildFieldEvidenceNote = (detail: Record<string, any> | undefined): string | null => {
+  if (!detail || typeof detail !== "object") {
+    return null;
+  }
+
+  const verification = String(detail.verification || "").trim().toLowerCase();
+  const evidence = detail.evidence && typeof detail.evidence === "object" ? detail.evidence : null;
+  const snippet = typeof evidence?.snippet === "string" ? evidence.snippet.trim() : "";
+  const source = typeof evidence?.source === "string" ? evidence.source.trim() : typeof detail.source === "string" ? detail.source.trim() : "";
+
+  if (snippet && verification === "confirmed") {
+    return `Confirmed from ${source || "source text"}: ${snippet}`;
+  }
+  if (snippet && verification === "text_supported") {
+    return `Supported by ${source || "source text"}: ${snippet}`;
+  }
+  if (verification === "model_suggested") {
+    return "Model suggested this value, but the source text did not confirm it directly.";
+  }
+  if (verification === "operator_confirmed") {
+    return snippet
+      ? `Operator confirmed for this session: ${snippet}`
+      : "Confirmed by an operator for this validation session.";
+  }
+  if (verification === "not_found") {
+    return "The extraction pipeline did not confirm a value for this field.";
+  }
+  return snippet ? `${source || "Source evidence"}: ${snippet}` : null;
+};
+
 export function DocumentDetailsDrawer({
   document,
   open,
   onOpenChange,
+  onSaveFieldOverride,
+  isSavingFieldOverride = false,
 }: DocumentDetailsDrawerProps) {
   const [showRawJson, setShowRawJson] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [selectedResolutionField, setSelectedResolutionField] = useState<string | null>(null);
+  const [overrideValue, setOverrideValue] = useState("");
+  const [overrideNote, setOverrideNote] = useState("");
+  const resolvedDocument: DocumentForDrawer = document ?? {
+    id: "",
+    name: "",
+    type: "",
+    status: "warning",
+    issuesCount: 0,
+    extractedFields: {},
+    fieldDetails: {},
+    warningReasons: [],
+    reviewReasons: [],
+    criticalFieldStates: {},
+    fieldDiagnostics: {},
+    missingRequiredFields: [],
+    rawText: "",
+  };
 
-  if (!document) return null;
-
-  const extractedFields = document.extractedFields || {};
-  const fieldEntries = Object.entries(extractedFields).filter(([key]) =>
+  const extractedFields = resolvedDocument.extractedFields || {};
+  const mergedFieldDetails =
+    resolvedDocument.fieldDetails ||
+    (extractedFields._field_details as Record<string, any> | undefined) ||
+    {};
+  const extractedFieldsWithMetadata =
+    mergedFieldDetails && Object.keys(mergedFieldDetails).length > 0
+      ? { ...extractedFields, _field_details: mergedFieldDetails }
+      : extractedFields;
+  const fieldEntries = Object.entries(extractedFieldsWithMetadata).filter(([key]) =>
     shouldShowField(key)
   );
-  const warningReasons = (document.warningReasons || []).filter(Boolean);
-  const reviewReasons = (document.reviewReasons || []).filter(Boolean);
-  const criticalFieldStates = document.criticalFieldStates || {};
-  const fieldDiagnostics = document.fieldDiagnostics || {};
+  const warningReasons = (resolvedDocument.warningReasons || []).filter(Boolean);
+  const reviewReasons = (resolvedDocument.reviewReasons || []).filter(Boolean);
+  const criticalFieldStates = resolvedDocument.criticalFieldStates || {};
+  const fieldDiagnostics = resolvedDocument.fieldDiagnostics || {};
   const reasonContext: ReviewReasonContext = {
-    docType: document.typeKey || document.type,
-    rawText: document.rawText,
+    docType: resolvedDocument.typeKey || resolvedDocument.type,
+    rawText: resolvedDocument.rawText,
     criticalFieldStates,
     fieldDiagnostics,
-    missingRequiredFields: document.missingRequiredFields,
+    missingRequiredFields: resolvedDocument.missingRequiredFields,
   };
   const reviewNotes = Array.from(
     new Set(
@@ -484,8 +578,90 @@ export function DocumentDetailsDrawer({
     ),
   );
   const displayFieldChecks = buildDisplayFieldChecks(criticalFieldStates, reasonContext);
+  const resolvableFields = useMemo(() => {
+    const candidates = new Map<string, { key: string; currentValue: string; label: string; verification: string }>();
+    const addCandidate = (fieldName: string, verification = "not_found") => {
+      const normalized = resolvePreferredOverrideFieldKey(
+        resolvedDocument.documentType || resolvedDocument.typeKey || resolvedDocument.type,
+        fieldName,
+        extractedFields,
+        mergedFieldDetails,
+      );
+      if (!normalized) return;
+      const detail = mergedFieldDetails?.[normalized];
+      const currentValueRaw =
+        detail?.value ??
+        extractedFields?.[normalized] ??
+        extractedFields?.[fieldName];
+      const currentValue =
+        currentValueRaw === null || currentValueRaw === undefined ? "" : String(currentValueRaw);
+      candidates.set(normalized, {
+        key: normalized,
+        currentValue,
+        label: humanizeFieldName(normalized),
+        verification,
+      });
+    };
 
-  const extractionStatus = (document.extractionStatus ?? '').toLowerCase();
+    (resolvedDocument.missingRequiredFields || []).forEach((field) => addCandidate(String(field), "not_found"));
+    Object.entries(criticalFieldStates).forEach(([fieldName, state]) => {
+      if (isFieldMarkedMissing({ ...reasonContext, criticalFieldStates }, fieldName)) {
+        addCandidate(fieldName, String(state || "not_found"));
+      }
+    });
+    Object.entries(mergedFieldDetails || {}).forEach(([fieldName, detail]) => {
+      const verification = normalizeReviewFieldKey((detail as Record<string, any>)?.verification);
+      if (verification && !["confirmed", "operator_confirmed"].includes(verification)) {
+        addCandidate(fieldName, verification);
+      }
+    });
+
+    return Array.from(candidates.values());
+  }, [criticalFieldStates, resolvedDocument.missingRequiredFields, extractedFields, mergedFieldDetails, reasonContext]);
+
+  const activeResolutionField =
+    (selectedResolutionField && resolvableFields.find((entry) => entry.key === selectedResolutionField)) ||
+    resolvableFields[0] ||
+    null;
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    if (!activeResolutionField) {
+      setSelectedResolutionField(null);
+      setOverrideValue("");
+      setOverrideNote("");
+      return;
+    }
+    if (selectedResolutionField !== activeResolutionField.key) {
+      setSelectedResolutionField(activeResolutionField.key);
+      setOverrideValue(activeResolutionField.currentValue ?? "");
+      setOverrideNote("");
+    }
+  }, [activeResolutionField, open, selectedResolutionField]);
+
+  const handleSelectResolutionField = (fieldName: string) => {
+    const nextField = resolvableFields.find((entry) => entry.key === fieldName);
+    setSelectedResolutionField(fieldName);
+    setOverrideValue(nextField?.currentValue ?? "");
+    setOverrideNote("");
+  };
+
+  const handleSaveFieldOverride = async () => {
+    if (!resolvedDocument.id || !activeResolutionField || !onSaveFieldOverride) {
+      return;
+    }
+    await onSaveFieldOverride({
+      documentId: resolvedDocument.id,
+      fieldName: activeResolutionField.key,
+      overrideValue: overrideValue.trim(),
+      note: overrideNote.trim() || undefined,
+    });
+    setOverrideNote("");
+  };
+
+  const extractionStatus = (resolvedDocument.extractionStatus ?? '').toLowerCase();
   const extractionModeLabel = (() => {
     if (extractionStatus === 'text_only') return 'Text extraction';
     if (['success', 'partial', 'structured'].includes(extractionStatus)) return 'Structured extraction';
@@ -547,6 +723,11 @@ export function DocumentDetailsDrawer({
         <div className="space-y-2">
           {fields.map(([key, value]) => {
             const formatted = formatFieldValue(value, key);
+            const fieldDetail =
+              mergedFieldDetails && typeof mergedFieldDetails === "object"
+                ? mergedFieldDetails[key]
+                : undefined;
+            const evidenceNote = buildFieldEvidenceNote(fieldDetail);
             const isBulletField = shouldBeBulletList(key, value);
             
             // Determine if we should render as bullet list
@@ -580,6 +761,11 @@ export function DocumentDetailsDrawer({
                     {Array.isArray(formatted) ? formatted.join(", ") : formatted}
                   </span>
                 )}
+                {evidenceNote && (
+                  <span className="text-xs text-muted-foreground leading-relaxed">
+                    {evidenceNote}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -587,6 +773,8 @@ export function DocumentDetailsDrawer({
       </div>
     );
   };
+
+  if (!document) return null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -596,17 +784,17 @@ export function DocumentDetailsDrawer({
             <div
               className={cn(
                 "p-2 rounded-lg",
-                document.status === "success" && "bg-success/10",
-                document.status === "warning" && "bg-warning/10",
-                document.status === "error" && "bg-destructive/10"
+                resolvedDocument.status === "success" && "bg-success/10",
+                resolvedDocument.status === "warning" && "bg-warning/10",
+                resolvedDocument.status === "error" && "bg-destructive/10"
               )}
             >
-              <StatusIcon status={document.status} />
+              <StatusIcon status={resolvedDocument.status} />
             </div>
             <div className="flex-1 min-w-0">
-              <SheetTitle className="truncate">{document.name}</SheetTitle>
+              <SheetTitle className="truncate">{resolvedDocument.name}</SheetTitle>
               <SheetDescription className="truncate">
-                {document.type}
+                {resolvedDocument.type}
               </SheetDescription>
             </div>
           </div>
@@ -614,25 +802,25 @@ export function DocumentDetailsDrawer({
           {/* Status badges */}
           <div className="flex flex-wrap gap-2">
             <Badge
-              variant={document.status === "success" ? "default" : "outline"}
+              variant={resolvedDocument.status === "success" ? "default" : "outline"}
               className={cn(
-                document.status === "success" &&
+                resolvedDocument.status === "success" &&
                   "bg-success/10 text-success border-success/20",
-                document.status === "warning" &&
+                resolvedDocument.status === "warning" &&
                   "bg-warning/10 text-warning border-warning/20",
-                document.status === "error" &&
+                resolvedDocument.status === "error" &&
                   "bg-destructive/10 text-destructive border-destructive/20"
               )}
             >
-              {document.status === "success"
+              {resolvedDocument.status === "success"
                 ? "Verified"
-                : document.status === "warning"
+                : resolvedDocument.status === "warning"
                 ? "Review"
                 : "Issues"}
             </Badge>
-            {document.issuesCount > 0 && (
+            {resolvedDocument.issuesCount > 0 && (
               <Badge variant="outline" className="border-warning/30 text-warning">
-                {document.issuesCount} issue{document.issuesCount > 1 ? "s" : ""}
+                {resolvedDocument.issuesCount} issue{resolvedDocument.issuesCount > 1 ? "s" : ""}
               </Badge>
             )}
             {extractionModeLabel && (
@@ -640,16 +828,16 @@ export function DocumentDetailsDrawer({
                 {extractionModeLabel}
               </Badge>
             )}
-            {document.sourceFormat && (
+            {resolvedDocument.sourceFormat && (
               <Badge
                 variant="outline"
                 className={cn(
                   "text-xs",
-                  document.isElectronicBL
+                  resolvedDocument.isElectronicBL
                     ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
-                    : document.sourceFormat.includes("ISO")
+                    : resolvedDocument.sourceFormat.includes("ISO")
                     ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
-                    : document.sourceFormat.includes("MT")
+                    : resolvedDocument.sourceFormat.includes("MT")
                     ? "bg-blue-500/10 text-blue-600 border-blue-500/30"
                     : "bg-gray-500/10"
                 )}
@@ -658,9 +846,9 @@ export function DocumentDetailsDrawer({
                 {document.sourceFormat}
               </Badge>
             )}
-            {document.ocrConfidence && document.ocrConfidence < 100 && (
+            {resolvedDocument.ocrConfidence && resolvedDocument.ocrConfidence < 100 && (
               <Badge variant="outline" className="text-xs">
-                OCR: {Math.round(document.ocrConfidence)}%
+                OCR: {Math.round(resolvedDocument.ocrConfidence)}%
               </Badge>
             )}
           </div>
@@ -698,6 +886,62 @@ export function DocumentDetailsDrawer({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {resolvableFields.length > 0 && onSaveFieldOverride && (
+              <div className="space-y-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Resolve Extraction Fields
+                  </h4>
+                  <p className="text-sm text-muted-foreground">
+                    Save an operator-confirmed value on this session for unresolved fields. This updates the saved case data, but it does not trigger a full revalidation rerun yet.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {resolvableFields.map((field) => (
+                    <Button
+                      key={field.key}
+                      type="button"
+                      variant={activeResolutionField?.key === field.key ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleSelectResolutionField(field.key)}
+                    >
+                      {field.label}
+                    </Button>
+                  ))}
+                </div>
+                {activeResolutionField && (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="field-override-value">Resolved value</Label>
+                      <Input
+                        id="field-override-value"
+                        value={overrideValue}
+                        onChange={(event) => setOverrideValue(event.target.value)}
+                        placeholder={`Enter ${activeResolutionField.label.toLowerCase()}`}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="field-override-note">Operator note</Label>
+                      <Textarea
+                        id="field-override-note"
+                        value={overrideNote}
+                        onChange={(event) => setOverrideNote(event.target.value)}
+                        placeholder="Optional note about how this value was confirmed from the source."
+                        rows={3}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleSaveFieldOverride}
+                      disabled={!overrideValue.trim() || isSavingFieldOverride}
+                    >
+                      {isSavingFieldOverride ? "Saving..." : "Save field override"}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 

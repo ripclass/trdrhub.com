@@ -29,6 +29,7 @@ import type {
   AmendmentsAvailable as SharedAmendmentsAvailable,
   ContractWarning as SharedContractWarning,
   ContractValidation as SharedContractValidation,
+  ExtractionFieldDetail as SharedExtractionFieldDetail,
 } from '@shared/types';
 
 // Re-export schema-first types for use across the app
@@ -60,6 +61,8 @@ export type OptionEDocument = {
   filename: string;
   extraction_status?: string | null;
   extracted_fields?: Record<string, unknown>;
+  field_details?: Record<string, SharedExtractionFieldDetail>;
+  fieldDetails?: Record<string, SharedExtractionFieldDetail>;
   issues_count?: number;
 };
 
@@ -236,6 +239,7 @@ export interface ValidationDocument {
   status: 'success' | 'warning' | 'error';
   issuesCount: number;
   extractedFields: Record<string, any>;
+  fieldDetails?: Record<string, SharedExtractionFieldDetail>;
   missingRequiredFields?: string[];
   requiredFieldsFound?: number;
   requiredFieldsTotal?: number;

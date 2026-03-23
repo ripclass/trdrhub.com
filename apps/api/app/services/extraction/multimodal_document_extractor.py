@@ -12,7 +12,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from PIL import Image
 
 from app.services.extraction.ai_first_extractor import (
+    _build_default_field_details_from_wrapped_result,
+    _derive_overall_status_from_field_details,
     _parse_llm_json_with_repair,
+    _summarize_field_detail_statuses,
     _wrap_ai_result_with_default_confidence,
 )
 from app.services.llm_provider import LLMProvider
@@ -316,11 +319,19 @@ async def extract_document_multimodal_first(
         return None
 
     wrapped = _wrap_ai_result_with_default_confidence(parsed, default_confidence=0.82)
+    field_details = _build_default_field_details_from_wrapped_result(
+        wrapped,
+        source=f"multimodal:{source_mode}",
+        raw_text=extracted_text,
+    )
     wrapped["_extraction_method"] = "multimodal_ai_first"
     wrapped["_source_mode"] = source_mode
     wrapped["_llm_provider"] = provider_used
     wrapped["_llm_model"] = model
     wrapped["_multimodal_pages_used"] = len(image_parts)
+    wrapped["_field_details"] = field_details
+    wrapped["_status_counts"] = _summarize_field_detail_statuses(field_details)
+    wrapped["_status"] = _derive_overall_status_from_field_details(field_details)
     if subtype_hint:
         wrapped["_multimodal_subtype_hint"] = subtype_hint
     logger.info(

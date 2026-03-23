@@ -261,6 +261,31 @@ class ProcessingSummaryV2(BaseModel):
     extraction_quality: Optional[float] = None
 
 
+class ExtractionFieldEvidence(BaseModel):
+    source: str
+    snippet: Optional[str] = None
+    strategy: Optional[str] = None
+
+
+class ExtractionFieldDetail(BaseModel):
+    value: Optional[Any] = None
+    raw_value: Optional[Any] = None
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    status: Optional[str] = None
+    validator_agrees: Optional[bool] = None
+    issues: List[str] = Field(default_factory=list)
+    source: Optional[str] = None
+    verification: Optional[str] = None
+    evidence: Optional[ExtractionFieldEvidence] = None
+
+
+class FieldOverrideRequest(BaseModel):
+    document_id: str
+    field_name: str
+    override_value: Optional[Any] = None
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
 class DocumentExtractionDocument(BaseModel):
     document_id: Optional[str] = None
     document_type: Optional[str] = None
@@ -268,6 +293,7 @@ class DocumentExtractionDocument(BaseModel):
     status: Optional[str] = None
     extraction_status: Optional[str] = None
     extracted_fields: Optional[Dict[str, Any]] = None
+    field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
     issues_count: Optional[int] = Field(default=None, ge=0)
     ocr_confidence: Optional[float] = None
     review_required: Optional[bool] = None
@@ -309,11 +335,23 @@ class StructuredResultDocument(BaseModel):
     filename: str
     extraction_status: str
     extracted_fields: Dict[str, Any]
+    field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
     issues_count: int = Field(ge=0)
     review_required: Optional[bool] = None
     review_reasons: List[str] = Field(default_factory=list)
     critical_field_states: Dict[str, str] = Field(default_factory=dict)
     extraction_debug: Optional[Dict[str, Any]] = None
+
+
+class FieldOverrideResponse(BaseModel):
+    job_id: str
+    jobId: str
+    document_id: str
+    field_name: str
+    override_value: Optional[Any] = None
+    verification: str = Field(default="operator_confirmed")
+    applied_at: datetime
+    updated_document: Optional[StructuredResultDocument] = None
 
 
 class StructuredResultIssue(BaseModel):

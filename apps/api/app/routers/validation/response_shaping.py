@@ -479,6 +479,7 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 "status": status,
                 "extraction_status": extraction_status,
                 "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
+                "field_details": doc.get("field_details") or doc.get("fieldDetails") or doc.get("_field_details") or {},
                 "issues_count": doc.get("discrepancyCount")
                 or doc.get("issues_count")
                 or doc.get("issuesCount")

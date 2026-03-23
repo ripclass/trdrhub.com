@@ -320,6 +320,7 @@ const mapDocuments = (docs: any[] = []) => {
       ? doc.reviewReasons.map((reason: unknown) => String(reason))
       : [];
     const criticalFieldStates = doc?.critical_field_states ?? doc?.criticalFieldStates ?? {};
+    const fieldDetails = doc?.field_details ?? doc?.fieldDetails ?? {};
     const fieldDiagnostics = doc?.extraction_artifacts_v1?.field_diagnostics ?? doc?.field_diagnostics ?? {};
     const rawText =
       doc?.extraction_artifacts_v1?.raw_text ??
@@ -351,6 +352,7 @@ const mapDocuments = (docs: any[] = []) => {
       issuesCount,
       parseComplete: typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
       parseCompleteness: doc?.parse_completeness ?? doc?.parseCompleteness,
+      fieldDetails,
       missingRequiredFields,
       requiredFieldsFound,
       requiredFieldsTotal,
