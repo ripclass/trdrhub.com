@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import re
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -10,7 +11,8 @@ from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCH_PIPELINE_PATH = ROOT / "app" / "services" / "extraction" / "launch_pipeline.py"
-VALIDATE_PATH = ROOT / "app" / "routers" / "validate.py"
+LC_DATES_PATH = ROOT / "app" / "routers" / "validation" / "lc_dates.py"
+LC_INTAKE_PATH = ROOT / "app" / "routers" / "validation" / "lc_intake.py"
 STRUCTURED_BUILDER_PATH = ROOT / "app" / "services" / "extraction" / "structured_lc_builder.py"
 LC_TAXONOMY_PATH = ROOT / "app" / "services" / "extraction" / "lc_taxonomy.py"
 
@@ -57,19 +59,44 @@ def _load_launch_pipeline_symbols() -> Dict[str, Any]:
 
 
 def _load_validate_symbols() -> Dict[str, Any]:
-    source = VALIDATE_PATH.read_text(encoding="utf-8")
-    parsed = ast.parse(source)
-    selected_nodes: List[ast.AST] = []
-    for node in parsed.body:
-        if isinstance(node, ast.FunctionDef) and node.name in {
-            "_coerce_mt700_date_iso",
-            "_extract_mt700_block_value",
-            "_extract_mt700_timeline_fields",
-            "_repair_lc_mt700_dates",
-            "_build_lc_intake_summary",
-        }:
-            selected_nodes.append(node)
+    lc_dates = _load_lc_dates_symbols()
+    lc_intake = _load_lc_intake_symbols(lc_dates)
+    return {
+        "_coerce_mt700_date_iso": lc_dates["coerce_mt700_date_iso"],
+        "_extract_mt700_block_value": lc_dates["extract_mt700_block_value"],
+        "_extract_mt700_timeline_fields": lc_dates["extract_mt700_timeline_fields"],
+        "_repair_lc_mt700_dates": lc_dates["repair_lc_mt700_dates"],
+        "_build_lc_intake_summary": lc_intake["build_lc_intake_summary"],
+    }
 
+
+def _load_module(path: Path, name: str):
+    root_str = str(ROOT)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_lc_dates_symbols() -> Dict[str, Any]:
+    source = LC_DATES_PATH.read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+    selected_nodes = [
+        node
+        for node in parsed.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name
+        in {
+            "coerce_mt700_date_iso",
+            "extract_mt700_block_value",
+            "extract_mt700_timeline_fields",
+            "repair_lc_mt700_dates",
+        }
+    ]
     module_ast = ast.Module(body=selected_nodes, type_ignores=[])
     ast.fix_missing_locations(module_ast)
     namespace: Dict[str, Any] = {
@@ -79,7 +106,26 @@ def _load_validate_symbols() -> Dict[str, Any]:
         "datetime": __import__("datetime").datetime,
         "re": re,
     }
-    exec(compile(module_ast, str(VALIDATE_PATH), "exec"), namespace)
+    exec(compile(module_ast, str(LC_DATES_PATH), "exec"), namespace)
+    return namespace
+
+
+def _load_lc_intake_symbols(lc_dates: Dict[str, Any]) -> Dict[str, Any]:
+    source = LC_INTAKE_PATH.read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+    selected_nodes = [
+        node
+        for node in parsed.body
+        if isinstance(node, ast.FunctionDef) and node.name == "build_lc_intake_summary"
+    ]
+    module_ast = ast.Module(body=selected_nodes, type_ignores=[])
+    ast.fix_missing_locations(module_ast)
+    namespace: Dict[str, Any] = {
+        "Any": Any,
+        "Dict": Dict,
+        "repair_lc_mt700_dates": lc_dates["repair_lc_mt700_dates"],
+    }
+    exec(compile(module_ast, str(LC_INTAKE_PATH), "exec"), namespace)
     return namespace
 
 

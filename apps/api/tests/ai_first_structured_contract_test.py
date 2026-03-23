@@ -137,14 +137,14 @@ def test_response_shaping_downgrades_success_when_parse_incomplete():
 
 
 def test_coo_parse_completeness_requires_minimum_fields_for_verified():
-    module_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "validate.py"
+    module_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "validation" / "review_policy.py"
     source = module_path.read_text(encoding="utf-8")
     parsed = ast.parse(source)
 
     target_names = {
-        "_is_populated_field_value",
-        "_assess_required_field_completeness",
-        "_assess_coo_parse_completeness",
+        "is_populated_field_value",
+        "assess_required_field_completeness",
+        "assess_coo_parse_completeness",
     }
     selected = [node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name in target_names]
     module_ast = ast.Module(body=selected, type_ignores=[])
@@ -152,7 +152,7 @@ def test_coo_parse_completeness_requires_minimum_fields_for_verified():
 
     namespace = {"Any": Any, "Dict": Dict, "List": List, "Optional": Optional}
     exec(compile(module_ast, str(module_path), "exec"), namespace)
-    assess = namespace["_assess_coo_parse_completeness"]
+    assess = namespace["assess_coo_parse_completeness"]
 
     shallow = assess({"country_of_origin": "Bangladesh", "goods_description": "Cotton shirts"})
     assert shallow["parse_complete"] is False

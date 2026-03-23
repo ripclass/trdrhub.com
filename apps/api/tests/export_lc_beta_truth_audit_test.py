@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATE_PATH = ROOT / "app" / "routers" / "validate.py"
+REVIEW_POLICY_PATH = ROOT / "app" / "routers" / "validation" / "review_policy.py"
 LAUNCH_PIPELINE_PATH = ROOT / "app" / "services" / "extraction" / "launch_pipeline.py"
 CROSSDOC_PATH = ROOT / "app" / "services" / "crossdoc.py"
 VESSEL_SANCTIONS_PATH = ROOT / "app" / "services" / "vessel_sanctions.py"
@@ -62,8 +63,8 @@ def _load_module(path: Path, name: str):
 
 
 def test_day1_invoice_policy_does_not_require_invoice_weights() -> None:
-    symbols = _load_symbols(VALIDATE_PATH, {"_day1_policy_for_doc"})
-    policy = symbols["_day1_policy_for_doc"]("commercial_invoice")
+    symbols = _load_symbols(REVIEW_POLICY_PATH, {"day1_policy_for_doc"})
+    policy = symbols["day1_policy_for_doc"]("commercial_invoice")
 
     assert "gross_weight" not in policy["fields"]
     assert "net_weight" not in policy["fields"]

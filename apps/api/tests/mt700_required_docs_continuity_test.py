@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import ast
 import importlib.util
-import json
 from pathlib import Path
+import ast
 from typing import Any, Dict, List, Optional, Tuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VALIDATE_PATH = ROOT / "app" / "routers" / "validate.py"
+LC_INTAKE_PATH = ROOT / "app" / "routers" / "validation" / "lc_intake.py"
 LC_TAXONOMY_PATH = ROOT / "app" / "services" / "extraction" / "lc_taxonomy.py"
 STRUCTURED_BUILDER_PATH = ROOT / "app" / "services" / "extraction" / "structured_lc_builder.py"
 
@@ -32,13 +31,14 @@ def _load_structured_builder_module():
 
 
 def _load_validate_required_doc_symbols() -> Dict[str, Any]:
-    source = VALIDATE_PATH.read_text(encoding="utf-8")
+    source = LC_INTAKE_PATH.read_text(encoding="utf-8")
     parsed = ast.parse(source)
     target_functions = {
         "_parse_json_if_possible",
-        "_coerce_text_list",
-        "_infer_required_document_types_from_lc",
-        "_prepare_extractor_outputs_for_structured_result",
+        "coerce_text_list",
+        "infer_required_document_types_from_lc",
+        "resolve_legacy_workflow_lc_fields",
+        "prepare_extractor_outputs_for_structured_result",
     }
 
     selected_nodes: List[ast.AST] = []
@@ -54,28 +54,55 @@ def _load_validate_required_doc_symbols() -> Dict[str, Any]:
     module_ast = ast.Module(body=selected_nodes, type_ignores=[])
     ast.fix_missing_locations(module_ast)
     taxonomy = _load_lc_taxonomy_module()
+    lc_dates_ns = _load_lc_dates_symbols()
     namespace: Dict[str, Any] = {
         "Any": Any,
         "Dict": Dict,
         "List": List,
         "Optional": Optional,
         "Tuple": Tuple,
-        "json": json,
+        "json": __import__("json"),
+        "LCType": type("LCTypeStub", (), {"UNKNOWN": type("EnumValue", (), {"value": "unknown"})()}),
+        "normalize_lc_type": lambda value: value if value in {"import", "export", "draft", "unknown"} else None,
         "normalize_required_documents": taxonomy.normalize_required_documents,
-        "_resolve_legacy_workflow_lc_fields": lambda context, payload=None: {
-            "lc_type": "unknown",
-            "lc_type_reason": "stub",
-            "lc_type_confidence": 0.0,
-            "lc_type_source": "stub",
-        },
+        "build_lc_classification": taxonomy.build_lc_classification,
+        "repair_lc_mt700_dates": lc_dates_ns["repair_lc_mt700_dates"],
     }
-    exec(compile(module_ast, str(VALIDATE_PATH), "exec"), namespace)
+    exec(compile(module_ast, str(LC_INTAKE_PATH), "exec"), namespace)
+    return namespace
+
+
+def _load_lc_dates_symbols() -> Dict[str, Any]:
+    source = (ROOT / "app" / "routers" / "validation" / "lc_dates.py").read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+    selected_nodes = [
+        node
+        for node in parsed.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name
+        in {
+            "coerce_mt700_date_iso",
+            "extract_mt700_block_value",
+            "extract_mt700_timeline_fields",
+            "repair_lc_mt700_dates",
+        }
+    ]
+    module_ast = ast.Module(body=selected_nodes, type_ignores=[])
+    ast.fix_missing_locations(module_ast)
+    namespace: Dict[str, Any] = {
+        "Any": Any,
+        "Dict": Dict,
+        "Optional": Optional,
+        "datetime": __import__("datetime").datetime,
+        "re": __import__("re"),
+    }
+    exec(compile(module_ast, str(ROOT / "app" / "routers" / "validation" / "lc_dates.py"), "exec"), namespace)
     return namespace
 
 
 def test_validate_inference_keeps_compact_mt700_required_doc_tokens_consistent():
     ns = _load_validate_required_doc_symbols()
-    infer_required_document_types = ns["_infer_required_document_types_from_lc"]
+    infer_required_document_types = ns["infer_required_document_types_from_lc"]
     required_codes = infer_required_document_types(
         {"documents_required": ["INVOICE/BL/PL/COO/INSURANCE"]}
     )
@@ -89,7 +116,7 @@ def test_validate_inference_keeps_compact_mt700_required_doc_tokens_consistent()
 
 def test_prepare_extractor_outputs_rebuilds_classification_after_required_doc_backfill():
     ns = _load_validate_required_doc_symbols()
-    prepare_structured = ns["_prepare_extractor_outputs_for_structured_result"]
+    prepare_structured = ns["prepare_extractor_outputs_for_structured_result"]
     ns["build_lc_classification"] = (
         lambda source, payload=None: {
             "required_documents": [
