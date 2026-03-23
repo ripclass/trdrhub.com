@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from app.routers.validation.result_finalization import bind_shared as bind_result_finalization_shared
 from app.routers.validation.result_finalization import finalize_validation_result

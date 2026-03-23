@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict
+from uuid import uuid4
 
 from .lc_dates import backfill_lc_mt700_sources, repair_lc_mt700_dates
 
