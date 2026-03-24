@@ -16,6 +16,48 @@ _BL_DOCUMENT_TYPES = {
     "multimodal_transport_document",
 }
 _PACKING_LIST_DOCUMENT_TYPES = {"packing_list"}
+_COO_DOCUMENT_TYPES = {
+    "certificate_of_origin",
+    "gsp_form_a",
+    "eur1_movement_certificate",
+    "customs_declaration",
+    "export_license",
+    "import_license",
+    "phytosanitary_certificate",
+    "fumigation_certificate",
+    "health_certificate",
+    "veterinary_certificate",
+    "sanitary_certificate",
+    "cites_permit",
+    "radiation_certificate",
+}
+_INSURANCE_DOCUMENT_TYPES = {
+    "insurance_certificate",
+    "insurance_policy",
+    "beneficiary_certificate",
+    "beneficiary_statement",
+    "manufacturer_certificate",
+    "manufacturers_certificate",
+    "conformity_certificate",
+    "certificate_of_conformity",
+    "non_manipulation_certificate",
+    "halal_certificate",
+    "kosher_certificate",
+    "organic_certificate",
+}
+_INSPECTION_DOCUMENT_TYPES = {
+    "inspection_certificate",
+    "pre_shipment_inspection",
+    "quality_certificate",
+    "weight_certificate",
+    "weight_list",
+    "measurement_certificate",
+    "analysis_certificate",
+    "lab_test_report",
+    "sgs_certificate",
+    "bureau_veritas_certificate",
+    "intertek_certificate",
+}
 _USER_RESOLVABLE_STATES = {"candidate", "unconfirmed", "operator_rejected"}
 _HIGH_PRIORITY_FIELDS = {"invoice_number", "invoice_date", "amount", "currency"}
 _BL_HIGH_PRIORITY_FIELDS = {"bl_number", "on_board_date", "port_of_loading", "port_of_discharge"}
@@ -25,6 +67,36 @@ _PACKING_LIST_HIGH_PRIORITY_FIELDS = {
     "total_packages",
     "gross_weight",
     "net_weight",
+}
+_COO_HIGH_PRIORITY_FIELDS = {
+    "certificate_number",
+    "country_of_origin",
+    "exporter_name",
+    "goods_description",
+    "issue_date",
+    "certifying_authority",
+    "license_number",
+    "declaration_reference",
+    "permit_number",
+}
+_INSURANCE_HIGH_PRIORITY_FIELDS = {
+    "policy_number",
+    "certificate_number",
+    "insured_amount",
+    "coverage_type",
+    "issuer_name",
+    "issue_date",
+}
+_INSPECTION_HIGH_PRIORITY_FIELDS = {
+    "certificate_number",
+    "inspection_agency",
+    "inspection_date",
+    "inspection_result",
+    "quality_finding",
+    "analysis_result",
+    "gross_weight",
+    "net_weight",
+    "measurement_value",
 }
 
 
@@ -38,6 +110,9 @@ def _priority_for_field(field_name: str) -> str:
         normalized in _HIGH_PRIORITY_FIELDS
         or normalized in _BL_HIGH_PRIORITY_FIELDS
         or normalized in _PACKING_LIST_HIGH_PRIORITY_FIELDS
+        or normalized in _COO_HIGH_PRIORITY_FIELDS
+        or normalized in _INSURANCE_HIGH_PRIORITY_FIELDS
+        or normalized in _INSPECTION_HIGH_PRIORITY_FIELDS
     ):
         return "high"
     return "medium"
@@ -68,6 +143,9 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
             document_type not in _INVOICE_DOCUMENT_TYPES
             and document_type not in _BL_DOCUMENT_TYPES
             and document_type not in _PACKING_LIST_DOCUMENT_TYPES
+            and document_type not in _COO_DOCUMENT_TYPES
+            and document_type not in _INSURANCE_DOCUMENT_TYPES
+            and document_type not in _INSPECTION_DOCUMENT_TYPES
         ):
             continue
 

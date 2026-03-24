@@ -231,3 +231,188 @@ def test_build_resolution_queue_v1_collects_packing_list_unresolved_facts() -> N
     assert items[0]["priority"] == "high"
     assert items[1]["field_name"] == "gross_weight"
     assert items[1]["reason"] == "operator_rejected_candidate"
+
+
+def test_build_resolution_queue_v1_collects_coo_unresolved_facts() -> None:
+    documents = [
+        {
+            "document_id": "doc-coo",
+            "document_type": "certificate_of_origin",
+            "filename": "Certificate_of_Origin.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "certificate_of_origin",
+                "facts": [
+                    {
+                        "field_name": "country_of_origin",
+                        "value": "Bangladesh",
+                        "normalized_value": "Bangladesh",
+                        "verification_state": "candidate",
+                        "evidence_snippet": "Country of Origin: Bangladesh",
+                        "evidence_source": "native_text",
+                        "page": 1,
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "goods_description",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "certificate_number",
+                        "value": "COO-26",
+                        "normalized_value": "COO-26",
+                        "verification_state": "confirmed",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["document_counts"] == {"certificate_of_origin": 2}
+    items = sorted(queue["items"], key=lambda item: item["field_name"])
+    assert items[0]["field_name"] == "country_of_origin"
+    assert items[0]["priority"] == "high"
+    assert items[1]["field_name"] == "goods_description"
+
+
+def test_build_resolution_queue_v1_collects_insurance_unresolved_facts() -> None:
+    documents = [
+        {
+            "document_id": "doc-insurance",
+            "document_type": "insurance_certificate",
+            "filename": "Insurance_Certificate.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "insurance_certificate",
+                "facts": [
+                    {
+                        "field_name": "policy_number",
+                        "value": "POL-2026-001",
+                        "normalized_value": "POL-2026-001",
+                        "verification_state": "candidate",
+                        "evidence_snippet": "Policy No: POL-2026-001",
+                        "evidence_source": "native_text",
+                        "page": 1,
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "issuer_name",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "insured_amount",
+                        "value": "USD 125,000.50",
+                        "normalized_value": "125000.50",
+                        "verification_state": "confirmed",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["document_counts"] == {"insurance_certificate": 2}
+    items = sorted(queue["items"], key=lambda item: item["field_name"])
+    assert items[0]["field_name"] == "issuer_name"
+    assert items[0]["priority"] == "high"
+    assert items[1]["field_name"] == "policy_number"
+
+
+def test_build_resolution_queue_v1_collects_inspection_unresolved_facts() -> None:
+    documents = [
+        {
+            "document_id": "doc-inspection",
+            "document_type": "inspection_certificate",
+            "filename": "Inspection_Certificate.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "inspection_certificate",
+                "facts": [
+                    {
+                        "field_name": "inspection_result",
+                        "value": "PASSED",
+                        "normalized_value": "PASSED",
+                        "verification_state": "candidate",
+                        "evidence_snippet": "Inspection Result: PASSED",
+                        "evidence_source": "native_text",
+                        "page": 1,
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "inspection_agency",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "gross_weight",
+                        "value": "20,400 KGS",
+                        "normalized_value": "20,400 KGS",
+                        "verification_state": "confirmed",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["document_counts"] == {"inspection_certificate": 2}
+    items = sorted(queue["items"], key=lambda item: item["field_name"])
+    assert items[0]["field_name"] == "inspection_agency"
+    assert items[0]["priority"] == "high"
+    assert items[1]["field_name"] == "inspection_result"
+
+
+def test_build_resolution_queue_v1_collects_regulatory_unresolved_facts() -> None:
+    documents = [
+        {
+            "document_id": "doc-phyto",
+            "document_type": "phytosanitary_certificate",
+            "filename": "Phytosanitary_Certificate.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "phytosanitary_certificate",
+                "facts": [
+                    {
+                        "field_name": "certificate_number",
+                        "value": "PHY-2026-01",
+                        "normalized_value": "PHY-2026-01",
+                        "verification_state": "candidate",
+                        "evidence_snippet": "Certificate No: PHY-2026-01",
+                        "evidence_source": "native_text",
+                        "page": 1,
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "certifying_authority",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                        "origin": "document_ai",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["document_counts"] == {"phytosanitary_certificate": 2}
+    items = sorted(queue["items"], key=lambda item: item["field_name"])
+    assert items[0]["field_name"] == "certificate_number"
+    assert items[1]["field_name"] == "certifying_authority"

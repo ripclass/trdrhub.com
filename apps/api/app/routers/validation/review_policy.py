@@ -118,11 +118,50 @@ def context_payload_for_doc_type(context: Dict[str, Any], document_type: str) ->
         return context.get("bill_of_lading") or {}
     if document_type == "packing_list":
         return context.get("packing_list") or {}
-    if document_type == "certificate_of_origin":
+    if document_type in {
+        "certificate_of_origin",
+        "gsp_form_a",
+        "eur1_movement_certificate",
+        "customs_declaration",
+        "export_license",
+        "import_license",
+        "phytosanitary_certificate",
+        "fumigation_certificate",
+        "health_certificate",
+        "veterinary_certificate",
+        "sanitary_certificate",
+        "cites_permit",
+        "radiation_certificate",
+    }:
         return context.get("certificate_of_origin") or {}
-    if document_type == "insurance_certificate":
+    if document_type in {
+        "insurance_certificate",
+        "insurance_policy",
+        "beneficiary_certificate",
+        "beneficiary_statement",
+        "manufacturer_certificate",
+        "manufacturers_certificate",
+        "conformity_certificate",
+        "certificate_of_conformity",
+        "non_manipulation_certificate",
+        "halal_certificate",
+        "kosher_certificate",
+        "organic_certificate",
+    }:
         return context.get("insurance_certificate") or {}
-    if document_type == "inspection_certificate":
+    if document_type in {
+        "inspection_certificate",
+        "pre_shipment_inspection",
+        "quality_certificate",
+        "weight_certificate",
+        "weight_list",
+        "measurement_certificate",
+        "analysis_certificate",
+        "lab_test_report",
+        "sgs_certificate",
+        "bureau_veritas_certificate",
+        "intertek_certificate",
+    }:
         return context.get("inspection_certificate") or {}
     return {}
 

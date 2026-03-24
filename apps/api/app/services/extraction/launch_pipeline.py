@@ -25,7 +25,14 @@ from app.services.extraction.iso20022_lc_extractor import (
 )
 from app.services.extraction.lc_taxonomy import build_lc_classification
 from app.services.extraction.multimodal_document_extractor import extract_document_multimodal_first
-from app.services.facts import build_bl_fact_set, build_invoice_fact_set, build_packing_list_fact_set
+from app.services.facts import (
+    build_bl_fact_set,
+    build_coo_fact_set,
+    build_insurance_fact_set,
+    build_inspection_fact_set,
+    build_invoice_fact_set,
+    build_packing_list_fact_set,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +63,51 @@ CANONICAL_DOCUMENT_ALIASES = {
     "weight certificate": "weight_certificate",
     "lab test report": "lab_test_report",
     "certificate of conformity": "certificate_of_conformity",
+}
+
+INSURANCE_FAMILY_DOCUMENT_SUBTYPES = {
+    "insurance_certificate": "insurance_certificate",
+    "insurance_policy": "insurance_policy",
+    "beneficiary_certificate": "beneficiary_certificate",
+    "beneficiary_statement": "beneficiary_certificate",
+    "manufacturer_certificate": "manufacturer_certificate",
+    "manufacturers_certificate": "manufacturers_certificate",
+    "conformity_certificate": "conformity_certificate",
+    "certificate_of_conformity": "certificate_of_conformity",
+    "non_manipulation_certificate": "non_manipulation_certificate",
+    "halal_certificate": "halal_certificate",
+    "kosher_certificate": "kosher_certificate",
+    "organic_certificate": "organic_certificate",
+}
+
+INSPECTION_FAMILY_DOCUMENT_SUBTYPES = {
+    "inspection_certificate": "inspection_certificate",
+    "pre_shipment_inspection": "pre_shipment_inspection",
+    "quality_certificate": "quality_certificate",
+    "weight_list": "weight_certificate",
+    "weight_certificate": "weight_certificate",
+    "measurement_certificate": "measurement_certificate",
+    "analysis_certificate": "analysis_certificate",
+    "lab_test_report": "lab_test_report",
+    "sgs_certificate": "sgs_certificate",
+    "bureau_veritas_certificate": "bureau_veritas_certificate",
+    "intertek_certificate": "intertek_certificate",
+}
+
+REGULATORY_FAMILY_DOCUMENT_SUBTYPES = {
+    "certificate_of_origin": "certificate_of_origin",
+    "gsp_form_a": "gsp_form_a",
+    "eur1_movement_certificate": "eur1_movement_certificate",
+    "customs_declaration": "customs_declaration",
+    "export_license": "export_license",
+    "import_license": "import_license",
+    "phytosanitary_certificate": "phytosanitary_certificate",
+    "fumigation_certificate": "fumigation_certificate",
+    "health_certificate": "health_certificate",
+    "veterinary_certificate": "veterinary_certificate",
+    "sanitary_certificate": "sanitary_certificate",
+    "cites_permit": "cites_permit",
+    "radiation_certificate": "radiation_certificate",
 }
 
 MEASUREMENT_LABEL_ALIASES = {
@@ -175,7 +227,7 @@ class LaunchExtractionPipeline:
                 content_type=content_type,
             )
 
-        if normalized_doc_type == "certificate_of_origin":
+        if normalized_doc_type in REGULATORY_FAMILY_DOCUMENT_SUBTYPES:
             return await self._process_certificate_of_origin(
                 extracted_text=extracted_text,
                 filename=filename,
@@ -183,9 +235,15 @@ class LaunchExtractionPipeline:
                 document_type=normalized_doc_type,
                 file_bytes=file_bytes,
                 content_type=content_type,
+                forced_subtype=(
+                    None
+                    if normalized_doc_type == "certificate_of_origin"
+                    else REGULATORY_FAMILY_DOCUMENT_SUBTYPES[normalized_doc_type]
+                ),
+                post_validation_target=normalized_doc_type,
             )
 
-        if normalized_doc_type == "insurance_certificate":
+        if normalized_doc_type in INSURANCE_FAMILY_DOCUMENT_SUBTYPES:
             return await self._process_insurance_certificate(
                 extracted_text=extracted_text,
                 filename=filename,
@@ -193,21 +251,19 @@ class LaunchExtractionPipeline:
                 document_type=normalized_doc_type,
                 file_bytes=file_bytes,
                 content_type=content_type,
+                forced_subtype=(
+                    None
+                    if normalized_doc_type == "insurance_certificate"
+                    else INSURANCE_FAMILY_DOCUMENT_SUBTYPES[normalized_doc_type]
+                ),
+                post_validation_target=(
+                    "beneficiary_certificate"
+                    if normalized_doc_type in {"beneficiary_certificate", "beneficiary_statement"}
+                    else normalized_doc_type
+                ),
             )
 
-        if normalized_doc_type in {"beneficiary_certificate", "beneficiary_statement"}:
-            return await self._process_insurance_certificate(
-                extracted_text=extracted_text,
-                filename=filename,
-                quality_assessment=quality_assessment,
-                document_type=normalized_doc_type,
-                file_bytes=file_bytes,
-                content_type=content_type,
-                forced_subtype="beneficiary_certificate",
-                post_validation_target="beneficiary_certificate",
-            )
-
-        if normalized_doc_type == "inspection_certificate":
+        if normalized_doc_type in INSPECTION_FAMILY_DOCUMENT_SUBTYPES:
             return await self._process_inspection_certificate(
                 extracted_text=extracted_text,
                 filename=filename,
@@ -215,17 +271,11 @@ class LaunchExtractionPipeline:
                 document_type=normalized_doc_type,
                 file_bytes=file_bytes,
                 content_type=content_type,
-            )
-
-        if normalized_doc_type in {"weight_list", "weight_certificate"}:
-            return await self._process_inspection_certificate(
-                extracted_text=extracted_text,
-                filename=filename,
-                quality_assessment=quality_assessment,
-                document_type=normalized_doc_type,
-                file_bytes=file_bytes,
-                content_type=content_type,
-                forced_subtype="weight_certificate",
+                forced_subtype=(
+                    None
+                    if normalized_doc_type == "inspection_certificate"
+                    else INSPECTION_FAMILY_DOCUMENT_SUBTYPES[normalized_doc_type]
+                ),
                 post_validation_target=normalized_doc_type,
             )
 
@@ -841,8 +891,19 @@ class LaunchExtractionPipeline:
             "post_validation_target": None,
         }
 
-    async def _process_certificate_of_origin(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
-        regulatory_subtype = _detect_regulatory_subtype(filename=filename, extracted_text=extracted_text)
+    async def _process_certificate_of_origin(
+        self,
+        *,
+        extracted_text: str,
+        filename: str,
+        quality_assessment: Any,
+        document_type: str,
+        file_bytes: Optional[bytes] = None,
+        content_type: Optional[str] = None,
+        forced_subtype: Optional[str] = None,
+        post_validation_target: str = "certificate_of_origin",
+    ) -> Dict[str, Any]:
+        regulatory_subtype = forced_subtype or _detect_regulatory_subtype(filename=filename, extracted_text=extracted_text)
         base_patch = {
             "ocr_quality": {
                 "overall_score": quality_assessment.overall_score,
@@ -873,15 +934,39 @@ class LaunchExtractionPipeline:
                 )
                 regulatory_review = _assess_regulatory_completeness(shaped_payload, regulatory_subtype=regulatory_subtype)
                 effective_extraction_status = "success" if regulatory_review.get("parse_complete") else "partial"
+                extracted_fields = (
+                    coo_struct.get("extracted_fields")
+                    if isinstance(coo_struct.get("extracted_fields"), dict)
+                    else coo_struct
+                )
+                extraction_lane = _resolve_extraction_lane(
+                    extraction_method=coo_struct.get("_extraction_method", "unknown"),
+                )
+                fact_graph_v1 = build_coo_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "regulatory_subtype": regulatory_subtype,
+                        "extracted_fields": extracted_fields,
+                        "field_details": coo_struct.get("_field_details"),
+                        "raw_text": extracted_text,
+                        "extraction_method": coo_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": extraction_lane,
+                    }
+                )
                 return {
                     "handled": True,
                     "context_key": "certificate_of_origin",
-                    "context_payload": {**shaped_payload, "regulatory_review": regulatory_review},
+                    "context_payload": {**shaped_payload, "regulatory_review": regulatory_review, "fact_graph_v1": fact_graph_v1},
                     "doc_info_patch": {
                         **base_patch,
                         "regulatory_subtype": regulatory_subtype,
                         "regulatory_family": shaped_payload.get("regulatory_family"),
-                        "extracted_fields": coo_struct.get("extracted_fields") if isinstance(coo_struct.get("extracted_fields"), dict) else coo_struct,
+                        "extracted_fields": extracted_fields,
                         "extraction_status": effective_extraction_status,
                         "parse_complete": regulatory_review.get("parse_complete"),
                         "parse_completeness": regulatory_review.get("required_ratio"),
@@ -889,18 +974,17 @@ class LaunchExtractionPipeline:
                         "required_fields_found": regulatory_review.get("required_found"),
                         "required_fields_total": regulatory_review.get("required_total"),
                         "extraction_method": coo_struct.get("_extraction_method", "unknown"),
-                        "extraction_lane": _resolve_extraction_lane(
-                            extraction_method=coo_struct.get("_extraction_method", "unknown"),
-                        ),
+                        "extraction_lane": extraction_lane,
                         "extraction_confidence": coo_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": coo_struct.get("_field_details"),
                         "status_counts": coo_struct.get("_status_counts"),
                         "review_reasons": list(base_patch.get("review_reasons") or []) + list(regulatory_review.get("review_reasons") or []),
+                        "fact_graph_v1": fact_graph_v1,
                     },
                     "has_structured_data": True,
                     "validation_doc_type": "certificate_of_origin",
-                    "post_validation_target": "certificate_of_origin",
+                    "post_validation_target": post_validation_target,
                 }
         except Exception as exc:
             logger.warning("Launch pipeline COO AI extraction failed for %s: %s", filename, exc, exc_info=True)
@@ -911,7 +995,7 @@ class LaunchExtractionPipeline:
             if coo_context:
                 shaped_payload = _shape_regulatory_payload(coo_context, regulatory_subtype=regulatory_subtype, raw_text=extracted_text)
                 regulatory_review = _assess_regulatory_completeness(shaped_payload, regulatory_subtype=regulatory_subtype)
-                return _build_support_only_result(
+                result = _build_support_only_result(
                     context_key="certificate_of_origin",
                     context_payload={**shaped_payload, "regulatory_review": regulatory_review},
                     base_patch=base_patch,
@@ -923,12 +1007,55 @@ class LaunchExtractionPipeline:
                         "regulatory_family": shaped_payload.get("regulatory_family"),
                     },
                 )
+                fact_graph_v1 = build_coo_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "regulatory_subtype": regulatory_subtype,
+                        "extracted_fields": {
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "field_details": coo_context.get("_field_details"),
+                        "raw_text": extracted_text,
+                        "extraction_method": "regex_support",
+                        "extraction_lane": "support_only",
+                    }
+                )
+                result["context_payload"]["fact_graph_v1"] = fact_graph_v1
+                result["doc_info_patch"]["fact_graph_v1"] = fact_graph_v1
+                return result
         except Exception as exc:
             logger.warning("Launch pipeline COO regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
         shaped_payload = _shape_regulatory_payload({}, regulatory_subtype=regulatory_subtype, raw_text=extracted_text)
         regulatory_review = _assess_regulatory_completeness(shaped_payload, regulatory_subtype=regulatory_subtype)
-        return {"handled": True, "context_key": "certificate_of_origin", "context_payload": {**shaped_payload, "regulatory_review": regulatory_review}, "doc_info_patch": {**base_patch, "regulatory_subtype": regulatory_subtype, "regulatory_family": shaped_payload.get("regulatory_family"), "parse_complete": regulatory_review.get("parse_complete"), "parse_completeness": regulatory_review.get("required_ratio"), "missing_required_fields": regulatory_review.get("missing_required_fields", []), "required_fields_found": regulatory_review.get("required_found"), "required_fields_total": regulatory_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(regulatory_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_coo_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
+        fact_graph_v1 = build_coo_fact_set(
+            {
+                **{
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "document_type": document_type,
+                "regulatory_subtype": regulatory_subtype,
+                "extracted_fields": {
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "field_details": {},
+                "raw_text": extracted_text,
+                "extraction_method": "launch_pipeline_coo_extraction_failed",
+                "extraction_lane": "unknown",
+            }
+        )
+        return {"handled": True, "context_key": "certificate_of_origin", "context_payload": {**shaped_payload, "regulatory_review": regulatory_review, "fact_graph_v1": fact_graph_v1}, "doc_info_patch": {**base_patch, "regulatory_subtype": regulatory_subtype, "regulatory_family": shaped_payload.get("regulatory_family"), "fact_graph_v1": fact_graph_v1, "parse_complete": regulatory_review.get("parse_complete"), "parse_completeness": regulatory_review.get("required_ratio"), "missing_required_fields": regulatory_review.get("missing_required_fields", []), "required_fields_found": regulatory_review.get("required_found"), "required_fields_total": regulatory_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(regulatory_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_coo_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
 
     async def _process_insurance_certificate(
         self,
@@ -972,20 +1099,43 @@ class LaunchExtractionPipeline:
                     allow_text_backfill=False,
                 )
                 insurance_review = _assess_insurance_completeness(shaped_payload, insurance_subtype=insurance_subtype)
+                extracted_fields = (
+                    insurance_struct.get("extracted_fields")
+                    if isinstance(insurance_struct.get("extracted_fields"), dict)
+                    else insurance_struct
+                )
+                extraction_lane = _resolve_extraction_lane(
+                    extraction_method=insurance_struct.get("_extraction_method", "unknown"),
+                )
+                fact_graph_v1 = build_insurance_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "insurance_subtype": insurance_subtype,
+                        "extracted_fields": extracted_fields,
+                        "field_details": insurance_struct.get("_field_details"),
+                        "raw_text": extracted_text,
+                        "extraction_method": insurance_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": extraction_lane,
+                    }
+                )
                 return {
                     "handled": True,
                     "context_key": "insurance_certificate",
-                    "context_payload": {**shaped_payload, "insurance_review": insurance_review},
+                    "context_payload": {**shaped_payload, "insurance_review": insurance_review, "fact_graph_v1": fact_graph_v1},
                     "doc_info_patch": {
                         **base_patch,
                         "insurance_subtype": insurance_subtype,
                         "insurance_family": shaped_payload.get("insurance_family"),
-                        "extracted_fields": insurance_struct.get("extracted_fields") if isinstance(insurance_struct.get("extracted_fields"), dict) else insurance_struct,
+                        "fact_graph_v1": fact_graph_v1,
+                        "extracted_fields": extracted_fields,
                         "extraction_status": "success" if insurance_review.get("parse_complete") else "partial",
                         "extraction_method": insurance_struct.get("_extraction_method", "unknown"),
-                        "extraction_lane": _resolve_extraction_lane(
-                            extraction_method=insurance_struct.get("_extraction_method", "unknown"),
-                        ),
+                        "extraction_lane": extraction_lane,
                         "extraction_confidence": insurance_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": insurance_struct.get("_field_details"),
@@ -1010,7 +1160,7 @@ class LaunchExtractionPipeline:
             if insurance_context:
                 shaped_payload = _shape_insurance_payload(insurance_context, insurance_subtype=insurance_subtype, raw_text=extracted_text)
                 insurance_review = _assess_insurance_completeness(shaped_payload, insurance_subtype=insurance_subtype)
-                return _build_support_only_result(
+                result = _build_support_only_result(
                     context_key="insurance_certificate",
                     context_payload={**shaped_payload, "insurance_review": insurance_review},
                     base_patch=base_patch,
@@ -1022,6 +1172,29 @@ class LaunchExtractionPipeline:
                         "insurance_family": shaped_payload.get("insurance_family"),
                     },
                 )
+                fact_graph_v1 = build_insurance_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "insurance_subtype": insurance_subtype,
+                        "extracted_fields": {
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "field_details": insurance_context.get("_field_details"),
+                        "raw_text": extracted_text,
+                        "extraction_method": "regex_support",
+                        "extraction_lane": "support_only",
+                    }
+                )
+                result["context_payload"]["fact_graph_v1"] = fact_graph_v1
+                result["doc_info_patch"]["fact_graph_v1"] = fact_graph_v1
+                return result
         except Exception as exc:
             logger.warning("Launch pipeline insurance regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -1032,7 +1205,7 @@ class LaunchExtractionPipeline:
             ["policy_number", "certificate_number", "insured_amount", "issuer_name"],
         )
         if has_structured_values:
-            return _build_support_only_result(
+            result = _build_support_only_result(
                 context_key="insurance_certificate",
                 context_payload={**shaped_payload, "insurance_review": insurance_review},
                 base_patch=base_patch,
@@ -1043,18 +1216,62 @@ class LaunchExtractionPipeline:
                 ),
                 review_payload=insurance_review,
                 extra_doc_info={
-                    "insurance_subtype": insurance_subtype,
-                    "insurance_family": shaped_payload.get("insurance_family"),
-                },
+                        "insurance_subtype": insurance_subtype,
+                        "insurance_family": shaped_payload.get("insurance_family"),
+                    },
             )
+            fact_graph_v1 = build_insurance_fact_set(
+                {
+                    **{
+                        key: value
+                        for key, value in shaped_payload.items()
+                        if not str(key).startswith("_")
+                    },
+                    "document_type": document_type,
+                    "insurance_subtype": insurance_subtype,
+                    "extracted_fields": {
+                        key: value
+                        for key, value in shaped_payload.items()
+                        if not str(key).startswith("_")
+                    },
+                    "field_details": result["doc_info_patch"].get("field_details") or {},
+                    "raw_text": extracted_text,
+                    "extraction_method": "raw_text_support",
+                    "extraction_lane": "support_only",
+                }
+            )
+            result["context_payload"]["fact_graph_v1"] = fact_graph_v1
+            result["doc_info_patch"]["fact_graph_v1"] = fact_graph_v1
+            return result
+        fact_graph_v1 = build_insurance_fact_set(
+            {
+                **{
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "document_type": document_type,
+                "insurance_subtype": insurance_subtype,
+                "extracted_fields": {
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "field_details": {},
+                "raw_text": extracted_text,
+                "extraction_method": "launch_pipeline_insurance_extraction_failed",
+                "extraction_lane": "unknown",
+            }
+        )
         return {
             "handled": True,
             "context_key": "insurance_certificate",
-            "context_payload": {**shaped_payload, "insurance_review": insurance_review},
+            "context_payload": {**shaped_payload, "insurance_review": insurance_review, "fact_graph_v1": fact_graph_v1},
             "doc_info_patch": {
                 **base_patch,
                 "insurance_subtype": insurance_subtype,
                 "insurance_family": shaped_payload.get("insurance_family"),
+                "fact_graph_v1": fact_graph_v1,
                 "parse_complete": insurance_review.get("parse_complete"),
                 "parse_completeness": insurance_review.get("required_ratio"),
                 "missing_required_fields": insurance_review.get("missing_required_fields", []),
@@ -1162,19 +1379,42 @@ class LaunchExtractionPipeline:
                     allow_text_backfill=False,
                 )
                 inspection_review = _assess_inspection_completeness(shaped_payload, inspection_subtype=inspection_subtype)
+                extracted_fields = (
+                    inspection_struct.get("extracted_fields")
+                    if isinstance(inspection_struct.get("extracted_fields"), dict)
+                    else inspection_struct
+                )
+                extraction_lane = _resolve_extraction_lane(
+                    extraction_method=inspection_struct.get("_extraction_method", "unknown"),
+                )
+                fact_graph_v1 = build_inspection_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "inspection_subtype": inspection_subtype,
+                        "extracted_fields": extracted_fields,
+                        "field_details": inspection_struct.get("_field_details"),
+                        "raw_text": extracted_text,
+                        "extraction_method": inspection_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": extraction_lane,
+                    }
+                )
                 return {
                     "handled": True,
                     "context_key": "inspection_certificate",
-                    "context_payload": {**shaped_payload, "inspection_review": inspection_review},
+                    "context_payload": {**shaped_payload, "inspection_review": inspection_review, "fact_graph_v1": fact_graph_v1},
                     "doc_info_patch": {
                         **base_patch,
                         "inspection_subtype": inspection_subtype,
-                        "extracted_fields": inspection_struct.get("extracted_fields") if isinstance(inspection_struct.get("extracted_fields"), dict) else inspection_struct,
+                        "fact_graph_v1": fact_graph_v1,
+                        "extracted_fields": extracted_fields,
                         "extraction_status": "success" if inspection_review.get("parse_complete") else "partial",
                         "extraction_method": inspection_struct.get("_extraction_method", "unknown"),
-                        "extraction_lane": _resolve_extraction_lane(
-                            extraction_method=inspection_struct.get("_extraction_method", "unknown"),
-                        ),
+                        "extraction_lane": extraction_lane,
                         "extraction_confidence": inspection_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": inspection_struct.get("_field_details"),
@@ -1201,7 +1441,7 @@ class LaunchExtractionPipeline:
             if inspection_context:
                 shaped_payload = _shape_inspection_payload(inspection_context, inspection_subtype=inspection_subtype, raw_text=extracted_text)
                 inspection_review = _assess_inspection_completeness(shaped_payload, inspection_subtype=inspection_subtype)
-                return _build_support_only_result(
+                result = _build_support_only_result(
                     context_key="inspection_certificate",
                     context_payload={**shaped_payload, "inspection_review": inspection_review},
                     base_patch=base_patch,
@@ -1213,6 +1453,29 @@ class LaunchExtractionPipeline:
                         "inspection_family": shaped_payload.get("inspection_family"),
                     },
                 )
+                fact_graph_v1 = build_inspection_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "inspection_subtype": inspection_subtype,
+                        "extracted_fields": {
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "field_details": inspection_context.get("_field_details"),
+                        "raw_text": extracted_text,
+                        "extraction_method": "regex_support",
+                        "extraction_lane": "support_only",
+                    }
+                )
+                result["context_payload"]["fact_graph_v1"] = fact_graph_v1
+                result["doc_info_patch"]["fact_graph_v1"] = fact_graph_v1
+                return result
         except Exception as exc:
             logger.warning("Launch pipeline inspection regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -1231,7 +1494,7 @@ class LaunchExtractionPipeline:
             ],
         )
         if has_structured_values:
-            return _build_support_only_result(
+            result = _build_support_only_result(
                 context_key="inspection_certificate",
                 context_payload={**shaped_payload, "inspection_review": inspection_review},
                 base_patch=base_patch,
@@ -1250,18 +1513,62 @@ class LaunchExtractionPipeline:
                 ),
                 review_payload=inspection_review,
                 extra_doc_info={
-                    "inspection_subtype": inspection_subtype,
-                    "inspection_family": shaped_payload.get("inspection_family"),
-                },
+                        "inspection_subtype": inspection_subtype,
+                        "inspection_family": shaped_payload.get("inspection_family"),
+                    },
             )
+            fact_graph_v1 = build_inspection_fact_set(
+                {
+                    **{
+                        key: value
+                        for key, value in shaped_payload.items()
+                        if not str(key).startswith("_")
+                    },
+                    "document_type": document_type,
+                    "inspection_subtype": inspection_subtype,
+                    "extracted_fields": {
+                        key: value
+                        for key, value in shaped_payload.items()
+                        if not str(key).startswith("_")
+                    },
+                    "field_details": result["doc_info_patch"].get("field_details") or {},
+                    "raw_text": extracted_text,
+                    "extraction_method": "raw_text_support",
+                    "extraction_lane": "support_only",
+                }
+            )
+            result["context_payload"]["fact_graph_v1"] = fact_graph_v1
+            result["doc_info_patch"]["fact_graph_v1"] = fact_graph_v1
+            return result
+        fact_graph_v1 = build_inspection_fact_set(
+            {
+                **{
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "document_type": document_type,
+                "inspection_subtype": inspection_subtype,
+                "extracted_fields": {
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "field_details": {},
+                "raw_text": extracted_text,
+                "extraction_method": "launch_pipeline_inspection_extraction_failed",
+                "extraction_lane": "unknown",
+            }
+        )
         return {
             "handled": True,
             "context_key": "inspection_certificate",
-            "context_payload": {**shaped_payload, "inspection_review": inspection_review},
+            "context_payload": {**shaped_payload, "inspection_review": inspection_review, "fact_graph_v1": fact_graph_v1},
             "doc_info_patch": {
                 **base_patch,
                 "inspection_subtype": inspection_subtype,
                 "inspection_family": shaped_payload.get("inspection_family"),
+                "fact_graph_v1": fact_graph_v1,
                 "parse_complete": inspection_review.get("parse_complete"),
                 "parse_completeness": inspection_review.get("required_ratio"),
                 "missing_required_fields": inspection_review.get("missing_required_fields", []),
