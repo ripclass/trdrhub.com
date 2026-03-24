@@ -3,6 +3,7 @@ import { FileCheck, Loader2 } from 'lucide-react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useOnboarding } from '@/hooks/use-onboarding'
+import { persistPendingExporterReviewRoute } from '@/lib/exporter/pendingReviewRoute'
 import {
   matchesLcopilotScope,
   resolveLcopilotRoute,
@@ -46,6 +47,7 @@ export function LcopilotBetaRoute({ scope, children }: LcopilotBetaRouteProps) {
   }
 
   if (!user) {
+    persistPendingExporterReviewRoute(returnUrl)
     return <Navigate to={`/login?returnUrl=${encodeURIComponent(returnUrl)}`} replace />
   }
 

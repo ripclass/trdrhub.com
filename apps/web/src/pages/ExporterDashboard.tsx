@@ -1,6 +1,6 @@
 // ExporterDashboard - Section-based dashboard with embedded workflows
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, Link, useLocation } from "react-router-dom";
 import * as React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,12 @@ import {
 } from "@/lib/exporter/exporterSections";
 import { getParam } from "@/lib/exporter/url";
 import {
+  clearPendingExporterReviewRoute,
+  isPendingExporterReviewRoute,
+  persistPendingExporterReviewRoute,
+  readPendingExporterReviewRoute,
+} from "@/lib/exporter/pendingReviewRoute";
+import {
   FileText,
   CheckCircle,
   XCircle,
@@ -96,6 +102,7 @@ export default function ExporterDashboard() {
 type AnySection = ExporterSection | SidebarSection;
 
 function DashboardContent() {
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { jobId: contextJobId, setJobId } = useResultsContext();
   const { user: authUser } = useAuth();
@@ -140,6 +147,11 @@ function DashboardContent() {
 
   // Effective jobId (context or URL)
   const effectiveJobId = urlJobId || contextJobId;
+  const hasResultsRouteContext = Boolean(
+    sectionParam &&
+      urlJobId &&
+      ["reviews", "documents", "issues", "extracted-data", "history", "customs"].includes(sectionParam),
+  );
 
   // Derive sidebar section from activeSection
   const sidebarSection: SidebarSection = EXPORTER_SECTION_OPTIONS.includes(activeSection as ExporterSection)
@@ -177,6 +189,26 @@ function DashboardContent() {
     }
   }, [sectionParam]);
 
+  useEffect(() => {
+    const currentRoute = `${location.pathname}${location.search}`;
+    if (isPendingExporterReviewRoute(currentRoute)) {
+      persistPendingExporterReviewRoute(currentRoute);
+      return;
+    }
+
+    if (location.pathname !== DASHBOARD_BASE || location.search) {
+      return;
+    }
+
+    const pendingRoute = readPendingExporterReviewRoute();
+    if (!pendingRoute) {
+      return;
+    }
+
+    const pendingUrl = new URL(pendingRoute, window.location.origin);
+    setSearchParams(new URLSearchParams(pendingUrl.search), { replace: true });
+  }, [location.pathname, location.search, setSearchParams]);
+
   /**
    * Navigate to a section with optional extras (jobId, lc, tab).
    */
@@ -211,6 +243,15 @@ function DashboardContent() {
         if (jobIdToUse) params.set("jobId", jobIdToUse);
         if (lcToUse) params.set("lc", lcToUse);
         if (tabToUse && section === "reviews") params.set("tab", tabToUse);
+
+        const pendingRoute = `${DASHBOARD_BASE}?${params.toString()}`;
+        if (jobIdToUse) {
+          persistPendingExporterReviewRoute(pendingRoute);
+        } else {
+          clearPendingExporterReviewRoute();
+        }
+      } else {
+        clearPendingExporterReviewRoute();
       }
 
       setSearchParams(params, { replace: true });
@@ -295,6 +336,13 @@ function DashboardContent() {
     "history",
     "customs",
   ].includes(activeSection);
+
+  useEffect(() => {
+    if (!hasResultsRouteContext) {
+      return;
+    }
+    persistPendingExporterReviewRoute(`${location.pathname}${location.search}`);
+  }, [hasResultsRouteContext, location.pathname, location.search]);
 
   return (
     <DashboardLayout

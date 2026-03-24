@@ -234,8 +234,29 @@ def build_workflow_stage(
             "summary": "Upload the LC and supporting documents to begin extraction and validation.",
         }
 
-    unresolved_documents = 0
-    unresolved_fields = 0
+    materialize_document_fact_graphs_v1(normalized_documents)
+
+    queue_unresolved_documents = 0
+    queue_unresolved_fields = 0
+    try:
+        queue_payload = _build_resolution_queue_payload(normalized_documents)
+        queue_summary = (
+            queue_payload.get("summary")
+            if isinstance(queue_payload, dict) and isinstance(queue_payload.get("summary"), dict)
+            else {}
+        )
+        queue_documents = queue_summary.get("unresolved_documents")
+        if isinstance(queue_documents, int):
+            queue_unresolved_documents = max(0, queue_documents)
+        queue_total_items = queue_summary.get("total_items")
+        if isinstance(queue_total_items, int):
+            queue_unresolved_fields = max(0, queue_total_items)
+    except Exception:
+        queue_unresolved_documents = 0
+        queue_unresolved_fields = 0
+
+    unresolved_documents = queue_unresolved_documents
+    unresolved_fields = queue_unresolved_fields
     lane_counts: Dict[str, int] = {}
     for document in normalized_documents:
         extraction_lane = str(
@@ -244,6 +265,10 @@ def build_workflow_stage(
             or "unknown"
         ).strip() or "unknown"
         lane_counts[extraction_lane] = lane_counts.get(extraction_lane, 0) + 1
+
+        document_fact_graph = document.get("fact_graph_v1") or document.get("factGraphV1")
+        if isinstance(document_fact_graph, dict):
+            continue
 
         extraction_resolution = (
             document.get("extraction_resolution")

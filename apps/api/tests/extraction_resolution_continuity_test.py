@@ -91,6 +91,13 @@ def _load_response_shaping_symbols() -> Dict[str, Any]:
         "Dict": Dict,
         "List": List,
         "Optional": Optional,
+        "materialize_document_fact_graphs_v1": lambda docs: docs,
+        "_build_resolution_queue_payload": lambda docs: {
+            "summary": {
+                "total_items": 0,
+                "unresolved_documents": 0,
+            }
+        },
     }
     return _load_symbols(
         RESPONSE_SHAPING_PATH,
@@ -309,6 +316,51 @@ def test_workflow_stage_moves_to_validation_results_when_extraction_is_resolved(
     assert stage["ready_for_final_validation"] is True
     assert stage["unresolved_documents"] == 0
     assert stage["unresolved_fields"] == 0
+
+
+def test_workflow_stage_prefers_fact_backed_queue_counts_over_legacy_resolution_counts() -> None:
+    symbols = _load_response_shaping_symbols()
+    build_workflow_stage = symbols["build_workflow_stage"]
+    build_workflow_stage.__globals__["_build_resolution_queue_payload"] = lambda docs: {
+        "summary": {
+            "total_items": 6,
+            "unresolved_documents": 3,
+        }
+    }
+
+    stage = build_workflow_stage(
+        [
+            {
+                "document_id": "doc-1",
+                "extraction_lane": "document_ai",
+                "fact_graph_v1": {"document_type": "commercial_invoice", "facts": []},
+                "extraction_resolution": {
+                    "required": True,
+                    "unresolved_count": 1,
+                    "fields": [{"field_name": "invoice_date"}],
+                },
+            },
+            {
+                "document_id": "doc-2",
+                "extraction_lane": "support_only",
+                "extraction_resolution": {
+                    "required": True,
+                    "unresolved_count": 2,
+                    "fields": [
+                        {"field_name": "issuer_name"},
+                        {"field_name": "permit_number"},
+                    ],
+                },
+            },
+        ],
+        validation_status="review",
+    )
+
+    assert stage["stage"] == "extraction_resolution"
+    assert stage["unresolved_documents"] == 4
+    assert stage["unresolved_fields"] == 8
+    assert stage["document_lane_counts"]["document_ai"] == 1
+    assert stage["document_lane_counts"]["support_only"] == 1
 
 
 def test_workflow_stage_contract_override_downgrades_submission_and_bank_verdict() -> None:
