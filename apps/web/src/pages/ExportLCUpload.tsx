@@ -1237,7 +1237,12 @@ export default function ExportLCUpload({
       } else {
         console.log('🚀 Navigating to results page with jobId:', jobId);
         setTimeout(() => {
-          navigate(`/lcopilot/results/${jobId}?lc=${encodeURIComponent(lcNumber.trim())}`);
+          const params = new URLSearchParams({
+            section: "reviews",
+            jobId,
+            lc: lcNumber.trim(),
+          });
+          navigate(`/lcopilot/exporter-dashboard?${params.toString()}`);
         }, 1500);
       }
 

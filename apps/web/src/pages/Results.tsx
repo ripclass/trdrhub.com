@@ -408,7 +408,12 @@ Compliance check: PASSED
     if (versionData) {
       setCurrentVersion(versionData);
       // Navigate to the new version's results
-      navigate(`/lcopilot/results/${versionData.job_id}?lc=${lcNumber}`);
+      const params = new URLSearchParams({
+        section: "reviews",
+        jobId: versionData.job_id,
+        lc: lcNumber,
+      });
+      navigate(`/lcopilot/exporter-dashboard?${params.toString()}`);
     }
   };
 

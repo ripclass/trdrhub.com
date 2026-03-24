@@ -255,7 +255,7 @@ export function LCWorkspaceView({ embedded = false }: { embedded?: boolean }) {
     navigate(
       embedded
         ? `/lcopilot/exporter-dashboard?section=reviews&jobId=${sessionId}`
-        : `/lcopilot/results/${sessionId}`,
+        : `/lcopilot/exporter-dashboard?section=reviews&jobId=${sessionId}`,
     );
   };
 

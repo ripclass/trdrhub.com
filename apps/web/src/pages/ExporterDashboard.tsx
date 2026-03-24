@@ -254,7 +254,6 @@ function DashboardContent() {
       handleSectionChange("reviews", {
         jobId: payload.jobId,
         lc: payload.lcNumber,
-        tab: "overview",
       });
     },
     [setJobId, handleSectionChange]

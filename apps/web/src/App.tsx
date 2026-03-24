@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import LandingPage from './pages/landing/LandingPage'
 import Index from './pages/Index'
 import TRDRHub from './pages/TRDRHub'
@@ -175,6 +175,21 @@ import {
   BankFormatsPage,
   CertificatesPage,
 } from './pages/tools/doc-generator'
+
+function LegacyExporterResultsRedirect() {
+  const location = useLocation()
+  const { jobId } = useParams()
+  const params = new URLSearchParams(location.search)
+
+  if (jobId && !params.has('jobId')) {
+    params.set('jobId', jobId)
+  }
+  if (!params.has('section')) {
+    params.set('section', 'reviews')
+  }
+
+  return <Navigate to={`/lcopilot/exporter-dashboard?${params.toString()}`} replace />
+}
 
 // Main App Component
 function App() {
@@ -356,8 +371,8 @@ function App() {
           </LcopilotBetaRoute>
         } />
         <Route path="/lcopilot/upload-lc" element={<UploadLC />} />
-        <Route path="/lcopilot/results" element={<ExporterResults />} />
-        <Route path="/lcopilot/results/:jobId" element={<ExporterResults />} />
+        <Route path="/lcopilot/results" element={<LegacyExporterResultsRedirect />} />
+        <Route path="/lcopilot/results/:jobId" element={<LegacyExporterResultsRedirect />} />
         {/* V2 Results - Output-First SME-focused design */}
         <Route path="/lcopilot/results-v2/:sessionId" element={<ExporterResultsV2 />} />
         <Route path="/lcopilot/draft-corrections" element={<DraftLCCorrections />} />
@@ -395,7 +410,7 @@ function App() {
             <EnterpriseDashboard />
           </LcopilotBetaRoute>
         } />
-        <Route path="/lcopilot/exporter-results" element={<ExporterResults />} />
+        <Route path="/lcopilot/exporter-results" element={<LegacyExporterResultsRedirect />} />
         <Route path="/lcopilot/exporter-analytics" element={<ExporterAnalytics />} />
         <Route path="/lcopilot/importer-analytics" element={<ImporterAnalytics />} />
         <Route path="/lcopilot/analytics" element={<AnalyticsPage />} />
