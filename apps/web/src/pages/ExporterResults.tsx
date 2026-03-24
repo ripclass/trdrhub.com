@@ -1290,6 +1290,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     (structuredResult as any)?.workflowStage ??
     null;
   const workflowStage = resultData?.workflowStage ?? null;
+  const isExtractionResolutionStage = workflowStage?.stage === 'extraction_resolution';
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
   const extractionResolutionSummary = useMemo(() => {
     const docsNeedingResolution = documents.filter((doc) => doc.extractionResolution?.required);
@@ -2113,8 +2114,21 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
   );
   const exporterPresentationTruth = useMemo(
-    () =>
-      getExporterPresentationTruth({
+    () => {
+      if (isExtractionResolutionStage) {
+        return {
+          readinessLabel: 'Review needed' as const,
+          readinessSummary:
+            workflowStage?.summary ||
+            'Validation is still provisional because extracted fields need confirmation before the case should be treated as clean.',
+          overallStatus: 'warning' as const,
+          presentationStatus: 'review_required' as const,
+          presentationSummary:
+            'Resolve extraction confirmation items before treating presentation readiness as final.',
+        };
+      }
+
+      return getExporterPresentationTruth({
         canonicalResultTruth,
         checklistTruth: {
           missingRequirements: requirementChecklistSummary.missing,
@@ -2124,11 +2138,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           awaitingDocuments: requirementChecklistSummary.awaitingDocument,
         },
         totalIssues: surfaceFindingsCount,
-      }),
-    [canonicalResultTruth, requirementChecklistSummary, surfaceFindingsCount],
+      });
+    },
+    [canonicalResultTruth, isExtractionResolutionStage, requirementChecklistSummary, surfaceFindingsCount, workflowStage?.summary],
   );
   const actionEngine = useMemo(() => {
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
+
+    if (isExtractionResolutionStage) {
+      actions.push({
+        priority: 'critical',
+        title: 'Confirm unresolved extracted fields',
+        detail:
+          workflowStage?.summary ||
+          'Review source evidence in the Documents tab and confirm unresolved fields before treating validation findings as final.',
+      });
+    }
 
     checklistReviewFindings.forEach((finding) => {
       actions.push({
@@ -2163,7 +2188,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const rank = { critical: 0, major: 1, minor: 2 };
       return rank[a.priority] - rank[b.priority];
     });
-  }, [checklistReviewFindings, issueCards]);
+  }, [checklistReviewFindings, isExtractionResolutionStage, issueCards, workflowStage?.summary]);
   const additionalActionItems = useMemo(() => {
     const reviewFindingTitles = new Set(checklistReviewFindings.map((finding) => finding.title));
     return actionEngine.filter((action) => !reviewFindingTitles.has(action.title));
@@ -2172,6 +2197,36 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const displayBankVerdict = useMemo<BankVerdict | null>(() => {
     const baseVerdict = (structuredResult?.bank_verdict as BankVerdict | null) ?? null;
     const normalizedVerdict = String(baseVerdict?.verdict ?? '').trim().toUpperCase();
+
+    if (isExtractionResolutionStage) {
+      const checklistCriticalCount = checklistReviewFindings.filter((finding) => finding.severity === 'critical').length;
+      const checklistMajorCount = checklistReviewFindings.length - checklistCriticalCount;
+      const actionItems: BankVerdictActionItem[] = actionEngine.slice(0, 5).map((action) => ({
+        priority: action.priority === 'critical' ? 'critical' : action.priority === 'major' ? 'high' : 'medium',
+        issue: action.title,
+        action: action.detail,
+      }));
+
+      return {
+        verdict: 'CAUTION',
+        verdict_color: 'yellow',
+        verdict_message: 'Extraction resolution required before bank review',
+        recommendation:
+          workflowStage?.summary ||
+          'Confirm unresolved extracted fields before treating this case as submission-ready.',
+        can_submit: false,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: baseVerdict?.estimated_discrepancy_fee ?? 0,
+        issue_summary: {
+          critical: checklistCriticalCount,
+          major: checklistMajorCount,
+          minor: 0,
+          total: checklistReviewFindings.length,
+        },
+        action_items: actionItems,
+        action_items_count: actionEngine.length,
+      };
+    }
 
     if (exporterPresentationTruth.presentationStatus === 'ready') {
       return baseVerdict;
@@ -2226,7 +2281,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       action_items: actionItems,
       action_items_count: actionEngine.length,
     };
-  }, [actionEngine, checklistReviewFindings, exporterPresentationTruth.presentationStatus, structuredResult?.bank_verdict]);
+  }, [actionEngine, checklistReviewFindings, exporterPresentationTruth.presentationStatus, isExtractionResolutionStage, structuredResult?.bank_verdict, workflowStage?.summary]);
   const customsPackReadiness = useMemo(() => {
     const derivedBlockers = requirementChecklist.filter(
       (item) => item.requirementStatus === 'missing' || item.reviewState === 'blocked',
@@ -2251,6 +2306,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       else if (owner.includes('compliance')) ownerBuckets.compliance += 1;
       else if (owner.includes('waiver')) ownerBuckets.waiver += 1;
     });
+
+    if (isExtractionResolutionStage) {
+      return {
+        status: 'review_required' as const,
+        summary:
+          workflowStage?.summary ||
+          'Resolve extraction confirmation items before treating customs readiness as final.',
+        blockers: [],
+        reviews: derivedReviews,
+        ownerBuckets,
+        source: 'workflow_stage',
+      };
+    }
+
     return {
       status: exporterPresentationTruth.presentationStatus,
       summary: exporterPresentationTruth.presentationSummary,
@@ -2259,7 +2328,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       ownerBuckets,
       source: 'shared',
     };
-  }, [requirementChecklist, issueCards, exporterPresentationTruth]);
+  }, [requirementChecklist, issueCards, exporterPresentationTruth, isExtractionResolutionStage, workflowStage?.summary]);
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = Boolean(manifestData?.documents?.length);
   const processingSummaryExtras =
@@ -2307,10 +2376,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   );
   const submissionEligibility = canonicalResultTruth.submissionEligibility;
   const canSubmitFromValidation = canonicalResultTruth.canSubmitFromValidation;
-  const canGenerateCustomsPack = exporterPresentationTruth.presentationStatus !== 'not_ready';
+  const canGenerateCustomsPack =
+    exporterPresentationTruth.presentationStatus !== 'not_ready' && !isExtractionResolutionStage;
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsQueryEnabled && guardrailsLoading) return false;
+    if (isExtractionResolutionStage) return false;
     if (!canSubmitFromValidation) return false;
     if (exporterPresentationTruth.presentationStatus !== 'ready') return false;
     if (!guardrails) {
@@ -2324,6 +2395,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     guardrailsQueryEnabled,
     canSubmitFromValidation,
     exporterPresentationTruth.presentationStatus,
+    isExtractionResolutionStage,
   ]);
 
   // Contract Validation warnings (Output-First layer)
@@ -3760,6 +3832,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               renderReferenceIssuesCard={renderReferenceIssuesCard}
               lcNumber={lcNumber}
               onDraftEmail={handleDraftEmail}
+              workflowStage={workflowStage}
             />
           </TabsContent>
         </Tabs>

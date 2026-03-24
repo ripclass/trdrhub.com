@@ -106,6 +106,7 @@ from .presentation_contract import (
     _build_validation_contract,
     _run_validation_arbitration_escalation,
     _build_submission_eligibility_context,
+    _apply_workflow_stage_contract_overrides,
 )
 
 from .session_refresh import (
@@ -243,6 +244,7 @@ __all__ = [
     "_build_validation_contract",
     "_run_validation_arbitration_escalation",
     "_build_submission_eligibility_context",
+    "_apply_workflow_stage_contract_overrides",
     "sync_structured_result_collections",
     "apply_cycle2_runtime_recovery",
     "backfill_hybrid_secondary_surfaces",

@@ -137,6 +137,31 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             "summary": f"stage={stage} status={validation_status}",
         }
 
+    def _fake_apply_workflow_stage_contract_overrides(
+        workflow_stage,
+        bank_verdict,
+        submission_eligibility,
+        validation_contract=None,
+    ):
+        stage = str((workflow_stage or {}).get("stage") or "").strip().lower()
+        bank_verdict = copy.deepcopy(bank_verdict or {})
+        submission_eligibility = copy.deepcopy(submission_eligibility or {})
+        validation_contract = copy.deepcopy(validation_contract or {})
+        if stage == "extraction_resolution":
+            bank_verdict["verdict"] = "CAUTION"
+            bank_verdict["can_submit"] = False
+            submission_eligibility["can_submit"] = False
+            submission_eligibility["reasons"] = list(submission_eligibility.get("reasons") or []) + [
+                "workflow_stage_extraction_resolution"
+            ]
+            validation_contract["final_verdict"] = "review"
+            validation_contract["override_reason"] = "extraction_resolution_pending"
+        return {
+            "bank_verdict": bank_verdict,
+            "submission_eligibility": submission_eligibility,
+            "validation_contract": validation_contract,
+        }
+
     namespace: Dict[str, Any] = {
         "Any": Any,
         "Dict": Dict,
@@ -148,6 +173,7 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "_build_submission_eligibility_context": _fake_build_submission_eligibility_context,
         "_build_validation_contract": _fake_build_validation_contract,
         "_run_validation_arbitration_escalation": _fake_run_validation_arbitration_escalation,
+        "_apply_workflow_stage_contract_overrides": _fake_apply_workflow_stage_contract_overrides,
         "build_processing_summary_v2": _fake_build_processing_summary_v2,
         "count_issue_severity": _fake_count_issue_severity,
         "build_workflow_stage": _fake_build_workflow_stage,
@@ -239,3 +265,81 @@ def test_refresh_structured_result_after_field_override_recomputes_same_session_
     assert refreshed["document_extraction_v1"]["documents"][0]["field_details"]["invoice_date"]["verification"] == "operator_confirmed"
     assert refreshed["workflow_stage"]["stage"] == "validation_results"
     assert refreshed["_operator_field_refresh"]["field_name"] == "invoice_date"
+
+
+def test_refresh_structured_result_keeps_submission_provisional_while_extraction_resolution_is_open() -> None:
+    symbols = _load_symbols(
+        {
+            "sync_structured_result_collections",
+            "_normalize_field_key",
+            "_normalize_issue_document_ids",
+            "_issue_targets_overridden_field",
+            "_is_override_resolved_extraction_issue",
+            "_filter_resolved_override_issues",
+            "_build_field_decisions_from_documents",
+            "_copy_documents_to_secondary_surfaces",
+            "_resolve_documents_for_refresh",
+            "refresh_structured_result_after_field_override",
+        }
+    )
+    refresh = symbols["refresh_structured_result_after_field_override"]
+
+    document = {
+        "document_id": "doc-invoice",
+        "document_type": "commercial_invoice",
+        "name": "Invoice.pdf",
+        "extracted_fields": {
+            "invoice_number": "DKEL/EXP/2026/114",
+            "invoice_date": None,
+        },
+        "field_details": {
+            "invoice_date": {
+                "verification": "not_found",
+                "source": "ai_first",
+                "confidence": 0.0,
+            }
+        },
+        "review_reasons": [],
+        "critical_field_states": {"invoice_date": "missing"},
+        "extraction_resolution": {
+            "required": True,
+            "unresolved_count": 1,
+            "summary": "1 field still needs confirmation.",
+            "fields": [{"field_name": "invoice_date", "label": "Invoice Date"}],
+        },
+        "status": "warning",
+    }
+    structured_result = {
+        "documents": [copy.deepcopy(document)],
+        "documents_structured": [copy.deepcopy(document)],
+        "document_extraction_v1": {"documents": [copy.deepcopy(document)]},
+        "processing_summary": {
+            "documents": [copy.deepcopy(document)],
+            "processing_time_seconds": 12.3,
+            "processing_time_display": "12.3s",
+            "processing_time_ms": 12300,
+            "extraction_quality": 96,
+        },
+        "processing_summary_v2": {"documents": [copy.deepcopy(document)]},
+        "issues": [],
+        "analytics": {},
+        "gate_result": {"completeness": 0.95},
+        "validation_blocked": False,
+        "bank_verdict": {"verdict": "SUBMIT", "can_submit": True, "action_items": [], "issue_summary": {}},
+        "submission_eligibility": {"can_submit": True, "reasons": []},
+        "effective_submission_eligibility": {"can_submit": True, "reasons": []},
+    }
+
+    refreshed = asyncio.run(
+        refresh(
+            structured_result,
+            document_id="doc-invoice",
+            field_name="invoice_number",
+        )
+    )
+
+    assert refreshed["workflow_stage"]["stage"] == "extraction_resolution"
+    assert refreshed["submission_eligibility"]["can_submit"] is False
+    assert "workflow_stage_extraction_resolution" in refreshed["submission_eligibility"]["reasons"]
+    assert refreshed["bank_verdict"]["verdict"] == "CAUTION"
+    assert refreshed["validation_contract_v1"]["final_verdict"] == "review"

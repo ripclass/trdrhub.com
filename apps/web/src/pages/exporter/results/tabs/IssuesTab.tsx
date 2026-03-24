@@ -40,6 +40,12 @@ interface IssuesTabProps {
   lcNumber?: string;
   companyName?: string;
   onDraftEmail?: (context: EmailDraftContext) => void;
+  workflowStage?: {
+    stage?: string;
+    summary?: string;
+    unresolved_documents?: number;
+    unresolved_fields?: number;
+  } | null;
 }
 
 const BUCKETS = [
@@ -76,6 +82,7 @@ export function IssuesTab({
   lcNumber,
   companyName,
   onDraftEmail,
+  workflowStage,
 }: IssuesTabProps) {
   const grouped = useMemo(() => {
     const documentary = new Map<string, IssueCard[]>();
@@ -113,6 +120,19 @@ export function IssuesTab({
     [reviewFindings],
   );
   const overallValidationNote = useMemo(() => {
+    if (workflowStage?.stage === "extraction_resolution") {
+      return {
+        tone: "warning" as const,
+        title: "Overall Validation Note",
+        summary:
+          workflowStage.summary ||
+          "Validation is still provisional because extracted fields remain unresolved.",
+        nextStep:
+          "Confirm the unresolved fields from source evidence first. Treat discrepancy and compliance surfaces as provisional until extraction resolution is complete.",
+        Icon: AlertTriangle,
+      };
+    }
+
     if (issueCards.length === 0 && reviewFindings.length === 0) {
       return {
         tone: "success" as const,
@@ -156,7 +176,7 @@ export function IssuesTab({
         : "Resolve the discrepancy findings below before treating the case as ready for submission.",
       Icon: FileWarning,
     };
-  }, [issueCards.length, reviewFindings.length, totalComplianceAlerts, totalDiscrepancyFindings]);
+  }, [issueCards.length, reviewFindings.length, totalComplianceAlerts, totalDiscrepancyFindings, workflowStage]);
   const noteToneClass =
     overallValidationNote.tone === "success"
       ? "border-success/40 bg-success/5 text-success"

@@ -1225,7 +1225,16 @@ describe('ExporterResults', () => {
     ];
 
     structured.documents_structured = documentsStructured;
+    structured.documents = documentsStructured as any;
     structured.lc_structured.documents_structured = documentsStructured;
+    structured.workflow_stage = {
+      stage: 'extraction_resolution',
+      provisional_validation: true,
+      ready_for_final_validation: false,
+      unresolved_documents: 2,
+      unresolved_fields: 4,
+      summary: '2 documents still need 4 fields confirmed before validation should be treated as final.',
+    } as any;
     activeResults = buildValidationResponse({ structured_result: structured });
 
     const user = userEvent.setup();
@@ -1234,8 +1243,10 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
-    expect(screen.getByText(/Extraction Resolution Required/i)).toBeInTheDocument();
-    expect(screen.getByText(/Validation below is provisional until/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Extraction Resolution Required/i })).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/2 documents still need 4 fields confirmed before validation should be treated as final\./i).length,
+    ).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
 
@@ -1258,6 +1269,22 @@ describe('ExporterResults', () => {
     expect(within(packingDrawer).getByText(/Source packing list does not clearly show a document date\./i)).toBeInTheDocument();
     expect(within(packingDrawer).getByText(/Confirmed from native_text: Gross Weight: 20,400 kg/i)).toBeInTheDocument();
     expect(within(packingDrawer).queryByText(/^Field not found$/i)).toBeNull();
+
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('tab', { name: /Issues/i }));
+    expect(
+      screen.getByText(/Confirm the unresolved fields from source evidence first\./i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    expect(
+      within(customsPanel).getAllByText(/2 documents still need 4 fields confirmed before validation should be treated as final\./i)
+        .length,
+    ).toBeGreaterThan(0);
+    expect(within(customsPanel).getByRole('button', { name: /Generate Customs Pack/i })).toBeDisabled();
+    expect(within(customsPanel).queryByRole('button', { name: /Submit to Bank/i })).toBeNull();
   });
 
   it('saves an operator-confirmed field override from the document detail drawer and refreshes the same session results', async () => {

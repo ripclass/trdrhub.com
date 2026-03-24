@@ -103,6 +103,28 @@ def _load_response_shaping_symbols() -> Dict[str, Any]:
     )
 
 
+def _load_presentation_contract_symbols() -> Dict[str, Any]:
+    namespace: Dict[str, Any] = {
+        "Any": Any,
+        "Dict": Dict,
+        "List": List,
+        "Optional": Optional,
+        "Tuple": tuple,
+        "json": __import__("json"),
+        "logging": __import__("logging"),
+        "logger": __import__("logging").getLogger(__name__),
+        "_build_document_field_hint_index": lambda _documents: {},
+        "_build_unresolved_critical_context": lambda _field_decisions, critical_fields=None, documents=None: [],
+    }
+    return _load_symbols(
+        ROOT / "app" / "routers" / "validation" / "presentation_contract.py",
+        {
+            "_apply_workflow_stage_contract_overrides",
+        },
+        namespace,
+    )
+
+
 def test_launch_pipeline_completeness_emits_extraction_resolution_not_review_reasons() -> None:
     symbols = _load_launch_pipeline_symbols()
     assess = symbols["_assess_invoice_financial_completeness"]
@@ -244,6 +266,47 @@ def test_workflow_stage_moves_to_validation_results_when_extraction_is_resolved(
     assert stage["ready_for_final_validation"] is True
     assert stage["unresolved_documents"] == 0
     assert stage["unresolved_fields"] == 0
+
+
+def test_workflow_stage_contract_override_downgrades_submission_and_bank_verdict() -> None:
+    symbols = _load_presentation_contract_symbols()
+    apply_overrides = symbols["_apply_workflow_stage_contract_overrides"]
+
+    overridden = apply_overrides(
+        {
+            "stage": "extraction_resolution",
+            "summary": "2 fields still need confirmation.",
+            "unresolved_documents": 1,
+            "unresolved_fields": 2,
+        },
+        {
+            "verdict": "SUBMIT",
+            "can_submit": True,
+            "action_items": [],
+            "issue_summary": {"critical": 0, "major": 0, "minor": 0, "total": 0},
+        },
+        {
+            "can_submit": True,
+            "reasons": [],
+            "missing_reason_codes": [],
+            "unresolved_critical_fields": [],
+            "unresolved_critical_statuses": [],
+        },
+        {
+            "final_verdict": "pass",
+            "review_required_reason": [],
+            "escalation_triggers": [],
+            "rules_evidence": {},
+            "evidence_summary": {},
+        },
+    )
+
+    assert overridden["bank_verdict"]["verdict"] == "CAUTION"
+    assert overridden["bank_verdict"]["can_submit"] is False
+    assert overridden["submission_eligibility"]["can_submit"] is False
+    assert "workflow_stage_extraction_resolution" in overridden["submission_eligibility"]["reasons"]
+    assert overridden["validation_contract"]["final_verdict"] == "review"
+    assert overridden["validation_contract"]["override_reason"] == "extraction_resolution_pending"
 
 
 def test_review_metadata_does_not_promote_preparser_guess_over_existing_extraction_state() -> None:

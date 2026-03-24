@@ -459,6 +459,152 @@ def _build_submission_eligibility_context(
         "unresolved_critical_statuses": sorted(str(s) for s in statuses if s),
     }
 
+def _apply_workflow_stage_contract_overrides(
+    workflow_stage: Optional[Dict[str, Any]],
+    bank_verdict: Optional[Dict[str, Any]],
+    submission_eligibility: Optional[Dict[str, Any]],
+    validation_contract: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    workflow_stage = workflow_stage or {}
+    stage = str(workflow_stage.get("stage") or "").strip().lower()
+
+    bank_verdict = dict(bank_verdict or {})
+    submission_eligibility = dict(submission_eligibility or {})
+    validation_contract = dict(validation_contract or {})
+
+    if stage != "extraction_resolution":
+        return {
+            "bank_verdict": bank_verdict,
+            "submission_eligibility": submission_eligibility,
+            "validation_contract": validation_contract,
+        }
+
+    summary = (
+        str(workflow_stage.get("summary") or "").strip()
+        or "Validation is still provisional until extracted fields are confirmed."
+    )
+    unresolved_documents = int(workflow_stage.get("unresolved_documents") or 0)
+    unresolved_fields = int(workflow_stage.get("unresolved_fields") or 0)
+    reason_code = "workflow_stage_extraction_resolution"
+
+    bank_reasons = [str(item).strip() for item in (bank_verdict.get("reasons") or []) if str(item).strip()]
+    if reason_code not in {item.lower() for item in bank_reasons}:
+        bank_reasons.append(reason_code)
+    action_items = list(bank_verdict.get("action_items") or [])
+    if not any(
+        str(item.get("issue") or "").strip().lower() == "confirm unresolved extracted fields"
+        for item in action_items
+        if isinstance(item, dict)
+    ):
+        action_items.insert(
+            0,
+            {
+                "priority": "high",
+                "issue": "Confirm unresolved extracted fields",
+                "action": summary,
+            },
+        )
+    issue_summary = dict(bank_verdict.get("issue_summary") or {})
+    issue_summary["major"] = max(
+        int(issue_summary.get("major") or 0),
+        unresolved_documents or (1 if unresolved_fields else 0),
+    )
+    issue_summary["total"] = max(
+        int(issue_summary.get("total") or 0),
+        int(issue_summary.get("critical") or 0)
+        + int(issue_summary.get("major") or 0)
+        + int(issue_summary.get("minor") or 0),
+    )
+    bank_verdict.update(
+        {
+            "verdict": "CAUTION",
+            "verdict_color": "yellow",
+            "verdict_message": "Extraction resolution required before bank review",
+            "recommendation": summary,
+            "can_submit": False,
+            "reasons": bank_reasons,
+            "action_items": action_items,
+            "action_items_count": len(action_items),
+            "issue_summary": issue_summary,
+            "provisional_validation": True,
+            "workflow_stage": dict(workflow_stage),
+        }
+    )
+
+    submission_reasons = [
+        str(item).strip() for item in (submission_eligibility.get("reasons") or []) if str(item).strip()
+    ]
+    if reason_code not in {item.lower() for item in submission_reasons}:
+        submission_reasons.append(reason_code)
+    submission_eligibility.update(
+        {
+            "can_submit": False,
+            "reasons": submission_reasons,
+            "source": submission_eligibility.get("source") or "validation",
+            "provisional_validation": True,
+            "workflow_stage": dict(workflow_stage),
+            "workflow_stage_summary": summary,
+        }
+    )
+
+    review_required_reason = [
+        str(item).strip() for item in (validation_contract.get("review_required_reason") or []) if str(item).strip()
+    ]
+    if reason_code not in {item.lower() for item in review_required_reason}:
+        review_required_reason.append(reason_code)
+    escalation_triggers = [
+        str(item).strip() for item in (validation_contract.get("escalation_triggers") or []) if str(item).strip()
+    ]
+    if reason_code not in {item.lower() for item in escalation_triggers}:
+        escalation_triggers.append(reason_code)
+
+    rules_evidence = dict(validation_contract.get("rules_evidence") or {})
+    rules_submission_reasons = [
+        str(item).strip() for item in (rules_evidence.get("submission_reasons") or []) if str(item).strip()
+    ]
+    if reason_code not in {item.lower() for item in rules_submission_reasons}:
+        rules_submission_reasons.append(reason_code)
+    rules_evidence.update(
+        {
+            "submission_can_submit": False,
+            "submission_reasons": rules_submission_reasons,
+            "workflow_stage": dict(workflow_stage),
+            "workflow_stage_summary": summary,
+        }
+    )
+
+    evidence_summary = dict(validation_contract.get("evidence_summary") or {})
+    evidence_summary.update(
+        {
+            "submission_readiness": "not_ready",
+            "workflow_stage": stage,
+            "workflow_stage_summary": summary,
+            "provisional_validation": True,
+        }
+    )
+
+    validation_contract.update(
+        {
+            "final_verdict": "review",
+            "override_reason": "extraction_resolution_pending",
+            "arbitration_mode": "workflow_stage_resolution",
+            "review_required_reason": sorted(set(review_required_reason)),
+            "escalation_triggers": sorted(set(escalation_triggers)),
+            "recommended_escalation_layer": None,
+            "next_action": "confirm_extracted_fields",
+            "rules_evidence": rules_evidence,
+            "evidence_summary": evidence_summary,
+            "provisional_validation": True,
+            "workflow_stage": dict(workflow_stage),
+        }
+    )
+
+    return {
+        "bank_verdict": bank_verdict,
+        "submission_eligibility": submission_eligibility,
+        "validation_contract": validation_contract,
+    }
+
 def _parse_json_if_possible(value: Any) -> Any:
     if isinstance(value, str):
         stripped = value.strip()

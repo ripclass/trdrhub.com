@@ -19,6 +19,7 @@ from app.services.validation.response_contract_validator import (
 )
 
 from .presentation_contract import (
+    _apply_workflow_stage_contract_overrides,
     _build_submission_eligibility_context,
     _build_validation_contract,
     _run_validation_arbitration_escalation,
@@ -662,6 +663,26 @@ async def refresh_structured_result_after_field_override(
     )
     structured_result["workflow_stage"] = workflow_stage
     structured_result["workflowStage"] = workflow_stage
+    workflow_overrides = _apply_workflow_stage_contract_overrides(
+        workflow_stage,
+        structured_result.get("bank_verdict"),
+        structured_result.get("effective_submission_eligibility")
+        or structured_result.get("submission_eligibility"),
+        structured_result.get("validation_contract_v1"),
+    )
+    structured_result["bank_verdict"] = workflow_overrides["bank_verdict"]
+    structured_result["submission_eligibility"] = workflow_overrides["submission_eligibility"]
+    structured_result["raw_submission_eligibility"] = copy.deepcopy(
+        structured_result["submission_eligibility"]
+    )
+    structured_result["effective_submission_eligibility"] = copy.deepcopy(
+        structured_result["submission_eligibility"]
+    )
+    structured_result["validation_contract_v1"] = workflow_overrides["validation_contract"]
+    analytics["validation_contract_v1"] = copy.deepcopy(
+        structured_result["validation_contract_v1"]
+    )
+    processing_summary["bank_verdict"] = structured_result["bank_verdict"].get("verdict")
 
     _copy_documents_to_secondary_surfaces(structured_result, documents)
     structured_result = validate_and_annotate_response(structured_result)
