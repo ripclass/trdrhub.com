@@ -97,11 +97,12 @@ def test_build_resolution_queue_v1_collects_only_unresolved_invoice_facts() -> N
     queue = build_resolution_queue_v1(documents)
 
     assert queue["version"] == "resolution_queue_v1"
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["user_resolvable_items"] == 2
-    assert queue["summary"]["unresolved_documents"] == 1
+    assert queue["summary"]["total_items"] == 3
+    assert queue["summary"]["user_resolvable_items"] == 3
+    assert queue["summary"]["unresolved_documents"] == 2
     assert queue["summary"]["document_counts"]["commercial_invoice"] == 2
-    assert [item["field_name"] for item in queue["items"]] == ["invoice_number", "invoice_date"]
+    assert queue["summary"]["document_counts"]["packing_list"] == 1
+    assert [item["field_name"] for item in queue["items"]] == ["invoice_number", "invoice_date", "packing_list_number"]
     assert queue["items"][0]["reason"] == "system_could_not_confirm"
 
 
@@ -178,3 +179,55 @@ def test_build_resolution_queue_v1_collects_bl_unresolved_facts() -> None:
     assert queue["summary"]["unresolved_documents"] == 1
     assert queue["summary"]["document_counts"]["bill_of_lading"] == 2
     assert [item["field_name"] for item in queue["items"]] == ["bl_number", "port_of_loading"]
+
+
+def test_build_resolution_queue_v1_collects_packing_list_unresolved_facts() -> None:
+    documents = [
+        {
+            "document_id": "doc-packing",
+            "document_type": "packing_list",
+            "filename": "Packing_List.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "packing_list",
+                "facts": [
+                    {
+                        "field_name": "document_date",
+                        "value": "20 Apr 2026",
+                        "normalized_value": "2026-04-20",
+                        "verification_state": "candidate",
+                        "evidence_snippet": "Date: 20 Apr 2026",
+                        "evidence_source": "native_text",
+                        "page": 1,
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "gross_weight",
+                        "value": "20,400 KGS",
+                        "normalized_value": "20,400 KGS",
+                        "verification_state": "operator_rejected",
+                        "evidence_snippet": "G.W. 20,400 KGS",
+                        "evidence_source": "native_text",
+                        "page": 1,
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "packing_list_number",
+                        "value": "PL-026",
+                        "normalized_value": "PL-026",
+                        "verification_state": "confirmed",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["document_counts"] == {"packing_list": 2}
+    items = sorted(queue["items"], key=lambda item: item["field_name"])
+    assert items[0]["field_name"] == "document_date"
+    assert items[0]["priority"] == "high"
+    assert items[1]["field_name"] == "gross_weight"
+    assert items[1]["reason"] == "operator_rejected_candidate"

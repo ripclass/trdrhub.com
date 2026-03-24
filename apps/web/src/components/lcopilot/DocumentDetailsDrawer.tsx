@@ -569,6 +569,7 @@ const isFactResolutionBackedDocument = (docType: string | undefined): boolean =>
     "sea_waybill",
     "air_waybill",
     "multimodal_transport_document",
+    "packing_list",
   ].includes(normalized);
 };
 

@@ -4,6 +4,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .bl_facts import build_bl_fact_set
 from .invoice_facts import build_invoice_fact_set
+from .packing_list_facts import build_packing_list_fact_set
 
 
 _INVOICE_DOCUMENT_TYPES = {"commercial_invoice", "proforma_invoice"}
@@ -16,6 +17,7 @@ _BL_DOCUMENT_TYPES = {
     "air_waybill",
     "multimodal_transport_document",
 }
+_PACKING_LIST_DOCUMENT_TYPES = {"packing_list"}
 _RESOLVED_FACT_STATES = {"confirmed", "operator_confirmed"}
 _INVOICE_VALIDATION_ALIASES = {
     "invoice_number": ("invoice_number", "invoice_no", "inv_no"),
@@ -32,6 +34,15 @@ _BL_VALIDATION_ALIASES = {
     "port_of_loading": ("port_of_loading", "pol", "load_port", "loading_port"),
     "port_of_discharge": ("port_of_discharge", "pod", "discharge_port", "destination_port"),
     "on_board_date": ("on_board_date", "shipped_on_board_date", "shipment_date", "date_of_shipment", "date"),
+}
+_PACKING_LIST_VALIDATION_ALIASES = {
+    "packing_list_number": ("packing_list_number", "packing_no", "packing_reference"),
+    "document_date": ("document_date", "date", "issue_date"),
+    "total_packages": ("total_packages", "package_count", "number_of_packages", "cartons", "total_cartons"),
+    "gross_weight": ("gross_weight", "gross_wt", "total_gross_weight"),
+    "net_weight": ("net_weight", "net_wt", "total_net_weight"),
+    "marks_and_numbers": ("marks_and_numbers", "shipping_marks", "marks"),
+    "packing_size_breakdown": ("packing_size_breakdown", "size_breakdown", "carton_size", "dimensions"),
 }
 
 
@@ -56,6 +67,11 @@ def materialize_document_fact_graph_v1(document: Dict[str, Any]) -> Optional[Dic
         return fact_graph
     if document_type in _BL_DOCUMENT_TYPES:
         fact_graph = build_bl_fact_set(document)
+        document["fact_graph_v1"] = fact_graph
+        document["factGraphV1"] = fact_graph
+        return fact_graph
+    if document_type in _PACKING_LIST_DOCUMENT_TYPES:
+        fact_graph = build_packing_list_fact_set(document)
         document["fact_graph_v1"] = fact_graph
         document["factGraphV1"] = fact_graph
         return fact_graph
@@ -88,6 +104,14 @@ def _iter_bl_documents(documents: Iterable[Dict[str, Any]]) -> Iterable[Dict[str
         if not isinstance(document, dict):
             continue
         if _document_type(document) in _BL_DOCUMENT_TYPES:
+            yield document
+
+
+def _iter_packing_list_documents(documents: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        if _document_type(document) in _PACKING_LIST_DOCUMENT_TYPES:
             yield document
 
 
@@ -193,6 +217,57 @@ def project_bl_validation_context(
     return projected
 
 
+def project_packing_list_validation_context(
+    base_context: Optional[Dict[str, Any]],
+    *,
+    document: Optional[Dict[str, Any]] = None,
+    fact_graph: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    source_context = base_context if isinstance(base_context, dict) else {}
+    projected: Dict[str, Any] = dict(source_context)
+
+    if not projected and isinstance(document, dict):
+        extracted_fields = document.get("extracted_fields")
+        if isinstance(extracted_fields, dict):
+            projected = {
+                str(key): value
+                for key, value in extracted_fields.items()
+                if not str(key).startswith("_")
+            }
+
+    for aliases in _PACKING_LIST_VALIDATION_ALIASES.values():
+        for alias in aliases:
+            projected.pop(alias, None)
+
+    selected_fact_graph = fact_graph if isinstance(fact_graph, dict) else None
+    if selected_fact_graph is None and isinstance(document, dict):
+        selected_fact_graph = materialize_document_fact_graph_v1(document)
+    if not isinstance(selected_fact_graph, dict):
+        return projected
+
+    for fact in selected_fact_graph.get("facts") or []:
+        if not isinstance(fact, dict):
+            continue
+        field_name = str(fact.get("field_name") or "").strip().lower()
+        aliases = _PACKING_LIST_VALIDATION_ALIASES.get(field_name)
+        if not aliases:
+            continue
+        verification_state = str(fact.get("verification_state") or "").strip().lower()
+        if verification_state not in _RESOLVED_FACT_STATES:
+            continue
+        fact_value = fact.get("normalized_value")
+        if fact_value in (None, ""):
+            fact_value = fact.get("value")
+        if fact_value in (None, ""):
+            continue
+        for alias in aliases:
+            projected[alias] = fact_value
+
+    projected["fact_graph_v1"] = selected_fact_graph
+    projected["factGraphV1"] = selected_fact_graph
+    return projected
+
+
 def apply_invoice_fact_graph_to_validation_inputs(
     payload: Dict[str, Any],
     extracted_context: Dict[str, Any],
@@ -260,4 +335,45 @@ def apply_bl_fact_graph_to_validation_inputs(
         payload["bill_of_lading"] = projected
     if isinstance(extracted_context, dict):
         extracted_context["bill_of_lading"] = projected
+    return projected
+
+
+def apply_packing_list_fact_graph_to_validation_inputs(
+    payload: Dict[str, Any],
+    extracted_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    payload_docs = payload.get("documents") if isinstance(payload, dict) else None
+    context_docs = extracted_context.get("documents") if isinstance(extracted_context, dict) else None
+    packing_document = next(
+        _iter_packing_list_documents(
+            payload_docs if isinstance(payload_docs, list) else context_docs if isinstance(context_docs, list) else []
+        ),
+        None,
+    )
+
+    payload_packing = (
+        payload.get("packing_list")
+        if isinstance(payload, dict) and isinstance(payload.get("packing_list"), dict)
+        else {}
+    )
+    context_packing = (
+        extracted_context.get("packing_list")
+        if isinstance(extracted_context, dict) and isinstance(extracted_context.get("packing_list"), dict)
+        else {}
+    )
+    base_packing_context = payload_packing or context_packing
+    fact_graph = None
+    if isinstance(packing_document, dict):
+        fact_graph = packing_document.get("fact_graph_v1") or packing_document.get("factGraphV1")
+
+    projected = project_packing_list_validation_context(
+        base_packing_context,
+        document=packing_document,
+        fact_graph=fact_graph,
+    )
+
+    if isinstance(payload, dict):
+        payload["packing_list"] = projected
+    if isinstance(extracted_context, dict):
+        extracted_context["packing_list"] = projected
     return projected

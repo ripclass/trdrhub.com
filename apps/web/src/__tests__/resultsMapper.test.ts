@@ -515,6 +515,96 @@ describe('results mapper - option e payload', () => {
     expect(mapped.documents[0]?.extractionResolution?.fields[0]?.candidateValue).toBe('2026-04-21');
   });
 
+  it('uses fact_resolution_v1 as the packing-list unresolved source of truth', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        workflow_stage: {
+          stage: 'extraction_resolution',
+          provisional_validation: true,
+          ready_for_final_validation: false,
+          unresolved_documents: 1,
+          unresolved_fields: 1,
+          summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+        },
+        fact_resolution_v1: {
+          version: 'fact_resolution_v1',
+          workflow_stage: {
+            stage: 'extraction_resolution',
+            provisional_validation: true,
+            ready_for_final_validation: false,
+            unresolved_documents: 1,
+            unresolved_fields: 1,
+            summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+          },
+          documents: [
+            {
+              document_id: 'doc-packing',
+              document_type: 'packing_list',
+              filename: 'Packing_List.pdf',
+              resolution_required: true,
+              ready_for_validation: false,
+              unresolved_count: 1,
+              summary: '1 field still needs confirmation before document validation input is treated as final.',
+              resolution_items: [
+                {
+                  document_id: 'doc-packing',
+                  document_type: 'packing_list',
+                  filename: 'Packing_List.pdf',
+                  field_name: 'document_date',
+                  label: 'Document Date',
+                  priority: 'high',
+                  candidate_value: '2026-04-20',
+                  normalized_value: '2026-04-20',
+                  evidence_snippet: 'Packing List Date: 20 Apr 2026',
+                  evidence_source: 'native_text',
+                  page: 1,
+                  reason: 'system_could_not_confirm',
+                  verification_state: 'candidate',
+                  resolvable_by_user: true,
+                  origin: 'document_ai',
+                },
+              ],
+            },
+          ],
+          summary: {
+            total_documents: 1,
+            unresolved_documents: 1,
+            total_items: 1,
+            user_resolvable_items: 1,
+            ready_for_validation: false,
+          },
+        },
+        document_extraction_v1: {
+          documents: [
+            {
+              document_id: 'doc-packing',
+              document_type: 'packing_list',
+              filename: 'Packing_List.pdf',
+              extraction_status: 'success',
+              field_details: {
+                gross_weight: {
+                  verification: 'not_found',
+                },
+              },
+              missing_required_fields: ['gross_weight'],
+              review_required: true,
+              review_reasons: ['FIELD_NOT_FOUND'],
+            },
+          ],
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.documents[0]?.resolutionItems).toHaveLength(1);
+    expect(mapped.documents[0]?.extractionResolution?.required).toBe(true);
+    expect(mapped.documents[0]?.extractionResolution?.fields[0]?.fieldName).toBe('document_date');
+    expect(mapped.documents[0]?.extractionResolution?.fields[0]?.candidateValue).toBe('2026-04-20');
+  });
+
   it('preserves extraction lanes from canonical document payloads', () => {
     const seeded = buildValidationResults();
     const documents = [

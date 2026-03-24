@@ -9,6 +9,7 @@ from uuid import uuid4
 from app.services.facts import (
     apply_bl_fact_graph_to_validation_inputs,
     apply_invoice_fact_graph_to_validation_inputs,
+    apply_packing_list_fact_graph_to_validation_inputs,
 )
 
 
@@ -99,6 +100,7 @@ async def execute_validation_pipeline(
     try:
         apply_invoice_fact_graph_to_validation_inputs(payload, extracted_context)
         apply_bl_fact_graph_to_validation_inputs(payload, extracted_context)
+        apply_packing_list_fact_graph_to_validation_inputs(payload, extracted_context)
 
         # Build LCBaseline from extracted context
         v2_baseline = _build_lc_baseline_from_context(lc_context)

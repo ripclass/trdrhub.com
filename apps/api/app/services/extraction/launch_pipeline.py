@@ -25,7 +25,7 @@ from app.services.extraction.iso20022_lc_extractor import (
 )
 from app.services.extraction.lc_taxonomy import build_lc_classification
 from app.services.extraction.multimodal_document_extractor import extract_document_multimodal_first
-from app.services.facts import build_bl_fact_set, build_invoice_fact_set
+from app.services.facts import build_bl_fact_set, build_invoice_fact_set, build_packing_list_fact_set
 
 logger = logging.getLogger(__name__)
 
@@ -732,22 +732,46 @@ class LaunchExtractionPipeline:
             packing_struct = multimodal_struct or await extract_packing_list_ai_first(extracted_text)
             extraction_status = packing_struct.get("_status", "unknown")
             if packing_struct and extraction_status != "failed":
+                extracted_fields = (
+                    packing_struct.get("extracted_fields")
+                    if isinstance(packing_struct.get("extracted_fields"), dict)
+                    else packing_struct
+                )
+                extraction_lane = _resolve_extraction_lane(
+                    extraction_method=packing_struct.get("_extraction_method", "unknown"),
+                )
+                fact_graph_v1 = build_packing_list_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in packing_struct.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "extracted_fields": extracted_fields,
+                        "field_details": packing_struct.get("_field_details"),
+                        "raw_text": extracted_text,
+                        "extraction_method": packing_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": extraction_lane,
+                    }
+                )
                 return {
                     "handled": True,
                     "context_key": "packing_list",
-                    "context_payload": _apply_canonical_normalization({**packing_struct, "raw_text": extracted_text}),
+                    "context_payload": _apply_canonical_normalization(
+                        {**packing_struct, "raw_text": extracted_text, "fact_graph_v1": fact_graph_v1}
+                    ),
                     "doc_info_patch": {
                         **base_patch,
-                        "extracted_fields": packing_struct.get("extracted_fields") if isinstance(packing_struct.get("extracted_fields"), dict) else packing_struct,
+                        "extracted_fields": extracted_fields,
                         "extraction_status": "success",
                         "extraction_method": packing_struct.get("_extraction_method", "unknown"),
-                        "extraction_lane": _resolve_extraction_lane(
-                            extraction_method=packing_struct.get("_extraction_method", "unknown"),
-                        ),
+                        "extraction_lane": extraction_lane,
                         "extraction_confidence": packing_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": packing_struct.get("_field_details"),
                         "status_counts": packing_struct.get("_status_counts"),
+                        "fact_graph_v1": fact_graph_v1,
                     },
                     "has_structured_data": True,
                     "validation_doc_type": "packing_list",
@@ -760,17 +784,62 @@ class LaunchExtractionPipeline:
             packing_fields = self._fallback_extractor.extract_fields(extracted_text, DocumentType.PACKING_LIST)
             packing_context = _fields_to_flat_context(packing_fields)
             if packing_context:
-                return _build_support_only_result(
+                result = _build_support_only_result(
                     context_key="packing_list",
                     context_payload=_apply_canonical_normalization({**packing_context, "raw_text": extracted_text}),
                     base_patch=base_patch,
                     extraction_method="regex_support",
                     field_details=packing_context.get("_field_details"),
                 )
+                fact_graph_v1 = build_packing_list_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in packing_context.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "extracted_fields": {
+                            key: value
+                            for key, value in packing_context.items()
+                            if not str(key).startswith("_")
+                        },
+                        "field_details": packing_context.get("_field_details"),
+                        "raw_text": extracted_text,
+                        "extraction_method": "regex_support",
+                        "extraction_lane": "support_only",
+                    }
+                )
+                result["context_payload"]["fact_graph_v1"] = fact_graph_v1
+                result["doc_info_patch"]["fact_graph_v1"] = fact_graph_v1
+                return result
         except Exception as exc:
             logger.warning("Launch pipeline packing list regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
-        return {"handled": True, "context_key": "packing_list", "context_payload": {"raw_text": extracted_text}, "doc_info_patch": {**base_patch, "extraction_status": "failed", "extraction_error": "launch_pipeline_packing_list_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
+        fact_graph_v1 = build_packing_list_fact_set(
+            {
+                "document_type": document_type,
+                "extracted_fields": {},
+                "field_details": {},
+                "raw_text": extracted_text,
+                "extraction_method": "launch_pipeline_packing_list_extraction_failed",
+                "extraction_lane": "unknown",
+            }
+        )
+        return {
+            "handled": True,
+            "context_key": "packing_list",
+            "context_payload": {"raw_text": extracted_text, "fact_graph_v1": fact_graph_v1},
+            "doc_info_patch": {
+                **base_patch,
+                "fact_graph_v1": fact_graph_v1,
+                "extraction_status": "failed",
+                "extraction_error": "launch_pipeline_packing_list_extraction_failed",
+            },
+            "has_structured_data": False,
+            "validation_doc_type": None,
+            "post_validation_target": None,
+        }
 
     async def _process_certificate_of_origin(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         regulatory_subtype = _detect_regulatory_subtype(filename=filename, extracted_text=extracted_text)

@@ -153,6 +153,7 @@ const FACT_RESOLUTION_DOCUMENT_TYPES = new Set([
   'sea_waybill',
   'air_waybill',
   'multimodal_transport_document',
+  'packing_list',
 ]);
 
 type ResolutionQueueItemLike = {

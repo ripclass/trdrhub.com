@@ -657,6 +657,7 @@ def build_fact_resolution_v1(
         "sea_waybill",
         "air_waybill",
         "multimodal_transport_document",
+        "packing_list",
     }
     contract_documents: List[Dict[str, Any]] = []
     unresolved_documents = 0

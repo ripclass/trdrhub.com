@@ -98,7 +98,7 @@ def test_build_fact_resolution_v1_exposes_invoice_slice_cleanly() -> None:
 
     assert payload["version"] == "fact_resolution_v1"
     assert payload["workflow_stage"]["stage"] == "extraction_resolution"
-    assert payload["summary"]["total_documents"] == 1
+    assert payload["summary"]["total_documents"] == 2
     assert payload["summary"]["unresolved_documents"] == 1
     assert payload["summary"]["total_items"] == 1
     assert payload["documents"][0]["document_id"] == "doc-invoice"
@@ -106,3 +106,6 @@ def test_build_fact_resolution_v1_exposes_invoice_slice_cleanly() -> None:
     assert payload["documents"][0]["resolution_required"] is True
     assert payload["documents"][0]["ready_for_validation"] is False
     assert payload["documents"][0]["resolution_items"][0]["field_name"] == "invoice_date"
+    assert payload["documents"][1]["document_id"] == "doc-packing"
+    assert payload["documents"][1]["document_type"] == "packing_list"
+    assert payload["documents"][1]["resolution_required"] is False
