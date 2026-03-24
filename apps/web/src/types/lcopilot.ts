@@ -31,6 +31,7 @@ import type {
   ContractWarning as SharedContractWarning,
   ContractValidation as SharedContractValidation,
   ExtractionFieldDetail as SharedExtractionFieldDetail,
+  FactResolutionV1 as SharedFactResolutionV1,
   ResolutionQueueItem as SharedResolutionQueueItem,
   ResolutionQueueV1 as SharedResolutionQueueV1,
 } from '@shared/types';
@@ -293,6 +294,7 @@ export type StructuredResultBankVerdict = SharedBankVerdict;
 export type StructuredResultBankProfile = SharedBankProfile;
 export type StructuredResultAmendmentsAvailable = SharedAmendmentsAvailable;
 export type WorkflowStageInfo = SharedWorkflowStageInfo;
+export type FactResolutionV1 = SharedFactResolutionV1;
 export type ResolutionQueueItem = SharedResolutionQueueItem;
 export type ResolutionQueueV1 = SharedResolutionQueueV1;
 
@@ -333,6 +335,7 @@ export interface ValidationResults {
   workflowStage?: WorkflowStageInfo | null;
   complianceLevel?: string;
   complianceCapReason?: string | null;
+  factResolution?: FactResolutionV1 | null;
   resolutionQueue?: ResolutionQueueV1 | null;
   
   // Sanctions Screening additions

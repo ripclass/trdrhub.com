@@ -363,6 +363,33 @@ class ResolutionQueueV1(BaseModel):
     summary: ResolutionQueueSummary
 
 
+class FactResolutionDocument(BaseModel):
+    document_id: str
+    document_type: str
+    filename: Optional[str] = None
+    resolution_required: bool
+    ready_for_validation: bool
+    unresolved_count: int = Field(ge=0)
+    summary: str
+    fact_graph_v1: Optional[DocumentFactSet] = None
+    resolution_items: List[ResolutionQueueItem] = Field(default_factory=list)
+
+
+class FactResolutionSummary(BaseModel):
+    total_documents: int = Field(ge=0)
+    unresolved_documents: int = Field(ge=0)
+    total_items: int = Field(ge=0)
+    user_resolvable_items: int = Field(ge=0)
+    ready_for_validation: bool
+
+
+class FactResolutionV1(BaseModel):
+    version: str = Field(default="fact_resolution_v1")
+    workflow_stage: Optional[WorkflowStageInfo] = None
+    documents: List[FactResolutionDocument] = Field(default_factory=list)
+    summary: FactResolutionSummary
+
+
 class DocumentExtractionDocument(BaseModel):
     document_id: Optional[str] = None
     document_type: Optional[str] = None
@@ -643,6 +670,7 @@ class StructuredResultPayload(BaseModel):
     processing_summary_v2: Optional[ProcessingSummaryV2] = None
     document_extraction_v1: Optional[DocumentExtractionV1] = None
     resolution_queue_v1: Optional[ResolutionQueueV1] = None
+    fact_resolution_v1: Optional[FactResolutionV1] = None
     issue_provenance_v1: Optional[IssueProvenanceV1] = None
     documents: List[StructuredResultDocument]
     issues: List[StructuredResultIssue]

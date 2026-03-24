@@ -330,6 +330,101 @@ describe('results mapper - option e payload', () => {
     expect(mapped.documents[0]?.extractionResolution?.fields[0]?.candidateValue).toBe('2026-04-20');
   });
 
+  it('prefers fact_resolution_v1 over stale invoice queue and legacy extraction fields', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        workflow_stage: {
+          stage: 'validation_results',
+          provisional_validation: false,
+          ready_for_final_validation: true,
+          unresolved_documents: 0,
+          unresolved_fields: 0,
+          summary: 'Extraction is sufficiently resolved. Validation findings reflect the current confirmed document set.',
+        },
+        resolution_queue_v1: {
+          version: 'resolution_queue_v1',
+          items: [
+            {
+              document_id: 'doc-invoice',
+              document_type: 'commercial_invoice',
+              filename: 'Invoice.pdf',
+              field_name: 'invoice_date',
+              label: 'Invoice Date',
+              priority: 'high',
+              candidate_value: '2026-04-20',
+              normalized_value: '2026-04-20',
+              reason: 'system_could_not_confirm',
+              verification_state: 'candidate',
+              resolvable_by_user: true,
+            },
+          ],
+          summary: {
+            total_items: 1,
+            user_resolvable_items: 1,
+            unresolved_documents: 1,
+            document_counts: { commercial_invoice: 1 },
+          },
+        },
+        fact_resolution_v1: {
+          version: 'fact_resolution_v1',
+          workflow_stage: {
+            stage: 'validation_results',
+            provisional_validation: false,
+            ready_for_final_validation: true,
+            unresolved_documents: 0,
+            unresolved_fields: 0,
+            summary: 'resolved',
+          },
+          documents: [
+            {
+              document_id: 'doc-invoice',
+              document_type: 'commercial_invoice',
+              filename: 'Invoice.pdf',
+              resolution_required: false,
+              ready_for_validation: true,
+              unresolved_count: 0,
+              summary: 'Invoice facts required for validation are resolved.',
+              resolution_items: [],
+            },
+          ],
+          summary: {
+            total_documents: 1,
+            unresolved_documents: 0,
+            total_items: 0,
+            user_resolvable_items: 0,
+            ready_for_validation: true,
+          },
+        },
+        document_extraction_v1: {
+          documents: [
+            {
+              document_id: 'doc-invoice',
+              document_type: 'commercial_invoice',
+              filename: 'Invoice.pdf',
+              extraction_status: 'success',
+              field_details: {
+                seller: {
+                  verification: 'not_found',
+                },
+              },
+              missing_required_fields: ['seller'],
+              review_required: true,
+              review_reasons: ['FIELD_NOT_FOUND'],
+            },
+          ],
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.factResolution?.summary.ready_for_validation).toBe(true);
+    expect(mapped.documents[0]?.resolutionItems ?? []).toHaveLength(0);
+    expect(mapped.documents[0]?.extractionResolution?.required).toBe(false);
+  });
+
   it('preserves extraction lanes from canonical document payloads', () => {
     const seeded = buildValidationResults();
     const documents = [

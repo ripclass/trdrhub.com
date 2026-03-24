@@ -27,6 +27,7 @@ from .presentation_contract import (
 )
 from .response_shaping import (
     build_bank_submission_verdict,
+    build_fact_resolution_v1,
     build_resolution_queue_v1,
     materialize_document_fact_graphs_v1,
     build_workflow_stage,
@@ -681,6 +682,11 @@ async def refresh_structured_result_after_field_override(
     structured_result["workflow_stage"] = workflow_stage
     structured_result["workflowStage"] = workflow_stage
     structured_result["resolution_queue_v1"] = build_resolution_queue_v1(documents)
+    structured_result["fact_resolution_v1"] = build_fact_resolution_v1(
+        documents,
+        workflow_stage=workflow_stage,
+        resolution_queue=structured_result.get("resolution_queue_v1"),
+    )
     issue_partition = _partition_workflow_stage_issues(
         structured_result.get("issues") or [],
         documents,

@@ -160,8 +160,18 @@ type ResolutionQueueItemLike = {
   origin?: string | null;
 };
 
-const normalizeResolutionQueueItems = (resolutionQueue?: any): ResolutionQueueItemLike[] =>
-  ensureArray(resolutionQueue?.items)
+type FactResolutionDocumentLike = {
+  documentId: string;
+  filename?: string;
+  resolutionRequired: boolean;
+  readyForValidation: boolean;
+  unresolvedCount: number;
+  summary: string;
+  resolutionItems: ResolutionQueueItemLike[];
+};
+
+const normalizeResolutionQueueItemList = (items?: any[]): ResolutionQueueItemLike[] =>
+  ensureArray(items)
     .map((item) => ({
       documentId: String(item?.document_id ?? '').trim(),
       filename: item?.filename ? String(item.filename) : undefined,
@@ -177,6 +187,25 @@ const normalizeResolutionQueueItems = (resolutionQueue?: any): ResolutionQueueIt
       origin: item?.origin ? String(item.origin) : null,
     }))
     .filter((item) => item.documentId && item.fieldName);
+
+const normalizeResolutionQueueItems = (resolutionQueue?: any): ResolutionQueueItemLike[] =>
+  normalizeResolutionQueueItemList(resolutionQueue?.items);
+
+const normalizeFactResolutionDocuments = (factResolution?: any): FactResolutionDocumentLike[] =>
+  ensureArray(factResolution?.documents)
+    .map((document) => ({
+      documentId: String(document?.document_id ?? '').trim(),
+      filename: document?.filename ? String(document.filename) : undefined,
+      resolutionRequired: Boolean(document?.resolution_required),
+      readyForValidation: Boolean(document?.ready_for_validation),
+      unresolvedCount:
+        typeof document?.unresolved_count === 'number'
+          ? document.unresolved_count
+          : normalizeResolutionQueueItemList(document?.resolution_items).length,
+      summary: String(document?.summary ?? ''),
+      resolutionItems: normalizeResolutionQueueItemList(document?.resolution_items),
+    }))
+    .filter((document) => document.documentId);
 
 const buildQueueBackedExtractionResolution = (
   resolutionItems: ResolutionQueueItemLike[],
@@ -220,6 +249,28 @@ const buildQueueBackedExtractionResolution = (
     })),
   };
 };
+
+const buildFactResolutionExtractionResolution = (document: FactResolutionDocumentLike) => ({
+  required: document.resolutionRequired,
+  unresolvedCount: document.unresolvedCount,
+  summary:
+    document.summary ||
+    (document.resolutionRequired
+      ? `${document.unresolvedCount} extracted field${document.unresolvedCount === 1 ? '' : 's'} still need confirmation before validation can be treated as final.`
+      : ''),
+  fields: document.resolutionItems.map((item) => ({
+    fieldName: item.fieldName,
+    label: item.label,
+    verification: item.verification,
+    candidateValue: item.candidateValue,
+    normalizedValue: item.normalizedValue,
+    evidenceSnippet: item.evidenceSnippet,
+    evidenceSource: item.evidenceSource,
+    page: item.page,
+    reason: item.reason,
+    origin: item.origin,
+  })),
+});
 
 const buildExtractionResolution = ({
   existingResolution,
@@ -326,40 +377,48 @@ const buildExtractionResolution = ({
 
 const deriveWorkflowStage = ({
   existingStage,
+  factResolution,
   documents,
   validationStatus,
 }: {
   existingStage?: any;
+  factResolution?: any;
   documents: ReturnType<typeof mapDocuments>;
   validationStatus?: string | null;
 }) => {
-  if (existingStage && typeof existingStage === 'object') {
+  const stageSource =
+    existingStage && typeof existingStage === 'object'
+      ? existingStage
+      : factResolution?.workflow_stage && typeof factResolution.workflow_stage === 'object'
+      ? factResolution.workflow_stage
+      : null;
+  if (stageSource && typeof stageSource === 'object') {
     return {
-      stage: String(existingStage.stage ?? 'validation_results'),
-      provisional_validation: Boolean(existingStage.provisional_validation),
+      stage: String(stageSource.stage ?? 'validation_results'),
+      provisional_validation: Boolean(stageSource.provisional_validation),
       ready_for_final_validation:
-        existingStage.ready_for_final_validation !== undefined
-          ? Boolean(existingStage.ready_for_final_validation)
-          : !Boolean(existingStage.provisional_validation),
+        stageSource.ready_for_final_validation !== undefined
+          ? Boolean(stageSource.ready_for_final_validation)
+          : !Boolean(stageSource.provisional_validation),
       unresolved_documents:
-        typeof existingStage.unresolved_documents === 'number'
-          ? existingStage.unresolved_documents
-          : typeof existingStage.unresolvedDocuments === 'number'
-          ? existingStage.unresolvedDocuments
+        typeof stageSource.unresolved_documents === 'number'
+          ? stageSource.unresolved_documents
+          : typeof stageSource.unresolvedDocuments === 'number'
+          ? stageSource.unresolvedDocuments
           : 0,
       unresolved_fields:
-        typeof existingStage.unresolved_fields === 'number'
-          ? existingStage.unresolved_fields
-          : typeof existingStage.unresolvedFields === 'number'
-          ? existingStage.unresolvedFields
+        typeof stageSource.unresolved_fields === 'number'
+          ? stageSource.unresolved_fields
+          : typeof stageSource.unresolvedFields === 'number'
+          ? stageSource.unresolvedFields
           : 0,
       document_lane_counts:
-        existingStage.document_lane_counts && typeof existingStage.document_lane_counts === 'object'
-          ? existingStage.document_lane_counts
-          : existingStage.documentLaneCounts && typeof existingStage.documentLaneCounts === 'object'
-          ? existingStage.documentLaneCounts
+        stageSource.document_lane_counts && typeof stageSource.document_lane_counts === 'object'
+          ? stageSource.document_lane_counts
+          : stageSource.documentLaneCounts && typeof stageSource.documentLaneCounts === 'object'
+          ? stageSource.documentLaneCounts
           : undefined,
-      summary: String(existingStage.summary ?? ''),
+      summary: String(stageSource.summary ?? ''),
     };
   }
 
@@ -564,8 +623,10 @@ const mapDocuments = (
   docs: any[] = [],
   workflowStageHint?: string | null,
   resolutionQueue?: any,
+  factResolution?: any,
 ) => {
   const normalizedResolutionItems = normalizeResolutionQueueItems(resolutionQueue);
+  const normalizedFactResolutionDocuments = normalizeFactResolutionDocuments(factResolution);
 
   return docs.map((doc, index) => {
     const documentId = String(doc?.document_id ?? doc?.id ?? index);
@@ -620,7 +681,16 @@ const mapDocuments = (
     const criticalFieldStates = doc?.critical_field_states ?? doc?.criticalFieldStates ?? {};
     const fieldDetails = doc?.field_details ?? doc?.fieldDetails ?? {};
     const existingExtractionResolution = doc?.extraction_resolution ?? doc?.extractionResolution;
-    const resolutionItems = INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase())
+    const matchedFactResolution = INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase())
+      ? normalizedFactResolutionDocuments.find(
+          (item) =>
+            item.documentId === documentId ||
+            (!!item.filename && item.filename.toLowerCase() === String(filename).toLowerCase()),
+        )
+      : undefined;
+    const resolutionItems = matchedFactResolution
+      ? matchedFactResolution.resolutionItems
+      : INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase())
       ? normalizedResolutionItems.filter(
           (item) =>
             item.documentId === documentId ||
@@ -634,7 +704,9 @@ const mapDocuments = (
       doc?.rawText ??
       '';
     const extractionResolution =
-      INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && resolutionQueue
+      INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && matchedFactResolution
+        ? buildFactResolutionExtractionResolution(matchedFactResolution)
+        : INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && resolutionQueue
         ? buildQueueBackedExtractionResolution(resolutionItems, workflowStageHint)
         : buildExtractionResolution({
             existingResolution: existingExtractionResolution,
@@ -681,7 +753,7 @@ const mapDocuments = (
       criticalFieldStates,
       fieldDiagnostics,
       rawText,
-      resolutionItems: resolutionQueue ? resolutionItems : undefined,
+      resolutionItems: matchedFactResolution ? resolutionItems : resolutionQueue ? resolutionItems : undefined,
       requirementStatus,
       reviewState,
       extractionResolution,
@@ -978,6 +1050,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const optionEDocuments = ensureArray(rawDocs);
   const existingWorkflowStage = (structured as any)?.workflow_stage ?? (structured as any)?.workflowStage ?? null;
   const resolutionQueue = (structured as any)?.resolution_queue_v1 ?? null;
+  const factResolution = (structured as any)?.fact_resolution_v1 ?? null;
 
   const documents = mapDocuments(
     optionEDocuments,
@@ -985,9 +1058,11 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
       ? String(existingWorkflowStage.stage ?? '')
       : null,
     resolutionQueue,
+    factResolution,
   );
   const workflowStage = deriveWorkflowStage({
     existingStage: existingWorkflowStage,
+    factResolution,
     documents,
     validationStatus: (structured as any)?.validation_status ?? null,
   });
@@ -1084,6 +1159,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     workflowStage,
     complianceLevel,
     complianceCapReason,
+    factResolution,
     resolutionQueue,
     
     // Sanctions Screening additions

@@ -2233,6 +2233,11 @@ def _build_blocked_structured_result(
     resolution_queue_v1 = _response_shaping.build_resolution_queue_v1(
         document_extraction.get("documents", [])
     )
+    fact_resolution_v1 = _response_shaping.build_fact_resolution_v1(
+        document_extraction.get("documents", []),
+        workflow_stage=workflow_stage,
+        resolution_queue=resolution_queue_v1,
+    )
     processing_summary_v2 = _build_processing_summary_v2(
         processing_summary,
         document_extraction.get("documents", []),
@@ -2315,6 +2320,7 @@ def _build_blocked_structured_result(
         "processing_summary_v2": processing_summary_v2,
         "document_extraction_v1": document_extraction,
         "resolution_queue_v1": resolution_queue_v1,
+        "fact_resolution_v1": fact_resolution_v1,
         "workflow_stage": workflow_stage,
         "workflowStage": workflow_stage,
         "issue_provenance_v1": _build_issue_provenance_v1(blocking_issues),

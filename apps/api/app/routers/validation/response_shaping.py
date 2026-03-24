@@ -612,6 +612,114 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
     return _build_resolution_queue_payload(documents)
 
 
+def build_fact_resolution_v1(
+    documents: List[Dict[str, Any]],
+    *,
+    workflow_stage: Optional[Dict[str, Any]] = None,
+    resolution_queue: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    materialize_document_fact_graphs_v1(documents)
+    effective_workflow_stage = (
+        workflow_stage
+        if isinstance(workflow_stage, dict)
+        else build_workflow_stage(documents)
+    )
+    queue_payload = (
+        resolution_queue
+        if isinstance(resolution_queue, dict)
+        else build_resolution_queue_v1(documents)
+    )
+
+    queue_items = (
+        queue_payload.get("items")
+        if isinstance(queue_payload.get("items"), list)
+        else []
+    )
+    queue_by_document_id: Dict[str, List[Dict[str, Any]]] = {}
+    queue_by_filename: Dict[str, List[Dict[str, Any]]] = {}
+    for item in queue_items:
+        if not isinstance(item, dict):
+            continue
+        document_id = str(item.get("document_id") or "").strip()
+        filename = str(item.get("filename") or "").strip().lower()
+        if document_id:
+            queue_by_document_id.setdefault(document_id, []).append(item)
+        if filename:
+            queue_by_filename.setdefault(filename, []).append(item)
+
+    invoice_document_types = {"commercial_invoice", "proforma_invoice"}
+    contract_documents: List[Dict[str, Any]] = []
+    unresolved_documents = 0
+    total_items = 0
+    user_resolvable_items = 0
+
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        document_type = str(
+            document.get("document_type")
+            or document.get("documentType")
+            or document.get("type")
+            or ""
+        ).strip().lower()
+        if document_type not in invoice_document_types:
+            continue
+
+        document_id = str(
+            document.get("document_id")
+            or document.get("documentId")
+            or document.get("id")
+            or ""
+        ).strip()
+        filename = str(document.get("filename") or document.get("name") or "").strip()
+        resolution_items = list(queue_by_document_id.get(document_id) or [])
+        if not resolution_items and filename:
+            resolution_items = list(queue_by_filename.get(filename.lower()) or [])
+
+        unresolved_count = len(resolution_items)
+        resolution_required = unresolved_count > 0
+        if resolution_required:
+            unresolved_documents += 1
+            total_items += unresolved_count
+            user_resolvable_items += sum(
+                1
+                for item in resolution_items
+                if bool(item.get("resolvable_by_user", True))
+            )
+
+        contract_documents.append(
+            {
+                "document_id": document_id,
+                "document_type": document_type,
+                "filename": filename or None,
+                "resolution_required": resolution_required,
+                "ready_for_validation": not resolution_required,
+                "unresolved_count": unresolved_count,
+                "summary": (
+                    f"{unresolved_count} invoice field{'s' if unresolved_count != 1 else ''} "
+                    "still need confirmation before invoice validation input is treated as final."
+                    if resolution_required
+                    else "Invoice facts required for validation are resolved."
+                ),
+                "fact_graph_v1": document.get("fact_graph_v1") or document.get("factGraphV1"),
+                "resolution_items": resolution_items,
+            }
+        )
+
+    return {
+        "version": "fact_resolution_v1",
+        "workflow_stage": effective_workflow_stage,
+        "documents": contract_documents,
+        "summary": {
+            "total_documents": len(contract_documents),
+            "unresolved_documents": unresolved_documents,
+            "total_items": total_items,
+            "user_resolvable_items": user_resolvable_items,
+            "ready_for_validation": unresolved_documents == 0,
+        },
+    }
+
+
 def build_issue_provenance_v1(issues: List[Dict[str, Any]]) -> Dict[str, Any]:
     provenance: List[Dict[str, Any]] = []
     for idx, issue in enumerate(issues or []):

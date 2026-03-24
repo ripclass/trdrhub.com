@@ -322,6 +322,36 @@ export const ResolutionQueueV1Schema = z.object({
 }).passthrough();
 export type ResolutionQueueV1 = z.infer<typeof ResolutionQueueV1Schema>;
 
+export const FactResolutionDocumentSchema = z.object({
+  document_id: z.string(),
+  document_type: z.string(),
+  filename: z.string().nullable().optional(),
+  resolution_required: z.boolean(),
+  ready_for_validation: z.boolean(),
+  unresolved_count: z.number().nonnegative(),
+  summary: z.string(),
+  fact_graph_v1: DocumentFactSetSchema.optional(),
+  resolution_items: z.array(ResolutionQueueItemSchema).default([]),
+}).passthrough();
+export type FactResolutionDocument = z.infer<typeof FactResolutionDocumentSchema>;
+
+export const FactResolutionSummarySchema = z.object({
+  total_documents: z.number().nonnegative(),
+  unresolved_documents: z.number().nonnegative(),
+  total_items: z.number().nonnegative(),
+  user_resolvable_items: z.number().nonnegative(),
+  ready_for_validation: z.boolean(),
+}).passthrough();
+export type FactResolutionSummary = z.infer<typeof FactResolutionSummarySchema>;
+
+export const FactResolutionV1Schema = z.object({
+  version: z.literal('fact_resolution_v1').default('fact_resolution_v1'),
+  workflow_stage: WorkflowStageInfoSchema.optional(),
+  documents: z.array(FactResolutionDocumentSchema).default([]),
+  summary: FactResolutionSummarySchema,
+}).passthrough();
+export type FactResolutionV1 = z.infer<typeof FactResolutionV1Schema>;
+
 export const ExtractionResolutionFieldSchema = z.object({
   field_name: z.string(),
   label: z.string(),
@@ -686,6 +716,7 @@ export const StructuredResultSchema = z.object({
   processing_summary_v2: ProcessingSummaryV2Schema.optional(),
   document_extraction_v1: DocumentExtractionV1Schema.optional(),
   resolution_queue_v1: ResolutionQueueV1Schema.optional(),
+  fact_resolution_v1: FactResolutionV1Schema.optional(),
   issue_provenance_v1: IssueProvenanceV1Schema.optional(),
   documents: z.array(StructuredResultDocumentSchema),
   issues: z.array(StructuredResultIssueSchema),

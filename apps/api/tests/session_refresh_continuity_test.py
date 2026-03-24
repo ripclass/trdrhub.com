@@ -171,6 +171,44 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             },
         }
 
+    def _fake_build_fact_resolution_v1(documents, *, workflow_stage=None, resolution_queue=None):
+        queue = (
+            resolution_queue
+            if isinstance(resolution_queue, dict)
+            else _fake_build_resolution_queue_v1(documents)
+        )
+        items = list(queue.get("items") or [])
+        documents_payload = []
+        for document in documents or []:
+            if str(document.get("document_type") or "").lower() != "commercial_invoice":
+                continue
+            document_id = document.get("document_id") or document.get("id")
+            doc_items = [item for item in items if item.get("document_id") == document_id]
+            documents_payload.append(
+                {
+                    "document_id": document_id,
+                    "document_type": "commercial_invoice",
+                    "filename": document.get("name") or document.get("filename"),
+                    "resolution_required": bool(doc_items),
+                    "ready_for_validation": not bool(doc_items),
+                    "unresolved_count": len(doc_items),
+                    "summary": "needs confirmation" if doc_items else "resolved",
+                    "resolution_items": doc_items,
+                }
+            )
+        return {
+            "version": "fact_resolution_v1",
+            "workflow_stage": workflow_stage or {},
+            "documents": documents_payload,
+            "summary": {
+                "total_documents": len(documents_payload),
+                "unresolved_documents": sum(1 for doc in documents_payload if doc["resolution_required"]),
+                "total_items": len(items),
+                "user_resolvable_items": len(items),
+                "ready_for_validation": len(items) == 0,
+            },
+        }
+
     def _fake_count_issue_severity(issues):
         return {
             "critical": sum(1 for issue in issues if str(issue.get("severity") or "").lower() == "critical"),
@@ -260,6 +298,7 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "_partition_workflow_stage_issues": _fake_partition_workflow_stage_issues,
         "materialize_document_fact_graphs_v1": _fake_materialize_document_fact_graphs_v1,
         "build_resolution_queue_v1": _fake_build_resolution_queue_v1,
+        "build_fact_resolution_v1": _fake_build_fact_resolution_v1,
         "build_processing_summary_v2": _fake_build_processing_summary_v2,
         "count_issue_severity": _fake_count_issue_severity,
         "build_workflow_stage": _fake_build_workflow_stage,
@@ -352,6 +391,7 @@ def test_refresh_structured_result_after_field_override_recomputes_same_session_
     assert refreshed["document_extraction_v1"]["documents"][0]["field_details"]["invoice_date"]["verification"] == "operator_confirmed"
     assert refreshed["workflow_stage"]["stage"] == "validation_results"
     assert refreshed["resolution_queue_v1"]["summary"]["total_items"] == 0
+    assert refreshed["fact_resolution_v1"]["summary"]["ready_for_validation"] is True
     assert refreshed["_operator_field_refresh"]["field_name"] == "invoice_date"
     assert refreshed["_operator_field_refresh"]["verification"] == "operator_confirmed"
 
@@ -450,6 +490,7 @@ def test_refresh_structured_result_keeps_submission_provisional_while_extraction
     assert refreshed["validation_contract_v1"]["final_verdict"] == "review"
     assert len(refreshed["issues"]) == 1
     assert refreshed["resolution_queue_v1"]["summary"]["total_items"] == 1
+    assert refreshed["fact_resolution_v1"]["summary"]["ready_for_validation"] is False
     assert refreshed["issues"][0]["reason_code"] == "crossdoc_mismatch"
     assert len(refreshed["_provisional_issues"]) == 1
     assert refreshed["_provisional_issues"][0]["reason_code"] == "FIELD_NOT_FOUND"
