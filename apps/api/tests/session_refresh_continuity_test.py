@@ -275,6 +275,7 @@ def test_refresh_structured_result_after_field_override_recomputes_same_session_
             structured_result,
             document_id="doc-invoice",
             field_name="invoice_date",
+            verification="operator_confirmed",
         )
     )
 
@@ -285,6 +286,7 @@ def test_refresh_structured_result_after_field_override_recomputes_same_session_
     assert refreshed["document_extraction_v1"]["documents"][0]["field_details"]["invoice_date"]["verification"] == "operator_confirmed"
     assert refreshed["workflow_stage"]["stage"] == "validation_results"
     assert refreshed["_operator_field_refresh"]["field_name"] == "invoice_date"
+    assert refreshed["_operator_field_refresh"]["verification"] == "operator_confirmed"
 
 
 def test_refresh_structured_result_keeps_submission_provisional_while_extraction_resolution_is_open() -> None:
@@ -370,6 +372,7 @@ def test_refresh_structured_result_keeps_submission_provisional_while_extraction
             structured_result,
             document_id="doc-invoice",
             field_name="invoice_number",
+            verification="operator_confirmed",
         )
     )
 
@@ -382,3 +385,86 @@ def test_refresh_structured_result_keeps_submission_provisional_while_extraction
     assert refreshed["issues"][0]["reason_code"] == "crossdoc_mismatch"
     assert len(refreshed["_provisional_issues"]) == 1
     assert refreshed["_provisional_issues"][0]["reason_code"] == "FIELD_NOT_FOUND"
+
+
+def test_refresh_structured_result_after_rejection_keeps_extraction_issue_open() -> None:
+    symbols = _load_symbols(
+        {
+            "sync_structured_result_collections",
+            "_normalize_field_key",
+            "_normalize_issue_document_ids",
+            "_issue_targets_overridden_field",
+            "_is_override_resolved_extraction_issue",
+            "_filter_resolved_override_issues",
+            "_build_field_decisions_from_documents",
+            "_copy_documents_to_secondary_surfaces",
+            "_resolve_documents_for_refresh",
+            "refresh_structured_result_after_field_override",
+        }
+    )
+    refresh = symbols["refresh_structured_result_after_field_override"]
+
+    document = {
+        "document_id": "doc-invoice",
+        "document_type": "commercial_invoice",
+        "name": "Invoice.pdf",
+        "extracted_fields": {"invoice_number": "DKEL/EXP/2026/114"},
+        "field_details": {
+            "invoice_date": {
+                "verification": "operator_rejected",
+                "source": "operator_override",
+                "confidence": 0.0,
+                "rejected_value": "2026-04-20",
+            }
+        },
+        "review_reasons": ["FIELD_NOT_FOUND"],
+        "critical_field_states": {"invoice_date": "unconfirmed"},
+        "extraction_resolution": {
+            "required": True,
+            "unresolved_count": 1,
+            "summary": "1 field still needs confirmation.",
+            "fields": [{"field_name": "invoice_date", "label": "Invoice Date"}],
+        },
+        "status": "warning",
+    }
+    structured_result = {
+        "documents": [copy.deepcopy(document)],
+        "documents_structured": [copy.deepcopy(document)],
+        "document_extraction_v1": {"documents": [copy.deepcopy(document)]},
+        "processing_summary": {
+            "documents": [copy.deepcopy(document)],
+            "processing_time_seconds": 12.3,
+            "processing_time_display": "12.3s",
+            "processing_time_ms": 12300,
+            "extraction_quality": 96,
+        },
+        "processing_summary_v2": {"documents": [copy.deepcopy(document)]},
+        "issues": [
+            {
+                "title": "Invoice date could not be confirmed",
+                "severity": "major",
+                "field": "invoice_date",
+                "document_ids": ["doc-invoice"],
+                "reason_code": "FIELD_NOT_FOUND",
+            }
+        ],
+        "analytics": {},
+        "gate_result": {"completeness": 0.95},
+        "validation_blocked": False,
+    }
+
+    refreshed = asyncio.run(
+        refresh(
+            structured_result,
+            document_id="doc-invoice",
+            field_name="invoice_date",
+            verification="operator_rejected",
+        )
+    )
+
+    assert refreshed["workflow_stage"]["stage"] == "extraction_resolution"
+    assert refreshed["submission_eligibility"]["can_submit"] is False
+    assert len(refreshed["issues"]) == 0
+    assert len(refreshed["_provisional_issues"]) == 1
+    assert refreshed["_provisional_issues"][0]["reason_code"] == "FIELD_NOT_FOUND"
+    assert refreshed["_operator_field_refresh"]["verification"] == "operator_rejected"

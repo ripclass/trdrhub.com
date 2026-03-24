@@ -72,6 +72,7 @@ interface DocumentDetailsDrawerProps {
     documentId: string;
     fieldName: string;
     overrideValue: string;
+    verification?: "operator_confirmed" | "operator_rejected";
     note?: string;
   }) => Promise<void>;
   isSavingFieldOverride?: boolean;
@@ -523,6 +524,11 @@ const buildFieldEvidenceNote = (detail: Record<string, any> | undefined): string
       ? `Operator confirmed for this session: ${snippet}`
       : "Confirmed by an operator for this validation session.";
   }
+  if (verification === "operator_rejected") {
+    return snippet
+      ? `Operator rejected this suggested value for this session: ${snippet}`
+      : "Operator rejected this suggested value for the current validation session.";
+  }
   if (verification === "not_found") {
     return "The extraction pipeline did not confirm a value for this field.";
   }
@@ -657,6 +663,7 @@ export function DocumentDetailsDrawer({
     if (verification === "text_supported") return "Text-supported candidate";
     if (verification === "model_suggested") return "Model-suggested candidate";
     if (verification === "operator_confirmed") return "Operator-confirmed value";
+    if (verification === "operator_rejected") return "Rejected candidate";
     if (verification === "not_found") return "No candidate value found";
     return verification ? humanizeFieldName(verification) : "Unresolved field";
   }, [activeResolutionDetail, activeResolutionField]);
@@ -687,7 +694,10 @@ export function DocumentDetailsDrawer({
     setShowManualOverrideEditor(!String(nextField?.currentValue ?? "").trim());
   };
 
-  const persistFieldOverride = async (value: string) => {
+  const persistFieldOverride = async (
+    value: string,
+    verification: "operator_confirmed" | "operator_rejected" = "operator_confirmed",
+  ) => {
     if (!resolvedDocument.id || !activeResolutionField || !onSaveFieldOverride) {
       return;
     }
@@ -699,6 +709,7 @@ export function DocumentDetailsDrawer({
       documentId: resolvedDocument.id,
       fieldName: activeResolutionField.key,
       overrideValue: trimmedValue,
+      verification,
       note: overrideNote.trim() || undefined,
     });
     setOverrideNote("");
@@ -710,6 +721,10 @@ export function DocumentDetailsDrawer({
 
   const handleConfirmSuggestedValue = async () => {
     await persistFieldOverride(activeResolutionCandidateValue);
+  };
+
+  const handleRejectSuggestedValue = async () => {
+    await persistFieldOverride(activeResolutionCandidateValue, "operator_rejected");
   };
 
   const extractionStatus = (resolvedDocument.extractionStatus ?? '').toLowerCase();
@@ -992,7 +1007,7 @@ export function DocumentDetailsDrawer({
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          If this matches the source document, confirm it directly. If not, edit the value before saving.
+                          If this matches the source document, confirm it directly. If it does not, reject the suggestion or edit the value before saving.
                         </p>
                         <div className="flex flex-wrap gap-2">
                           <Button
@@ -1009,13 +1024,21 @@ export function DocumentDetailsDrawer({
                               setOverrideValue(activeResolutionCandidateValue);
                               setShowManualOverrideEditor(true);
                             }}
-                            disabled={isSavingFieldOverride}
-                          >
-                            Edit value instead
-                          </Button>
+                              disabled={isSavingFieldOverride}
+                            >
+                              Edit value instead
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleRejectSuggestedValue}
+                              disabled={isSavingFieldOverride}
+                            >
+                              {isSavingFieldOverride ? "Saving..." : "Reject suggested value"}
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
                     {(!activeResolutionHasCandidate || showManualOverrideEditor) && (
                       <div className="space-y-2">
                         <Label htmlFor="field-override-value">

@@ -1420,10 +1420,104 @@ describe('ExporterResults', () => {
         document_id: 'doc-invoice',
         field_name: 'invoice_date',
         override_value: '2026-04-20',
+        verification: 'operator_confirmed',
         note: undefined,
       }),
     );
     await waitFor(() => expect(refreshResults).toHaveBeenCalledWith('manual'));
+  });
+
+  it('lets the operator reject a suggested unresolved value and keep the session provisional', async () => {
+    const structured = buildValidationResults().structured_result!;
+    const refreshResults = vi.fn().mockResolvedValue(activeResults);
+    const { exporterApi } = await import('@/api/exporter');
+    const saveFieldOverride = vi.mocked(exporterApi.saveFieldOverride);
+
+    const documentsStructured = [
+      {
+        document_id: 'doc-invoice',
+        document_type: 'commercial_invoice',
+        filename: 'Invoice.pdf',
+        extraction_status: 'success',
+        review_required: true,
+        review_reasons: ['critical_issue_date_missing'],
+        critical_field_states: { issue_date: 'missing' },
+        field_details: {
+          invoice_date: {
+            verification: 'model_suggested',
+            status: 'missing',
+            value: '2026-04-20',
+            evidence: {
+              source: 'native_text',
+              snippet: 'Invoice Date: 20 Apr 2026',
+            },
+          },
+        },
+        extraction_resolution: {
+          required: true,
+          unresolved_count: 1,
+          summary: 'Invoice date still needs confirmation from source evidence.',
+          fields: [{ field_name: 'invoice_date', label: 'Invoice Date', verification: 'model_suggested' }],
+        },
+        extracted_fields: { invoice_number: 'DKEL/EXP/2026/114' },
+        extraction_artifacts_v1: {
+          raw_text: 'Commercial Invoice\nInvoice Date: 20 Apr 2026\nLC No: EXP2026BD001\n',
+          field_diagnostics: {
+            issue_date: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+          },
+        },
+      },
+    ];
+
+    structured.documents_structured = documentsStructured;
+    structured.documents = documentsStructured as any;
+    structured.lc_structured.documents_structured = documentsStructured;
+    structured.workflow_stage = {
+      stage: 'extraction_resolution',
+      provisional_validation: true,
+      ready_for_final_validation: false,
+      unresolved_documents: 1,
+      unresolved_fields: 1,
+      summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+    } as any;
+    activeResults = buildValidationResponse({ structured_result: structured });
+    refreshResults.mockResolvedValue(activeResults);
+    mockUseCanonicalJobResult.mockReturnValue({
+      jobStatus: { status: 'completed' },
+      results: activeResults,
+      isLoading: false,
+      resultsError: null,
+      jobError: null,
+      refreshResults,
+    });
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults jobId="job-123" />));
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
+    );
+
+    const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
+    await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
+
+    const drawer = screen.getByRole('dialog');
+    await user.click(within(drawer).getByRole('button', { name: /Reject suggested value/i }));
+
+    await waitFor(() =>
+      expect(saveFieldOverride).toHaveBeenCalledWith('job-123', {
+        document_id: 'doc-invoice',
+        field_name: 'invoice_date',
+        override_value: '2026-04-20',
+        verification: 'operator_rejected',
+        note: undefined,
+      }),
+    );
+    await waitFor(() => expect(refreshResults).toHaveBeenCalledWith('manual'));
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Suggestion rejected for this session',
+      }),
+    );
   });
 
   it('saves an operator-confirmed field override from the document detail drawer and refreshes the same session results', async () => {
@@ -1491,6 +1585,7 @@ describe('ExporterResults', () => {
         document_id: 'doc-invoice',
         field_name: 'invoice_date',
         override_value: '2026-04-20',
+        verification: 'operator_confirmed',
         note: 'Confirmed from invoice header',
       }),
     );

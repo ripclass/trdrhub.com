@@ -308,6 +308,7 @@ class FieldOverrideRequest(BaseModel):
     document_id: str
     field_name: str
     override_value: Optional[Any] = None
+    verification: Optional[str] = "operator_confirmed"
     note: Optional[str] = Field(default=None, max_length=1000)
 
 

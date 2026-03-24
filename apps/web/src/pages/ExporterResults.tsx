@@ -1108,33 +1108,43 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       documentId: string;
       fieldName: string;
       overrideValue: string;
+      verification?: 'operator_confirmed' | 'operator_rejected';
       note?: string;
     }) => {
       if (!validationSessionId) {
         throw new Error('Missing validation session id');
       }
-      return exporterApi.saveFieldOverride(validationSessionId, {
-        document_id: payload.documentId,
-        field_name: payload.fieldName,
-        override_value: payload.overrideValue,
-        note: payload.note,
-      });
-    },
-  });
+        return exporterApi.saveFieldOverride(validationSessionId, {
+          document_id: payload.documentId,
+          field_name: payload.fieldName,
+          override_value: payload.overrideValue,
+          verification: payload.verification,
+          note: payload.note,
+        });
+      },
+    });
 
   const handleSaveFieldOverride = useCallback(
     async (payload: {
       documentId: string;
       fieldName: string;
       overrideValue: string;
+      verification?: 'operator_confirmed' | 'operator_rejected';
       note?: string;
     }) => {
       try {
         await saveFieldOverrideMutation.mutateAsync(payload);
         await refreshResults('manual');
+        const verification = payload.verification || 'operator_confirmed';
         toast({
-          title: 'Field saved for this session',
-          description: `${humanizeLabel(payload.fieldName)} was saved as an operator-confirmed value.`,
+          title:
+            verification === 'operator_rejected'
+              ? 'Suggestion rejected for this session'
+              : 'Field saved for this session',
+          description:
+            verification === 'operator_rejected'
+              ? `${humanizeLabel(payload.fieldName)} remains unresolved and will stay in extraction resolution until a source-backed value is confirmed.`
+              : `${humanizeLabel(payload.fieldName)} was saved as an operator-confirmed value.`,
         });
       } catch (error: any) {
         toast({

@@ -298,6 +298,7 @@ export const FieldOverrideRequestSchema = z.object({
   document_id: z.string(),
   field_name: z.string(),
   override_value: z.unknown(),
+  verification: z.enum(['operator_confirmed', 'operator_rejected']).optional(),
   note: z.string().trim().max(1000).optional(),
 });
 export type FieldOverrideRequest = z.infer<typeof FieldOverrideRequestSchema>;
@@ -394,7 +395,7 @@ export const FieldOverrideResponseSchema = z.object({
   document_id: z.string(),
   field_name: z.string(),
   override_value: z.unknown(),
-  verification: z.literal('operator_confirmed'),
+  verification: z.enum(['operator_confirmed', 'operator_rejected']),
   applied_at: z.string().datetime(),
   updated_document: StructuredResultDocumentSchema.optional(),
 }).passthrough();

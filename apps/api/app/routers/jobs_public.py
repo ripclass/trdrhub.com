@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import copy
 from uuid import UUID, uuid4
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from datetime import datetime, timezone
 
 from fastapi.encoders import jsonable_encoder
@@ -36,6 +36,7 @@ class FieldOverrideRequestBody(BaseModel):
     document_id: str
     field_name: str
     override_value: Any
+    verification: Literal["operator_confirmed", "operator_rejected"] = "operator_confirmed"
     note: Optional[str] = Field(default=None, max_length=1000)
 
 
@@ -398,6 +399,7 @@ def _apply_field_override_to_document(
     *,
     field_name: str,
     override_value: Any,
+    verification: str,
     note: Optional[str],
     actor_email: str,
     applied_at_iso: str,
@@ -412,7 +414,10 @@ def _apply_field_override_to_document(
         if isinstance(updated.get("extractedFields"), dict)
         else {}
     )
-    extracted_fields[normalized_field] = override_value
+    if verification == "operator_rejected":
+        extracted_fields.pop(normalized_field, None)
+    else:
+        extracted_fields[normalized_field] = override_value
     updated["extracted_fields"] = extracted_fields
     if "extractedFields" in updated:
         updated["extractedFields"] = copy.deepcopy(extracted_fields)
@@ -427,28 +432,49 @@ def _apply_field_override_to_document(
     existing_detail = field_details.get(normalized_field)
     if not isinstance(existing_detail, dict):
         existing_detail = {}
-    field_details[normalized_field] = {
+    base_detail = {
         **existing_detail,
-        "value": override_value,
-        "raw_value": override_value,
-        "verification": "operator_confirmed",
-        "status": "trusted",
         "source": "operator_override",
-        "confidence": 1.0,
-        "evidence": {
-            "source": "operator_override",
-            "snippet": str(note).strip() if note else f"{override_value}",
-            "strategy": "manual_override",
-        },
         "operator_note": str(note).strip() if note else None,
-        "operator_confirmed_by": actor_email,
-        "operator_confirmed_at": applied_at_iso,
     }
+    if verification == "operator_rejected":
+        field_details[normalized_field] = {
+            **base_detail,
+            "value": None,
+            "raw_value": existing_detail.get("raw_value", override_value),
+            "verification": "operator_rejected",
+            "status": "unconfirmed",
+            "confidence": 0.0,
+            "evidence": {
+                "source": "operator_override",
+                "snippet": str(note).strip() if note else f"{override_value}",
+                "strategy": "manual_rejection",
+            },
+            "rejected_value": override_value,
+            "operator_rejected_by": actor_email,
+            "operator_rejected_at": applied_at_iso,
+        }
+    else:
+        field_details[normalized_field] = {
+            **base_detail,
+            "value": override_value,
+            "raw_value": override_value,
+            "verification": "operator_confirmed",
+            "status": "trusted",
+            "confidence": 1.0,
+            "evidence": {
+                "source": "operator_override",
+                "snippet": str(note).strip() if note else f"{override_value}",
+                "strategy": "manual_override",
+            },
+            "operator_confirmed_by": actor_email,
+            "operator_confirmed_at": applied_at_iso,
+        }
     updated["field_details"] = field_details
     if "fieldDetails" in updated:
         updated["fieldDetails"] = copy.deepcopy(field_details)
 
-    missing_required_fields = [
+    existing_missing_required_fields = [
         str(value)
         for value in (
             updated.get("missing_required_fields")
@@ -457,8 +483,19 @@ def _apply_field_override_to_document(
             if isinstance(updated.get("missingRequiredFields"), list)
             else []
         )
-        if _normalize_override_field_name(value) != normalized_field
     ]
+    if verification == "operator_rejected":
+        missing_required_fields = list(existing_missing_required_fields)
+        if normalized_field not in {
+            _normalize_override_field_name(value) for value in missing_required_fields
+        }:
+            missing_required_fields.append(normalized_field)
+    else:
+        missing_required_fields = [
+            value
+            for value in existing_missing_required_fields
+            if _normalize_override_field_name(value) != normalized_field
+        ]
     updated["missing_required_fields"] = missing_required_fields
     if "missingRequiredFields" in updated:
         updated["missingRequiredFields"] = list(missing_required_fields)
@@ -470,7 +507,9 @@ def _apply_field_override_to_document(
         if isinstance(updated.get("criticalFieldStates"), dict)
         else {}
     )
-    if normalized_field in critical_field_states:
+    if verification == "operator_rejected":
+        critical_field_states[normalized_field] = "unconfirmed"
+    elif normalized_field in critical_field_states:
         critical_field_states[normalized_field] = "found"
     updated["critical_field_states"] = critical_field_states
     if "criticalFieldStates" in updated:
@@ -493,12 +532,14 @@ def _apply_field_override_to_document(
         current_diag = {}
     field_diagnostics[normalized_field] = {
         **current_diag,
-        "state": "operator_confirmed",
+        "state": verification,
         "source": "operator_override",
         "override_value": override_value,
         "override_note": str(note).strip() if note else None,
-        "confirmed_by": actor_email,
-        "confirmed_at": applied_at_iso,
+        "confirmed_by": actor_email if verification == "operator_confirmed" else current_diag.get("confirmed_by"),
+        "confirmed_at": applied_at_iso if verification == "operator_confirmed" else current_diag.get("confirmed_at"),
+        "rejected_by": actor_email if verification == "operator_rejected" else current_diag.get("rejected_by"),
+        "rejected_at": applied_at_iso if verification == "operator_rejected" else current_diag.get("rejected_at"),
     }
     if extraction_artifacts:
         extraction_artifacts["field_diagnostics"] = field_diagnostics
@@ -523,7 +564,12 @@ def _apply_field_override_to_document(
             else []
         )
     ]
-    review_reasons = _remove_override_resolved_review_reasons(review_reasons, normalized_field, unresolved_remaining)
+    if verification == "operator_confirmed":
+        review_reasons = _remove_override_resolved_review_reasons(
+            review_reasons,
+            normalized_field,
+            unresolved_remaining,
+        )
     updated["review_reasons"] = review_reasons
     if "reviewReasons" in updated:
         updated["reviewReasons"] = list(review_reasons)
@@ -533,10 +579,73 @@ def _apply_field_override_to_document(
 
     required_fields_found = updated.get("required_fields_found")
     required_fields_total = updated.get("required_fields_total")
-    if isinstance(required_fields_found, int) and isinstance(required_fields_total, int):
+    if (
+        verification == "operator_confirmed"
+        and isinstance(required_fields_found, int)
+        and isinstance(required_fields_total, int)
+    ):
         updated["required_fields_found"] = min(required_fields_total, required_fields_found + 1)
         if "requiredFieldsFound" in updated:
             updated["requiredFieldsFound"] = updated["required_fields_found"]
+
+    extraction_resolution = (
+        copy.deepcopy(updated.get("extraction_resolution"))
+        if isinstance(updated.get("extraction_resolution"), dict)
+        else copy.deepcopy(updated.get("extractionResolution"))
+        if isinstance(updated.get("extractionResolution"), dict)
+        else {}
+    )
+    resolution_fields = (
+        copy.deepcopy(extraction_resolution.get("fields"))
+        if isinstance(extraction_resolution.get("fields"), list)
+        else []
+    )
+    next_resolution_fields: List[Dict[str, Any]] = []
+    existing_resolution_entry: Optional[Dict[str, Any]] = None
+    for entry in resolution_fields:
+        if not isinstance(entry, dict):
+            continue
+        entry_field_name = _normalize_override_field_name(
+            entry.get("field_name") or entry.get("fieldName") or ""
+        )
+        if entry_field_name == normalized_field:
+            existing_resolution_entry = copy.deepcopy(entry)
+            continue
+        next_resolution_fields.append(copy.deepcopy(entry))
+
+    if verification == "operator_rejected":
+        fallback_label = " ".join(
+            part.capitalize() for part in normalized_field.split("_") if part
+        ) or normalized_field
+        next_resolution_fields.append(
+            {
+                **(existing_resolution_entry or {}),
+                "field_name": normalized_field,
+                "fieldName": normalized_field,
+                "label": (
+                    existing_resolution_entry.get("label")
+                    if isinstance(existing_resolution_entry, dict)
+                    and existing_resolution_entry.get("label")
+                    else fallback_label
+                ),
+                "verification": "operator_rejected",
+            }
+        )
+
+    if extraction_resolution or verification == "operator_rejected":
+        unresolved_count = len(next_resolution_fields)
+        extraction_resolution["required"] = unresolved_count > 0
+        extraction_resolution["unresolved_count"] = unresolved_count
+        extraction_resolution["unresolvedCount"] = unresolved_count
+        extraction_resolution["fields"] = next_resolution_fields
+        extraction_resolution["summary"] = (
+            f"{unresolved_count} field{'s' if unresolved_count != 1 else ''} still need confirmation from source evidence."
+            if unresolved_count > 0
+            else "All unresolved extraction fields for this document have been confirmed."
+        )
+        updated["extraction_resolution"] = extraction_resolution
+        if "extractionResolution" in updated:
+            updated["extractionResolution"] = copy.deepcopy(extraction_resolution)
 
     return updated
 
@@ -547,6 +656,7 @@ def _apply_field_override_to_structured_result(
     document_id: str,
     field_name: str,
     override_value: Any,
+    verification: str,
     note: Optional[str],
     actor_email: str,
     applied_at_iso: str,
@@ -567,6 +677,7 @@ def _apply_field_override_to_structured_result(
                     entry,
                     field_name=field_name,
                     override_value=override_value,
+                    verification=verification,
                     note=note,
                     actor_email=actor_email,
                     applied_at_iso=applied_at_iso,
@@ -590,6 +701,7 @@ def _apply_field_override_to_structured_result(
                     entry,
                     field_name=field_name,
                     override_value=override_value,
+                    verification=verification,
                     note=note,
                     actor_email=actor_email,
                     applied_at_iso=applied_at_iso,
@@ -622,6 +734,7 @@ def _apply_field_override_to_structured_result(
                     entry,
                     field_name=field_name,
                     override_value=override_value,
+                    verification=verification,
                     note=note,
                     actor_email=actor_email,
                     applied_at_iso=applied_at_iso,
@@ -662,6 +775,7 @@ def _record_operator_field_override(
     document_id: str,
     field_name: str,
     override_value: Any,
+    verification: str,
     note: Optional[str],
     actor_id: str,
     actor_email: str,
@@ -675,12 +789,16 @@ def _record_operator_field_override(
     if not isinstance(doc_overrides, dict):
         doc_overrides = {}
     doc_overrides[_normalize_override_field_name(field_name)] = {
-        "value": override_value,
+        "value": override_value if verification == "operator_confirmed" else None,
+        "rejected_value": override_value if verification == "operator_rejected" else None,
         "note": str(note).strip() if note else None,
-        "verification": "operator_confirmed",
-        "confirmed_by": actor_email,
-        "confirmed_by_user_id": actor_id,
-        "confirmed_at": applied_at_iso,
+        "verification": verification,
+        "confirmed_by": actor_email if verification == "operator_confirmed" else None,
+        "confirmed_by_user_id": actor_id if verification == "operator_confirmed" else None,
+        "confirmed_at": applied_at_iso if verification == "operator_confirmed" else None,
+        "rejected_by": actor_email if verification == "operator_rejected" else None,
+        "rejected_by_user_id": actor_id if verification == "operator_rejected" else None,
+        "rejected_at": applied_at_iso if verification == "operator_rejected" else None,
     }
     overrides[document_id] = doc_overrides
     updated["operator_field_overrides"] = overrides
@@ -693,6 +811,7 @@ def _build_field_override_response(
     document_id: str,
     field_name: str,
     override_value: Any,
+    verification: str,
     applied_at_iso: str,
     updated_document: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -704,7 +823,7 @@ def _build_field_override_response(
             "document_id": document_id,
             "field_name": field_name,
             "override_value": override_value,
-            "verification": "operator_confirmed",
+            "verification": verification,
             "applied_at": applied_at_iso,
             "updated_document": updated_document,
         }
@@ -871,6 +990,7 @@ async def save_job_field_override(
 
     field_name = _normalize_override_field_name(payload.field_name)
     document_id = str(payload.document_id)
+    verification = str(payload.verification or "operator_confirmed").strip().lower()
     applied_at = datetime.now(timezone.utc)
     applied_at_iso = applied_at.isoformat()
 
@@ -879,6 +999,7 @@ async def save_job_field_override(
         document_id=document_id,
         field_name=field_name,
         override_value=payload.override_value,
+        verification=verification,
         note=payload.note,
         actor_email=current_user.email,
         applied_at_iso=applied_at_iso,
@@ -893,6 +1014,7 @@ async def save_job_field_override(
         structured_result,
         document_id=document_id,
         field_name=field_name,
+        verification=verification,
     )
     refreshed_document = _get_document_from_structured_result(structured_result, document_id)
     if refreshed_document:
@@ -908,6 +1030,7 @@ async def save_job_field_override(
         document_id=document_id,
         field_name=field_name,
         override_value=payload.override_value,
+        verification=verification,
         note=payload.note,
         actor_id=str(current_user.id),
         actor_email=current_user.email,
@@ -938,7 +1061,7 @@ async def save_job_field_override(
             response_data={
                 "document_id": document_id,
                 "field_name": field_name,
-                "verification": "operator_confirmed",
+                "verification": verification,
             },
             audit_metadata={
                 "override_scope": "session_structured_result",
@@ -954,6 +1077,7 @@ async def save_job_field_override(
         document_id=document_id,
         field_name=field_name,
         override_value=payload.override_value,
+        verification=verification,
         applied_at_iso=applied_at_iso,
         updated_document=updated_document,
     )

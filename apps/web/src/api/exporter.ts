@@ -98,6 +98,7 @@ export interface FieldOverrideRequest {
   document_id: string;
   field_name: string;
   override_value: string;
+  verification?: 'operator_confirmed' | 'operator_rejected';
   note?: string;
 }
 
@@ -107,7 +108,7 @@ export interface FieldOverrideResponse {
   document_id: string;
   field_name: string;
   override_value: unknown;
-  verification: 'operator_confirmed';
+  verification: 'operator_confirmed' | 'operator_rejected';
   applied_at: string;
   updated_document?: Record<string, any>;
 }

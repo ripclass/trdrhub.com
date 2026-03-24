@@ -65,6 +65,12 @@ def test_apply_field_override_updates_document_review_state_and_field_metadata()
         "review_reasons": ["FIELD_NOT_FOUND", "critical_invoice_date_missing"],
         "critical_field_states": {"invoice_date": "missing"},
         "review_required": True,
+        "extraction_resolution": {
+            "required": True,
+            "unresolved_count": 1,
+            "summary": "1 field still needs confirmation from source evidence.",
+            "fields": [{"field_name": "invoice_date", "label": "Invoice Date"}],
+        },
         "extraction_artifacts_v1": {
             "field_diagnostics": {
                 "invoice_date": {"state": "missing", "reason_codes": ["FIELD_NOT_FOUND"]}
@@ -76,6 +82,7 @@ def test_apply_field_override_updates_document_review_state_and_field_metadata()
         document,
         field_name="invoice_date",
         override_value="2026-04-20",
+        verification="operator_confirmed",
         note="Confirmed from invoice header",
         actor_email="imran@iec.com",
         applied_at_iso="2026-03-23T12:00:00+00:00",
@@ -88,6 +95,8 @@ def test_apply_field_override_updates_document_review_state_and_field_metadata()
     assert updated["critical_field_states"]["invoice_date"] == "found"
     assert updated["review_reasons"] == []
     assert updated["review_required"] is False
+    assert updated["extraction_resolution"]["required"] is False
+    assert updated["extraction_resolution"]["unresolved_count"] == 0
     assert (
         updated["extraction_artifacts_v1"]["field_diagnostics"]["invoice_date"]["state"]
         == "operator_confirmed"
@@ -182,6 +191,7 @@ def test_apply_field_override_updates_top_level_and_lc_structured_document_colle
         document_id="doc-pack",
         field_name="issue_date",
         override_value="2026-04-20",
+        verification="operator_confirmed",
         note="Confirmed from packing list header",
         actor_email="imran@iec.com",
         applied_at_iso="2026-03-23T12:00:00+00:00",
@@ -205,6 +215,7 @@ def test_record_operator_field_override_persists_session_override_metadata() -> 
         document_id="doc-coo",
         field_name="exporter_name",
         override_value="Dhaka Knitwear & Exports Ltd.",
+        verification="operator_confirmed",
         note="Confirmed from certificate body",
         actor_id="user-1",
         actor_email="imran@iec.com",
@@ -236,6 +247,7 @@ def test_build_field_override_response_coerces_nested_non_json_types() -> None:
         document_id=str(uuid4()),
         field_name="issue_date",
         override_value="2026-04-20",
+        verification="operator_confirmed",
         applied_at_iso="2026-03-23T15:00:00+00:00",
         updated_document=updated_document,
     )
@@ -248,3 +260,89 @@ def test_build_field_override_response_coerces_nested_non_json_types() -> None:
     assert (
         response["updated_document"]["field_details"]["issue_date"]["confidence"] == 1.0
     )
+
+
+def test_apply_field_override_rejection_keeps_field_unresolved() -> None:
+    symbols = _load_symbols(
+        {
+            "_normalize_override_field_name",
+            "_is_unresolved_field_state",
+            "_remove_override_resolved_review_reasons",
+            "_apply_field_override_to_document",
+        }
+    )
+    apply_field_override_to_document = symbols["_apply_field_override_to_document"]
+
+    document = {
+        "document_id": "doc-invoice",
+        "extracted_fields": {"invoice_date": "2026-04-20"},
+        "field_details": {
+            "invoice_date": {
+                "verification": "model_suggested",
+                "status": "missing",
+                "value": "2026-04-20",
+            }
+        },
+        "missing_required_fields": [],
+        "review_reasons": ["FIELD_NOT_FOUND"],
+        "critical_field_states": {"invoice_date": "missing"},
+        "review_required": True,
+        "extraction_resolution": {
+            "required": True,
+            "unresolved_count": 1,
+            "summary": "1 field still needs confirmation from source evidence.",
+            "fields": [{"field_name": "invoice_date", "label": "Invoice Date"}],
+        },
+        "extraction_artifacts_v1": {
+            "field_diagnostics": {
+                "invoice_date": {"state": "missing", "reason_codes": ["FIELD_NOT_FOUND"]}
+            }
+        },
+    }
+
+    updated = apply_field_override_to_document(
+        document,
+        field_name="invoice_date",
+        override_value="2026-04-20",
+        verification="operator_rejected",
+        note="This date does not match the invoice header.",
+        actor_email="imran@iec.com",
+        applied_at_iso="2026-03-23T12:00:00+00:00",
+    )
+
+    assert "invoice_date" not in updated["extracted_fields"]
+    assert updated["field_details"]["invoice_date"]["verification"] == "operator_rejected"
+    assert updated["field_details"]["invoice_date"]["rejected_value"] == "2026-04-20"
+    assert updated["missing_required_fields"] == ["invoice_date"]
+    assert updated["critical_field_states"]["invoice_date"] == "unconfirmed"
+    assert updated["review_required"] is True
+    assert updated["extraction_resolution"]["required"] is True
+    assert updated["extraction_resolution"]["unresolved_count"] == 1
+    assert updated["extraction_resolution"]["fields"][0]["verification"] == "operator_rejected"
+    assert (
+        updated["extraction_artifacts_v1"]["field_diagnostics"]["invoice_date"]["state"]
+        == "operator_rejected"
+    )
+
+
+def test_record_operator_field_override_persists_rejection_metadata() -> None:
+    symbols = _load_symbols({"_normalize_override_field_name", "_record_operator_field_override"})
+    record_operator_field_override = symbols["_record_operator_field_override"]
+
+    updated = record_operator_field_override(
+        {"lc_number": "EXP2026BD001"},
+        document_id="doc-invoice",
+        field_name="invoice_date",
+        override_value="2026-04-20",
+        verification="operator_rejected",
+        note="Rejected after checking the invoice header.",
+        actor_id="user-1",
+        actor_email="imran@iec.com",
+        applied_at_iso="2026-03-23T12:00:00+00:00",
+    )
+
+    override = updated["operator_field_overrides"]["doc-invoice"]["invoice_date"]
+    assert override["value"] is None
+    assert override["rejected_value"] == "2026-04-20"
+    assert override["verification"] == "operator_rejected"
+    assert override["rejected_by"] == "imran@iec.com"

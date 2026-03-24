@@ -435,10 +435,18 @@ def _build_field_decisions_from_documents(
             if not status:
                 if verification in {"operator_confirmed", "confirmed", "text_supported"}:
                     status = "accepted"
-                elif verification in {"not_found", "missing", "failed", "unconfirmed"}:
+                elif verification in {
+                    "operator_rejected",
+                    "not_found",
+                    "missing",
+                    "failed",
+                    "unconfirmed",
+                }:
                     status = "retry"
             if not reason_code and verification == "operator_confirmed":
                 reason_code = "operator_confirmed"
+            if not reason_code and verification == "operator_rejected":
+                reason_code = "operator_rejected"
             if status:
                 decisions[normalized_field] = {
                     "status": status,
@@ -483,6 +491,7 @@ async def refresh_structured_result_after_field_override(
     *,
     document_id: str,
     field_name: str,
+    verification: str = "operator_confirmed",
 ) -> Dict[str, Any]:
     """Recompute downstream review/readiness surfaces after an operator field override."""
     if not isinstance(structured_result, dict):
@@ -494,10 +503,14 @@ async def refresh_structured_result_after_field_override(
 
     issues = structured_result.get("issues") or []
     if isinstance(issues, list):
-        structured_result["issues"] = _filter_resolved_override_issues(
-            issues,
-            document_id=document_id,
-            field_name=field_name,
+        structured_result["issues"] = (
+            _filter_resolved_override_issues(
+                issues,
+                document_id=document_id,
+                field_name=field_name,
+            )
+            if verification == "operator_confirmed"
+            else list(issues)
         )
     else:
         structured_result["issues"] = []
@@ -719,6 +732,7 @@ async def refresh_structured_result_after_field_override(
         "applied": True,
         "document_id": document_id,
         "field_name": _normalize_field_key(field_name),
+        "verification": verification,
         "issues_remaining": len(structured_result.get("issues") or []),
     }
     return structured_result
