@@ -112,9 +112,37 @@ def stabilize_document_review_semantics(doc_info: Dict[str, Any], extracted_text
 def context_payload_for_doc_type(context: Dict[str, Any], document_type: str) -> Dict[str, Any]:
     if document_type in ("letter_of_credit", "swift_message", "lc_application"):
         return context.get("lc") or {}
-    if document_type in ("commercial_invoice", "proforma_invoice"):
+    if document_type in (
+        "commercial_invoice",
+        "proforma_invoice",
+        "draft_bill_of_exchange",
+        "promissory_note",
+        "payment_receipt",
+        "debit_note",
+        "credit_note",
+    ):
         return context.get("invoice") or {}
-    if document_type == "bill_of_lading":
+    if document_type in {
+        "bill_of_lading",
+        "ocean_bill_of_lading",
+        "charter_party_bill_of_lading",
+        "house_bill_of_lading",
+        "master_bill_of_lading",
+        "sea_waybill",
+        "air_waybill",
+        "multimodal_transport_document",
+        "combined_transport_document",
+        "railway_consignment_note",
+        "road_transport_document",
+        "forwarders_certificate_of_receipt",
+        "forwarder_certificate_of_receipt",
+        "delivery_order",
+        "mates_receipt",
+        "shipping_company_certificate",
+        "warehouse_receipt",
+        "cargo_manifest",
+        "courier_or_post_receipt_or_certificate_of_posting",
+    }:
         return context.get("bill_of_lading") or {}
     if document_type == "packing_list":
         return context.get("packing_list") or {}
@@ -163,6 +191,13 @@ def context_payload_for_doc_type(context: Dict[str, Any], document_type: str) ->
         "intertek_certificate",
     }:
         return context.get("inspection_certificate") or {}
+    if document_type in {
+        "shipment_advice",
+        "delivery_note",
+        "other_specified_document",
+        "supporting_document",
+    }:
+        return context.get("supporting_document") or {}
     return {}
 
 

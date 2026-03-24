@@ -117,3 +117,38 @@ def test_apply_invoice_fact_graph_to_validation_inputs_mutates_payload_and_conte
     assert "buyer" not in payload["invoice"]
     assert extracted_context["invoice"]["invoice_number"] == "INV-2026-114"
     assert "buyer" not in extracted_context["invoice"]
+
+
+def test_apply_invoice_fact_graph_to_validation_inputs_supports_payment_receipt_documents() -> None:
+    payment_document = {
+        "document_id": "doc-receipt",
+        "document_type": "payment_receipt",
+        "filename": "Payment_Receipt.pdf",
+        "fact_graph_v1": {
+            "version": "fact_graph_v1",
+            "document_type": "payment_receipt",
+            "facts": [
+                {
+                    "field_name": "receipt_number",
+                    "value": "RCPT-26-009",
+                    "normalized_value": "RCPT-26-009",
+                    "verification_state": "confirmed",
+                },
+                {
+                    "field_name": "amount",
+                    "value": "USD 12,500.00",
+                    "normalized_value": "12500.00",
+                    "verification_state": "confirmed",
+                },
+            ],
+        },
+    }
+    payload = {"invoice": {"receipt_number": "STALE", "amount": "0"}, "documents": [payment_document]}
+    extracted_context = {"invoice": {"receipt_number": "STALE", "amount": "0"}, "documents": [payment_document]}
+
+    projected = apply_invoice_fact_graph_to_validation_inputs(payload, extracted_context)
+
+    assert projected["receipt_number"] == "RCPT-26-009"
+    assert projected["amount"] == "12500.00"
+    assert payload["invoice"]["receipt_number"] == "RCPT-26-009"
+    assert extracted_context["invoice"]["receipt_number"] == "RCPT-26-009"

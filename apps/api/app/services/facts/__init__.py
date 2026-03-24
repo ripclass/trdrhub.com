@@ -20,6 +20,7 @@ from .insurance_facts import build_insurance_fact_set
 from .inspection_facts import build_inspection_fact_set
 from .invoice_facts import build_invoice_fact_set
 from .packing_list_facts import build_packing_list_fact_set
+from .supporting_facts import build_supporting_fact_set
 from .models import DocumentEvidence, DocumentFact, DocumentFactSet
 
 __all__ = [
@@ -38,6 +39,7 @@ __all__ = [
     "build_inspection_fact_set",
     "build_invoice_fact_set",
     "build_packing_list_fact_set",
+    "build_supporting_fact_set",
     "materialize_document_fact_graph_v1",
     "materialize_document_fact_graphs_v1",
     "project_bl_validation_context",

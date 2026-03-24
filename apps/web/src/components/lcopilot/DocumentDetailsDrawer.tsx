@@ -299,6 +299,38 @@ const normalizeReviewFieldKey = (value: unknown): string =>
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
 
+const INVOICE_FAMILY_DOCUMENT_TYPES = new Set([
+  "commercial_invoice",
+  "proforma_invoice",
+  "draft_bill_of_exchange",
+  "promissory_note",
+  "payment_receipt",
+  "debit_note",
+  "credit_note",
+]);
+
+const TRANSPORT_FAMILY_DOCUMENT_TYPES = new Set([
+  "bill_of_lading",
+  "ocean_bill_of_lading",
+  "charter_party_bill_of_lading",
+  "house_bill_of_lading",
+  "master_bill_of_lading",
+  "sea_waybill",
+  "air_waybill",
+  "multimodal_transport_document",
+  "combined_transport_document",
+  "railway_consignment_note",
+  "road_transport_document",
+  "courier_or_post_receipt_or_certificate_of_posting",
+  "forwarders_certificate_of_receipt",
+  "forwarder_certificate_of_receipt",
+  "delivery_order",
+  "mates_receipt",
+  "shipping_company_certificate",
+  "warehouse_receipt",
+  "cargo_manifest",
+]);
+
 const resolvePreferredOverrideFieldKey = (
   docType: string | undefined,
   fieldName: string,
@@ -312,13 +344,13 @@ const resolvePreferredOverrideFieldKey = (
     Object.prototype.hasOwnProperty.call(extractedFields || {}, candidate);
 
   if (normalizedField === "issue_date") {
-    if (normalizedDocType === "commercial_invoice" && hasField("invoice_date")) {
+    if (INVOICE_FAMILY_DOCUMENT_TYPES.has(normalizedDocType) && hasField("invoice_date")) {
       return "invoice_date";
     }
     if (normalizedDocType === "packing_list" && hasField("document_date")) {
       return "document_date";
     }
-    if (normalizedDocType === "bill_of_lading" && hasField("bl_date")) {
+    if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType) && hasField("bl_date")) {
       return "bl_date";
     }
   }
@@ -350,7 +382,7 @@ const buildSpecificFieldMissingReasons = (context: ReviewReasonContext): string[
   const rawText = String(context.rawText || "");
   const reasons: string[] = [];
 
-  if (docType === "commercial_invoice") {
+  if (INVOICE_FAMILY_DOCUMENT_TYPES.has(docType)) {
     const missingIssueDate = isFieldMarkedMissing(context, "issue_date");
     const missingGrossWeight = isFieldMarkedMissing(context, "gross_weight");
     const missingNetWeight = isFieldMarkedMissing(context, "net_weight");
@@ -418,11 +450,11 @@ const humanizeReviewReason = (reason: string, context: ReviewReasonContext): str
     if (normalizedDocType === "weight_list" || normalizedDocType === "weight_certificate") return "Weight values were found, but document structure still needs manual confirmation.";
     if (normalizedDocType === "certificate_of_origin") return "Certificate of origin details need manual confirmation before clean presentation.";
     if (normalizedDocType === "insurance_certificate" || normalizedDocType === "insurance_policy") return "Insurance coverage details need manual confirmation before clean presentation.";
-    if (normalizedDocType === "bill_of_lading") return "Bill of lading details need manual review before clean presentation.";
+    if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType)) return "Transport-document details need manual review before clean presentation.";
     return "Key required fields need manual review before clean presentation.";
   }
   if (key === "OCR_AUTH_ERROR") {
-    if (normalizedDocType === "bill_of_lading") return "Bill of lading text extraction confidence is limited; visually confirm vessel, ports, and shipment wording.";
+    if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType)) return "Transport-document text extraction confidence is limited; visually confirm carrier, routing, and shipment wording.";
     if (normalizedDocType === "packing_list") return "Packing-list text extraction confidence is limited; visually confirm package, quantity, and weight details.";
     if (normalizedDocType === "certificate_of_origin") return "Certificate of origin text extraction confidence is limited; visually confirm origin and certifier details.";
     if (normalizedDocType === "beneficiary_certificate") return "Beneficiary certificate text extraction confidence is limited; visually confirm the required declaration wording.";
@@ -430,7 +462,7 @@ const humanizeReviewReason = (reason: string, context: ReviewReasonContext): str
     return "Text extraction confidence is limited; visually confirm the critical presentation fields.";
   }
   if (key === "LOW_CONFIDENCE") {
-    if (normalizedDocType === "bill_of_lading") return "Bill of lading fields were extracted with limited confidence and need manual confirmation.";
+    if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType)) return "Transport-document fields were extracted with limited confidence and need manual confirmation.";
     if (normalizedDocType === "packing_list") return "Packing-list fields were extracted with limited confidence and need manual confirmation.";
     return "Extraction confidence is limited for this document and needs manual confirmation.";
   }
@@ -476,7 +508,7 @@ const buildDisplayFieldChecks = (
       return [];
     }
 
-    if (docType === "commercial_invoice" && ["gross_weight", "net_weight", "issue_date"].includes(normalizedKey) && normalizedState === "missing") {
+    if (INVOICE_FAMILY_DOCUMENT_TYPES.has(docType) && ["gross_weight", "net_weight", "issue_date"].includes(normalizedKey) && normalizedState === "missing") {
       return [];
     }
     if (docType === "packing_list" && normalizedKey === "issue_date" && normalizedState === "missing") {
@@ -562,13 +594,30 @@ const isFactResolutionBackedDocument = (docType: string | undefined): boolean =>
   return [
     "commercial_invoice",
     "proforma_invoice",
+    "draft_bill_of_exchange",
+    "promissory_note",
+    "payment_receipt",
+    "debit_note",
+    "credit_note",
     "bill_of_lading",
     "ocean_bill_of_lading",
+    "charter_party_bill_of_lading",
     "house_bill_of_lading",
     "master_bill_of_lading",
     "sea_waybill",
     "air_waybill",
     "multimodal_transport_document",
+    "combined_transport_document",
+    "railway_consignment_note",
+    "road_transport_document",
+    "forwarders_certificate_of_receipt",
+    "forwarder_certificate_of_receipt",
+    "delivery_order",
+    "mates_receipt",
+    "shipping_company_certificate",
+    "warehouse_receipt",
+    "cargo_manifest",
+    "courier_or_post_receipt_or_certificate_of_posting",
     "packing_list",
     "certificate_of_origin",
     "gsp_form_a",
@@ -678,8 +727,8 @@ const buildManualResolutionGuidance = (
   if (normalizedField.includes("lc_number") || normalizedField.includes("reference")) {
     return "Check the reference block or the document header for the LC number or document reference. Only enter it if the identifier is clearly labeled.";
   }
-  if (normalizedDocType === "bill_of_lading") {
-    return "Review the main shipment summary, carrier block, and ports section. Only enter the value if the bill of lading shows it clearly.";
+  if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType)) {
+    return "Review the main shipment summary, carrier block, and routing section. Only enter the value if the transport document shows it clearly.";
   }
   if (normalizedDocType === "certificate_of_origin") {
     return "Review the certificate body and certifier section. Only enter the value if the certificate states it clearly.";

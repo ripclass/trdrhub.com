@@ -5,15 +5,35 @@ from typing import Any, Dict, List
 from .models import ResolutionQueue, ResolutionQueueItem, ResolutionQueueSummary
 
 
-_INVOICE_DOCUMENT_TYPES = {"commercial_invoice", "proforma_invoice"}
+_INVOICE_DOCUMENT_TYPES = {
+    "commercial_invoice",
+    "proforma_invoice",
+    "draft_bill_of_exchange",
+    "promissory_note",
+    "payment_receipt",
+    "debit_note",
+    "credit_note",
+}
 _BL_DOCUMENT_TYPES = {
     "bill_of_lading",
     "ocean_bill_of_lading",
+    "charter_party_bill_of_lading",
     "house_bill_of_lading",
     "master_bill_of_lading",
     "sea_waybill",
     "air_waybill",
     "multimodal_transport_document",
+    "combined_transport_document",
+    "railway_consignment_note",
+    "road_transport_document",
+    "forwarders_certificate_of_receipt",
+    "forwarder_certificate_of_receipt",
+    "delivery_order",
+    "mates_receipt",
+    "shipping_company_certificate",
+    "warehouse_receipt",
+    "cargo_manifest",
+    "courier_or_post_receipt_or_certificate_of_posting",
 }
 _PACKING_LIST_DOCUMENT_TYPES = {"packing_list"}
 _COO_DOCUMENT_TYPES = {
@@ -59,8 +79,27 @@ _INSPECTION_DOCUMENT_TYPES = {
     "intertek_certificate",
 }
 _USER_RESOLVABLE_STATES = {"candidate", "unconfirmed", "operator_rejected"}
-_HIGH_PRIORITY_FIELDS = {"invoice_number", "invoice_date", "amount", "currency"}
+_HIGH_PRIORITY_FIELDS = {
+    "invoice_number",
+    "instrument_number",
+    "receipt_number",
+    "lc_reference",
+    "invoice_date",
+    "amount",
+    "currency",
+}
 _BL_HIGH_PRIORITY_FIELDS = {"bl_number", "on_board_date", "port_of_loading", "port_of_discharge"}
+_BL_HIGH_PRIORITY_FIELDS.update(
+    {
+        "consignment_reference",
+        "airway_bill_number",
+        "airport_of_departure",
+        "airport_of_destination",
+        "transport_mode_chain",
+        "carriage_vessel_name",
+        "carriage_voyage_number",
+    }
+)
 _PACKING_LIST_HIGH_PRIORITY_FIELDS = {
     "packing_list_number",
     "document_date",

@@ -3,25 +3,40 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from .models import DocumentFact, DocumentFactSet
-from .normalization import (
-    normalize_amount,
-    normalize_currency,
-    normalize_date,
-    normalize_party_name,
-    normalize_reference,
-)
+from .normalization import normalize_date, normalize_party_name, normalize_reference
 
 
-_INVOICE_FACT_FIELDS: Dict[str, Tuple[str, ...]] = {
-    "invoice_number": ("invoice_number", "invoice_no", "inv_no", "instrument_number"),
-    "instrument_number": ("instrument_number", "invoice_number", "invoice_no", "inv_no"),
-    "receipt_number": ("receipt_number", "receipt_no", "receipt_reference", "instrument_number"),
+_SUPPORTING_FACT_FIELDS: Dict[str, Tuple[str, ...]] = {
+    "document_reference": (
+        "document_reference",
+        "reference_number",
+        "document_number",
+        "advice_number",
+        "note_number",
+        "receipt_number",
+        "supporting_reference",
+        "certificate_number",
+    ),
+    "issue_date": ("issue_date", "document_date", "advice_date", "date"),
+    "issuer_name": (
+        "issuer_name",
+        "issuer",
+        "issuing_authority",
+        "sender",
+        "carrier",
+        "courier",
+        "posted_by",
+    ),
     "lc_reference": ("lc_reference", "lc_number", "credit_number"),
-    "invoice_date": ("invoice_date", "date", "issue_date"),
-    "amount": ("amount", "invoice_amount", "total_amount", "total"),
-    "currency": ("currency", "currency_code"),
-    "seller": ("seller", "seller_name", "exporter", "beneficiary"),
-    "buyer": ("buyer", "buyer_name", "importer", "applicant"),
+    "goods_description": ("goods_description", "description", "cargo_description"),
+    "transport_reference": (
+        "transport_reference",
+        "transport_reference_number",
+        "consignment_reference",
+        "awb_number",
+        "airway_bill_number",
+        "bl_number",
+    ),
 }
 
 
@@ -104,13 +119,9 @@ def _first_value(
 
 
 def _normalize_fact_value(field_name: str, value: Any) -> Optional[Any]:
-    if field_name == "invoice_date":
+    if field_name == "issue_date":
         return normalize_date(value)
-    if field_name == "amount":
-        return normalize_amount(value)
-    if field_name == "currency":
-        return normalize_currency(value)
-    if field_name in {"seller", "buyer"}:
+    if field_name == "issuer_name":
         return normalize_party_name(value)
     return normalize_reference(value)
 
@@ -178,13 +189,13 @@ def _evidence(detail: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Opt
     )
 
 
-def build_invoice_fact_set(document_payload: Dict[str, Any]) -> Dict[str, Any]:
+def build_supporting_fact_set(document_payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = document_payload or {}
     fields = _source_fields(payload)
     details = _detail_map(payload)
     facts = []
 
-    for field_name, aliases in _INVOICE_FACT_FIELDS.items():
+    for field_name, aliases in _SUPPORTING_FACT_FIELDS.items():
         value, source_field_name, detail = _first_value(payload, fields, details, aliases)
         confidence = _coerce_confidence(detail.get("confidence"))
         evidence_snippet, evidence_source, page = _evidence(detail)
@@ -203,10 +214,10 @@ def build_invoice_fact_set(document_payload: Dict[str, Any]) -> Dict[str, Any]:
             )
         )
 
-    document_type = str(payload.get("document_type") or "commercial_invoice").strip() or "commercial_invoice"
+    document_type = str(payload.get("document_type") or "supporting_document").strip() or "supporting_document"
     return DocumentFactSet(
         version="fact_graph_v1",
         document_type=document_type,
-        document_subtype=str(payload.get("invoice_subtype") or document_type).strip() or None,
+        document_subtype=str(payload.get("supporting_subtype_guess") or document_type).strip() or None,
         facts=facts,
     ).to_dict()

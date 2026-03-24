@@ -135,3 +135,32 @@ def test_build_bl_fact_set_preserves_operator_confirmed_values() -> None:
     assert fact["verification_state"] == "operator_confirmed"
     assert fact["origin"] == "operator_override"
     assert fact["normalized_value"] == "BOL-2026-001"
+
+
+def test_build_bl_fact_set_supports_courier_receipt_aliases_and_document_type() -> None:
+    payload = build_bl_fact_set(
+        {
+            "document_type": "courier_or_post_receipt_or_certificate_of_posting",
+            "transport_subtype": "courier_or_post_receipt_or_certificate_of_posting",
+            "extraction_lane": "document_ai",
+            "extracted_fields": {
+                "receipt_number": "CR-2026-22",
+                "consignee_name": "ABC Imports LLC",
+            },
+            "field_details": {
+                "receipt_number": {
+                    "value": "CR-2026-22",
+                    "verification": "confirmed",
+                    "source": "multimodal:pdf_pages",
+                }
+            },
+        }
+    )
+
+    consignment_fact = _fact_by_name(payload, "consignment_reference")
+    consignee_fact = _fact_by_name(payload, "consignee")
+
+    assert payload["document_type"] == "courier_or_post_receipt_or_certificate_of_posting"
+    assert payload["document_subtype"] == "courier_or_post_receipt_or_certificate_of_posting"
+    assert consignment_fact["normalized_value"] == "CR-2026-22"
+    assert consignee_fact["normalized_value"] == "ABC Imports LLC"

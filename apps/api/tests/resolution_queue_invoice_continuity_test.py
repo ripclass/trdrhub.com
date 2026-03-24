@@ -416,3 +416,71 @@ def test_build_resolution_queue_v1_collects_regulatory_unresolved_facts() -> Non
     items = sorted(queue["items"], key=lambda item: item["field_name"])
     assert items[0]["field_name"] == "certificate_number"
     assert items[1]["field_name"] == "certifying_authority"
+
+
+def test_build_resolution_queue_v1_collects_payment_receipt_unresolved_facts() -> None:
+    documents = [
+        {
+            "document_id": "doc-receipt",
+            "document_type": "payment_receipt",
+            "filename": "Payment_Receipt.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "payment_receipt",
+                "facts": [
+                    {
+                        "field_name": "receipt_number",
+                        "value": "RCPT-26-009",
+                        "normalized_value": "RCPT-26-009",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "amount",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["document_counts"] == {"payment_receipt": 2}
+    assert [item["field_name"] for item in queue["items"]] == ["receipt_number", "amount"]
+
+
+def test_build_resolution_queue_v1_collects_courier_transport_unresolved_facts() -> None:
+    documents = [
+        {
+            "document_id": "doc-courier",
+            "document_type": "courier_or_post_receipt_or_certificate_of_posting",
+            "filename": "Courier_Receipt.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "courier_or_post_receipt_or_certificate_of_posting",
+                "facts": [
+                    {
+                        "field_name": "consignment_reference",
+                        "value": "CR-2026-22",
+                        "normalized_value": "CR-2026-22",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "consignee",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["document_counts"] == {"courier_or_post_receipt_or_certificate_of_posting": 2}
+    assert [item["field_name"] for item in queue["items"]] == ["consignment_reference", "consignee"]

@@ -154,13 +154,30 @@ type ResolutionQueueItemState = NonNullable<ValidationDocument['resolutionItems'
 const FACT_RESOLUTION_DOCUMENT_TYPES = new Set([
   'commercial_invoice',
   'proforma_invoice',
+  'draft_bill_of_exchange',
+  'promissory_note',
+  'payment_receipt',
+  'debit_note',
+  'credit_note',
   'bill_of_lading',
   'ocean_bill_of_lading',
+  'charter_party_bill_of_lading',
   'house_bill_of_lading',
   'master_bill_of_lading',
   'sea_waybill',
   'air_waybill',
   'multimodal_transport_document',
+  'combined_transport_document',
+  'railway_consignment_note',
+  'road_transport_document',
+  'forwarders_certificate_of_receipt',
+  'forwarder_certificate_of_receipt',
+  'delivery_order',
+  'mates_receipt',
+  'shipping_company_certificate',
+  'warehouse_receipt',
+  'cargo_manifest',
+  'courier_or_post_receipt_or_certificate_of_posting',
   'packing_list',
   'certificate_of_origin',
   'gsp_form_a',
@@ -200,6 +217,38 @@ const FACT_RESOLUTION_DOCUMENT_TYPES = new Set([
   'intertek_certificate',
 ]);
 
+const INVOICE_FAMILY_DOCUMENT_TYPES = new Set([
+  'commercial_invoice',
+  'proforma_invoice',
+  'draft_bill_of_exchange',
+  'promissory_note',
+  'payment_receipt',
+  'debit_note',
+  'credit_note',
+]);
+
+const TRANSPORT_FAMILY_DOCUMENT_TYPES = new Set([
+  'bill_of_lading',
+  'ocean_bill_of_lading',
+  'charter_party_bill_of_lading',
+  'house_bill_of_lading',
+  'master_bill_of_lading',
+  'sea_waybill',
+  'air_waybill',
+  'multimodal_transport_document',
+  'combined_transport_document',
+  'railway_consignment_note',
+  'road_transport_document',
+  'courier_or_post_receipt_or_certificate_of_posting',
+  'forwarders_certificate_of_receipt',
+  'forwarder_certificate_of_receipt',
+  'delivery_order',
+  'mates_receipt',
+  'shipping_company_certificate',
+  'warehouse_receipt',
+  'cargo_manifest',
+]);
+
 const _normalizeFieldKey = (value: unknown): string =>
   String(value || '')
     .trim()
@@ -228,7 +277,7 @@ const _buildSpecificFieldMissingReasons = (context: ReviewReasonContext): string
   const rawText = String(context.rawText || '');
   const reasons: string[] = [];
 
-  if (docType === 'commercial_invoice') {
+  if (INVOICE_FAMILY_DOCUMENT_TYPES.has(docType)) {
     const missingIssueDate = _isFieldMarkedMissing(context, 'issue_date');
     const missingGrossWeight = _isFieldMarkedMissing(context, 'gross_weight');
     const missingNetWeight = _isFieldMarkedMissing(context, 'net_weight');
@@ -298,14 +347,14 @@ const _humanizeDocumentReviewReason = (reason: string, context: ReviewReasonCont
     if (normalizedDocType === 'weight_list' || normalizedDocType === 'weight_certificate') return 'Weight values were found, but document structure still needs manual confirmation.';
     if (normalizedDocType === 'certificate_of_origin') return 'Certificate of origin details need manual confirmation before clean presentation.';
     if (normalizedDocType === 'insurance_certificate' || normalizedDocType === 'insurance_policy') return 'Insurance coverage details need manual confirmation before clean presentation.';
-    if (normalizedDocType === 'bill_of_lading') return 'Bill of lading details need manual review before clean presentation.';
+    if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType)) return 'Transport-document details need manual review before clean presentation.';
     return 'Key required fields need manual review before clean presentation.';
   }
   if (key === 'critical_bin_tin_low_confidence') {
     return 'Exporter BIN/TIN was not confidently confirmed on this document.';
   }
   if (key === 'OCR_AUTH_ERROR') {
-    if (normalizedDocType === 'bill_of_lading') return 'Bill of lading text extraction confidence is limited; visually confirm vessel, ports, and shipment wording.';
+    if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType)) return 'Transport-document text extraction confidence is limited; visually confirm carrier, routing, and shipment wording.';
     if (normalizedDocType === 'packing_list') return 'Packing-list text extraction confidence is limited; visually confirm package, quantity, and weight details.';
     if (normalizedDocType === 'certificate_of_origin') return 'Certificate of origin text extraction confidence is limited; visually confirm origin and certifier details.';
     if (normalizedDocType === 'beneficiary_certificate') return 'Beneficiary certificate text extraction confidence is limited; visually confirm the required declaration wording.';
@@ -313,7 +362,7 @@ const _humanizeDocumentReviewReason = (reason: string, context: ReviewReasonCont
     return 'Text extraction confidence is limited; visually confirm the critical presentation fields.';
   }
   if (key === 'LOW_CONFIDENCE') {
-    if (normalizedDocType === 'bill_of_lading') return 'Bill of lading fields were extracted with limited confidence and need manual confirmation.';
+    if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType)) return 'Transport-document fields were extracted with limited confidence and need manual confirmation.';
     if (normalizedDocType === 'packing_list') return 'Packing-list fields were extracted with limited confidence and need manual confirmation.';
     return 'Extraction confidence is limited for this document and needs manual confirmation.';
   }
@@ -519,7 +568,7 @@ const buildWarningReasons = ({
       reasons.push('Certificate of origin details are only partially extracted and need manual confirmation.');
     } else if (normalizedDocType === 'packing_list') {
       reasons.push('Packing-list details are only partially extracted and need manual confirmation.');
-    } else if (normalizedDocType === 'bill_of_lading') {
+    } else if (TRANSPORT_FAMILY_DOCUMENT_TYPES.has(normalizedDocType)) {
       reasons.push('Bill of lading details need manual confirmation before clean presentation.');
     } else {
       reasons.push(`Document extraction is ${extractionStatus.replace('_', ' ')} and needs manual confirmation.`);

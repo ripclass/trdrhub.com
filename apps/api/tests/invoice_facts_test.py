@@ -133,3 +133,36 @@ def test_build_invoice_fact_set_preserves_operator_confirmed_values() -> None:
     assert fact["verification_state"] == "operator_confirmed"
     assert fact["origin"] == "operator_override"
     assert fact["normalized_value"] == "INV-2026-001"
+
+
+def test_build_invoice_fact_set_supports_payment_receipt_fields_and_document_type() -> None:
+    payload = build_invoice_fact_set(
+        {
+            "document_type": "payment_receipt",
+            "invoice_subtype": "payment_receipt",
+            "extraction_lane": "document_ai",
+            "extracted_fields": {
+                "receipt_number": "RCPT-2026-014",
+                "amount": "USD 12,500.00",
+                "currency": "usd",
+                "lc_reference": "EXP2026BD014",
+            },
+            "field_details": {
+                "receipt_number": {
+                    "value": "RCPT-2026-014",
+                    "verification": "confirmed",
+                    "source": "multimodal:pdf_pages",
+                }
+            },
+        }
+    )
+
+    receipt_fact = _fact_by_name(payload, "receipt_number")
+    lc_reference_fact = _fact_by_name(payload, "lc_reference")
+    amount_fact = _fact_by_name(payload, "amount")
+
+    assert payload["document_type"] == "payment_receipt"
+    assert payload["document_subtype"] == "payment_receipt"
+    assert receipt_fact["normalized_value"] == "RCPT-2026-014"
+    assert lc_reference_fact["normalized_value"] == "EXP2026BD014"
+    assert amount_fact["normalized_value"] == "12500.00"

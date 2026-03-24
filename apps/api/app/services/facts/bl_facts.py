@@ -13,10 +13,24 @@ _BL_FACT_FIELDS: Dict[str, Tuple[str, ...]] = {
         "transport_document_reference",
         "transport_reference_number",
     ),
+    "consignment_reference": (
+        "consignment_reference",
+        "transport_document_reference",
+        "transport_reference_number",
+        "bl_number",
+        "receipt_number",
+        "courier_receipt_number",
+    ),
+    "airway_bill_number": ("airway_bill_number", "awb_number", "bl_number"),
     "shipper": ("shipper", "shipper_name", "exporter"),
     "consignee": ("consignee", "consignee_name", "importer", "applicant"),
     "port_of_loading": ("port_of_loading", "pol", "load_port", "loading_port"),
     "port_of_discharge": ("port_of_discharge", "pod", "discharge_port", "destination_port"),
+    "airport_of_departure": ("airport_of_departure", "port_of_loading"),
+    "airport_of_destination": ("airport_of_destination", "port_of_discharge"),
+    "transport_mode_chain": ("transport_mode_chain",),
+    "carriage_vessel_name": ("carriage_vessel_name", "vessel_name"),
+    "carriage_voyage_number": ("carriage_voyage_number", "voyage_number"),
     "on_board_date": (
         "on_board_date",
         "shipped_on_board_date",
@@ -201,9 +215,10 @@ def build_bl_fact_set(document_payload: Dict[str, Any]) -> Dict[str, Any]:
             )
         )
 
+    document_type = str(payload.get("document_type") or "bill_of_lading").strip() or "bill_of_lading"
     return DocumentFactSet(
         version="fact_graph_v1",
-        document_type="bill_of_lading",
-        document_subtype=str(payload.get("transport_subtype") or payload.get("document_type") or "").strip() or None,
+        document_type=document_type,
+        document_subtype=str(payload.get("transport_subtype") or document_type).strip() or None,
         facts=facts,
     ).to_dict()

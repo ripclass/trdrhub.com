@@ -117,3 +117,37 @@ def test_apply_bl_fact_graph_to_validation_inputs_mutates_payload_and_context() 
     assert "port_of_discharge" not in payload["bill_of_lading"]
     assert extracted_context["bill_of_lading"]["consignee"] == "TO ORDER OF ISSUING BANK"
     assert "port_of_discharge" not in extracted_context["bill_of_lading"]
+
+
+def test_apply_bl_fact_graph_to_validation_inputs_supports_courier_transport_aliases() -> None:
+    courier_document = {
+        "document_id": "doc-courier",
+        "document_type": "courier_or_post_receipt_or_certificate_of_posting",
+        "filename": "Courier_Receipt.pdf",
+        "fact_graph_v1": {
+            "version": "fact_graph_v1",
+            "document_type": "courier_or_post_receipt_or_certificate_of_posting",
+            "facts": [
+                {
+                    "field_name": "consignment_reference",
+                    "value": "CR-2026-22",
+                    "normalized_value": "CR-2026-22",
+                    "verification_state": "confirmed",
+                },
+                {
+                    "field_name": "consignee",
+                    "value": "Rejected Consignee",
+                    "normalized_value": "Rejected Consignee",
+                    "verification_state": "operator_rejected",
+                },
+            ],
+        },
+    }
+    payload = {"bill_of_lading": {"consignment_reference": "STALE", "consignee": "STALE"}, "documents": [courier_document]}
+    extracted_context = {"bill_of_lading": {"consignment_reference": "STALE", "consignee": "STALE"}, "documents": [courier_document]}
+
+    projected = apply_bl_fact_graph_to_validation_inputs(payload, extracted_context)
+
+    assert projected["consignment_reference"] == "CR-2026-22"
+    assert projected["transport_document_reference"] == "CR-2026-22"
+    assert "consignee" not in projected

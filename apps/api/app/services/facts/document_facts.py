@@ -8,17 +8,38 @@ from .insurance_facts import build_insurance_fact_set
 from .inspection_facts import build_inspection_fact_set
 from .invoice_facts import build_invoice_fact_set
 from .packing_list_facts import build_packing_list_fact_set
+from .supporting_facts import build_supporting_fact_set
 
 
-_INVOICE_DOCUMENT_TYPES = {"commercial_invoice", "proforma_invoice"}
+_INVOICE_DOCUMENT_TYPES = {
+    "commercial_invoice",
+    "proforma_invoice",
+    "draft_bill_of_exchange",
+    "promissory_note",
+    "payment_receipt",
+    "debit_note",
+    "credit_note",
+}
 _BL_DOCUMENT_TYPES = {
     "bill_of_lading",
     "ocean_bill_of_lading",
+    "charter_party_bill_of_lading",
     "house_bill_of_lading",
     "master_bill_of_lading",
     "sea_waybill",
     "air_waybill",
     "multimodal_transport_document",
+    "combined_transport_document",
+    "railway_consignment_note",
+    "road_transport_document",
+    "forwarders_certificate_of_receipt",
+    "forwarder_certificate_of_receipt",
+    "delivery_order",
+    "mates_receipt",
+    "shipping_company_certificate",
+    "warehouse_receipt",
+    "cargo_manifest",
+    "courier_or_post_receipt_or_certificate_of_posting",
 }
 _PACKING_LIST_DOCUMENT_TYPES = {"packing_list"}
 _COO_DOCUMENT_TYPES = {
@@ -63,9 +84,17 @@ _INSPECTION_DOCUMENT_TYPES = {
     "bureau_veritas_certificate",
     "intertek_certificate",
 }
+_SUPPORTING_DOCUMENT_TYPES = {
+    "shipment_advice",
+    "delivery_note",
+    "other_specified_document",
+    "supporting_document",
+}
 _RESOLVED_FACT_STATES = {"confirmed", "operator_confirmed"}
 _INVOICE_VALIDATION_ALIASES = {
     "invoice_number": ("invoice_number", "invoice_no", "inv_no"),
+    "instrument_number": ("instrument_number", "invoice_number", "invoice_no", "inv_no"),
+    "receipt_number": ("receipt_number", "receipt_no", "receipt_reference"),
     "invoice_date": ("invoice_date", "date", "issue_date"),
     "amount": ("amount", "invoice_amount", "total_amount", "total"),
     "currency": ("currency", "currency_code"),
@@ -74,10 +103,24 @@ _INVOICE_VALIDATION_ALIASES = {
 }
 _BL_VALIDATION_ALIASES = {
     "bl_number": ("bl_number", "bill_of_lading_number", "transport_document_reference", "transport_reference_number"),
+    "consignment_reference": (
+        "consignment_reference",
+        "transport_document_reference",
+        "transport_reference_number",
+        "bl_number",
+        "receipt_number",
+        "courier_receipt_number",
+    ),
+    "airway_bill_number": ("airway_bill_number", "awb_number", "bl_number"),
     "shipper": ("shipper", "shipper_name", "exporter"),
     "consignee": ("consignee", "consignee_name", "importer", "applicant"),
     "port_of_loading": ("port_of_loading", "pol", "load_port", "loading_port"),
     "port_of_discharge": ("port_of_discharge", "pod", "discharge_port", "destination_port"),
+    "airport_of_departure": ("airport_of_departure", "port_of_loading"),
+    "airport_of_destination": ("airport_of_destination", "port_of_discharge"),
+    "transport_mode_chain": ("transport_mode_chain",),
+    "carriage_vessel_name": ("carriage_vessel_name", "vessel_name"),
+    "carriage_voyage_number": ("carriage_voyage_number", "voyage_number"),
     "on_board_date": ("on_board_date", "shipped_on_board_date", "shipment_date", "date_of_shipment", "date"),
 }
 _PACKING_LIST_VALIDATION_ALIASES = {
@@ -167,6 +210,11 @@ def materialize_document_fact_graph_v1(document: Dict[str, Any]) -> Optional[Dic
         return fact_graph
     if document_type in _INSPECTION_DOCUMENT_TYPES:
         fact_graph = build_inspection_fact_set(document)
+        document["fact_graph_v1"] = fact_graph
+        document["factGraphV1"] = fact_graph
+        return fact_graph
+    if document_type in _SUPPORTING_DOCUMENT_TYPES:
+        fact_graph = build_supporting_fact_set(document)
         document["fact_graph_v1"] = fact_graph
         document["factGraphV1"] = fact_graph
         return fact_graph

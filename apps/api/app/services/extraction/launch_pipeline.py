@@ -32,6 +32,7 @@ from app.services.facts import (
     build_inspection_fact_set,
     build_invoice_fact_set,
     build_packing_list_fact_set,
+    build_supporting_fact_set,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,12 +48,22 @@ CANONICAL_DOCUMENT_ALIASES = {
     "commercial invoice": "commercial_invoice",
     "proforma": "proforma_invoice",
     "proforma invoice": "proforma_invoice",
+    "bill of exchange": "draft_bill_of_exchange",
+    "draft bill of exchange": "draft_bill_of_exchange",
+    "promissory note": "promissory_note",
+    "payment receipt": "payment_receipt",
+    "debit note": "debit_note",
+    "credit note": "credit_note",
     "bill of lading": "bill_of_lading",
     "b/l": "bill_of_lading",
     "bl": "bill_of_lading",
     "sea waybill": "sea_waybill",
     "air waybill": "air_waybill",
     "awb": "air_waybill",
+    "ocean bill of lading": "ocean_bill_of_lading",
+    "charter party bill of lading": "charter_party_bill_of_lading",
+    "courier receipt": "courier_or_post_receipt_or_certificate_of_posting",
+    "certificate of posting": "courier_or_post_receipt_or_certificate_of_posting",
     "packing": "packing_list",
     "packing list": "packing_list",
     "certificate of origin": "certificate_of_origin",
@@ -63,6 +74,8 @@ CANONICAL_DOCUMENT_ALIASES = {
     "weight certificate": "weight_certificate",
     "lab test report": "lab_test_report",
     "certificate of conformity": "certificate_of_conformity",
+    "shipment advice": "shipment_advice",
+    "delivery note": "delivery_note",
 }
 
 INSURANCE_FAMILY_DOCUMENT_SUBTYPES = {
@@ -92,6 +105,22 @@ INSPECTION_FAMILY_DOCUMENT_SUBTYPES = {
     "sgs_certificate": "sgs_certificate",
     "bureau_veritas_certificate": "bureau_veritas_certificate",
     "intertek_certificate": "intertek_certificate",
+}
+
+PAYMENT_FAMILY_DOCUMENT_SUBTYPES = {
+    "draft_bill_of_exchange": "bill_of_exchange",
+    "bill_of_exchange": "bill_of_exchange",
+    "promissory_note": "promissory_note",
+    "payment_receipt": "payment_receipt",
+    "debit_note": "debit_note",
+    "credit_note": "credit_note",
+}
+
+GENERIC_SUPPORTING_DOCUMENT_SUBTYPES = {
+    "shipment_advice",
+    "delivery_note",
+    "other_specified_document",
+    "supporting_document",
 }
 
 REGULATORY_FAMILY_DOCUMENT_SUBTYPES = {
@@ -207,7 +236,19 @@ class LaunchExtractionPipeline:
                 content_type=content_type,
             )
 
-        if normalized_doc_type == "bill_of_lading":
+        if normalized_doc_type in PAYMENT_FAMILY_DOCUMENT_SUBTYPES:
+            return await self._process_invoice(
+                extracted_text=extracted_text,
+                filename=filename,
+                quality_assessment=quality_assessment,
+                document_type=normalized_doc_type,
+                file_bytes=file_bytes,
+                content_type=content_type,
+                forced_subtype=PAYMENT_FAMILY_DOCUMENT_SUBTYPES[normalized_doc_type],
+                post_validation_target=normalized_doc_type,
+            )
+
+        if normalized_doc_type in TRANSPORT_DOC_ALIASES:
             return await self._process_bl(
                 extracted_text=extracted_text,
                 filename=filename,
@@ -215,6 +256,12 @@ class LaunchExtractionPipeline:
                 document_type=normalized_doc_type,
                 file_bytes=file_bytes,
                 content_type=content_type,
+                forced_subtype=(
+                    None
+                    if normalized_doc_type == "bill_of_lading"
+                    else normalized_doc_type
+                ),
+                post_validation_target=normalized_doc_type,
             )
 
         if normalized_doc_type == "packing_list":
@@ -279,7 +326,7 @@ class LaunchExtractionPipeline:
                 post_validation_target=normalized_doc_type,
             )
 
-        if normalized_doc_type == "supporting_document":
+        if normalized_doc_type in GENERIC_SUPPORTING_DOCUMENT_SUBTYPES:
             return await self._process_supporting_document(
                 extracted_text=extracted_text,
                 filename=filename,
@@ -438,8 +485,19 @@ class LaunchExtractionPipeline:
             "post_validation_target": None,
         }
 
-    async def _process_invoice(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
-        invoice_subtype = _detect_invoice_financial_subtype(filename=filename, extracted_text=extracted_text)
+    async def _process_invoice(
+        self,
+        *,
+        extracted_text: str,
+        filename: str,
+        quality_assessment: Any,
+        document_type: str,
+        file_bytes: Optional[bytes] = None,
+        content_type: Optional[str] = None,
+        forced_subtype: Optional[str] = None,
+        post_validation_target: str = "invoice",
+    ) -> Dict[str, Any]:
+        invoice_subtype = forced_subtype or _detect_invoice_financial_subtype(filename=filename, extracted_text=extracted_text)
         base_patch = {
             "ocr_quality": {
                 "overall_score": quality_assessment.overall_score,
@@ -524,7 +582,7 @@ class LaunchExtractionPipeline:
                     },
                     "has_structured_data": True,
                     "validation_doc_type": "invoice",
-                    "post_validation_target": "invoice",
+                    "post_validation_target": post_validation_target,
                 }
         except Exception as exc:
             logger.warning("Launch pipeline invoice AI extraction failed for %s: %s", filename, exc, exc_info=True)
@@ -605,8 +663,19 @@ class LaunchExtractionPipeline:
         )
         return {"handled": True, "context_key": "invoice", "context_payload": {**shaped_payload, "invoice_review": invoice_review, "fact_graph_v1": fact_graph_v1}, "doc_info_patch": {**base_patch, "invoice_subtype": invoice_subtype, "invoice_family": shaped_payload.get("invoice_family"), "fact_graph_v1": fact_graph_v1, "parse_complete": invoice_review.get("parse_complete"), "parse_completeness": invoice_review.get("required_ratio"), "missing_required_fields": invoice_review.get("missing_required_fields", []), "required_fields_found": invoice_review.get("required_found"), "required_fields_total": invoice_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(invoice_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_invoice_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
 
-    async def _process_bl(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
-        transport_subtype = _detect_transport_subtype(filename=filename, extracted_text=extracted_text)
+    async def _process_bl(
+        self,
+        *,
+        extracted_text: str,
+        filename: str,
+        quality_assessment: Any,
+        document_type: str,
+        file_bytes: Optional[bytes] = None,
+        content_type: Optional[str] = None,
+        forced_subtype: Optional[str] = None,
+        post_validation_target: str = "bill_of_lading",
+    ) -> Dict[str, Any]:
+        transport_subtype = forced_subtype or _detect_transport_subtype(filename=filename, extracted_text=extracted_text)
         base_patch = {
             "ocr_quality": {
                 "overall_score": quality_assessment.overall_score,
@@ -683,7 +752,7 @@ class LaunchExtractionPipeline:
                     },
                     "has_structured_data": True,
                     "validation_doc_type": "bl",
-                    "post_validation_target": "bill_of_lading",
+                    "post_validation_target": post_validation_target,
                 }
         except Exception as exc:
             logger.warning("Launch pipeline BL AI extraction failed for %s: %s", filename, exc, exc_info=True)
@@ -1320,16 +1389,50 @@ class LaunchExtractionPipeline:
             review_reasons.append("supporting_document_low_confidence_classification")
         if len((extracted_text or '').strip()) < 80:
             review_reasons.append("supporting_document_sparse_text")
+        extraction_method = (
+            multimodal_struct.get("_extraction_method", "unknown")
+            if isinstance(multimodal_struct, dict)
+            else "unknown"
+        )
+        extraction_lane = _resolve_extraction_lane(extraction_method=extraction_method)
+        field_details = (
+            multimodal_struct.get("_field_details")
+            if isinstance(multimodal_struct, dict) and isinstance(multimodal_struct.get("_field_details"), dict)
+            else {}
+        )
+        fact_graph_v1 = build_supporting_fact_set(
+            {
+                **{
+                    key: value
+                    for key, value in payload.items()
+                    if not str(key).startswith("_")
+                },
+                "document_type": document_type,
+                "extracted_fields": {
+                    key: value
+                    for key, value in payload.items()
+                    if not str(key).startswith("_")
+                },
+                "field_details": field_details,
+                "raw_text": extracted_text,
+                "extraction_method": extraction_method,
+                "extraction_lane": extraction_lane,
+            }
+        )
         return {
             "handled": True,
             "context_key": "supporting_document",
-            "context_payload": payload,
+            "context_payload": {**payload, "fact_graph_v1": fact_graph_v1},
             "doc_info_patch": {
                 **base_patch,
                 "extraction_status": "partial",
                 "supporting_subtype_guess": supporting_guess.get("subtype"),
                 "supporting_family_guess": supporting_guess.get("family"),
                 "guess_confidence": supporting_guess.get("confidence"),
+                "fact_graph_v1": fact_graph_v1,
+                "field_details": field_details,
+                "extraction_method": extraction_method,
+                "extraction_lane": extraction_lane,
                 "review_reasons": review_reasons,
             },
             "has_structured_data": True,
@@ -1872,6 +1975,7 @@ def _assess_coo_parse_completeness(extracted_fields: Optional[Dict[str, Any]]) -
 TRANSPORT_DOC_ALIASES = {
     "bill_of_lading",
     "ocean_bill_of_lading",
+    "charter_party_bill_of_lading",
     "sea_waybill",
     "air_waybill",
     "multimodal_transport_document",
@@ -1887,6 +1991,7 @@ TRANSPORT_DOC_ALIASES = {
     "shipping_company_certificate",
     "warehouse_receipt",
     "cargo_manifest",
+    "courier_or_post_receipt_or_certificate_of_posting",
 }
 
 REGULATORY_DOC_ALIASES = {
@@ -1958,9 +2063,11 @@ def _detect_transport_subtype(*, filename: str, extracted_text: str) -> str:
         ("air_waybill", ["air waybill", " air waybill", "awb", "air transport document", "airport of departure", "airport of destination"]),
         ("sea_waybill", ["sea waybill", "seawaybill", "sea-waybill"]),
         ("ocean_bill_of_lading", ["ocean bill of lading", "ocean b/l"]),
+        ("charter_party_bill_of_lading", ["charter party bill of lading", "charter party b/l", "charterparty"]),
         ("multimodal_transport_document", ["multimodal transport", "combined transport", "at least two different modes of transport"]),
         ("railway_consignment_note", ["railway consignment", "rail consignment", "railway receipt"]),
         ("road_transport_document", ["road transport document", "cmr", "truck consignment", "road consignment"]),
+        ("courier_or_post_receipt_or_certificate_of_posting", ["courier receipt", "post receipt", "certificate of posting", "postal receipt"]),
         ("forwarders_certificate_of_receipt", ["forwarder's certificate of receipt", "forwarders certificate of receipt", "fcr"]),
         ("house_bill_of_lading", ["house bill of lading", "house b/l", "hbl"]),
         ("master_bill_of_lading", ["master bill of lading", "master b/l", "mbl"]),
@@ -2874,11 +2981,13 @@ def _assess_transport_completeness(payload: Optional[Dict[str, Any]], *, transpo
         "air_waybill": ["airway_bill_number", "airport_of_departure", "airport_of_destination", "shipper", "consignee"],
         "sea_waybill": ["port_of_loading", "port_of_discharge", "shipper", "consignee"],
         "ocean_bill_of_lading": ["port_of_loading", "port_of_discharge", "shipper", "consignee"],
+        "charter_party_bill_of_lading": ["carriage_vessel_name", "shipper", "consignee"],
         "house_bill_of_lading": ["transport_reference_number", "shipper", "consignee"],
         "master_bill_of_lading": ["transport_reference_number", "shipper", "consignee"],
         "multimodal_transport_document": ["transport_mode_chain", "port_of_loading", "port_of_discharge"],
         "railway_consignment_note": ["consignment_reference", "consignee"],
         "road_transport_document": ["consignment_reference", "consignee"],
+        "courier_or_post_receipt_or_certificate_of_posting": ["consignment_reference", "consignee"],
         "forwarders_certificate_of_receipt": ["consignment_reference", "shipper"],
         "delivery_order": ["consignment_reference", "consignee"],
         "mates_receipt": ["carriage_vessel_name"],
@@ -2916,9 +3025,11 @@ def _shape_transport_payload(
         "air_waybill": ("transport_document", "air"),
         "sea_waybill": ("transport_document", "sea"),
         "ocean_bill_of_lading": ("transport_document", "sea"),
+        "charter_party_bill_of_lading": ("transport_document", "sea"),
         "multimodal_transport_document": ("transport_document", "multimodal"),
         "railway_consignment_note": ("transport_document", "rail"),
         "road_transport_document": ("transport_document", "road"),
+        "courier_or_post_receipt_or_certificate_of_posting": ("transport_document", "courier"),
         "forwarders_certificate_of_receipt": ("transport_document", "forwarder"),
         "house_bill_of_lading": ("transport_document", "sea"),
         "master_bill_of_lading": ("transport_document", "sea"),
@@ -2957,7 +3068,7 @@ def _shape_transport_payload(
             shaped.get("bl_number"),
             _extract_label_value(raw_text, ["awb no", "awb number", "air waybill no", "air waybill number"]) if allow_text_backfill else None,
         )
-    elif transport_subtype in {"sea_waybill", "ocean_bill_of_lading", "house_bill_of_lading", "master_bill_of_lading", "mates_receipt", "shipping_company_certificate"}:
+    elif transport_subtype in {"sea_waybill", "ocean_bill_of_lading", "charter_party_bill_of_lading", "house_bill_of_lading", "master_bill_of_lading", "mates_receipt", "shipping_company_certificate"}:
         shaped["transport_reference_number"] = _first(
             shaped.get("transport_reference_number"),
             shaped.get("bl_number"),
@@ -2971,11 +3082,12 @@ def _shape_transport_payload(
             _extract_label_value(raw_text, ["mode chain", "modes of transport", "transport modes"]) if allow_text_backfill else None,
             "multimodal",
         )
-    elif transport_subtype in {"railway_consignment_note", "road_transport_document", "forwarders_certificate_of_receipt", "delivery_order"}:
+    elif transport_subtype in {"railway_consignment_note", "road_transport_document", "courier_or_post_receipt_or_certificate_of_posting", "forwarders_certificate_of_receipt", "delivery_order"}:
         shaped["consignment_reference"] = _first(
             shaped.get("consignment_reference"),
             shaped.get("bl_number"),
-            _extract_label_value(raw_text, ["consignment note", "consignment no", "document no", "fcr no", "delivery order no"]) if allow_text_backfill else None,
+            shaped.get("receipt_number"),
+            _extract_label_value(raw_text, ["consignment note", "consignment no", "document no", "fcr no", "delivery order no", "courier receipt no", "post receipt no", "certificate of posting no"]) if allow_text_backfill else None,
         )
 
     return _apply_canonical_normalization(shaped)

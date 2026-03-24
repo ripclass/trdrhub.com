@@ -879,6 +879,127 @@ describe('results mapper - option e payload', () => {
     expect(mapped.documents[0]?.extractionResolution?.fields[0]?.candidateValue).toBe('PASSED');
   });
 
+  it('uses fact_resolution_v1 as the payment and courier unresolved source of truth', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        workflow_stage: {
+          stage: 'extraction_resolution',
+          provisional_validation: true,
+          ready_for_final_validation: false,
+          unresolved_documents: 2,
+          unresolved_fields: 2,
+          summary: '2 documents still need 2 fields confirmed before validation should be treated as final.',
+        },
+        fact_resolution_v1: {
+          version: 'fact_resolution_v1',
+          workflow_stage: {
+            stage: 'extraction_resolution',
+            provisional_validation: true,
+            ready_for_final_validation: false,
+            unresolved_documents: 2,
+            unresolved_fields: 2,
+            summary: '2 documents still need 2 fields confirmed before validation should be treated as final.',
+          },
+          documents: [
+            {
+              document_id: 'doc-receipt',
+              document_type: 'payment_receipt',
+              filename: 'Payment_Receipt.pdf',
+              resolution_required: true,
+              ready_for_validation: false,
+              unresolved_count: 1,
+              summary: 'Payment receipt facts still need confirmation before validation should be treated as final.',
+              resolution_items: [
+                {
+                  document_id: 'doc-receipt',
+                  document_type: 'payment_receipt',
+                  filename: 'Payment_Receipt.pdf',
+                  field_name: 'receipt_number',
+                  label: 'Receipt Number',
+                  priority: 'high',
+                  candidate_value: 'RCPT-26-009',
+                  normalized_value: 'RCPT-26-009',
+                  evidence_snippet: 'Receipt No: RCPT-26-009',
+                  evidence_source: 'native_text',
+                  page: 1,
+                  reason: 'system_could_not_confirm',
+                  verification_state: 'candidate',
+                  resolvable_by_user: true,
+                  origin: 'document_ai',
+                },
+              ],
+            },
+            {
+              document_id: 'doc-courier',
+              document_type: 'courier_or_post_receipt_or_certificate_of_posting',
+              filename: 'Courier_Receipt.pdf',
+              resolution_required: true,
+              ready_for_validation: false,
+              unresolved_count: 1,
+              summary: 'Courier receipt facts still need confirmation before validation should be treated as final.',
+              resolution_items: [
+                {
+                  document_id: 'doc-courier',
+                  document_type: 'courier_or_post_receipt_or_certificate_of_posting',
+                  filename: 'Courier_Receipt.pdf',
+                  field_name: 'consignment_reference',
+                  label: 'Consignment Reference',
+                  priority: 'high',
+                  candidate_value: 'CR-2026-22',
+                  normalized_value: 'CR-2026-22',
+                  evidence_snippet: 'Courier Receipt No: CR-2026-22',
+                  evidence_source: 'native_text',
+                  page: 1,
+                  reason: 'system_could_not_confirm',
+                  verification_state: 'candidate',
+                  resolvable_by_user: true,
+                  origin: 'document_ai',
+                },
+              ],
+            },
+          ],
+          summary: {
+            total_documents: 2,
+            unresolved_documents: 2,
+            total_items: 2,
+            user_resolvable_items: 2,
+            ready_for_validation: false,
+          },
+        },
+        document_extraction_v1: {
+          documents: [
+            {
+              document_id: 'doc-receipt',
+              document_type: 'payment_receipt',
+              filename: 'Payment_Receipt.pdf',
+              extraction_status: 'partial',
+              review_required: true,
+              review_reasons: ['FIELD_NOT_FOUND'],
+            },
+            {
+              document_id: 'doc-courier',
+              document_type: 'courier_or_post_receipt_or_certificate_of_posting',
+              filename: 'Courier_Receipt.pdf',
+              extraction_status: 'partial',
+              review_required: true,
+              review_reasons: ['FIELD_NOT_FOUND'],
+            },
+          ],
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+
+    expect(mapped.documents[0]?.typeKey).toBe('payment_receipt');
+    expect(mapped.documents[0]?.resolutionItems?.[0]?.fieldName).toBe('receipt_number');
+    expect(mapped.documents[1]?.typeKey).toBe('courier_or_post_receipt_or_certificate_of_posting');
+    expect(mapped.documents[1]?.extractionResolution?.fields[0]?.fieldName).toBe('consignment_reference');
+  });
+
   it('preserves extraction lanes from canonical document payloads', () => {
     const seeded = buildValidationResults();
     const documents = [
