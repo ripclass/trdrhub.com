@@ -151,6 +151,17 @@ type ReviewReasonContext = {
 
 type ExtractionResolutionState = NonNullable<ValidationDocument['extractionResolution']>;
 type ResolutionQueueItemState = NonNullable<ValidationDocument['resolutionItems']>[number];
+const FACT_RESOLUTION_DOCUMENT_TYPES = new Set([
+  'commercial_invoice',
+  'proforma_invoice',
+  'bill_of_lading',
+  'ocean_bill_of_lading',
+  'house_bill_of_lading',
+  'master_bill_of_lading',
+  'sea_waybill',
+  'air_waybill',
+  'multimodal_transport_document',
+]);
 
 const _normalizeFieldKey = (value: unknown): string =>
   String(value || '')
@@ -1302,7 +1313,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const fieldDetails = docAny.field_details ?? docAny.fieldDetails ?? {};
       const criticalFieldStates = docAny.critical_field_states ?? docAny.criticalFieldStates ?? {};
       const resolutionItems =
-        ['commercial_invoice', 'proforma_invoice'].includes(typeKey.toLowerCase())
+        FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase())
           ? normalizedResolutionQueueItems.filter(
               (item) =>
                 item.documentId === documentId ||
@@ -1312,7 +1323,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const fieldDiagnostics = docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {};
       const rawText = docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '';
       const extractionResolution =
-        ['commercial_invoice', 'proforma_invoice'].includes(typeKey.toLowerCase()) && backendResolutionQueue
+        FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && backendResolutionQueue
           ? _buildQueueBackedExtractionResolutionState(resolutionItems)
           : _buildExtractionResolutionState({
               missingRequiredFields,

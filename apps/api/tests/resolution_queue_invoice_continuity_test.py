@@ -129,3 +129,52 @@ def test_build_resolution_queue_v1_keeps_rejected_candidate_visible() -> None:
     assert queue["summary"]["total_items"] >= 1
     assert invoice_date_item["candidate_value"] == "2026-04-20"
     assert invoice_date_item["reason"] == "operator_rejected_candidate"
+
+
+def test_build_resolution_queue_v1_collects_bl_unresolved_facts() -> None:
+    documents = [
+        {
+            "document_id": "doc-bl",
+            "document_type": "bill_of_lading",
+            "filename": "Bill_of_Lading.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "bill_of_lading",
+                "document_subtype": "bill_of_lading",
+                "facts": [
+                    {
+                        "field_name": "bl_number",
+                        "value": "BOL-2026-001",
+                        "normalized_value": "BOL-2026-001",
+                        "verification_state": "candidate",
+                        "origin": "document_ai",
+                        "evidence_snippet": "Bill of Lading No. BOL-2026-001",
+                        "evidence_source": "visual+native_text",
+                        "page": 1,
+                    },
+                    {
+                        "field_name": "port_of_loading",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "shipper",
+                        "value": "Dhaka Knitwear & Exports Ltd.",
+                        "normalized_value": "Dhaka Knitwear & Exports Ltd.",
+                        "verification_state": "confirmed",
+                        "origin": "document_ai",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["user_resolvable_items"] == 2
+    assert queue["summary"]["unresolved_documents"] == 1
+    assert queue["summary"]["document_counts"]["bill_of_lading"] == 2
+    assert [item["field_name"] for item in queue["items"]] == ["bl_number", "port_of_loading"]

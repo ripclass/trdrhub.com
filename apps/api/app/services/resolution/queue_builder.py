@@ -6,8 +6,18 @@ from .models import ResolutionQueue, ResolutionQueueItem, ResolutionQueueSummary
 
 
 _INVOICE_DOCUMENT_TYPES = {"commercial_invoice", "proforma_invoice"}
+_BL_DOCUMENT_TYPES = {
+    "bill_of_lading",
+    "ocean_bill_of_lading",
+    "house_bill_of_lading",
+    "master_bill_of_lading",
+    "sea_waybill",
+    "air_waybill",
+    "multimodal_transport_document",
+}
 _USER_RESOLVABLE_STATES = {"candidate", "unconfirmed", "operator_rejected"}
 _HIGH_PRIORITY_FIELDS = {"invoice_number", "invoice_date", "amount", "currency"}
+_BL_HIGH_PRIORITY_FIELDS = {"bl_number", "on_board_date", "port_of_loading", "port_of_discharge"}
 
 
 def _humanize_field_name(field_name: str) -> str:
@@ -15,7 +25,10 @@ def _humanize_field_name(field_name: str) -> str:
 
 
 def _priority_for_field(field_name: str) -> str:
-    return "high" if str(field_name or "").strip().lower() in _HIGH_PRIORITY_FIELDS else "medium"
+    normalized = str(field_name or "").strip().lower()
+    if normalized in _HIGH_PRIORITY_FIELDS or normalized in _BL_HIGH_PRIORITY_FIELDS:
+        return "high"
+    return "medium"
 
 
 def _reason_for_state(verification_state: str) -> str:
@@ -39,7 +52,7 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
             or document.get("type")
             or ""
         ).strip().lower()
-        if document_type not in _INVOICE_DOCUMENT_TYPES:
+        if document_type not in _INVOICE_DOCUMENT_TYPES and document_type not in _BL_DOCUMENT_TYPES:
             continue
 
         fact_graph = document.get("fact_graph_v1") or document.get("factGraphV1")

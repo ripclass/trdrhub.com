@@ -647,7 +647,17 @@ def build_fact_resolution_v1(
         if filename:
             queue_by_filename.setdefault(filename, []).append(item)
 
-    invoice_document_types = {"commercial_invoice", "proforma_invoice"}
+    fact_resolution_document_types = {
+        "commercial_invoice",
+        "proforma_invoice",
+        "bill_of_lading",
+        "ocean_bill_of_lading",
+        "house_bill_of_lading",
+        "master_bill_of_lading",
+        "sea_waybill",
+        "air_waybill",
+        "multimodal_transport_document",
+    }
     contract_documents: List[Dict[str, Any]] = []
     unresolved_documents = 0
     total_items = 0
@@ -662,7 +672,7 @@ def build_fact_resolution_v1(
             or document.get("type")
             or ""
         ).strip().lower()
-        if document_type not in invoice_document_types:
+        if document_type not in fact_resolution_document_types:
             continue
 
         document_id = str(
@@ -696,10 +706,10 @@ def build_fact_resolution_v1(
                 "ready_for_validation": not resolution_required,
                 "unresolved_count": unresolved_count,
                 "summary": (
-                    f"{unresolved_count} invoice field{'s' if unresolved_count != 1 else ''} "
-                    "still need confirmation before invoice validation input is treated as final."
+                    f"{unresolved_count} field{'s' if unresolved_count != 1 else ''} "
+                    "still need confirmation before document validation input is treated as final."
                     if resolution_required
-                    else "Invoice facts required for validation are resolved."
+                    else "Document facts required for validation are resolved."
                 ),
                 "fact_graph_v1": document.get("fact_graph_v1") or document.get("factGraphV1"),
                 "resolution_items": resolution_items,

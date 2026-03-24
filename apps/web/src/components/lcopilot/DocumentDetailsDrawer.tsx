@@ -557,9 +557,19 @@ const buildFieldEvidenceNote = (detail: Record<string, any> | undefined): string
   return snippet ? `${source || "Source evidence"}: ${snippet}` : null;
 };
 
-const isInvoiceLikeDocument = (docType: string | undefined): boolean => {
+const isFactResolutionBackedDocument = (docType: string | undefined): boolean => {
   const normalized = normalizeReviewFieldKey(docType);
-  return normalized === "commercial_invoice" || normalized === "proforma_invoice";
+  return [
+    "commercial_invoice",
+    "proforma_invoice",
+    "bill_of_lading",
+    "ocean_bill_of_lading",
+    "house_bill_of_lading",
+    "master_bill_of_lading",
+    "sea_waybill",
+    "air_waybill",
+    "multimodal_transport_document",
+  ].includes(normalized);
 };
 
 const buildResolutionItemEvidenceNote = (
@@ -701,7 +711,7 @@ export function DocumentDetailsDrawer({
   );
   const displayFieldChecks = buildDisplayFieldChecks(criticalFieldStates, reasonContext);
   const hasQueueBackedResolution =
-    isInvoiceLikeDocument(resolvedDocument.documentType || resolvedDocument.typeKey || resolvedDocument.type) &&
+    isFactResolutionBackedDocument(resolvedDocument.documentType || resolvedDocument.typeKey || resolvedDocument.type) &&
     Array.isArray(resolvedDocument.resolutionItems);
   const resolvableFields = useMemo(() => {
     if (hasQueueBackedResolution) {

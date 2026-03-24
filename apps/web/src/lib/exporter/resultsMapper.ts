@@ -143,7 +143,17 @@ const normalizeFieldKey = (value: unknown): string =>
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
 
-const INVOICE_DOCUMENT_TYPES = new Set(['commercial_invoice', 'proforma_invoice']);
+const FACT_RESOLUTION_DOCUMENT_TYPES = new Set([
+  'commercial_invoice',
+  'proforma_invoice',
+  'bill_of_lading',
+  'ocean_bill_of_lading',
+  'house_bill_of_lading',
+  'master_bill_of_lading',
+  'sea_waybill',
+  'air_waybill',
+  'multimodal_transport_document',
+]);
 
 type ResolutionQueueItemLike = {
   documentId: string;
@@ -681,7 +691,7 @@ const mapDocuments = (
     const criticalFieldStates = doc?.critical_field_states ?? doc?.criticalFieldStates ?? {};
     const fieldDetails = doc?.field_details ?? doc?.fieldDetails ?? {};
     const existingExtractionResolution = doc?.extraction_resolution ?? doc?.extractionResolution;
-    const matchedFactResolution = INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase())
+    const matchedFactResolution = FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase())
       ? normalizedFactResolutionDocuments.find(
           (item) =>
             item.documentId === documentId ||
@@ -690,7 +700,7 @@ const mapDocuments = (
       : undefined;
     const resolutionItems = matchedFactResolution
       ? matchedFactResolution.resolutionItems
-      : INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase())
+      : FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase())
       ? normalizedResolutionItems.filter(
           (item) =>
             item.documentId === documentId ||
@@ -704,9 +714,9 @@ const mapDocuments = (
       doc?.rawText ??
       '';
     const extractionResolution =
-      INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && matchedFactResolution
+      FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && matchedFactResolution
         ? buildFactResolutionExtractionResolution(matchedFactResolution)
-        : INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && resolutionQueue
+        : FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && resolutionQueue
         ? buildQueueBackedExtractionResolution(resolutionItems, workflowStageHint)
         : buildExtractionResolution({
             existingResolution: existingExtractionResolution,

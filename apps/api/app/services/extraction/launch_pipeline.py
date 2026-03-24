@@ -25,7 +25,7 @@ from app.services.extraction.iso20022_lc_extractor import (
 )
 from app.services.extraction.lc_taxonomy import build_lc_classification
 from app.services.extraction.multimodal_document_extractor import extract_document_multimodal_first
-from app.services.facts import build_invoice_fact_set
+from app.services.facts import build_bl_fact_set, build_invoice_fact_set
 
 logger = logging.getLogger(__name__)
 
@@ -586,13 +586,32 @@ class LaunchExtractionPipeline:
                     allow_text_backfill=False,
                 )
                 transport_review = _assess_transport_completeness(shaped_payload, transport_subtype=transport_subtype)
+                fact_graph_v1 = build_bl_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "transport_subtype": transport_subtype,
+                        "extracted_fields": bl_struct.get("extracted_fields") if isinstance(bl_struct.get("extracted_fields"), dict) else bl_struct,
+                        "field_details": bl_struct.get("_field_details") if isinstance(bl_struct.get("_field_details"), dict) else {},
+                        "raw_text": extracted_text,
+                        "extraction_method": bl_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=bl_struct.get("_extraction_method", "unknown"),
+                        ),
+                    }
+                )
                 return {
                     "handled": True,
                     "context_key": "bill_of_lading",
-                    "context_payload": {**shaped_payload, "transport_review": transport_review},
+                    "context_payload": {**shaped_payload, "transport_review": transport_review, "fact_graph_v1": fact_graph_v1},
                     "doc_info_patch": {
                         **base_patch,
                         "transport_subtype": transport_subtype,
+                        "fact_graph_v1": fact_graph_v1,
                         "extracted_fields": bl_struct.get("extracted_fields") if isinstance(bl_struct.get("extracted_fields"), dict) else bl_struct,
                         "extraction_status": "success" if transport_review.get("parse_complete") else "partial",
                         "extraction_method": bl_struct.get("_extraction_method", "unknown"),
@@ -625,7 +644,30 @@ class LaunchExtractionPipeline:
             if bl_context:
                 shaped_payload = _shape_transport_payload(bl_context, transport_subtype=transport_subtype, raw_text=extracted_text)
                 transport_review = _assess_transport_completeness(shaped_payload, transport_subtype=transport_subtype)
-                return _build_support_only_result(
+                fact_graph_v1 = build_bl_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "transport_subtype": transport_subtype,
+                        "extracted_fields": {
+                            key: value
+                            for key, value in {
+                                **bl_context,
+                                **shaped_payload,
+                            }.items()
+                            if not str(key).startswith("_")
+                        },
+                        "field_details": bl_context.get("_field_details") if isinstance(bl_context.get("_field_details"), dict) else {},
+                        "raw_text": extracted_text,
+                        "extraction_method": "regex_support",
+                        "extraction_lane": "support_only",
+                    }
+                )
+                result = _build_support_only_result(
                     context_key="bill_of_lading",
                     context_payload={**shaped_payload, "transport_review": transport_review},
                     base_patch=base_patch,
@@ -638,12 +680,35 @@ class LaunchExtractionPipeline:
                         "transport_mode": shaped_payload.get("transport_mode"),
                     },
                 )
+                result["context_payload"]["fact_graph_v1"] = fact_graph_v1
+                result["doc_info_patch"]["fact_graph_v1"] = fact_graph_v1
+                return result
         except Exception as exc:
             logger.warning("Launch pipeline BL regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
         shaped_payload = _shape_transport_payload({}, transport_subtype=transport_subtype, raw_text=extracted_text)
         transport_review = _assess_transport_completeness(shaped_payload, transport_subtype=transport_subtype)
-        return {"handled": True, "context_key": "bill_of_lading", "context_payload": {**shaped_payload, "transport_review": transport_review}, "doc_info_patch": {**base_patch, "transport_subtype": transport_subtype, "transport_family": shaped_payload.get("transport_family"), "transport_mode": shaped_payload.get("transport_mode"), "parse_complete": transport_review.get("parse_complete"), "parse_completeness": transport_review.get("required_ratio"), "missing_required_fields": transport_review.get("missing_required_fields", []), "required_fields_found": transport_review.get("required_found"), "required_fields_total": transport_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(transport_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_bl_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
+        fact_graph_v1 = build_bl_fact_set(
+            {
+                **{
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "document_type": document_type,
+                "transport_subtype": transport_subtype,
+                "extracted_fields": {
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "field_details": {},
+                "raw_text": extracted_text,
+                "extraction_method": "launch_pipeline_bl_extraction_failed",
+                "extraction_lane": "unknown",
+            }
+        )
+        return {"handled": True, "context_key": "bill_of_lading", "context_payload": {**shaped_payload, "transport_review": transport_review, "fact_graph_v1": fact_graph_v1}, "doc_info_patch": {**base_patch, "transport_subtype": transport_subtype, "transport_family": shaped_payload.get("transport_family"), "transport_mode": shaped_payload.get("transport_mode"), "fact_graph_v1": fact_graph_v1, "parse_complete": transport_review.get("parse_complete"), "parse_completeness": transport_review.get("required_ratio"), "missing_required_fields": transport_review.get("missing_required_fields", []), "required_fields_found": transport_review.get("required_found"), "required_fields_total": transport_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(transport_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_bl_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
 
     async def _process_packing_list(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         base_patch = {
