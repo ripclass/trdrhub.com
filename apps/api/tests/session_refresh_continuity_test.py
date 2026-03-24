@@ -115,6 +115,28 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             "minor": sum(1 for issue in issues if str(issue.get("severity") or "").lower() not in {"critical", "major"}),
         }
 
+    def _fake_build_workflow_stage(documents, *, validation_status=None):
+        unresolved_documents = 0
+        unresolved_fields = 0
+        for document in documents or []:
+            extraction_resolution = (
+                document.get("extraction_resolution")
+                if isinstance(document.get("extraction_resolution"), dict)
+                else {}
+            )
+            if bool(extraction_resolution.get("required")):
+                unresolved_documents += 1
+                unresolved_fields += int(extraction_resolution.get("unresolved_count") or 0)
+        stage = "validation_results" if unresolved_documents == 0 else "extraction_resolution"
+        return {
+            "stage": stage,
+            "provisional_validation": stage != "validation_results",
+            "ready_for_final_validation": stage == "validation_results",
+            "unresolved_documents": unresolved_documents,
+            "unresolved_fields": unresolved_fields,
+            "summary": f"stage={stage} status={validation_status}",
+        }
+
     namespace: Dict[str, Any] = {
         "Any": Any,
         "Dict": Dict,
@@ -128,6 +150,7 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "_run_validation_arbitration_escalation": _fake_run_validation_arbitration_escalation,
         "build_processing_summary_v2": _fake_build_processing_summary_v2,
         "count_issue_severity": _fake_count_issue_severity,
+        "build_workflow_stage": _fake_build_workflow_stage,
         "validate_and_annotate_response": lambda payload: payload,
         "apply_cycle2_runtime_recovery": lambda payload: payload,
         "backfill_hybrid_secondary_surfaces": lambda payload: payload,
@@ -214,4 +237,5 @@ def test_refresh_structured_result_after_field_override_recomputes_same_session_
     assert refreshed["submission_eligibility"]["can_submit"] is True
     assert refreshed["processing_summary_v2"]["total_issues"] == 0
     assert refreshed["document_extraction_v1"]["documents"][0]["field_details"]["invoice_date"]["verification"] == "operator_confirmed"
+    assert refreshed["workflow_stage"]["stage"] == "validation_results"
     assert refreshed["_operator_field_refresh"]["field_name"] == "invoice_date"

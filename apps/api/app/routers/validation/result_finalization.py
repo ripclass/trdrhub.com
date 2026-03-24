@@ -647,6 +647,12 @@ async def finalize_validation_result(
         structured_result["document_extraction_v1"] = _build_document_extraction_v1(
             document_summaries
         )
+        workflow_stage = _response_shaping.build_workflow_stage(
+            structured_result["document_extraction_v1"].get("documents", []),
+            validation_status=structured_result.get("validation_status"),
+        )
+        structured_result["workflow_stage"] = workflow_stage
+        structured_result["workflowStage"] = workflow_stage
         issue_provenance_input: List[Dict[str, Any]] = []
         if isinstance(deduplicated_results, list) and deduplicated_results:
             issue_provenance_input.extend(deduplicated_results)

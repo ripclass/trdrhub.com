@@ -235,6 +235,95 @@ const buildExtractionResolution = ({
   return derived;
 };
 
+const deriveWorkflowStage = ({
+  existingStage,
+  documents,
+  validationStatus,
+}: {
+  existingStage?: any;
+  documents: ReturnType<typeof mapDocuments>;
+  validationStatus?: string | null;
+}) => {
+  if (existingStage && typeof existingStage === 'object') {
+    return {
+      stage: String(existingStage.stage ?? 'validation_results'),
+      provisional_validation: Boolean(existingStage.provisional_validation),
+      ready_for_final_validation:
+        existingStage.ready_for_final_validation !== undefined
+          ? Boolean(existingStage.ready_for_final_validation)
+          : !Boolean(existingStage.provisional_validation),
+      unresolved_documents:
+        typeof existingStage.unresolved_documents === 'number'
+          ? existingStage.unresolved_documents
+          : typeof existingStage.unresolvedDocuments === 'number'
+          ? existingStage.unresolvedDocuments
+          : 0,
+      unresolved_fields:
+        typeof existingStage.unresolved_fields === 'number'
+          ? existingStage.unresolved_fields
+          : typeof existingStage.unresolvedFields === 'number'
+          ? existingStage.unresolvedFields
+          : 0,
+      document_lane_counts:
+        existingStage.document_lane_counts && typeof existingStage.document_lane_counts === 'object'
+          ? existingStage.document_lane_counts
+          : existingStage.documentLaneCounts && typeof existingStage.documentLaneCounts === 'object'
+          ? existingStage.documentLaneCounts
+          : undefined,
+      summary: String(existingStage.summary ?? ''),
+    };
+  }
+
+  if (documents.length === 0) {
+    return {
+      stage: 'upload',
+      provisional_validation: true,
+      ready_for_final_validation: false,
+      unresolved_documents: 0,
+      unresolved_fields: 0,
+      summary: 'Upload the LC and supporting documents to begin extraction and validation.',
+    };
+  }
+
+  const unresolvedDocuments = documents.filter((doc) => doc.extractionResolution?.required).length;
+  const unresolvedFields = documents.reduce(
+    (total, doc) => total + Number(doc.extractionResolution?.unresolvedCount ?? 0),
+    0,
+  );
+  const documentLaneCounts = documents.reduce<Record<string, number>>((counts, doc) => {
+    const lane = doc.extractionLane || 'unknown';
+    counts[lane] = (counts[lane] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  if (unresolvedDocuments > 0 || unresolvedFields > 0) {
+    return {
+      stage: 'extraction_resolution',
+      provisional_validation: true,
+      ready_for_final_validation: false,
+      unresolved_documents: unresolvedDocuments,
+      unresolved_fields: unresolvedFields,
+      document_lane_counts: documentLaneCounts,
+      summary: `${unresolvedDocuments} document${unresolvedDocuments === 1 ? '' : 's'} still need${
+        unresolvedDocuments === 1 ? 's' : ''
+      } ${unresolvedFields} field${unresolvedFields === 1 ? '' : 's'} confirmed before validation should be treated as final.`,
+    };
+  }
+
+  return {
+    stage: 'validation_results',
+    provisional_validation: false,
+    ready_for_final_validation: true,
+    unresolved_documents: 0,
+    unresolved_fields: 0,
+    document_lane_counts: documentLaneCounts,
+    summary:
+      ['blocked', 'review', 'partial'].includes(String(validationStatus ?? '').toLowerCase())
+        ? 'Extraction is sufficiently resolved. Remaining items belong to documentary validation or policy review, not parser uncertainty.'
+        : 'Extraction is sufficiently resolved. Validation findings reflect the current confirmed document set.',
+  };
+};
+
 const formatTextValue = (value: any): string => {
   if (value === null || value === undefined) {
     return '—';
@@ -398,6 +487,12 @@ const mapDocuments = (docs: any[] = []) => {
       doc?.extraction?.extraction_status ??
       'unknown'
     ).toString();
+    const extractionLane = (
+      doc?.extraction_lane ??
+      doc?.extractionLane ??
+      doc?.extraction?.lane ??
+      'unknown'
+    ).toString();
     const rawStatus = doc?.status;
     const normalizedStatus = typeof rawStatus === 'string' ? rawStatus.toLowerCase() : null;
     const status =
@@ -466,6 +561,7 @@ const mapDocuments = (docs: any[] = []) => {
       type: doc?.document_type_label ?? normalizeDocType(typeKey),
       typeKey,
       extractionStatus,
+      extractionLane,
       status,
       issuesCount,
       parseComplete: typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
@@ -775,6 +871,11 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   const optionEDocuments = ensureArray(rawDocs);
 
   const documents = mapDocuments(optionEDocuments);
+  const workflowStage = deriveWorkflowStage({
+    existingStage: (structured as any)?.workflow_stage ?? (structured as any)?.workflowStage ?? null,
+    documents,
+    validationStatus: (structured as any)?.validation_status ?? null,
+  });
   
   // Safely extract issues - ensure it's always an array
   const rawIssues = structured.issues ?? [];
@@ -865,6 +966,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     gateResult,
     extractionSummary,
     lcBaseline,
+    workflowStage,
     complianceLevel,
     complianceCapReason,
     

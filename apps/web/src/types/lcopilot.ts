@@ -27,6 +27,7 @@ import type {
   BankVerdict as SharedBankVerdict,
   BankProfile as SharedBankProfile,
   AmendmentsAvailable as SharedAmendmentsAvailable,
+  WorkflowStageInfo as SharedWorkflowStageInfo,
   ContractWarning as SharedContractWarning,
   ContractValidation as SharedContractValidation,
   ExtractionFieldDetail as SharedExtractionFieldDetail,
@@ -236,6 +237,7 @@ export interface ValidationDocument {
   type: string;
   typeKey?: string;
   extractionStatus: string;
+  extractionLane?: string;
   status: 'success' | 'warning' | 'error';
   issuesCount: number;
   extractedFields: Record<string, any>;
@@ -278,6 +280,7 @@ export type SubmissionEligibility = SharedSubmissionEligibility;
 export type StructuredResultBankVerdict = SharedBankVerdict;
 export type StructuredResultBankProfile = SharedBankProfile;
 export type StructuredResultAmendmentsAvailable = SharedAmendmentsAvailable;
+export type WorkflowStageInfo = SharedWorkflowStageInfo;
 
 // Sanctions Screening Types - now using schema-first shared types
 export type SanctionsScreeningIssue = SharedSanctionsScreeningIssue;
@@ -313,6 +316,7 @@ export interface ValidationResults {
   gateResult?: GateResult | null;
   extractionSummary?: ExtractionSummary | null;
   lcBaseline?: LCBaseline | null;
+  workflowStage?: WorkflowStageInfo | null;
   complianceLevel?: string;
   complianceCapReason?: string | null;
   

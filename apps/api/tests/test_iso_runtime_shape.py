@@ -132,6 +132,11 @@ class _FieldExtractorStub:
 
 
 class _DocumentTypeStub:
+    LETTER_OF_CREDIT = "letter_of_credit"
+    COMMERCIAL_INVOICE = "commercial_invoice"
+    BILL_OF_LADING = "bill_of_lading"
+    PACKING_LIST = "packing_list"
+    CERTIFICATE_OF_ORIGIN = "certificate_of_origin"
     INSURANCE_CERTIFICATE = "insurance_certificate"
     INSPECTION_CERTIFICATE = "inspection_certificate"
 
@@ -140,7 +145,7 @@ async def _failed_ai(*args: Any, **kwargs: Any) -> dict[str, Any]:
     return {"_status": "failed"}
 
 
-def _load_launch_supporting_pipeline():
+def _load_launch_supporting_pipeline(overrides: Optional[Dict[str, Any]] = None):
     namespace: Dict[str, Any] = {
         "re": re,
         "json": json,
@@ -160,11 +165,13 @@ def _load_launch_supporting_pipeline():
         "extract_bl_ai_first": _failed_ai,
         "extract_packing_list_ai_first": _failed_ai,
         "extract_coo_ai_first": _failed_ai,
+        "extract_document_multimodal_first": _failed_ai,
         "detect_iso20022_schema": lambda _text: (None, 0.0),
         "detect_lc_format": lambda _text: "mt700",
         "_apply_canonical_normalization": lambda payload: dict(payload or {}),
         "_detect_lc_financial_subtype": lambda **kwargs: str(kwargs.get("document_type") or "letter_of_credit"),
         "_shape_lc_financial_payload": lambda payload, **kwargs: dict(payload or {}),
+        "_build_lc_user_facing_extracted_fields": lambda payload: dict(payload or {}),
         "_assess_lc_financial_completeness": lambda payload, **kwargs: {
             "parse_complete": False,
             "required_ratio": 0.0,
@@ -215,8 +222,14 @@ def _load_launch_supporting_pipeline():
         "TRANSPORT_DOC_ALIASES",
         "MEASUREMENT_LABEL_ALIASES",
         "LaunchExtractionPipeline",
+        "_resolve_extraction_lane",
         "_canonicalize_launch_doc_type",
+        "_build_support_only_field_detail",
+        "_build_support_only_field_details_from_payload",
+        "_build_support_only_extraction_resolution",
+        "_build_support_only_result",
         "_fields_to_flat_context",
+        "_fields_to_lc_context",
         "_is_populated_field_value",
         "_assess_required_field_completeness",
         "_build_extraction_resolution_metrics",
@@ -230,6 +243,8 @@ def _load_launch_supporting_pipeline():
         "_extract_amount_value",
         "_has_extracted_content",
     }
+    if overrides:
+        namespace.update(overrides)
     loaded = _load_symbols(LAUNCH_PIPELINE_PATH, symbols, namespace)
     return loaded["LaunchExtractionPipeline"]
 
@@ -309,9 +324,11 @@ def test_beneficiary_certificate_dispatch_uses_recoverable_text() -> None:
     )
 
     assert result["handled"] is True
-    assert result["post_validation_target"] == "beneficiary_certificate"
+    assert result["support_only"] is True
+    assert result["has_structured_data"] is False
+    assert result["post_validation_target"] is None
     assert result["doc_info_patch"]["insurance_subtype"] == "beneficiary_certificate"
-    assert result["doc_info_patch"]["extraction_status"] in {"success", "partial"}
+    assert result["doc_info_patch"]["extraction_status"] == "partial"
     assert result["context_payload"]["certificate_number"] == "BC-022"
 
 
@@ -337,9 +354,11 @@ def test_weight_list_dispatch_preserves_weight_target_and_extracts_values() -> N
     )
 
     assert result["handled"] is True
-    assert result["post_validation_target"] == "weight_list"
+    assert result["support_only"] is True
+    assert result["has_structured_data"] is False
+    assert result["post_validation_target"] is None
     assert result["doc_info_patch"]["inspection_subtype"] == "weight_certificate"
-    assert result["doc_info_patch"]["extraction_status"] in {"success", "partial"}
+    assert result["doc_info_patch"]["extraction_status"] == "partial"
     assert result["context_payload"]["gross_weight"] == "1165.65 KG"
     assert result["context_payload"]["net_weight"] == "1073.15 KG"
 
@@ -365,9 +384,11 @@ def test_weight_certificate_dispatch_stays_weight_certificate() -> None:
     )
 
     assert result["handled"] is True
-    assert result["post_validation_target"] == "weight_certificate"
+    assert result["support_only"] is True
+    assert result["has_structured_data"] is False
+    assert result["post_validation_target"] is None
     assert result["doc_info_patch"]["inspection_subtype"] == "weight_certificate"
-    assert result["doc_info_patch"]["extraction_status"] in {"success", "partial"}
+    assert result["doc_info_patch"]["extraction_status"] == "partial"
 
 
 def test_bank_guarantee_dispatch_uses_lc_like_boundary() -> None:
@@ -444,7 +465,137 @@ def test_inspection_certificate_dispatch_extracts_plain_result_labels() -> None:
     )
 
     assert result["handled"] is True
-    assert result["post_validation_target"] == "inspection_certificate"
+    assert result["support_only"] is True
+    assert result["has_structured_data"] is False
+    assert result["post_validation_target"] is None
     assert result["doc_info_patch"]["inspection_subtype"] == "inspection_certificate"
-    assert result["doc_info_patch"]["extraction_status"] in {"success", "partial"}
+    assert result["doc_info_patch"]["extraction_status"] == "partial"
     assert result["context_payload"]["inspection_result"] == "SATISFACTORY"
+
+
+def test_invoice_regex_fallback_stays_support_only_until_confirmed() -> None:
+    pipeline_cls = _load_launch_supporting_pipeline()
+    pipeline = pipeline_cls()
+    pipeline._fallback_extractor = types.SimpleNamespace(
+        extract_fields=lambda *_args, **_kwargs: [
+            types.SimpleNamespace(
+                field_name="invoice_date",
+                value="2026-03-08",
+                raw_text="Invoice Date: 2026-03-08",
+                confidence=0.84,
+            ),
+            types.SimpleNamespace(
+                field_name="invoice_number",
+                value="INV-022",
+                raw_text="Invoice No: INV-022",
+                confidence=0.79,
+            ),
+        ]
+    )
+
+    result = asyncio.run(
+        pipeline.process_document(
+            extracted_text="COMMERCIAL INVOICE\nInvoice Date: 2026-03-08\nInvoice No: INV-022",
+            document_type="commercial_invoice",
+            filename="Invoice.pdf",
+            extraction_artifacts_v1={},
+        )
+    )
+
+    assert result["handled"] is True
+    assert result["support_only"] is True
+    assert result["has_structured_data"] is False
+    assert result["validation_doc_type"] is None
+    assert result["post_validation_target"] is None
+    assert result["doc_info_patch"]["extraction_status"] == "partial"
+    assert result["doc_info_patch"]["extraction_method"] == "regex_support"
+    assert result["doc_info_patch"]["extraction_lane"] == "support_only"
+    assert result["doc_info_patch"]["field_details"]["invoice_date"]["verification"] == "support_only"
+    assert result["context_payload"]["invoice_date"] == "2026-03-08"
+
+
+def test_invoice_ai_success_does_not_backfill_missing_fields_from_raw_text() -> None:
+    async def _no_multimodal(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    async def _ai_invoice(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        return {
+            "_status": "success",
+            "_extraction_method": "ai_first",
+            "_field_details": {
+                "invoice_number": {
+                    "value": "INV-100",
+                    "verification": "confirmed",
+                    "confidence": 0.93,
+                }
+            },
+            "invoice_number": "INV-100",
+            "extracted_fields": {
+                "invoice_number": "INV-100",
+            },
+        }
+
+    pipeline_cls = _load_launch_supporting_pipeline(
+        overrides={
+            "extract_invoice_ai_first": _ai_invoice,
+            "extract_document_multimodal_first": _no_multimodal,
+        }
+    )
+    pipeline = pipeline_cls()
+
+    result = asyncio.run(
+        pipeline.process_document(
+            extracted_text="COMMERCIAL INVOICE\nInvoice Number: INV-100\nCurrency: USD\nAmount: 5000\n",
+            document_type="commercial_invoice",
+            filename="Invoice.pdf",
+            extraction_artifacts_v1={},
+        )
+    )
+
+    assert result["handled"] is True
+    assert result["has_structured_data"] is True
+    assert result["validation_doc_type"] == "invoice"
+    assert result["doc_info_patch"]["extraction_lane"] == "document_ai"
+    assert result["context_payload"]["invoice_number"] == "INV-100"
+    assert result["context_payload"].get("currency") in (None, "")
+    assert result["context_payload"].get("amount") in (None, "")
+    assert result["doc_info_patch"]["extracted_fields"] == {"invoice_number": "INV-100"}
+
+
+def test_iso_lc_path_marks_structured_iso_lane() -> None:
+    async def _iso_extract(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        return {
+            "_extraction_method": "iso20022_camtoai",
+            "_extraction_confidence": 0.97,
+            "number": "LC-ISO-022",
+            "applicant": "Applicant Co.",
+            "beneficiary": "Beneficiary Co.",
+        }
+
+    pipeline_cls = _load_launch_supporting_pipeline(
+        overrides={
+            "detect_lc_format": lambda _text: "iso20022",
+            "extract_iso20022_with_ai_fallback": _iso_extract,
+            "_build_lc_user_facing_extracted_fields": lambda payload: {
+                "lc_number": payload.get("number"),
+                "applicant": payload.get("applicant"),
+                "beneficiary": payload.get("beneficiary"),
+            },
+        }
+    )
+    pipeline = pipeline_cls()
+
+    result = asyncio.run(
+        pipeline.process_document(
+            extracted_text="<Document>ISO LC</Document>",
+            document_type="letter_of_credit",
+            filename="LC_ISO.xml",
+            extraction_artifacts_v1={},
+        )
+    )
+
+    assert result["handled"] is True
+    assert result["has_structured_data"] is True
+    assert result["doc_info_patch"]["extraction_method"] == "iso20022_camtoai"
+    assert result["doc_info_patch"]["extraction_lane"] == "structured_iso"
+    assert result["lc_number"] == "LC-ISO-022"

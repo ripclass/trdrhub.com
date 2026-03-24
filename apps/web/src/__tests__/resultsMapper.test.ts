@@ -253,5 +253,59 @@ describe('results mapper - option e payload', () => {
     const mapped = buildValidationResponse(payload);
     expect(mapped.documents[0]?.extractionResolution?.required).toBe(false);
   });
+
+  it('preserves extraction lanes from canonical document payloads', () => {
+    const seeded = buildValidationResults();
+    const documents = [
+      {
+        document_id: 'doc-iso-lc',
+        document_type: 'letter_of_credit',
+        filename: 'LC.xml',
+        extraction_status: 'success',
+        extraction_lane: 'structured_iso',
+        extracted_fields: {
+          lc_number: 'LC-ISO-022',
+        },
+        field_details: {},
+        review_reasons: [],
+      },
+      {
+        document_id: 'doc-invoice',
+        document_type: 'commercial_invoice',
+        filename: 'Invoice.pdf',
+        extraction_status: 'partial',
+        extractionLane: 'document_ai',
+        extracted_fields: {
+          invoice_number: 'INV-022',
+        },
+        field_details: {},
+        review_reasons: [],
+      },
+    ];
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        document_extraction_v1: {
+          documents,
+        },
+        documents_structured: documents,
+        workflow_stage: {
+          stage: 'extraction_resolution',
+          provisional_validation: true,
+          ready_for_final_validation: false,
+          unresolved_documents: 1,
+          unresolved_fields: 1,
+          summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.documents[0]?.extractionLane).toBe('structured_iso');
+    expect(mapped.documents[1]?.extractionLane).toBe('document_ai');
+    expect(mapped.workflowStage?.stage).toBe('extraction_resolution');
+    expect(mapped.workflowStage?.provisional_validation).toBe(true);
+  });
 });
 

@@ -25,6 +25,7 @@ from .presentation_contract import (
 )
 from .response_shaping import (
     build_bank_submission_verdict,
+    build_workflow_stage,
     build_processing_summary_v2,
     count_issue_severity,
 )
@@ -655,6 +656,12 @@ async def refresh_structured_result_after_field_override(
     )
     analytics["issue_counts"] = count_issue_severity(issues)
     analytics["document_status_distribution"] = processing_summary_v2.get("status_counts")
+    workflow_stage = build_workflow_stage(
+        documents,
+        validation_status=structured_result.get("validation_status"),
+    )
+    structured_result["workflow_stage"] = workflow_stage
+    structured_result["workflowStage"] = workflow_stage
 
     _copy_documents_to_secondary_surfaces(structured_result, documents)
     structured_result = validate_and_annotate_response(structured_result)

@@ -1013,6 +1013,8 @@ def _build_document_summaries(
             "extractedFields": _filter_user_facing_fields(detail.get("extracted_fields") or {}),
             "field_details": detail.get("field_details") or detail.get("fieldDetails") or detail.get("_field_details") or {},
             "fieldDetails": detail.get("fieldDetails") or detail.get("field_details") or detail.get("_field_details") or {},
+            "extraction_lane": detail.get("extraction_lane") or detail.get("extractionLane"),
+            "extractionLane": detail.get("extractionLane") or detail.get("extraction_lane"),
             "extraction_resolution": detail.get("extraction_resolution") or detail.get("extractionResolution"),
             "extractionResolution": detail.get("extractionResolution") or detail.get("extraction_resolution"),
             "ocrConfidence": detail.get("ocr_confidence"),
@@ -1686,12 +1688,19 @@ async def _build_document_context(
             if launch_pipeline_result and launch_pipeline_result.get("handled"):
                 context_key = launch_pipeline_result.get("context_key")
                 context_payload = launch_pipeline_result.get("context_payload") or {}
+                support_only = bool(launch_pipeline_result.get("support_only"))
                 if context_key and isinstance(context_payload, dict):
-                    target_ctx = context.setdefault(context_key, {})
-                    if context_key == "lc" and "raw_text" not in target_ctx:
-                        context["lc_text"] = extracted_text
-                        target_ctx["source_type"] = document_type
-                    target_ctx.update(context_payload)
+                    if support_only:
+                        support_candidates = context.setdefault("_support_candidates", {})
+                        support_bucket = support_candidates.setdefault(context_key, [])
+                        if isinstance(support_bucket, list):
+                            support_bucket.append(context_payload)
+                    else:
+                        target_ctx = context.setdefault(context_key, {})
+                        if context_key == "lc" and "raw_text" not in target_ctx:
+                            context["lc_text"] = extracted_text
+                            target_ctx["source_type"] = document_type
+                        target_ctx.update(context_payload)
 
                 validation_doc_type = launch_pipeline_result.get("validation_doc_type")
                 if validation_doc_type and context_key and isinstance(context.get(context_key), dict):
@@ -1707,10 +1716,10 @@ async def _build_document_context(
                     if context_key == "lc":
                         context["lc_structured_output"] = validated_payload
 
-                if launch_pipeline_result.get("lc_number") and not context.get("lc_number"):
+                if not support_only and launch_pipeline_result.get("lc_number") and not context.get("lc_number"):
                     context["lc_number"] = launch_pipeline_result.get("lc_number")
 
-                if context_key == "lc":
+                if context_key == "lc" and not support_only:
                     lc_required_document_types = _infer_required_document_types_from_lc(context.get("lc") or {})
                     primary_lc_anchor_seen = True
 
@@ -2167,6 +2176,7 @@ def _build_blocked_structured_result(
             "document_type": doc.get("document_type") or "supporting_document",
             "extraction_status": actual_extraction_status,  # Keep real status
             "extracted_fields": actual_extracted_fields,    # Keep real data
+            "extraction_lane": doc.get("extraction_lane") or doc.get("extractionLane"),
             "issues_count": 0,
             "raw_text_preview": doc.get("raw_text_preview"),  # Keep preview text
             "ocr_confidence": doc.get("ocr_confidence"),
@@ -2204,6 +2214,10 @@ def _build_blocked_structured_result(
 
     _response_shaping.attach_extraction_observability(docs_structured)
     document_extraction = _build_document_extraction_v1(docs_structured)
+    workflow_stage = _response_shaping.build_workflow_stage(
+        document_extraction.get("documents", []),
+        validation_status="blocked",
+    )
     processing_summary_v2 = _build_processing_summary_v2(
         processing_summary,
         document_extraction.get("documents", []),
@@ -2285,6 +2299,8 @@ def _build_blocked_structured_result(
         "processing_summary": processing_summary,
         "processing_summary_v2": processing_summary_v2,
         "document_extraction_v1": document_extraction,
+        "workflow_stage": workflow_stage,
+        "workflowStage": workflow_stage,
         "issue_provenance_v1": _build_issue_provenance_v1(blocking_issues),
         
         # Analytics

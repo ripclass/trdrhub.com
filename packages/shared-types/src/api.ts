@@ -283,6 +283,17 @@ export const ExtractionResolutionSchema = z.object({
 }).passthrough();
 export type ExtractionResolution = z.infer<typeof ExtractionResolutionSchema>;
 
+export const WorkflowStageInfoSchema = z.object({
+  stage: z.enum(['upload', 'extraction_resolution', 'validation_results']),
+  provisional_validation: z.boolean(),
+  ready_for_final_validation: z.boolean(),
+  unresolved_documents: z.number().nonnegative(),
+  unresolved_fields: z.number().nonnegative(),
+  document_lane_counts: z.record(z.number()).optional(),
+  summary: z.string(),
+}).passthrough();
+export type WorkflowStageInfo = z.infer<typeof WorkflowStageInfoSchema>;
+
 export const FieldOverrideRequestSchema = z.object({
   document_id: z.string(),
   field_name: z.string(),
@@ -297,6 +308,8 @@ export const DocumentExtractionDocumentSchema = z.object({
   filename: z.string().optional(),
   status: z.enum(['success', 'warning', 'error']).optional(),
   extraction_status: z.string().optional(),
+  extraction_lane: z.string().optional(),
+  extractionLane: z.string().optional(),
   extracted_fields: z.record(z.unknown()).optional(),
   field_details: z.record(ExtractionFieldDetailSchema).optional(),
   fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
@@ -351,6 +364,8 @@ export const StructuredResultDocumentSchema = z.object({
   document_type: z.string().optional(),
   filename: z.string().optional(),
   extraction_status: z.string().optional(),
+  extraction_lane: z.string().optional(),
+  extractionLane: z.string().optional(),
   extracted_fields: z.record(z.unknown()).optional(),
   field_details: z.record(ExtractionFieldDetailSchema).optional(),
   fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
@@ -622,6 +637,8 @@ export const StructuredResultSchema = z.object({
   submission_eligibility: SubmissionEligibilitySchema.optional(),
   raw_submission_eligibility: SubmissionEligibilitySchema.optional(),
   effective_submission_eligibility: SubmissionEligibilitySchema.optional(),
+  workflow_stage: WorkflowStageInfoSchema.optional(),
+  workflowStage: WorkflowStageInfoSchema.optional(),
   bank_verdict: BankVerdictSchema.optional(),
   bank_profile: BankProfileSchema.optional(),
   amendments_available: AmendmentsAvailableSchema.optional(),
@@ -847,6 +864,7 @@ export const ValidationDocumentSchema = z.object({
   type: z.string(),
   typeKey: z.string().optional(),
   extractionStatus: z.string(),
+  extractionLane: z.string().optional(),
   status: z.enum(['success', 'warning', 'error']),
   issuesCount: z.number(),
   extractedFields: z.record(z.unknown()),

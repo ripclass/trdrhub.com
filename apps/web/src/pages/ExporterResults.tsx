@@ -1285,6 +1285,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const issueCards = resultData?.issues ?? [];
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
+  const backendWorkflowStage =
+    (structuredResult as any)?.workflow_stage ??
+    (structuredResult as any)?.workflowStage ??
+    null;
+  const workflowStage = resultData?.workflowStage ?? null;
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
   const extractionResolutionSummary = useMemo(() => {
     const docsNeedingResolution = documents.filter((doc) => doc.extractionResolution?.required);
@@ -1293,12 +1298,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       0,
     );
     return {
-      required: docsNeedingResolution.length > 0,
+      required:
+        workflowStage?.stage === 'extraction_resolution' ||
+        docsNeedingResolution.length > 0,
       documents: docsNeedingResolution,
-      documentCount: docsNeedingResolution.length,
-      unresolvedCount,
+      documentCount:
+        typeof workflowStage?.unresolved_documents === 'number'
+          ? workflowStage.unresolved_documents
+          : docsNeedingResolution.length,
+      unresolvedCount:
+        typeof workflowStage?.unresolved_fields === 'number'
+          ? workflowStage.unresolved_fields
+          : unresolvedCount,
+      summary:
+        typeof backendWorkflowStage?.summary === 'string' && backendWorkflowStage.summary.trim().length > 0
+          ? backendWorkflowStage.summary
+          : null,
     };
-  }, [documents]);
+  }, [backendWorkflowStage, documents, workflowStage]);
   const backendIssueCount = Math.max(summary?.total_issues ?? 0, issueCards.length);
   const severityBreakdown = summary?.severity_breakdown ?? {
     critical: 0,
@@ -2862,11 +2879,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </AlertTitle>
               <AlertDescription className="mt-2 space-y-2 text-sm">
                 <p>
-                  Validation below is provisional until{' '}
-                  <span className="font-medium">{extractionResolutionSummary.unresolvedCount}</span>{' '}
-                  extracted field{extractionResolutionSummary.unresolvedCount === 1 ? '' : 's'} across{' '}
-                  <span className="font-medium">{extractionResolutionSummary.documentCount}</span>{' '}
-                  document{extractionResolutionSummary.documentCount === 1 ? '' : 's'} are confirmed.
+                  {extractionResolutionSummary.summary ?? (
+                    <>
+                      Validation below is provisional until{' '}
+                      <span className="font-medium">{extractionResolutionSummary.unresolvedCount}</span>{' '}
+                      extracted field{extractionResolutionSummary.unresolvedCount === 1 ? '' : 's'} across{' '}
+                      <span className="font-medium">{extractionResolutionSummary.documentCount}</span>{' '}
+                      document{extractionResolutionSummary.documentCount === 1 ? '' : 's'} are confirmed.
+                    </>
+                  )}
                 </p>
                 <p className="text-muted-foreground">
                   Open the Documents tab, review the source evidence, and confirm only the unresolved fields. This refreshes the same session and does not start a new paid validation run.

@@ -1628,26 +1628,7 @@ def _build_existing_candidate(
 def _merge_field_candidates(existing_candidate: _ParsedFieldCandidate, parsed_candidate: Optional[_ParsedFieldCandidate]) -> _ParsedFieldCandidate:
     if not parsed_candidate:
         return existing_candidate
-    if (
-        _top3_field_boost_v1_enabled()
-        and existing_candidate.name in _TOP3_FIELD_NAMES
-        and existing_candidate.state == "found"
-        and parsed_candidate.state == "found"
-    ):
-        existing_has_evidence = bool(existing_candidate.evidence_snippet)
-        parsed_has_evidence = bool(parsed_candidate.evidence_snippet)
-        if parsed_has_evidence and (
-            not existing_has_evidence
-            or parsed_candidate.confidence > existing_candidate.confidence
-        ):
-            return parsed_candidate
-    if existing_candidate.state == "found":
-        return existing_candidate
-    if parsed_candidate.state == "found":
-        return parsed_candidate
-    if existing_candidate.state == "parse_failed":
-        return existing_candidate
-    return parsed_candidate
+    return existing_candidate
 
 
 def _field_numeric_value(field: Optional[FieldExtraction]) -> Optional[float]:
@@ -1683,8 +1664,8 @@ def _evaluate_cross_field_reasons(
             reasons.extend(["cross_field_weight_conflict", "CROSS_FIELD_CONFLICT"])
 
     if "amount_currency_pair" in checks:
-        amount = auxiliary_fields.get("amount")
-        currency = auxiliary_fields.get("currency")
+        amount = by_name.get("amount")
+        currency = by_name.get("currency")
         amount_found = bool(amount and amount.state == "found" and amount.value_normalized not in (None, ""))
         currency_found = bool(currency and currency.state == "found" and currency.value_normalized not in (None, ""))
         if amount_found != currency_found:

@@ -75,6 +75,21 @@ MEASUREMENT_LABEL_ALIASES = {
 }
 
 
+def _resolve_extraction_lane(*, extraction_method: Optional[str], support_only: bool = False) -> str:
+    if support_only:
+        return "support_only"
+    method = str(extraction_method or "").strip().lower()
+    if method.startswith("iso20022"):
+        return "structured_iso"
+    if method.startswith("mt700_structured"):
+        return "structured_mt"
+    if "ai" in method or "multimodal" in method:
+        return "document_ai"
+    if method in {"regex_support", "raw_text_support"}:
+        return "support_only"
+    return "unknown"
+
+
 class LaunchExtractionPipeline:
     """Thin launch-focused extraction boundary.
 
@@ -257,6 +272,9 @@ class LaunchExtractionPipeline:
                         "extracted_fields": user_facing_fields or iso_context,
                         "extraction_status": "success",
                         "extraction_method": iso_context.get("_extraction_method", "iso20022"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=iso_context.get("_extraction_method", "iso20022"),
+                        ),
                         "extraction_confidence": iso_context.get("_extraction_confidence", 0.0),
                     },
                     "has_structured_data": True,
@@ -276,7 +294,14 @@ class LaunchExtractionPipeline:
             lc_struct = multimodal_struct or await extract_lc_ai_first(extracted_text)
             extraction_status = lc_struct.get("_status", "unknown") if isinstance(lc_struct, dict) else "unknown"
             if lc_struct and extraction_status != "failed":
-                shaped_payload = _shape_lc_financial_payload(lc_struct, lc_subtype=lc_subtype, raw_text=extracted_text, source_type=document_type, lc_format=lc_format)
+                shaped_payload = _shape_lc_financial_payload(
+                    lc_struct,
+                    lc_subtype=lc_subtype,
+                    raw_text=extracted_text,
+                    source_type=document_type,
+                    lc_format=lc_format,
+                    allow_text_backfill=False,
+                )
                 lc_review = _assess_lc_financial_completeness(shaped_payload, lc_subtype=lc_subtype)
                 user_facing_fields = _build_lc_user_facing_extracted_fields(shaped_payload)
                 return {
@@ -290,6 +315,9 @@ class LaunchExtractionPipeline:
                         "extracted_fields": user_facing_fields or (lc_struct.get("extracted_fields") if isinstance(lc_struct.get("extracted_fields"), dict) else lc_struct),
                         "extraction_status": "success" if lc_review.get("parse_complete") else "partial",
                         "extraction_method": lc_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=lc_struct.get("_extraction_method", "unknown"),
+                        ),
                         "extraction_confidence": lc_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": lc_struct.get("_field_details"),
@@ -319,30 +347,19 @@ class LaunchExtractionPipeline:
             if lc_context:
                 shaped_payload = _shape_lc_financial_payload(lc_context, lc_subtype=lc_subtype, raw_text=extracted_text, source_type=document_type, lc_format=lc_format)
                 lc_review = _assess_lc_financial_completeness(shaped_payload, lc_subtype=lc_subtype)
-                user_facing_fields = _build_lc_user_facing_extracted_fields(shaped_payload)
-                return {
-                    "handled": True,
-                    "context_key": "lc",
-                    "context_payload": {**shaped_payload, "lc_review": lc_review},
-                    "doc_info_patch": {
-                        **base_patch,
+                return _build_support_only_result(
+                    context_key="lc",
+                    context_payload={**shaped_payload, "lc_review": lc_review},
+                    base_patch=base_patch,
+                    extraction_method="regex_support",
+                    field_details=lc_context.get("_field_details"),
+                    review_payload=lc_review,
+                    extra_doc_info={
                         "lc_subtype": lc_subtype,
                         "lc_family": shaped_payload.get("lc_family"),
-                        "extracted_fields": user_facing_fields or lc_context,
-                        "extraction_status": "success" if lc_review.get("parse_complete") else "partial",
-                        "extraction_method": "regex_fallback",
-                        "parse_complete": lc_review.get("parse_complete"),
-                        "parse_completeness": lc_review.get("required_ratio"),
-                        "missing_required_fields": lc_review.get("missing_required_fields", []),
-                        "required_fields_found": lc_review.get("required_found"),
-                        "required_fields_total": lc_review.get("required_total"),
-                        "review_reasons": list(base_patch.get("review_reasons") or []) + list(lc_review.get("review_reasons") or []),
                     },
-                    "has_structured_data": True,
-                    "lc_number": shaped_payload.get("number") or shaped_payload.get("lc_number"),
-                    "validation_doc_type": "lc",
-                    "post_validation_target": "lc",
-                }
+                    lc_number=shaped_payload.get("number") or shaped_payload.get("lc_number"),
+                )
         except Exception as exc:
             logger.warning("Launch pipeline LC regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -394,7 +411,12 @@ class LaunchExtractionPipeline:
             invoice_struct = multimodal_struct or await extract_invoice_ai_first(extracted_text)
             extraction_status = invoice_struct.get("_status", "unknown")
             if invoice_struct and extraction_status != "failed":
-                shaped_payload = _shape_invoice_financial_payload(invoice_struct, invoice_subtype=invoice_subtype, raw_text=extracted_text)
+                shaped_payload = _shape_invoice_financial_payload(
+                    invoice_struct,
+                    invoice_subtype=invoice_subtype,
+                    raw_text=extracted_text,
+                    allow_text_backfill=False,
+                )
                 invoice_review = _assess_invoice_financial_completeness(shaped_payload, invoice_subtype=invoice_subtype)
                 return {
                     "handled": True,
@@ -407,6 +429,9 @@ class LaunchExtractionPipeline:
                         "extracted_fields": invoice_struct.get("extracted_fields") if isinstance(invoice_struct.get("extracted_fields"), dict) else invoice_struct,
                         "extraction_status": "success" if invoice_review.get("parse_complete") else "partial",
                         "extraction_method": invoice_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=invoice_struct.get("_extraction_method", "unknown"),
+                        ),
                         "extraction_confidence": invoice_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": invoice_struct.get("_field_details"),
@@ -431,29 +456,18 @@ class LaunchExtractionPipeline:
             if invoice_context:
                 shaped_payload = _shape_invoice_financial_payload(invoice_context, invoice_subtype=invoice_subtype, raw_text=extracted_text)
                 invoice_review = _assess_invoice_financial_completeness(shaped_payload, invoice_subtype=invoice_subtype)
-                return {
-                    "handled": True,
-                    "context_key": "invoice",
-                    "context_payload": {**shaped_payload, "invoice_review": invoice_review},
-                    "doc_info_patch": {
-                        **base_patch,
+                return _build_support_only_result(
+                    context_key="invoice",
+                    context_payload={**shaped_payload, "invoice_review": invoice_review},
+                    base_patch=base_patch,
+                    extraction_method="regex_support",
+                    field_details=invoice_context.get("_field_details"),
+                    review_payload=invoice_review,
+                    extra_doc_info={
                         "invoice_subtype": invoice_subtype,
                         "invoice_family": shaped_payload.get("invoice_family"),
-                        "extracted_fields": invoice_context,
-                        "extraction_status": "success" if invoice_review.get("parse_complete") else "partial",
-                        "extraction_method": "regex_fallback",
-                        "field_details": invoice_context.get("_field_details"),
-                        "parse_complete": invoice_review.get("parse_complete"),
-                        "parse_completeness": invoice_review.get("required_ratio"),
-                        "missing_required_fields": invoice_review.get("missing_required_fields", []),
-                        "required_fields_found": invoice_review.get("required_found"),
-                        "required_fields_total": invoice_review.get("required_total"),
-                        "review_reasons": list(base_patch.get("review_reasons") or []) + list(invoice_review.get("review_reasons") or []),
                     },
-                    "has_structured_data": True,
-                    "validation_doc_type": "invoice",
-                    "post_validation_target": "invoice",
-                }
+                )
         except Exception as exc:
             logger.warning("Launch pipeline invoice regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -485,7 +499,12 @@ class LaunchExtractionPipeline:
             bl_struct = multimodal_struct or await extract_bl_ai_first(extracted_text)
             extraction_status = bl_struct.get("_status", "unknown")
             if bl_struct and extraction_status != "failed":
-                shaped_payload = _shape_transport_payload(bl_struct, transport_subtype=transport_subtype, raw_text=extracted_text)
+                shaped_payload = _shape_transport_payload(
+                    bl_struct,
+                    transport_subtype=transport_subtype,
+                    raw_text=extracted_text,
+                    allow_text_backfill=False,
+                )
                 transport_review = _assess_transport_completeness(shaped_payload, transport_subtype=transport_subtype)
                 return {
                     "handled": True,
@@ -497,6 +516,9 @@ class LaunchExtractionPipeline:
                         "extracted_fields": bl_struct.get("extracted_fields") if isinstance(bl_struct.get("extracted_fields"), dict) else bl_struct,
                         "extraction_status": "success" if transport_review.get("parse_complete") else "partial",
                         "extraction_method": bl_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=bl_struct.get("_extraction_method", "unknown"),
+                        ),
                         "extraction_confidence": bl_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": bl_struct.get("_field_details"),
@@ -523,30 +545,19 @@ class LaunchExtractionPipeline:
             if bl_context:
                 shaped_payload = _shape_transport_payload(bl_context, transport_subtype=transport_subtype, raw_text=extracted_text)
                 transport_review = _assess_transport_completeness(shaped_payload, transport_subtype=transport_subtype)
-                return {
-                    "handled": True,
-                    "context_key": "bill_of_lading",
-                    "context_payload": {**shaped_payload, "transport_review": transport_review},
-                    "doc_info_patch": {
-                        **base_patch,
+                return _build_support_only_result(
+                    context_key="bill_of_lading",
+                    context_payload={**shaped_payload, "transport_review": transport_review},
+                    base_patch=base_patch,
+                    extraction_method="regex_support",
+                    field_details=bl_context.get("_field_details"),
+                    review_payload=transport_review,
+                    extra_doc_info={
                         "transport_subtype": transport_subtype,
-                        "extracted_fields": bl_context,
-                        "extraction_status": "success" if transport_review.get("parse_complete") else "partial",
-                        "extraction_method": "regex_fallback",
-                        "field_details": bl_context.get("_field_details"),
                         "transport_family": shaped_payload.get("transport_family"),
                         "transport_mode": shaped_payload.get("transport_mode"),
-                        "parse_complete": transport_review.get("parse_complete"),
-                        "parse_completeness": transport_review.get("required_ratio"),
-                        "missing_required_fields": transport_review.get("missing_required_fields", []),
-                        "required_fields_found": transport_review.get("required_found"),
-                        "required_fields_total": transport_review.get("required_total"),
-                        "review_reasons": list(base_patch.get("review_reasons") or []) + list(transport_review.get("review_reasons") or []),
                     },
-                    "has_structured_data": True,
-                    "validation_doc_type": "bl",
-                    "post_validation_target": "bill_of_lading",
-                }
+                )
         except Exception as exc:
             logger.warning("Launch pipeline BL regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -585,6 +596,9 @@ class LaunchExtractionPipeline:
                         "extracted_fields": packing_struct.get("extracted_fields") if isinstance(packing_struct.get("extracted_fields"), dict) else packing_struct,
                         "extraction_status": "success",
                         "extraction_method": packing_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=packing_struct.get("_extraction_method", "unknown"),
+                        ),
                         "extraction_confidence": packing_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": packing_struct.get("_field_details"),
@@ -601,21 +615,13 @@ class LaunchExtractionPipeline:
             packing_fields = self._fallback_extractor.extract_fields(extracted_text, DocumentType.PACKING_LIST)
             packing_context = _fields_to_flat_context(packing_fields)
             if packing_context:
-                return {
-                    "handled": True,
-                    "context_key": "packing_list",
-                    "context_payload": _apply_canonical_normalization({**packing_context, "raw_text": extracted_text}),
-                    "doc_info_patch": {
-                        **base_patch,
-                        "extracted_fields": packing_context,
-                        "extraction_status": "success",
-                        "extraction_method": "regex_fallback",
-                        "field_details": packing_context.get("_field_details"),
-                    },
-                    "has_structured_data": True,
-                    "validation_doc_type": "packing_list",
-                    "post_validation_target": "packing_list",
-                }
+                return _build_support_only_result(
+                    context_key="packing_list",
+                    context_payload=_apply_canonical_normalization({**packing_context, "raw_text": extracted_text}),
+                    base_patch=base_patch,
+                    extraction_method="regex_support",
+                    field_details=packing_context.get("_field_details"),
+                )
         except Exception as exc:
             logger.warning("Launch pipeline packing list regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -645,7 +651,12 @@ class LaunchExtractionPipeline:
             coo_struct = multimodal_struct or await extract_coo_ai_first(extracted_text)
             extraction_status = coo_struct.get("_status", "unknown")
             if coo_struct and extraction_status != "failed":
-                shaped_payload = _shape_regulatory_payload(coo_struct, regulatory_subtype=regulatory_subtype, raw_text=extracted_text)
+                shaped_payload = _shape_regulatory_payload(
+                    coo_struct,
+                    regulatory_subtype=regulatory_subtype,
+                    raw_text=extracted_text,
+                    allow_text_backfill=False,
+                )
                 regulatory_review = _assess_regulatory_completeness(shaped_payload, regulatory_subtype=regulatory_subtype)
                 effective_extraction_status = "success" if regulatory_review.get("parse_complete") else "partial"
                 return {
@@ -664,6 +675,9 @@ class LaunchExtractionPipeline:
                         "required_fields_found": regulatory_review.get("required_found"),
                         "required_fields_total": regulatory_review.get("required_total"),
                         "extraction_method": coo_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=coo_struct.get("_extraction_method", "unknown"),
+                        ),
                         "extraction_confidence": coo_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": coo_struct.get("_field_details"),
@@ -683,30 +697,18 @@ class LaunchExtractionPipeline:
             if coo_context:
                 shaped_payload = _shape_regulatory_payload(coo_context, regulatory_subtype=regulatory_subtype, raw_text=extracted_text)
                 regulatory_review = _assess_regulatory_completeness(shaped_payload, regulatory_subtype=regulatory_subtype)
-                effective_extraction_status = "success" if regulatory_review.get("parse_complete") else "partial"
-                return {
-                    "handled": True,
-                    "context_key": "certificate_of_origin",
-                    "context_payload": {**shaped_payload, "regulatory_review": regulatory_review},
-                    "doc_info_patch": {
-                        **base_patch,
+                return _build_support_only_result(
+                    context_key="certificate_of_origin",
+                    context_payload={**shaped_payload, "regulatory_review": regulatory_review},
+                    base_patch=base_patch,
+                    extraction_method="regex_support",
+                    field_details=coo_context.get("_field_details"),
+                    review_payload=regulatory_review,
+                    extra_doc_info={
                         "regulatory_subtype": regulatory_subtype,
                         "regulatory_family": shaped_payload.get("regulatory_family"),
-                        "extracted_fields": coo_context,
-                        "extraction_status": effective_extraction_status,
-                        "parse_complete": regulatory_review.get("parse_complete"),
-                        "parse_completeness": regulatory_review.get("required_ratio"),
-                        "missing_required_fields": regulatory_review.get("missing_required_fields", []),
-                        "required_fields_found": regulatory_review.get("required_found"),
-                        "required_fields_total": regulatory_review.get("required_total"),
-                        "extraction_method": "regex_fallback",
-                        "field_details": coo_context.get("_field_details"),
-                        "review_reasons": list(base_patch.get("review_reasons") or []) + list(regulatory_review.get("review_reasons") or []),
                     },
-                    "has_structured_data": True,
-                    "validation_doc_type": "certificate_of_origin",
-                    "post_validation_target": "certificate_of_origin",
-                }
+                )
         except Exception as exc:
             logger.warning("Launch pipeline COO regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -749,7 +751,12 @@ class LaunchExtractionPipeline:
             insurance_struct = multimodal_struct or await extract_insurance_ai_first(extracted_text)
             extraction_status = insurance_struct.get("_status", "unknown")
             if insurance_struct and extraction_status != "failed":
-                shaped_payload = _shape_insurance_payload(insurance_struct, insurance_subtype=insurance_subtype, raw_text=extracted_text)
+                shaped_payload = _shape_insurance_payload(
+                    insurance_struct,
+                    insurance_subtype=insurance_subtype,
+                    raw_text=extracted_text,
+                    allow_text_backfill=False,
+                )
                 insurance_review = _assess_insurance_completeness(shaped_payload, insurance_subtype=insurance_subtype)
                 return {
                     "handled": True,
@@ -762,6 +769,9 @@ class LaunchExtractionPipeline:
                         "extracted_fields": insurance_struct.get("extracted_fields") if isinstance(insurance_struct.get("extracted_fields"), dict) else insurance_struct,
                         "extraction_status": "success" if insurance_review.get("parse_complete") else "partial",
                         "extraction_method": insurance_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=insurance_struct.get("_extraction_method", "unknown"),
+                        ),
                         "extraction_confidence": insurance_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": insurance_struct.get("_field_details"),
@@ -786,29 +796,18 @@ class LaunchExtractionPipeline:
             if insurance_context:
                 shaped_payload = _shape_insurance_payload(insurance_context, insurance_subtype=insurance_subtype, raw_text=extracted_text)
                 insurance_review = _assess_insurance_completeness(shaped_payload, insurance_subtype=insurance_subtype)
-                return {
-                    "handled": True,
-                    "context_key": "insurance_certificate",
-                    "context_payload": {**shaped_payload, "insurance_review": insurance_review},
-                    "doc_info_patch": {
-                        **base_patch,
+                return _build_support_only_result(
+                    context_key="insurance_certificate",
+                    context_payload={**shaped_payload, "insurance_review": insurance_review},
+                    base_patch=base_patch,
+                    extraction_method="regex_support",
+                    field_details=insurance_context.get("_field_details"),
+                    review_payload=insurance_review,
+                    extra_doc_info={
                         "insurance_subtype": insurance_subtype,
                         "insurance_family": shaped_payload.get("insurance_family"),
-                        "extracted_fields": insurance_context,
-                        "extraction_status": "success" if insurance_review.get("parse_complete") else "partial",
-                        "extraction_method": "regex_fallback",
-                        "field_details": insurance_context.get("_field_details"),
-                        "parse_complete": insurance_review.get("parse_complete"),
-                        "parse_completeness": insurance_review.get("required_ratio"),
-                        "missing_required_fields": insurance_review.get("missing_required_fields", []),
-                        "required_fields_found": insurance_review.get("required_found"),
-                        "required_fields_total": insurance_review.get("required_total"),
-                        "review_reasons": list(base_patch.get("review_reasons") or []) + list(insurance_review.get("review_reasons") or []),
                     },
-                    "has_structured_data": True,
-                    "validation_doc_type": "insurance",
-                    "post_validation_target": post_validation_target,
-                }
+                )
         except Exception as exc:
             logger.warning("Launch pipeline insurance regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -818,12 +817,22 @@ class LaunchExtractionPipeline:
             shaped_payload,
             ["policy_number", "certificate_number", "insured_amount", "issuer_name"],
         )
-        extraction_status = (
-            "success"
-            if insurance_review.get("parse_complete")
-            else ("partial" if has_structured_values else "failed")
-        )
-        has_structured_data = extraction_status != "failed"
+        if has_structured_values:
+            return _build_support_only_result(
+                context_key="insurance_certificate",
+                context_payload={**shaped_payload, "insurance_review": insurance_review},
+                base_patch=base_patch,
+                extraction_method="raw_text_support",
+                field_details=_build_support_only_field_details_from_payload(
+                    shaped_payload,
+                    ["policy_number", "certificate_number", "insured_amount", "issuer_name"],
+                ),
+                review_payload=insurance_review,
+                extra_doc_info={
+                    "insurance_subtype": insurance_subtype,
+                    "insurance_family": shaped_payload.get("insurance_family"),
+                },
+            )
         return {
             "handled": True,
             "context_key": "insurance_certificate",
@@ -838,12 +847,12 @@ class LaunchExtractionPipeline:
                 "required_fields_found": insurance_review.get("required_found"),
                 "required_fields_total": insurance_review.get("required_total"),
                 "review_reasons": list(base_patch.get("review_reasons") or []) + list(insurance_review.get("review_reasons") or []),
-                "extraction_status": extraction_status,
-                "extraction_error": None if has_structured_data else "launch_pipeline_insurance_extraction_failed",
+                "extraction_status": "failed",
+                "extraction_error": "launch_pipeline_insurance_extraction_failed",
             },
-            "has_structured_data": has_structured_data,
-            "validation_doc_type": "insurance" if has_structured_data else None,
-            "post_validation_target": post_validation_target if has_structured_data else None,
+            "has_structured_data": False,
+            "validation_doc_type": None,
+            "post_validation_target": None,
         }
 
     async def _process_supporting_document(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
@@ -932,7 +941,12 @@ class LaunchExtractionPipeline:
             inspection_struct = multimodal_struct or await extract_inspection_ai_first(extracted_text)
             extraction_status = inspection_struct.get("_status", "unknown")
             if inspection_struct and extraction_status != "failed":
-                shaped_payload = _shape_inspection_payload(inspection_struct, inspection_subtype=inspection_subtype, raw_text=extracted_text)
+                shaped_payload = _shape_inspection_payload(
+                    inspection_struct,
+                    inspection_subtype=inspection_subtype,
+                    raw_text=extracted_text,
+                    allow_text_backfill=False,
+                )
                 inspection_review = _assess_inspection_completeness(shaped_payload, inspection_subtype=inspection_subtype)
                 return {
                     "handled": True,
@@ -944,6 +958,9 @@ class LaunchExtractionPipeline:
                         "extracted_fields": inspection_struct.get("extracted_fields") if isinstance(inspection_struct.get("extracted_fields"), dict) else inspection_struct,
                         "extraction_status": "success" if inspection_review.get("parse_complete") else "partial",
                         "extraction_method": inspection_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": _resolve_extraction_lane(
+                            extraction_method=inspection_struct.get("_extraction_method", "unknown"),
+                        ),
                         "extraction_confidence": inspection_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": inspection_struct.get("_field_details"),
@@ -970,29 +987,18 @@ class LaunchExtractionPipeline:
             if inspection_context:
                 shaped_payload = _shape_inspection_payload(inspection_context, inspection_subtype=inspection_subtype, raw_text=extracted_text)
                 inspection_review = _assess_inspection_completeness(shaped_payload, inspection_subtype=inspection_subtype)
-                return {
-                    "handled": True,
-                    "context_key": "inspection_certificate",
-                    "context_payload": {**shaped_payload, "inspection_review": inspection_review},
-                    "doc_info_patch": {
-                        **base_patch,
+                return _build_support_only_result(
+                    context_key="inspection_certificate",
+                    context_payload={**shaped_payload, "inspection_review": inspection_review},
+                    base_patch=base_patch,
+                    extraction_method="regex_support",
+                    field_details=inspection_context.get("_field_details"),
+                    review_payload=inspection_review,
+                    extra_doc_info={
                         "inspection_subtype": inspection_subtype,
-                        "extracted_fields": inspection_context,
-                        "extraction_status": "success" if inspection_review.get("parse_complete") else "partial",
-                        "extraction_method": "regex_fallback",
-                        "field_details": inspection_context.get("_field_details"),
                         "inspection_family": shaped_payload.get("inspection_family"),
-                        "parse_complete": inspection_review.get("parse_complete"),
-                        "parse_completeness": inspection_review.get("required_ratio"),
-                        "missing_required_fields": inspection_review.get("missing_required_fields", []),
-                        "required_fields_found": inspection_review.get("required_found"),
-                        "required_fields_total": inspection_review.get("required_total"),
-                        "review_reasons": list(base_patch.get("review_reasons") or []) + list(inspection_review.get("review_reasons") or []),
                     },
-                    "has_structured_data": True,
-                    "validation_doc_type": "inspection",
-                    "post_validation_target": post_validation_target,
-                }
+                )
         except Exception as exc:
             logger.warning("Launch pipeline inspection regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
@@ -1010,12 +1016,30 @@ class LaunchExtractionPipeline:
                 "inspection_agency",
             ],
         )
-        extraction_status = (
-            "success"
-            if inspection_review.get("parse_complete")
-            else ("partial" if has_structured_values else "failed")
-        )
-        has_structured_data = extraction_status != "failed"
+        if has_structured_values:
+            return _build_support_only_result(
+                context_key="inspection_certificate",
+                context_payload={**shaped_payload, "inspection_review": inspection_review},
+                base_patch=base_patch,
+                extraction_method="raw_text_support",
+                field_details=_build_support_only_field_details_from_payload(
+                    shaped_payload,
+                    [
+                        "inspection_result",
+                        "quality_finding",
+                        "analysis_result",
+                        "gross_weight",
+                        "net_weight",
+                        "measurement_value",
+                        "inspection_agency",
+                    ],
+                ),
+                review_payload=inspection_review,
+                extra_doc_info={
+                    "inspection_subtype": inspection_subtype,
+                    "inspection_family": shaped_payload.get("inspection_family"),
+                },
+            )
         return {
             "handled": True,
             "context_key": "inspection_certificate",
@@ -1030,12 +1054,12 @@ class LaunchExtractionPipeline:
                 "required_fields_found": inspection_review.get("required_found"),
                 "required_fields_total": inspection_review.get("required_total"),
                 "review_reasons": list(base_patch.get("review_reasons") or []) + list(inspection_review.get("review_reasons") or []),
-                "extraction_status": extraction_status,
-                "extraction_error": None if has_structured_data else "launch_pipeline_inspection_extraction_failed",
+                "extraction_status": "failed",
+                "extraction_error": "launch_pipeline_inspection_extraction_failed",
             },
-            "has_structured_data": has_structured_data,
-            "validation_doc_type": "inspection" if has_structured_data else None,
-            "post_validation_target": post_validation_target if has_structured_data else None,
+            "has_structured_data": False,
+            "validation_doc_type": None,
+            "post_validation_target": None,
         }
 
 
@@ -1050,13 +1074,59 @@ def _set_nested_value(root: Dict[str, Any], path: tuple[str, ...], value: Any) -
     target[path[-1]] = value
 
 
+def _build_support_only_field_detail(*, value: Any, raw_text: Optional[str], confidence: Any) -> Dict[str, Any]:
+    detail: Dict[str, Any] = {
+        "value": value,
+        "verification": "support_only",
+        "source": "regex_support",
+    }
+    if confidence is not None:
+        detail["confidence"] = confidence
+    snippet = str(raw_text or value or "").strip()
+    if raw_text:
+        detail["raw_text"] = raw_text
+    if snippet:
+        detail["raw_value"] = snippet
+        detail["evidence"] = {
+            "snippet": snippet,
+            "source": "regex_support",
+        }
+    return detail
+
+
+def _build_support_only_field_details_from_payload(
+    payload: Optional[Dict[str, Any]],
+    candidate_fields: List[str],
+) -> Dict[str, Dict[str, Any]]:
+    shaped = payload or {}
+    field_details: Dict[str, Dict[str, Any]] = {}
+    for field_name in candidate_fields:
+        value = shaped.get(field_name)
+        if not _is_populated_field_value(value):
+            continue
+        field_details[field_name] = _build_support_only_field_detail(
+            value=value,
+            raw_text=None,
+            confidence=None,
+        )
+    return field_details
+
+
 def _fields_to_lc_context(fields: List[Any]) -> Dict[str, Any]:
     lc_context: Dict[str, Any] = {}
+    field_details: Dict[str, Dict[str, Any]] = {}
     for field in fields:
         value = str(getattr(field, "value", "") or "").strip()
         if not value:
             continue
         name = getattr(field, "field_name", "")
+        raw_text = getattr(field, "raw_text", None)
+        confidence = getattr(field, "confidence", None)
+        field_details[name] = _build_support_only_field_detail(
+            value=value,
+            raw_text=raw_text,
+            confidence=confidence,
+        )
         if name == "lc_number":
             lc_context["number"] = value
         elif name == "issue_date":
@@ -1082,6 +1152,8 @@ def _fields_to_lc_context(fields: List[Any]) -> Dict[str, Any]:
                 lc_context["goods_items"] = value
         else:
             lc_context[name] = value
+    if field_details:
+        lc_context["_field_details"] = field_details
     return lc_context
 
 
@@ -1094,16 +1166,101 @@ def _fields_to_flat_context(fields: List[Any]) -> Dict[str, Any]:
             context[getattr(field, "field_name", "field")] = value
         details: Dict[str, Any] = {}
         confidence = getattr(field, "confidence", None)
-        if confidence is not None:
-            details["confidence"] = confidence
         raw_text = getattr(field, "raw_text", None)
-        if raw_text:
-            details["raw_text"] = raw_text
+        if value:
+            details = _build_support_only_field_detail(
+                value=value,
+                raw_text=raw_text,
+                confidence=confidence,
+            )
         if details:
             field_details[getattr(field, "field_name", "field")] = details
     if field_details:
         context["_field_details"] = field_details
     return context
+
+
+def _build_support_only_extraction_resolution(
+    field_details: Optional[Dict[str, Dict[str, Any]]],
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(field_details, dict) or not field_details:
+        return None
+    fields = [
+        {
+            "field_name": field_name,
+            "label": str(field_name).replace("_", " ").strip().title(),
+            "verification": str((detail or {}).get("verification") or "support_only"),
+        }
+        for field_name, detail in field_details.items()
+        if str(field_name or "").strip()
+    ]
+    unresolved_count = len(fields)
+    if unresolved_count == 0:
+        return None
+    return {
+        "required": True,
+        "unresolved_count": unresolved_count,
+        "summary": (
+            f"{unresolved_count} extracted field"
+            f"{'' if unresolved_count == 1 else 's'} need confirmation before validation can be treated as final."
+        ),
+        "fields": fields,
+        "source": "regex_support",
+    }
+
+
+def _build_support_only_result(
+    *,
+    context_key: str,
+    context_payload: Dict[str, Any],
+    base_patch: Dict[str, Any],
+    extraction_method: str,
+    field_details: Optional[Dict[str, Dict[str, Any]]],
+    review_payload: Optional[Dict[str, Any]] = None,
+    extra_doc_info: Optional[Dict[str, Any]] = None,
+    lc_number: Optional[str] = None,
+) -> Dict[str, Any]:
+    review_payload = review_payload or {}
+    extra_doc_info = extra_doc_info or {}
+    extraction_resolution = _build_support_only_extraction_resolution(field_details)
+    review_reasons = list(base_patch.get("review_reasons") or []) + list(review_payload.get("review_reasons") or [])
+    doc_info_patch: Dict[str, Any] = {
+        **base_patch,
+        **extra_doc_info,
+        "field_details": field_details or {},
+        "extraction_status": "partial" if field_details else "failed",
+        "extraction_method": extraction_method,
+        "extraction_lane": _resolve_extraction_lane(
+            extraction_method=extraction_method,
+            support_only=bool(field_details),
+        ),
+        "parse_complete": review_payload.get("parse_complete"),
+        "parse_completeness": review_payload.get("required_ratio"),
+        "missing_required_fields": review_payload.get("missing_required_fields", []),
+        "required_fields_found": review_payload.get("required_found"),
+        "required_fields_total": review_payload.get("required_total"),
+        "review_reasons": review_reasons,
+        "extraction_resolution": extraction_resolution,
+        "extractionResolution": extraction_resolution,
+    }
+    if doc_info_patch["extraction_status"] == "failed":
+        doc_info_patch["extraction_error"] = f"launch_pipeline_{context_key}_fallback_support_only"
+    return {
+        "handled": True,
+        "context_key": context_key,
+        "context_payload": {
+            **context_payload,
+            "_field_details": field_details or {},
+            "extraction_resolution": extraction_resolution,
+            "extractionResolution": extraction_resolution,
+        },
+        "doc_info_patch": doc_info_patch,
+        "has_structured_data": False,
+        "support_only": bool(field_details),
+        "lc_number": lc_number,
+        "validation_doc_type": None,
+        "post_validation_target": None,
+    }
 
 
 def _is_populated_field_value(value: Any) -> bool:
@@ -1370,7 +1527,13 @@ def _detect_invoice_financial_subtype(*, filename: str, extracted_text: str) -> 
     return "commercial_invoice"
 
 
-def _shape_invoice_financial_payload(payload: Dict[str, Any], *, invoice_subtype: str, raw_text: str) -> Dict[str, Any]:
+def _shape_invoice_financial_payload(
+    payload: Dict[str, Any],
+    *,
+    invoice_subtype: str,
+    raw_text: str,
+    allow_text_backfill: bool = True,
+) -> Dict[str, Any]:
     shaped = dict(payload or {})
     shaped["raw_text"] = raw_text
     shaped["invoice_subtype"] = invoice_subtype
@@ -1387,12 +1550,12 @@ def _shape_invoice_financial_payload(payload: Dict[str, Any], *, invoice_subtype
 
     shaped["invoice_number"] = _first(
         shaped.get("invoice_number"),
-        _extract_label_value(raw_text, ["invoice no", "invoice number"]),
+        _extract_label_value(raw_text, ["invoice no", "invoice number"]) if allow_text_backfill else None,
     )
     shaped["instrument_number"] = _first(
         shaped.get("instrument_number"),
         shaped.get("invoice_number"),
-        _extract_label_value(raw_text, ["bill no", "draft no", "note no", "reference no", "debit note no", "credit note no"]),
+        _extract_label_value(raw_text, ["bill no", "draft no", "note no", "reference no", "debit note no", "credit note no"]) if allow_text_backfill else None,
     )
     shaped["lc_reference"] = _first(
         shaped.get("lc_reference"),
@@ -1408,21 +1571,21 @@ def _shape_invoice_financial_payload(payload: Dict[str, Any], *, invoice_subtype
                 "letter of credit number",
                 "credit number",
             ],
-        ),
+        ) if allow_text_backfill else None,
     )
     shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("lc_reference"))
     if invoice_subtype == "payment_receipt":
         shaped["receipt_number"] = _first(
             shaped.get("receipt_number"),
-            _extract_label_value(raw_text, ["receipt no", "receipt number"]),
+            _extract_label_value(raw_text, ["receipt no", "receipt number"]) if allow_text_backfill else None,
         )
     else:
         shaped["receipt_number"] = shaped.get("receipt_number")
     shaped["amount"] = _first(
         shaped.get("amount"),
-        _extract_amount_value(raw_text, ["amount", "total amount", "receipt amount", "note amount"]),
+        _extract_amount_value(raw_text, ["amount", "total amount", "receipt amount", "note amount"]) if allow_text_backfill else None,
     )
-    shaped["currency"] = _first(shaped.get("currency"), _extract_label_value(raw_text, ["currency"]))
+    shaped["currency"] = _first(shaped.get("currency"), _extract_label_value(raw_text, ["currency"]) if allow_text_backfill else None)
     return _apply_canonical_normalization(shaped)
 
 
@@ -1520,7 +1683,15 @@ def _extract_mt700_timeline_fields(raw_text: str) -> Dict[str, Any]:
     return timeline
 
 
-def _shape_lc_financial_payload(payload: Dict[str, Any], *, lc_subtype: str, raw_text: str, source_type: str, lc_format: str) -> Dict[str, Any]:
+def _shape_lc_financial_payload(
+    payload: Dict[str, Any],
+    *,
+    lc_subtype: str,
+    raw_text: str,
+    source_type: str,
+    lc_format: str,
+    allow_text_backfill: bool = True,
+) -> Dict[str, Any]:
     shaped = dict(payload or {})
     shaped["raw_text"] = raw_text
     shaped["source_type"] = source_type
@@ -1596,12 +1767,20 @@ def _shape_lc_financial_payload(payload: Dict[str, Any], *, lc_subtype: str, raw
             ports.get("port_of_discharge"),
         )
 
-    shaped["applicant"] = _first(shaped.get("applicant"), _extract_label_value(raw_text, ["applicant", "buyer", "importer"]))
-    shaped["beneficiary"] = _first(shaped.get("beneficiary"), _extract_label_value(raw_text, ["beneficiary", "seller", "exporter"]))
-    shaped["amount"] = _first(shaped.get("amount"), _extract_amount_value(raw_text, ["amount", "guarantee amount", "credit amount"]))
-    shaped["currency"] = _first(shaped.get("currency"), _extract_label_value(raw_text, ["currency"]))
-    shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("number"), shaped.get("reference"), _extract_label_value(raw_text, ["lc number", "credit number", "reference number"]))
-    shaped["guarantee_reference"] = _first(shaped.get("guarantee_reference"), _extract_label_value(raw_text, ["guarantee no", "guarantee number", "reference number"]))
+    shaped["applicant"] = _first(shaped.get("applicant"), _extract_label_value(raw_text, ["applicant", "buyer", "importer"]) if allow_text_backfill else None)
+    shaped["beneficiary"] = _first(shaped.get("beneficiary"), _extract_label_value(raw_text, ["beneficiary", "seller", "exporter"]) if allow_text_backfill else None)
+    shaped["amount"] = _first(shaped.get("amount"), _extract_amount_value(raw_text, ["amount", "guarantee amount", "credit amount"]) if allow_text_backfill else None)
+    shaped["currency"] = _first(shaped.get("currency"), _extract_label_value(raw_text, ["currency"]) if allow_text_backfill else None)
+    shaped["lc_number"] = _first(
+        shaped.get("lc_number"),
+        shaped.get("number"),
+        shaped.get("reference"),
+        _extract_label_value(raw_text, ["lc number", "credit number", "reference number"]) if allow_text_backfill else None,
+    )
+    shaped["guarantee_reference"] = _first(
+        shaped.get("guarantee_reference"),
+        _extract_label_value(raw_text, ["guarantee no", "guarantee number", "reference number"]) if allow_text_backfill else None,
+    )
 
     if lc_format == "mt700":
         mt700_timeline = _extract_mt700_timeline_fields(raw_text)
@@ -1839,7 +2018,13 @@ def _detect_insurance_subtype(*, filename: str, extracted_text: str) -> str:
     return "insurance_certificate"
 
 
-def _shape_insurance_payload(payload: Dict[str, Any], *, insurance_subtype: str, raw_text: str) -> Dict[str, Any]:
+def _shape_insurance_payload(
+    payload: Dict[str, Any],
+    *,
+    insurance_subtype: str,
+    raw_text: str,
+    allow_text_backfill: bool = True,
+) -> Dict[str, Any]:
     shaped = dict(payload or {})
     shaped["raw_text"] = raw_text
     shaped["insurance_subtype"] = insurance_subtype
@@ -1868,7 +2053,7 @@ def _shape_insurance_payload(payload: Dict[str, Any], *, insurance_subtype: str,
                 "cert ref",
                 "beneficiary cert ref",
             ],
-        ),
+        ) if allow_text_backfill else None,
     )
     shaped["certificate_number"] = _first(shaped.get("certificate_number"), shaped.get("policy_number"))
     shaped["lc_reference"] = _first(
@@ -1885,18 +2070,18 @@ def _shape_insurance_payload(payload: Dict[str, Any], *, insurance_subtype: str,
                 "letter of credit number",
                 "credit number",
             ],
-        ),
+        ) if allow_text_backfill else None,
     )
     shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("lc_reference"))
     shaped["insured_amount"] = _first(
         shaped.get("insured_amount"),
-        _extract_amount_value(raw_text, ["insured amount", "sum insured", "coverage amount"]),
+        _extract_amount_value(raw_text, ["insured amount", "sum insured", "coverage amount"]) if allow_text_backfill else None,
     )
     shaped["issuer_name"] = _first(
         shaped.get("issuer_name"),
         shaped.get("insurer"),
         shaped.get("issuing_authority"),
-        _extract_label_value(raw_text, ["insurer", "insurance company", "underwriter", "issued by", "issuer"]),
+        _extract_label_value(raw_text, ["insurer", "insurance company", "underwriter", "issued by", "issuer"]) if allow_text_backfill else None,
     )
     return _apply_canonical_normalization(shaped)
 
@@ -1969,7 +2154,13 @@ def _detect_regulatory_subtype(*, filename: str, extracted_text: str) -> str:
     return "certificate_of_origin"
 
 
-def _shape_regulatory_payload(payload: Dict[str, Any], *, regulatory_subtype: str, raw_text: str) -> Dict[str, Any]:
+def _shape_regulatory_payload(
+    payload: Dict[str, Any],
+    *,
+    regulatory_subtype: str,
+    raw_text: str,
+    allow_text_backfill: bool = True,
+) -> Dict[str, Any]:
     shaped = dict(payload or {})
     shaped["raw_text"] = raw_text
     shaped["regulatory_subtype"] = regulatory_subtype
@@ -1986,44 +2177,44 @@ def _shape_regulatory_payload(payload: Dict[str, Any], *, regulatory_subtype: st
 
     shaped["certificate_number"] = _first(
         shaped.get("certificate_number"),
-        _extract_label_value(raw_text, ["certificate no", "certificate number"]),
+        _extract_label_value(raw_text, ["certificate no", "certificate number"]) if allow_text_backfill else None,
     )
     shaped["exporter_name"] = _first(
         shaped.get("exporter_name"),
         shaped.get("exporter"),
-        _extract_label_value(raw_text, ["exporter", "seller", "consignor"]),
+        _extract_label_value(raw_text, ["exporter", "seller", "consignor"]) if allow_text_backfill else None,
     )
     shaped["importer_name"] = _first(
         shaped.get("importer_name"),
         shaped.get("importer"),
-        _extract_label_value(raw_text, ["importer", "buyer", "consignee"]),
+        _extract_label_value(raw_text, ["importer", "buyer", "consignee"]) if allow_text_backfill else None,
     )
     shaped["goods_description"] = _first(
         shaped.get("goods_description"),
         shaped.get("goods"),
-        _extract_label_value(raw_text, ["goods description", "description of goods", "goods", "commodity"]),
+        _extract_label_value(raw_text, ["goods description", "description of goods", "goods", "commodity"]) if allow_text_backfill else None,
     )
     shaped["country_of_origin"] = _first(
         shaped.get("country_of_origin"),
         shaped.get("origin_country"),
-        _extract_label_value(raw_text, ["country of origin", "origin"]),
+        _extract_label_value(raw_text, ["country of origin", "origin"]) if allow_text_backfill else None,
     )
     shaped["issuing_authority"] = _first(
         shaped.get("issuing_authority"),
         shaped.get("certifying_authority"),
-        _extract_label_value(raw_text, ["issued by", "issuing authority", "chamber of commerce", "authority"]),
+        _extract_label_value(raw_text, ["issued by", "issuing authority", "chamber of commerce", "authority"]) if allow_text_backfill else None,
     )
     shaped["license_number"] = _first(
         shaped.get("license_number"),
-        _extract_label_value(raw_text, ["license no", "license number"]),
+        _extract_label_value(raw_text, ["license no", "license number"]) if allow_text_backfill else None,
     )
     shaped["declaration_reference"] = _first(
         shaped.get("declaration_reference"),
-        _extract_label_value(raw_text, ["declaration no", "declaration number", "customs declaration no"]),
+        _extract_label_value(raw_text, ["declaration no", "declaration number", "customs declaration no"]) if allow_text_backfill else None,
     )
     shaped["permit_number"] = _first(
         shaped.get("permit_number"),
-        _extract_label_value(raw_text, ["permit no", "permit number"]),
+        _extract_label_value(raw_text, ["permit no", "permit number"]) if allow_text_backfill else None,
     )
     shaped["lc_reference"] = _first(
         shaped.get("lc_reference"),
@@ -2038,7 +2229,7 @@ def _shape_regulatory_payload(payload: Dict[str, Any], *, regulatory_subtype: st
                 "letter of credit no",
                 "letter of credit number",
             ],
-        ),
+        ) if allow_text_backfill else None,
     )
     shaped["lc_number"] = _first(shaped.get("lc_number"), shaped.get("lc_reference"))
     return _apply_canonical_normalization(shaped)
@@ -2092,7 +2283,13 @@ def _detect_inspection_subtype(*, filename: str, extracted_text: str) -> str:
     return "inspection_certificate"
 
 
-def _shape_inspection_payload(payload: Dict[str, Any], *, inspection_subtype: str, raw_text: str) -> Dict[str, Any]:
+def _shape_inspection_payload(
+    payload: Dict[str, Any],
+    *,
+    inspection_subtype: str,
+    raw_text: str,
+    allow_text_backfill: bool = True,
+) -> Dict[str, Any]:
     shaped = dict(payload or {})
     shaped["raw_text"] = raw_text
     shaped["inspection_subtype"] = inspection_subtype
@@ -2110,37 +2307,37 @@ def _shape_inspection_payload(payload: Dict[str, Any], *, inspection_subtype: st
     shaped["inspection_agency"] = _first(
         shaped.get("inspection_agency"),
         shaped.get("inspection_company"),
-        _extract_label_value(raw_text, ["inspection company", "inspection agency", "inspector", "surveyed by", "inspection by"]),
+        _extract_label_value(raw_text, ["inspection company", "inspection agency", "inspector", "surveyed by", "inspection by"]) if allow_text_backfill else None,
     )
     shaped["inspection_result"] = _first(
         shaped.get("inspection_result"),
         shaped.get("inspection_results"),
-        _extract_label_value(raw_text, ["inspection result", "findings", "observations", "results", "result"]),
+        _extract_label_value(raw_text, ["inspection result", "findings", "observations", "results", "result"]) if allow_text_backfill else None,
     )
     shaped["quality_finding"] = _first(
         shaped.get("quality_finding"),
         shaped.get("inspection_result"),
         shaped.get("inspection_results"),
-        _extract_label_value(raw_text, ["quality finding", "quality result"]),
+        _extract_label_value(raw_text, ["quality finding", "quality result"]) if allow_text_backfill else None,
     )
     shaped["analysis_result"] = _first(
         shaped.get("analysis_result"),
         shaped.get("inspection_result"),
         shaped.get("inspection_results"),
-        _extract_label_value(raw_text, ["analysis result", "test result", "lab result"]),
+        _extract_label_value(raw_text, ["analysis result", "test result", "lab result"]) if allow_text_backfill else None,
     )
     shaped["gross_weight"] = _first(
         shaped.get("gross_weight"),
-        _extract_label_value(raw_text, ["gross weight", "gross wt", "gross", "g/w", "g w"]),
+        _extract_label_value(raw_text, ["gross weight", "gross wt", "gross", "g/w", "g w"]) if allow_text_backfill else None,
     )
     shaped["net_weight"] = _first(
         shaped.get("net_weight"),
-        _extract_label_value(raw_text, ["net weight", "net wt", "net", "n/w", "n w"]),
+        _extract_label_value(raw_text, ["net weight", "net wt", "net", "n/w", "n w"]) if allow_text_backfill else None,
     )
     measurement_candidate = _first(
         shaped.get("measurement_value"),
         shaped.get("dimensions"),
-        _extract_label_value(raw_text, ["measurements", "dimensions", "dimension", "size"]),
+        _extract_label_value(raw_text, ["measurements", "dimensions", "dimension", "size"]) if allow_text_backfill else None,
     )
     if isinstance(measurement_candidate, str):
         normalized_candidate = measurement_candidate.strip()
@@ -2183,7 +2380,13 @@ def _assess_transport_completeness(payload: Optional[Dict[str, Any]], *, transpo
     return metrics
 
 
-def _shape_transport_payload(payload: Dict[str, Any], *, transport_subtype: str, raw_text: str) -> Dict[str, Any]:
+def _shape_transport_payload(
+    payload: Dict[str, Any],
+    *,
+    transport_subtype: str,
+    raw_text: str,
+    allow_text_backfill: bool = True,
+) -> Dict[str, Any]:
     shaped = dict(payload or {})
     shaped["raw_text"] = raw_text
     shaped["transport_subtype"] = transport_subtype
@@ -2220,18 +2423,18 @@ def _shape_transport_payload(payload: Dict[str, Any], *, transport_subtype: str,
         shaped["airport_of_departure"] = _first(
             shaped.get("airport_of_departure"),
             shaped.get("port_of_loading"),
-            _extract_label_value(raw_text, ["airport of departure", "departure airport"]),
+            _extract_label_value(raw_text, ["airport of departure", "departure airport"]) if allow_text_backfill else None,
         )
         shaped["airport_of_destination"] = _first(
             shaped.get("airport_of_destination"),
             shaped.get("port_of_discharge"),
-            _extract_label_value(raw_text, ["airport of destination", "destination airport"]),
+            _extract_label_value(raw_text, ["airport of destination", "destination airport"]) if allow_text_backfill else None,
         )
         shaped["airway_bill_number"] = _first(
             shaped.get("airway_bill_number"),
             shaped.get("awb_number"),
             shaped.get("bl_number"),
-            _extract_label_value(raw_text, ["awb no", "awb number", "air waybill no", "air waybill number"]),
+            _extract_label_value(raw_text, ["awb no", "awb number", "air waybill no", "air waybill number"]) if allow_text_backfill else None,
         )
     elif transport_subtype in {"sea_waybill", "ocean_bill_of_lading", "house_bill_of_lading", "master_bill_of_lading", "mates_receipt", "shipping_company_certificate"}:
         shaped["transport_reference_number"] = _first(
@@ -2244,14 +2447,14 @@ def _shape_transport_payload(payload: Dict[str, Any], *, transport_subtype: str,
     elif transport_subtype == "multimodal_transport_document":
         shaped["transport_mode_chain"] = _first(
             shaped.get("transport_mode_chain"),
-            _extract_label_value(raw_text, ["mode chain", "modes of transport", "transport modes"]),
+            _extract_label_value(raw_text, ["mode chain", "modes of transport", "transport modes"]) if allow_text_backfill else None,
             "multimodal",
         )
     elif transport_subtype in {"railway_consignment_note", "road_transport_document", "forwarders_certificate_of_receipt", "delivery_order"}:
         shaped["consignment_reference"] = _first(
             shaped.get("consignment_reference"),
             shaped.get("bl_number"),
-            _extract_label_value(raw_text, ["consignment note", "consignment no", "document no", "fcr no", "delivery order no"]),
+            _extract_label_value(raw_text, ["consignment note", "consignment no", "document no", "fcr no", "delivery order no"]) if allow_text_backfill else None,
         )
 
     return _apply_canonical_normalization(shaped)

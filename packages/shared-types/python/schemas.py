@@ -294,6 +294,16 @@ class ExtractionResolution(BaseModel):
     source: Optional[str] = None
 
 
+class WorkflowStageInfo(BaseModel):
+    stage: str
+    provisional_validation: bool
+    ready_for_final_validation: bool
+    unresolved_documents: int = Field(ge=0)
+    unresolved_fields: int = Field(ge=0)
+    document_lane_counts: Dict[str, int] = Field(default_factory=dict)
+    summary: str
+
+
 class FieldOverrideRequest(BaseModel):
     document_id: str
     field_name: str
@@ -307,6 +317,7 @@ class DocumentExtractionDocument(BaseModel):
     filename: Optional[str] = None
     status: Optional[str] = None
     extraction_status: Optional[str] = None
+    extraction_lane: Optional[str] = None
     extracted_fields: Optional[Dict[str, Any]] = None
     field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
     extraction_resolution: Optional[ExtractionResolution] = None
@@ -350,6 +361,7 @@ class StructuredResultDocument(BaseModel):
     document_type: str
     filename: str
     extraction_status: str
+    extraction_lane: Optional[str] = None
     extracted_fields: Dict[str, Any]
     field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
     extraction_resolution: Optional[ExtractionResolution] = None
@@ -588,6 +600,7 @@ class StructuredResultPayload(BaseModel):
     submission_eligibility: Optional[SubmissionEligibility] = None
     raw_submission_eligibility: Optional[SubmissionEligibility] = None
     effective_submission_eligibility: Optional[SubmissionEligibility] = None
+    workflow_stage: Optional[WorkflowStageInfo] = None
     bank_verdict: Optional[BankVerdict] = None
     bank_profile: Optional[BankProfile] = None
     amendments_available: Optional[AmendmentsAvailable] = None
@@ -819,6 +832,7 @@ class ValidationDocument(BaseModel):
     type: str
     typeKey: Optional[str] = None
     extractionStatus: str
+    extractionLane: Optional[str] = None
     status: ValidationDocumentStatus
     issuesCount: int
     extractedFields: Dict[str, Any]

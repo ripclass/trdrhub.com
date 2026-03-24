@@ -58,6 +58,8 @@ def _load_review_metadata_symbols() -> Dict[str, Any]:
         "Sequence": Sequence,
         "dataclass": dataclass,
         "field": field,
+        "_top3_field_boost_v1_enabled": lambda: False,
+        "_TOP3_FIELD_NAMES": set(),
     }
     _load_symbols(
         CONTRACT_PATH,
@@ -72,9 +74,11 @@ def _load_review_metadata_symbols() -> Dict[str, Any]:
         REVIEW_METADATA_PATH,
         {
             "_EXTRACTION_RESOLUTION_REASON_CODES",
+            "_ParsedFieldCandidate",
             "_humanize_field_label",
             "_is_extraction_resolution_reason",
             "_build_extraction_resolution_from_fields",
+            "_merge_field_candidates",
         },
         namespace,
     )
@@ -90,6 +94,7 @@ def _load_response_shaping_symbols() -> Dict[str, Any]:
     return _load_symbols(
         RESPONSE_SHAPING_PATH,
         {
+            "build_workflow_stage",
             "_normalize_doc_status",
             "build_document_extraction_v1",
             "summarize_document_statuses",
@@ -176,3 +181,98 @@ def test_document_extraction_contract_preserves_extraction_resolution() -> None:
     document = payload["documents"][0]
     assert document["extraction_resolution"]["required"] is True
     assert document["extraction_resolution"]["unresolved_count"] == 1
+
+
+def test_workflow_stage_marks_extraction_resolution_until_unresolved_fields_clear() -> None:
+    symbols = _load_response_shaping_symbols()
+    build_workflow_stage = symbols["build_workflow_stage"]
+
+    stage = build_workflow_stage(
+        [
+            {
+                "document_id": "doc-1",
+                "extraction_lane": "document_ai",
+                "extraction_resolution": {
+                    "required": True,
+                    "unresolved_count": 2,
+                    "summary": "2 fields need confirmation.",
+                    "fields": [
+                        {"field_name": "invoice_date", "label": "Invoice Date"},
+                        {"field_name": "currency", "label": "Currency"},
+                    ],
+                },
+            },
+            {
+                "document_id": "doc-2",
+                "extraction_lane": "structured_iso",
+            },
+        ],
+        validation_status="review",
+    )
+
+    assert stage["stage"] == "extraction_resolution"
+    assert stage["provisional_validation"] is True
+    assert stage["ready_for_final_validation"] is False
+    assert stage["unresolved_documents"] == 1
+    assert stage["unresolved_fields"] == 2
+    assert stage["document_lane_counts"]["document_ai"] == 1
+    assert stage["document_lane_counts"]["structured_iso"] == 1
+
+
+def test_workflow_stage_moves_to_validation_results_when_extraction_is_resolved() -> None:
+    symbols = _load_response_shaping_symbols()
+    build_workflow_stage = symbols["build_workflow_stage"]
+
+    stage = build_workflow_stage(
+        [
+            {
+                "document_id": "doc-1",
+                "extraction_lane": "document_ai",
+                "extraction_resolution": {
+                    "required": False,
+                    "unresolved_count": 0,
+                    "summary": "",
+                    "fields": [],
+                },
+            }
+        ],
+        validation_status="review",
+    )
+
+    assert stage["stage"] == "validation_results"
+    assert stage["provisional_validation"] is False
+    assert stage["ready_for_final_validation"] is True
+    assert stage["unresolved_documents"] == 0
+    assert stage["unresolved_fields"] == 0
+
+
+def test_review_metadata_does_not_promote_preparser_guess_over_existing_extraction_state() -> None:
+    symbols = _load_review_metadata_symbols()
+    ParsedFieldCandidate = symbols["_ParsedFieldCandidate"]
+    merge_candidates = symbols["_merge_field_candidates"]
+
+    existing = ParsedFieldCandidate(
+        name="issue_date",
+        value_raw=None,
+        value_normalized=None,
+        state="missing",
+        confidence=0.0,
+        evidence_snippet=None,
+        reason_codes=["FIELD_NOT_FOUND"],
+        source="existing",
+    )
+    preparser = ParsedFieldCandidate(
+        name="issue_date",
+        value_raw="2026-03-08",
+        value_normalized="2026-03-08",
+        state="found",
+        confidence=0.88,
+        evidence_snippet="Invoice Date: 2026-03-08",
+        reason_codes=[],
+        source="preparser",
+    )
+
+    merged = merge_candidates(existing, preparser)
+
+    assert merged.source == "existing"
+    assert merged.state == "missing"

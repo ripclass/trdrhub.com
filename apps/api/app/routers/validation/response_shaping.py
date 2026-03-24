@@ -215,6 +215,88 @@ def build_extraction_diagnostics(
     }
 
 
+def build_workflow_stage(
+    documents: List[Dict[str, Any]],
+    *,
+    validation_status: Optional[str] = None,
+) -> Dict[str, Any]:
+    normalized_documents = [doc for doc in (documents or []) if isinstance(doc, dict)]
+    if not normalized_documents:
+        return {
+            "stage": "upload",
+            "provisional_validation": True,
+            "ready_for_final_validation": False,
+            "unresolved_documents": 0,
+            "unresolved_fields": 0,
+            "summary": "Upload the LC and supporting documents to begin extraction and validation.",
+        }
+
+    unresolved_documents = 0
+    unresolved_fields = 0
+    lane_counts: Dict[str, int] = {}
+    for document in normalized_documents:
+        extraction_lane = str(
+            document.get("extraction_lane")
+            or document.get("extractionLane")
+            or "unknown"
+        ).strip() or "unknown"
+        lane_counts[extraction_lane] = lane_counts.get(extraction_lane, 0) + 1
+
+        extraction_resolution = (
+            document.get("extraction_resolution")
+            if isinstance(document.get("extraction_resolution"), dict)
+            else document.get("extractionResolution")
+            if isinstance(document.get("extractionResolution"), dict)
+            else {}
+        )
+        if not extraction_resolution:
+            continue
+
+        required = bool(extraction_resolution.get("required"))
+        unresolved_count = extraction_resolution.get("unresolved_count")
+        if not isinstance(unresolved_count, int):
+            unresolved_count = extraction_resolution.get("unresolvedCount")
+        if not isinstance(unresolved_count, int):
+            fields = extraction_resolution.get("fields")
+            unresolved_count = len(fields) if isinstance(fields, list) else 0
+
+        if required or unresolved_count > 0:
+            unresolved_documents += 1
+            unresolved_fields += max(0, unresolved_count)
+
+    if unresolved_documents > 0 or unresolved_fields > 0:
+        summary = (
+            f"{unresolved_documents} document{'s' if unresolved_documents != 1 else ''} "
+            f"still need{'' if unresolved_documents != 1 else 's'} "
+            f"{unresolved_fields} field{'s' if unresolved_fields != 1 else ''} confirmed "
+            "before validation should be treated as final."
+        )
+        stage = "extraction_resolution"
+    else:
+        status_text = str(validation_status or "").strip().lower()
+        if status_text in {"blocked", "review", "partial"}:
+            summary = (
+                "Extraction is sufficiently resolved. Remaining items belong to documentary "
+                "validation or policy review, not parser uncertainty."
+            )
+        else:
+            summary = (
+                "Extraction is sufficiently resolved. Validation findings reflect the current "
+                "confirmed document set."
+            )
+        stage = "validation_results"
+
+    return {
+        "stage": stage,
+        "provisional_validation": stage != "validation_results",
+        "ready_for_final_validation": stage == "validation_results",
+        "unresolved_documents": unresolved_documents,
+        "unresolved_fields": unresolved_fields,
+        "document_lane_counts": lane_counts,
+        "summary": summary,
+    }
+
+
 def summarize_document_statuses(documents: List[Dict[str, Any]]) -> Dict[str, int]:
     counts = {"success": 0, "warning": 0, "error": 0}
     for doc in documents:
@@ -480,6 +562,8 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 "extraction_status": extraction_status,
                 "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
                 "field_details": doc.get("field_details") or doc.get("fieldDetails") or doc.get("_field_details") or {},
+                "extraction_lane": doc.get("extraction_lane") or doc.get("extractionLane"),
+                "extractionLane": doc.get("extractionLane") or doc.get("extraction_lane"),
                 "extraction_resolution": doc.get("extraction_resolution") or doc.get("extractionResolution"),
                 "extractionResolution": doc.get("extractionResolution") or doc.get("extraction_resolution"),
                 "issues_count": doc.get("discrepancyCount")
