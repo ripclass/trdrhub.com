@@ -2224,10 +2224,14 @@ def _build_blocked_structured_result(
     }
 
     _response_shaping.attach_extraction_observability(docs_structured)
+    _response_shaping.materialize_document_fact_graphs_v1(docs_structured)
     document_extraction = _build_document_extraction_v1(docs_structured)
     workflow_stage = _response_shaping.build_workflow_stage(
         document_extraction.get("documents", []),
         validation_status="blocked",
+    )
+    resolution_queue_v1 = _response_shaping.build_resolution_queue_v1(
+        document_extraction.get("documents", [])
     )
     processing_summary_v2 = _build_processing_summary_v2(
         processing_summary,
@@ -2310,6 +2314,7 @@ def _build_blocked_structured_result(
         "processing_summary": processing_summary,
         "processing_summary_v2": processing_summary_v2,
         "document_extraction_v1": document_extraction,
+        "resolution_queue_v1": resolution_queue_v1,
         "workflow_stage": workflow_stage,
         "workflowStage": workflow_stage,
         "issue_provenance_v1": _build_issue_provenance_v1(blocking_issues),

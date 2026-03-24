@@ -84,6 +84,8 @@ def _first_value(
             continue
         if _is_populated(detail.get("value")):
             return detail.get("value"), alias, detail
+        if _is_populated(detail.get("rejected_value")):
+            return detail.get("rejected_value"), alias, detail
         if _is_populated(detail.get("raw_value")):
             return detail.get("raw_value"), alias, detail
 

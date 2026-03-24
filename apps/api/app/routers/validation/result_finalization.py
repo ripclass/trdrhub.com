@@ -644,6 +644,7 @@ async def finalize_validation_result(
         )
         structured_result["processing_summary_v2"] = processing_summary_v2
 
+        _response_shaping.materialize_document_fact_graphs_v1(document_summaries)
         structured_result["document_extraction_v1"] = _build_document_extraction_v1(
             document_summaries
         )
@@ -653,6 +654,9 @@ async def finalize_validation_result(
         )
         structured_result["workflow_stage"] = workflow_stage
         structured_result["workflowStage"] = workflow_stage
+        structured_result["resolution_queue_v1"] = _response_shaping.build_resolution_queue_v1(
+            structured_result["document_extraction_v1"].get("documents", [])
+        )
         issue_partition = _partition_workflow_stage_issues(
             structured_result.get("issues") or [],
             structured_result["document_extraction_v1"].get("documents", []),

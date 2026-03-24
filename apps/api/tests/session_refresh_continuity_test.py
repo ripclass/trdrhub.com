@@ -107,6 +107,70 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             "discrepancies": len(issues or []),
         }
 
+    def _fake_materialize_document_fact_graphs_v1(documents):
+        for document in documents or []:
+            if not isinstance(document, dict):
+                continue
+            field_details = document.get("field_details") or {}
+            invoice_date_detail = field_details.get("invoice_date") if isinstance(field_details, dict) else {}
+            verification = str((invoice_date_detail or {}).get("verification") or "").lower()
+            candidate_value = (
+                (invoice_date_detail or {}).get("value")
+                or (invoice_date_detail or {}).get("rejected_value")
+                or (document.get("extracted_fields") or {}).get("invoice_date")
+            )
+            if verification in {"operator_confirmed", "confirmed"}:
+                state = "confirmed"
+            elif verification == "operator_rejected":
+                state = "operator_rejected"
+            else:
+                state = "unconfirmed"
+            document["fact_graph_v1"] = {
+                "version": "fact_graph_v1",
+                "document_type": document.get("document_type") or "commercial_invoice",
+                "document_subtype": "commercial_invoice",
+                "facts": [
+                    {
+                        "field_name": "invoice_date",
+                        "value": candidate_value,
+                        "normalized_value": candidate_value,
+                        "verification_state": state,
+                        "origin": (invoice_date_detail or {}).get("source"),
+                    }
+                ],
+            }
+        return documents
+
+    def _fake_build_resolution_queue_v1(documents):
+        items = []
+        unresolved_documents = 0
+        for document in documents or []:
+            fact_graph = document.get("fact_graph_v1") or {}
+            doc_items = []
+            for fact in fact_graph.get("facts") or []:
+                if str(fact.get("verification_state") or "").lower() not in {"candidate", "unconfirmed", "operator_rejected"}:
+                    continue
+                doc_items.append(
+                    {
+                        "document_id": document.get("document_id") or document.get("id"),
+                        "field_name": fact.get("field_name"),
+                        "candidate_value": fact.get("value"),
+                    }
+                )
+            if doc_items:
+                unresolved_documents += 1
+                items.extend(doc_items)
+        return {
+            "version": "resolution_queue_v1",
+            "items": items,
+            "summary": {
+                "total_items": len(items),
+                "user_resolvable_items": len(items),
+                "unresolved_documents": unresolved_documents,
+                "document_counts": {"commercial_invoice": len(items)} if items else {},
+            },
+        }
+
     def _fake_count_issue_severity(issues):
         return {
             "critical": sum(1 for issue in issues if str(issue.get("severity") or "").lower() == "critical"),
@@ -194,6 +258,8 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "_run_validation_arbitration_escalation": _fake_run_validation_arbitration_escalation,
         "_apply_workflow_stage_contract_overrides": _fake_apply_workflow_stage_contract_overrides,
         "_partition_workflow_stage_issues": _fake_partition_workflow_stage_issues,
+        "materialize_document_fact_graphs_v1": _fake_materialize_document_fact_graphs_v1,
+        "build_resolution_queue_v1": _fake_build_resolution_queue_v1,
         "build_processing_summary_v2": _fake_build_processing_summary_v2,
         "count_issue_severity": _fake_count_issue_severity,
         "build_workflow_stage": _fake_build_workflow_stage,
@@ -285,6 +351,7 @@ def test_refresh_structured_result_after_field_override_recomputes_same_session_
     assert refreshed["processing_summary_v2"]["total_issues"] == 0
     assert refreshed["document_extraction_v1"]["documents"][0]["field_details"]["invoice_date"]["verification"] == "operator_confirmed"
     assert refreshed["workflow_stage"]["stage"] == "validation_results"
+    assert refreshed["resolution_queue_v1"]["summary"]["total_items"] == 0
     assert refreshed["_operator_field_refresh"]["field_name"] == "invoice_date"
     assert refreshed["_operator_field_refresh"]["verification"] == "operator_confirmed"
 
@@ -382,6 +449,7 @@ def test_refresh_structured_result_keeps_submission_provisional_while_extraction
     assert refreshed["bank_verdict"]["verdict"] == "CAUTION"
     assert refreshed["validation_contract_v1"]["final_verdict"] == "review"
     assert len(refreshed["issues"]) == 1
+    assert refreshed["resolution_queue_v1"]["summary"]["total_items"] == 1
     assert refreshed["issues"][0]["reason_code"] == "crossdoc_mismatch"
     assert len(refreshed["_provisional_issues"]) == 1
     assert refreshed["_provisional_issues"][0]["reason_code"] == "FIELD_NOT_FOUND"
@@ -465,6 +533,7 @@ def test_refresh_structured_result_after_rejection_keeps_extraction_issue_open()
     assert refreshed["workflow_stage"]["stage"] == "extraction_resolution"
     assert refreshed["submission_eligibility"]["can_submit"] is False
     assert len(refreshed["issues"]) == 0
+    assert refreshed["resolution_queue_v1"]["summary"]["total_items"] == 1
     assert len(refreshed["_provisional_issues"]) == 1
     assert refreshed["_provisional_issues"][0]["reason_code"] == "FIELD_NOT_FOUND"
     assert refreshed["_operator_field_refresh"]["verification"] == "operator_rejected"

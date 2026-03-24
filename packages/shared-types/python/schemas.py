@@ -332,6 +332,37 @@ class DocumentFactSet(BaseModel):
     facts: List[DocumentFact] = Field(default_factory=list)
 
 
+class ResolutionQueueItem(BaseModel):
+    document_id: str
+    document_type: str
+    filename: Optional[str] = None
+    field_name: str
+    label: str
+    priority: str
+    candidate_value: Optional[Any] = None
+    normalized_value: Optional[Any] = None
+    evidence_snippet: Optional[str] = None
+    evidence_source: Optional[str] = None
+    page: Optional[int] = Field(default=None, ge=1)
+    reason: str
+    verification_state: str
+    resolvable_by_user: bool
+    origin: Optional[str] = None
+
+
+class ResolutionQueueSummary(BaseModel):
+    total_items: int = Field(ge=0)
+    user_resolvable_items: int = Field(ge=0)
+    unresolved_documents: int = Field(ge=0)
+    document_counts: Dict[str, int] = Field(default_factory=dict)
+
+
+class ResolutionQueueV1(BaseModel):
+    version: str = Field(default="resolution_queue_v1")
+    items: List[ResolutionQueueItem] = Field(default_factory=list)
+    summary: ResolutionQueueSummary
+
+
 class DocumentExtractionDocument(BaseModel):
     document_id: Optional[str] = None
     document_type: Optional[str] = None
@@ -611,6 +642,7 @@ class StructuredResultPayload(BaseModel):
     processing_summary: StructuredProcessingSummary
     processing_summary_v2: Optional[ProcessingSummaryV2] = None
     document_extraction_v1: Optional[DocumentExtractionV1] = None
+    resolution_queue_v1: Optional[ResolutionQueueV1] = None
     issue_provenance_v1: Optional[IssueProvenanceV1] = None
     documents: List[StructuredResultDocument]
     issues: List[StructuredResultIssue]

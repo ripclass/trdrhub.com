@@ -288,6 +288,40 @@ export const DocumentFactSetSchema = z.object({
 }).passthrough();
 export type DocumentFactSet = z.infer<typeof DocumentFactSetSchema>;
 
+export const ResolutionQueueItemSchema = z.object({
+  document_id: z.string(),
+  document_type: z.string(),
+  filename: z.string().nullable().optional(),
+  field_name: z.string(),
+  label: z.string(),
+  priority: z.string(),
+  candidate_value: z.unknown().optional(),
+  normalized_value: z.unknown().optional(),
+  evidence_snippet: z.string().nullable().optional(),
+  evidence_source: z.string().nullable().optional(),
+  page: z.number().int().positive().nullable().optional(),
+  reason: z.string(),
+  verification_state: z.string(),
+  resolvable_by_user: z.boolean(),
+  origin: z.string().nullable().optional(),
+}).passthrough();
+export type ResolutionQueueItem = z.infer<typeof ResolutionQueueItemSchema>;
+
+export const ResolutionQueueSummarySchema = z.object({
+  total_items: z.number().nonnegative(),
+  user_resolvable_items: z.number().nonnegative(),
+  unresolved_documents: z.number().nonnegative(),
+  document_counts: z.record(z.number()).default({}),
+}).passthrough();
+export type ResolutionQueueSummary = z.infer<typeof ResolutionQueueSummarySchema>;
+
+export const ResolutionQueueV1Schema = z.object({
+  version: z.literal('resolution_queue_v1').default('resolution_queue_v1'),
+  items: z.array(ResolutionQueueItemSchema).default([]),
+  summary: ResolutionQueueSummarySchema,
+}).passthrough();
+export type ResolutionQueueV1 = z.infer<typeof ResolutionQueueV1Schema>;
+
 export const ExtractionResolutionFieldSchema = z.object({
   field_name: z.string(),
   label: z.string(),
@@ -651,6 +685,7 @@ export const StructuredResultSchema = z.object({
   processing_summary: ProcessingSummarySchema,
   processing_summary_v2: ProcessingSummaryV2Schema.optional(),
   document_extraction_v1: DocumentExtractionV1Schema.optional(),
+  resolution_queue_v1: ResolutionQueueV1Schema.optional(),
   issue_provenance_v1: IssueProvenanceV1Schema.optional(),
   documents: z.array(StructuredResultDocumentSchema),
   issues: z.array(StructuredResultIssueSchema),
@@ -1062,6 +1097,9 @@ export const schemas = {
   ProcessingSummaryV2: ProcessingSummaryV2Schema,
   DocumentFact: DocumentFactSchema,
   DocumentFactSet: DocumentFactSetSchema,
+  ResolutionQueueItem: ResolutionQueueItemSchema,
+  ResolutionQueueSummary: ResolutionQueueSummarySchema,
+  ResolutionQueueV1: ResolutionQueueV1Schema,
   DocumentExtractionV1: DocumentExtractionV1Schema,
   IssueProvenanceV1: IssueProvenanceV1Schema,
   StructuredResultDocument: StructuredResultDocumentSchema,

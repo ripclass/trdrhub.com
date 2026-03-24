@@ -10,6 +10,9 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from app.services.facts import materialize_document_fact_graphs_v1 as _materialize_document_fact_graphs_v1
+from app.services.resolution import build_resolution_queue_v1 as _build_resolution_queue_payload
+
 from .utilities import format_duration, normalize_issue_severity
 
 
@@ -598,6 +601,15 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
             "status_counts": status_counts,
         },
     }
+
+
+def materialize_document_fact_graphs_v1(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return _materialize_document_fact_graphs_v1(documents)
+
+
+def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+    materialize_document_fact_graphs_v1(documents)
+    return _build_resolution_queue_payload(documents)
 
 
 def build_issue_provenance_v1(issues: List[Dict[str, Any]]) -> Dict[str, Any]:
