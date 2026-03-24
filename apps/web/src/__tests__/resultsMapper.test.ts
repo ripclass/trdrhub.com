@@ -307,5 +307,51 @@ describe('results mapper - option e payload', () => {
     expect(mapped.workflowStage?.stage).toBe('extraction_resolution');
     expect(mapped.workflowStage?.provisional_validation).toBe(true);
   });
+
+  it('clears derived extraction-resolution debt when backend workflow stage is validation_results', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        workflow_stage: {
+          stage: 'validation_results',
+          provisional_validation: false,
+          ready_for_final_validation: true,
+          unresolved_documents: 0,
+          unresolved_fields: 0,
+          summary: 'Extraction is sufficiently resolved. Validation findings reflect the current confirmed document set.',
+        },
+        document_extraction_v1: {
+          documents: [
+            {
+              document_id: 'doc-bl',
+              document_type: 'bill_of_lading',
+              filename: 'Bill_of_Lading.pdf',
+              extraction_status: 'success',
+              extracted_fields: {
+                issue_date: '2026-03-24',
+              },
+              field_details: {
+                issue_date: {
+                  verification: 'operator_confirmed',
+                },
+                gross_weight: {
+                  verification: 'model_suggested',
+                },
+              },
+              review_required: false,
+              review_reasons: [],
+            },
+          ],
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.workflowStage?.stage).toBe('validation_results');
+    expect(mapped.documents[0]?.extractionResolution?.required).toBe(false);
+    expect(mapped.documents[0]?.extractionResolution?.unresolvedCount).toBe(0);
+  });
 });
 

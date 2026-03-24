@@ -5,9 +5,11 @@ Public validation job status and results endpoints for exporter/importer flows.
 from __future__ import annotations
 
 import copy
+import math
 from uuid import UUID, uuid4
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi.encoders import jsonable_encoder
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -830,8 +832,27 @@ def _build_field_override_response(
     updated_document: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Return a JSON-safe field-override response payload."""
+    def _coerce_strict_json_value(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                str(key): _coerce_strict_json_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [_coerce_strict_json_value(item) for item in value]
+        if isinstance(value, tuple):
+            return [_coerce_strict_json_value(item) for item in value]
+        if isinstance(value, set):
+            return [_coerce_strict_json_value(item) for item in value]
+        if isinstance(value, float):
+            return value if math.isfinite(value) else None
+        if isinstance(value, Decimal):
+            return float(value) if value.is_finite() else None
+        return value
+
     return jsonable_encoder(
-        {
+        _coerce_strict_json_value(
+            {
             "job_id": session_id,
             "jobId": session_id,
             "document_id": document_id,
@@ -840,7 +861,8 @@ def _build_field_override_response(
             "verification": verification,
             "applied_at": applied_at_iso,
             "updated_document": updated_document,
-        }
+            }
+        )
     )
 
 
@@ -1093,7 +1115,7 @@ async def save_job_field_override(
         override_value=payload.override_value,
         verification=verification,
         applied_at_iso=applied_at_iso,
-        updated_document=updated_document,
+        updated_document=None,
     )
 
 

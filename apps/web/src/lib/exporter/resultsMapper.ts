@@ -149,13 +149,24 @@ const buildExtractionResolution = ({
   fieldDetails,
   criticalFieldStates,
   parseComplete,
+  workflowStageHint,
 }: {
   existingResolution?: any;
   missingRequiredFields: string[];
   fieldDetails: Record<string, any>;
   criticalFieldStates: Record<string, any>;
   parseComplete?: boolean;
+  workflowStageHint?: string | null;
 }) => {
+  const normalizedStageHint = String(workflowStageHint ?? '').trim().toLowerCase();
+  if (normalizedStageHint === 'validation_results') {
+    return {
+      required: false,
+      unresolvedCount: 0,
+      summary: '',
+      fields: [],
+    };
+  }
   const candidates = new Map<string, { fieldName: string; label: string; verification?: string }>();
   const addField = (rawField: unknown, verification?: string) => {
     const fieldName = normalizeFieldKey(rawField);
@@ -471,7 +482,7 @@ const buildNextAction = (bucket: string, suggestion: string): string => {
   return 'Correct the document field and revalidate before submission.';
 };
 
-const mapDocuments = (docs: any[] = []) => {
+const mapDocuments = (docs: any[] = [], workflowStageHint?: string | null) => {
   return docs.map((doc, index) => {
     const documentId = String(doc?.document_id ?? doc?.id ?? index);
     const filename = doc?.filename ?? doc?.name ?? `Document ${index + 1}`;
@@ -536,6 +547,7 @@ const mapDocuments = (docs: any[] = []) => {
       missingRequiredFields,
       fieldDetails,
       criticalFieldStates,
+      workflowStageHint,
       parseComplete:
         typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
     });
@@ -869,10 +881,16 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     }
   }
   const optionEDocuments = ensureArray(rawDocs);
+  const existingWorkflowStage = (structured as any)?.workflow_stage ?? (structured as any)?.workflowStage ?? null;
 
-  const documents = mapDocuments(optionEDocuments);
+  const documents = mapDocuments(
+    optionEDocuments,
+    existingWorkflowStage && typeof existingWorkflowStage === 'object'
+      ? String(existingWorkflowStage.stage ?? '')
+      : null,
+  );
   const workflowStage = deriveWorkflowStage({
-    existingStage: (structured as any)?.workflow_stage ?? (structured as any)?.workflowStage ?? null,
+    existingStage: existingWorkflowStage,
     documents,
     validationStatus: (structured as any)?.validation_status ?? null,
   });

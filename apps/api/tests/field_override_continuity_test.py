@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -35,6 +36,7 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "timezone": timezone,
         "uuid4": uuid4,
         "Decimal": Decimal,
+        "math": math,
         "jsonable_encoder": jsonable_encoder,
     }
     exec(compile(module_ast, str(JOBS_PUBLIC_PATH), "exec"), namespace)
@@ -304,6 +306,34 @@ def test_build_field_override_response_coerces_nested_non_json_types() -> None:
     )
     assert (
         response["updated_document"]["field_details"]["issue_date"]["confidence"] == 1.0
+    )
+
+
+def test_build_field_override_response_coerces_non_finite_numbers_to_none() -> None:
+    symbols = _load_symbols({"_build_field_override_response"})
+    build_field_override_response = symbols["_build_field_override_response"]
+
+    response = build_field_override_response(
+        session_id=str(uuid4()),
+        document_id=str(uuid4()),
+        field_name="issue_date",
+        override_value="2026-04-20",
+        verification="operator_confirmed",
+        applied_at_iso="2026-03-23T15:00:00+00:00",
+        updated_document={
+            "field_details": {
+                "issue_date": {
+                    "confidence": float("nan"),
+                    "secondary_confidence": Decimal("NaN"),
+                }
+            }
+        },
+    )
+
+    assert response["updated_document"]["field_details"]["issue_date"]["confidence"] is None
+    assert (
+        response["updated_document"]["field_details"]["issue_date"]["secondary_confidence"]
+        is None
     )
 
 
