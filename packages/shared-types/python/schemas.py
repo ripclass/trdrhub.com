@@ -312,6 +312,26 @@ class FieldOverrideRequest(BaseModel):
     note: Optional[str] = Field(default=None, max_length=1000)
 
 
+class DocumentFact(BaseModel):
+    field_name: str
+    value: Optional[Any] = None
+    normalized_value: Optional[Any] = None
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    verification_state: str = "unconfirmed"
+    origin: str = "unknown"
+    source_field_name: Optional[str] = None
+    evidence_snippet: Optional[str] = None
+    evidence_source: Optional[str] = None
+    page: Optional[int] = Field(default=None, ge=1)
+
+
+class DocumentFactSet(BaseModel):
+    version: str = Field(default="fact_graph_v1")
+    document_type: str
+    document_subtype: Optional[str] = None
+    facts: List[DocumentFact] = Field(default_factory=list)
+
+
 class DocumentExtractionDocument(BaseModel):
     document_id: Optional[str] = None
     document_type: Optional[str] = None
@@ -321,6 +341,7 @@ class DocumentExtractionDocument(BaseModel):
     extraction_lane: Optional[str] = None
     extracted_fields: Optional[Dict[str, Any]] = None
     field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
+    fact_graph_v1: Optional[DocumentFactSet] = None
     extraction_resolution: Optional[ExtractionResolution] = None
     issues_count: Optional[int] = Field(default=None, ge=0)
     ocr_confidence: Optional[float] = None
@@ -365,6 +386,7 @@ class StructuredResultDocument(BaseModel):
     extraction_lane: Optional[str] = None
     extracted_fields: Dict[str, Any]
     field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
+    fact_graph_v1: Optional[DocumentFactSet] = None
     extraction_resolution: Optional[ExtractionResolution] = None
     issues_count: int = Field(ge=0)
     review_required: Optional[bool] = None

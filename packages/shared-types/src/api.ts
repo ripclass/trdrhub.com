@@ -266,6 +266,28 @@ export const ExtractionFieldDetailSchema = z.object({
 }).passthrough();
 export type ExtractionFieldDetail = z.infer<typeof ExtractionFieldDetailSchema>;
 
+export const DocumentFactSchema = z.object({
+  field_name: z.string(),
+  value: z.unknown().optional(),
+  normalized_value: z.unknown().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  verification_state: z.string().default('unconfirmed'),
+  origin: z.string().default('unknown'),
+  source_field_name: z.string().nullable().optional(),
+  evidence_snippet: z.string().nullable().optional(),
+  evidence_source: z.string().nullable().optional(),
+  page: z.number().int().positive().nullable().optional(),
+}).passthrough();
+export type DocumentFact = z.infer<typeof DocumentFactSchema>;
+
+export const DocumentFactSetSchema = z.object({
+  version: z.literal('fact_graph_v1').default('fact_graph_v1'),
+  document_type: z.string(),
+  document_subtype: z.string().nullable().optional(),
+  facts: z.array(DocumentFactSchema).default([]),
+}).passthrough();
+export type DocumentFactSet = z.infer<typeof DocumentFactSetSchema>;
+
 export const ExtractionResolutionFieldSchema = z.object({
   field_name: z.string(),
   label: z.string(),
@@ -314,6 +336,8 @@ export const DocumentExtractionDocumentSchema = z.object({
   extracted_fields: z.record(z.unknown()).optional(),
   field_details: z.record(ExtractionFieldDetailSchema).optional(),
   fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
+  fact_graph_v1: DocumentFactSetSchema.optional(),
+  factGraphV1: DocumentFactSetSchema.optional(),
   extraction_resolution: ExtractionResolutionSchema.optional(),
   extractionResolution: ExtractionResolutionSchema.optional(),
   issues_count: z.number().nonnegative().optional(),
@@ -370,6 +394,8 @@ export const StructuredResultDocumentSchema = z.object({
   extracted_fields: z.record(z.unknown()).optional(),
   field_details: z.record(ExtractionFieldDetailSchema).optional(),
   fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
+  fact_graph_v1: DocumentFactSetSchema.optional(),
+  factGraphV1: DocumentFactSetSchema.optional(),
   extraction_resolution: ExtractionResolutionSchema.optional(),
   extractionResolution: ExtractionResolutionSchema.optional(),
   issues_count: z.number().nonnegative().optional(),
@@ -1034,6 +1060,8 @@ export const schemas = {
   // Structured validation payload
   StructuredProcessingSummary: StructuredProcessingSummarySchema,
   ProcessingSummaryV2: ProcessingSummaryV2Schema,
+  DocumentFact: DocumentFactSchema,
+  DocumentFactSet: DocumentFactSetSchema,
   DocumentExtractionV1: DocumentExtractionV1Schema,
   IssueProvenanceV1: IssueProvenanceV1Schema,
   StructuredResultDocument: StructuredResultDocumentSchema,

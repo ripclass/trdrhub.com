@@ -152,6 +152,8 @@ def _normalize_documents_structured(session_documents: List[Dict[str, Any]]) -> 
                 "extractedFields": extracted_fields_alt if extracted_fields_alt is not None else {},
                 "field_details": doc.get("field_details") or doc.get("fieldDetails") or doc.get("_field_details") or {},
                 "fieldDetails": doc.get("fieldDetails") or doc.get("field_details") or doc.get("_field_details") or {},
+                "fact_graph_v1": doc.get("fact_graph_v1") or doc.get("factGraphV1"),
+                "factGraphV1": doc.get("factGraphV1") or doc.get("fact_graph_v1"),
                 "discrepancyCount": discrepancy_count,
                 "issues_count": issues_count,
                 "ocrConfidence": ocr_confidence,

@@ -25,6 +25,7 @@ from app.services.extraction.iso20022_lc_extractor import (
 )
 from app.services.extraction.lc_taxonomy import build_lc_classification
 from app.services.extraction.multimodal_document_extractor import extract_document_multimodal_first
+from app.services.facts import build_invoice_fact_set
 
 logger = logging.getLogger(__name__)
 
@@ -418,23 +419,51 @@ class LaunchExtractionPipeline:
                     allow_text_backfill=False,
                 )
                 invoice_review = _assess_invoice_financial_completeness(shaped_payload, invoice_subtype=invoice_subtype)
+                extracted_fields = (
+                    invoice_struct.get("extracted_fields")
+                    if isinstance(invoice_struct.get("extracted_fields"), dict)
+                    else invoice_struct
+                )
+                extraction_lane = _resolve_extraction_lane(
+                    extraction_method=invoice_struct.get("_extraction_method", "unknown"),
+                )
+                fact_graph_v1 = build_invoice_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in invoice_struct.items()
+                            if not str(key).startswith("_")
+                        },
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "invoice_subtype": invoice_subtype,
+                        "extracted_fields": extracted_fields if isinstance(extracted_fields, dict) else {},
+                        "field_details": invoice_struct.get("_field_details") if isinstance(invoice_struct.get("_field_details"), dict) else {},
+                        "raw_text": extracted_text,
+                        "extraction_method": invoice_struct.get("_extraction_method", "unknown"),
+                        "extraction_lane": extraction_lane,
+                    }
+                )
                 return {
                     "handled": True,
                     "context_key": "invoice",
-                    "context_payload": {**shaped_payload, "invoice_review": invoice_review},
+                    "context_payload": {**shaped_payload, "invoice_review": invoice_review, "fact_graph_v1": fact_graph_v1},
                     "doc_info_patch": {
                         **base_patch,
                         "invoice_subtype": invoice_subtype,
                         "invoice_family": shaped_payload.get("invoice_family"),
-                        "extracted_fields": invoice_struct.get("extracted_fields") if isinstance(invoice_struct.get("extracted_fields"), dict) else invoice_struct,
+                        "extracted_fields": extracted_fields if isinstance(extracted_fields, dict) else invoice_struct,
                         "extraction_status": "success" if invoice_review.get("parse_complete") else "partial",
                         "extraction_method": invoice_struct.get("_extraction_method", "unknown"),
-                        "extraction_lane": _resolve_extraction_lane(
-                            extraction_method=invoice_struct.get("_extraction_method", "unknown"),
-                        ),
+                        "extraction_lane": extraction_lane,
                         "extraction_confidence": invoice_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": invoice_struct.get("_field_details"),
+                        "fact_graph_v1": fact_graph_v1,
                         "status_counts": invoice_struct.get("_status_counts"),
                         "parse_complete": invoice_review.get("parse_complete"),
                         "parse_completeness": invoice_review.get("required_ratio"),
@@ -456,7 +485,35 @@ class LaunchExtractionPipeline:
             if invoice_context:
                 shaped_payload = _shape_invoice_financial_payload(invoice_context, invoice_subtype=invoice_subtype, raw_text=extracted_text)
                 invoice_review = _assess_invoice_financial_completeness(shaped_payload, invoice_subtype=invoice_subtype)
-                return _build_support_only_result(
+                fact_graph_v1 = build_invoice_fact_set(
+                    {
+                        **{
+                            key: value
+                            for key, value in invoice_context.items()
+                            if not str(key).startswith("_")
+                        },
+                        **{
+                            key: value
+                            for key, value in shaped_payload.items()
+                            if not str(key).startswith("_")
+                        },
+                        "document_type": document_type,
+                        "invoice_subtype": invoice_subtype,
+                        "extracted_fields": {
+                            key: value
+                            for key, value in {
+                                **invoice_context,
+                                **shaped_payload,
+                            }.items()
+                            if not str(key).startswith("_")
+                        },
+                        "field_details": invoice_context.get("_field_details") if isinstance(invoice_context.get("_field_details"), dict) else {},
+                        "raw_text": extracted_text,
+                        "extraction_method": "regex_support",
+                        "extraction_lane": "support_only",
+                    }
+                )
+                result = _build_support_only_result(
                     context_key="invoice",
                     context_payload={**shaped_payload, "invoice_review": invoice_review},
                     base_patch=base_patch,
@@ -468,12 +525,35 @@ class LaunchExtractionPipeline:
                         "invoice_family": shaped_payload.get("invoice_family"),
                     },
                 )
+                result["context_payload"]["fact_graph_v1"] = fact_graph_v1
+                result["doc_info_patch"]["fact_graph_v1"] = fact_graph_v1
+                return result
         except Exception as exc:
             logger.warning("Launch pipeline invoice regex fallback failed for %s: %s", filename, exc, exc_info=True)
 
         shaped_payload = _shape_invoice_financial_payload({}, invoice_subtype=invoice_subtype, raw_text=extracted_text)
         invoice_review = _assess_invoice_financial_completeness(shaped_payload, invoice_subtype=invoice_subtype)
-        return {"handled": True, "context_key": "invoice", "context_payload": {**shaped_payload, "invoice_review": invoice_review}, "doc_info_patch": {**base_patch, "invoice_subtype": invoice_subtype, "invoice_family": shaped_payload.get("invoice_family"), "parse_complete": invoice_review.get("parse_complete"), "parse_completeness": invoice_review.get("required_ratio"), "missing_required_fields": invoice_review.get("missing_required_fields", []), "required_fields_found": invoice_review.get("required_found"), "required_fields_total": invoice_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(invoice_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_invoice_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
+        fact_graph_v1 = build_invoice_fact_set(
+            {
+                **{
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "document_type": document_type,
+                "invoice_subtype": invoice_subtype,
+                "extracted_fields": {
+                    key: value
+                    for key, value in shaped_payload.items()
+                    if not str(key).startswith("_")
+                },
+                "field_details": {},
+                "raw_text": extracted_text,
+                "extraction_method": "launch_pipeline_invoice_extraction_failed",
+                "extraction_lane": "unknown",
+            }
+        )
+        return {"handled": True, "context_key": "invoice", "context_payload": {**shaped_payload, "invoice_review": invoice_review, "fact_graph_v1": fact_graph_v1}, "doc_info_patch": {**base_patch, "invoice_subtype": invoice_subtype, "invoice_family": shaped_payload.get("invoice_family"), "fact_graph_v1": fact_graph_v1, "parse_complete": invoice_review.get("parse_complete"), "parse_completeness": invoice_review.get("required_ratio"), "missing_required_fields": invoice_review.get("missing_required_fields", []), "required_fields_found": invoice_review.get("required_found"), "required_fields_total": invoice_review.get("required_total"), "review_reasons": list(base_patch.get("review_reasons") or []) + list(invoice_review.get("review_reasons") or []), "extraction_status": "failed", "extraction_error": "launch_pipeline_invoice_extraction_failed"}, "has_structured_data": False, "validation_doc_type": None, "post_validation_target": None}
 
     async def _process_bl(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         transport_subtype = _detect_transport_subtype(filename=filename, extracted_text=extracted_text)

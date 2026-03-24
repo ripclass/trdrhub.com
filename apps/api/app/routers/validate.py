@@ -1747,6 +1747,9 @@ async def _build_document_context(
                         doc_info["extracted_fields"] = context_payload.get("extracted_fields")
                     if isinstance(context_payload.get("_field_details"), dict):
                         doc_info["field_details"] = context_payload.get("_field_details")
+                    if isinstance(context_payload.get("fact_graph_v1"), dict):
+                        doc_info["fact_graph_v1"] = context_payload.get("fact_graph_v1")
+                        doc_info["factGraphV1"] = context_payload.get("fact_graph_v1")
                     extraction_resolution = _extract_extraction_resolution_from_context_payload(context_payload)
                     if extraction_resolution:
                         doc_info["extraction_resolution"] = extraction_resolution
@@ -1882,6 +1885,9 @@ async def _build_document_context(
                 doc_info["extracted_fields"] = context_payload.get("extracted_fields")
             if isinstance(context_payload.get("_field_details"), dict):
                 doc_info["field_details"] = context_payload.get("_field_details")
+            if isinstance(context_payload.get("fact_graph_v1"), dict):
+                doc_info["fact_graph_v1"] = context_payload.get("fact_graph_v1")
+                doc_info["factGraphV1"] = context_payload.get("fact_graph_v1")
 
         doc_info.setdefault("_day1_runtime_hook", {})
         doc_info["_day1_runtime_hook"]["callsite_reached"] = True

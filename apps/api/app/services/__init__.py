@@ -22,22 +22,6 @@ from pathlib import Path
 _LEGACY_MODULE_NAME = "app._legacy_services"
 _LEGACY_MODULE_PATH = Path(__file__).resolve().parent.parent / "services.py"
 
-if _LEGACY_MODULE_NAME in sys.modules:
-    _legacy = sys.modules[_LEGACY_MODULE_NAME]
-else:
-    _spec = spec_from_file_location(_LEGACY_MODULE_NAME, _LEGACY_MODULE_PATH)
-    if _spec is None or _spec.loader is None:
-        raise ImportError(f"Unable to load legacy services from {_LEGACY_MODULE_PATH}")
-    _legacy = module_from_spec(_spec)
-    sys.modules[_LEGACY_MODULE_NAME] = _legacy
-    _spec.loader.exec_module(_legacy)
-
-S3Service = _legacy.S3Service  # type: ignore[attr-defined]
-ValidationSessionService = _legacy.ValidationSessionService  # type: ignore[attr-defined]
-DocumentProcessingService = _legacy.DocumentProcessingService  # type: ignore[attr-defined]
-ReportService = _legacy.ReportService  # type: ignore[attr-defined]
-DocumentAIService = _legacy.DocumentAIService  # type: ignore[attr-defined]
-
 __all__ = [
     "S3Service",
     "ValidationSessionService",
@@ -45,3 +29,26 @@ __all__ = [
     "ReportService",
     "DocumentAIService",
 ]
+
+
+def _load_legacy():
+    if _LEGACY_MODULE_NAME in sys.modules:
+        return sys.modules[_LEGACY_MODULE_NAME]
+    _spec = spec_from_file_location(_LEGACY_MODULE_NAME, _LEGACY_MODULE_PATH)
+    if _spec is None or _spec.loader is None:
+        raise ImportError(f"Unable to load legacy services from {_LEGACY_MODULE_PATH}")
+    legacy = module_from_spec(_spec)
+    sys.modules[_LEGACY_MODULE_NAME] = legacy
+    _spec.loader.exec_module(legacy)
+    return legacy
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        legacy = _load_legacy()
+        return getattr(legacy, name)
+    raise AttributeError(name)
+
+
+def __dir__():
+    return sorted(set(globals().keys()) | set(__all__))

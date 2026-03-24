@@ -562,6 +562,8 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 "extraction_status": extraction_status,
                 "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
                 "field_details": doc.get("field_details") or doc.get("fieldDetails") or doc.get("_field_details") or {},
+                "fact_graph_v1": doc.get("fact_graph_v1") or doc.get("factGraphV1"),
+                "factGraphV1": doc.get("factGraphV1") or doc.get("fact_graph_v1"),
                 "extraction_lane": doc.get("extraction_lane") or doc.get("extractionLane"),
                 "extractionLane": doc.get("extractionLane") or doc.get("extraction_lane"),
                 "extraction_resolution": doc.get("extraction_resolution") or doc.get("extractionResolution"),
