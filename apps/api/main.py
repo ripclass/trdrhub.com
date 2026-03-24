@@ -359,7 +359,6 @@ app.add_middleware(
             "/auth/login",
             "/auth/register",
             "/auth/csrf-token",  # Temporarily exempt to avoid audit logging issues
-            "/api/validate",  # TEMPORARY - Exempt for demo mode
             "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
         ],
 )
@@ -385,7 +384,6 @@ if not settings.USE_STUBS:
             "/auth/login",
             "/auth/register",
             "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
-            "/api/validate",  # TEMPORARY - Exempt for demo mode (validation works without auth)
             "/price-verify",  # Price verification API (public tool)
             "/members/admin/seed-existing-users",  # One-time setup endpoint
         },

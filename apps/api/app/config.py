@@ -145,6 +145,7 @@ class Settings(BaseSettings):
 
     # Stub tooling guard
     STUB_STATUS_TOKEN: Optional[str] = None
+    ENABLE_PUBLIC_VALIDATE_DEMO: bool = False
 
     # SSLCommerz configuration
     SSLCOMMERZ_STORE_ID: Optional[str] = None

@@ -928,19 +928,24 @@ async def get_user_optional(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ) -> User:
-    """Get current user if authenticated, otherwise return demo user."""
+    """Get current user, allowing demo fallback only when explicitly enabled."""
     if authorization and authorization.startswith("Bearer "):
-        try:
-            from app.core.security import get_current_user
-            from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-            security = HTTPBearer()
-            credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization[7:])
-            return await get_current_user(credentials=credentials, db=db)
-        except:
-            pass
-    
-    # Return demo user for unauthenticated requests
-    return get_or_create_demo_user(db)
+        from app.core.security import get_current_user
+        from fastapi.security import HTTPAuthorizationCredentials
+
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer",
+            credentials=authorization[7:],
+        )
+        return await get_current_user(credentials=credentials, db=db)
+
+    if settings.ENABLE_PUBLIC_VALIDATE_DEMO and not settings.is_production():
+        return get_or_create_demo_user(db)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+    )
 
 
 
