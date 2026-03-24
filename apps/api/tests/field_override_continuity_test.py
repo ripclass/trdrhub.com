@@ -44,6 +44,7 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
 def test_apply_field_override_updates_document_review_state_and_field_metadata() -> None:
     symbols = _load_symbols(
         {
+            "_document_matches_override_target",
             "_normalize_override_field_name",
             "_is_unresolved_field_state",
             "_remove_override_resolved_review_reasons",
@@ -106,6 +107,7 @@ def test_apply_field_override_updates_document_review_state_and_field_metadata()
 def test_apply_field_override_updates_top_level_and_lc_structured_document_collections() -> None:
     symbols = _load_symbols(
         {
+            "_document_matches_override_target",
             "_normalize_override_field_name",
             "_is_unresolved_field_state",
             "_remove_override_resolved_review_reasons",
@@ -206,6 +208,49 @@ def test_apply_field_override_updates_top_level_and_lc_structured_document_colle
     assert structured_result["lc_structured"]["documents_structured"][0]["critical_field_states"]["issue_date"] == "found"
 
 
+def test_apply_field_override_matches_filename_alias_when_uuid_is_not_sent() -> None:
+    symbols = _load_symbols(
+        {
+            "_document_matches_override_target",
+            "_normalize_override_field_name",
+            "_is_unresolved_field_state",
+            "_remove_override_resolved_review_reasons",
+            "_apply_field_override_to_document",
+            "_apply_field_override_to_structured_result",
+        }
+    )
+    apply_field_override_to_structured_result = symbols["_apply_field_override_to_structured_result"]
+
+    structured_result = {
+        "documents": [
+            {
+                "document_id": "doc-bl-uuid",
+                "filename": "Bill_of_Lading.pdf",
+                "extracted_fields": {"issue_date": "2026-03-24"},
+                "field_details": {"issue_date": {"verification": "model_suggested"}},
+                "missing_required_fields": [],
+                "review_reasons": ["FIELD_NOT_FOUND"],
+                "critical_field_states": {"issue_date": "missing"},
+            }
+        ]
+    }
+
+    updated_document = apply_field_override_to_structured_result(
+        structured_result,
+        document_id="Bill_of_Lading.pdf",
+        field_name="issue_date",
+        override_value="2026-03-24",
+        verification="operator_rejected",
+        note="Rejected from browser alias payload",
+        actor_email="imran@iec.com",
+        applied_at_iso="2026-03-23T12:00:00+00:00",
+    )
+
+    assert updated_document is not None
+    assert updated_document["document_id"] == "doc-bl-uuid"
+    assert updated_document["field_details"]["issue_date"]["verification"] == "operator_rejected"
+
+
 def test_record_operator_field_override_persists_session_override_metadata() -> None:
     symbols = _load_symbols({"_normalize_override_field_name", "_record_operator_field_override"})
     record_operator_field_override = symbols["_record_operator_field_override"]
@@ -265,6 +310,7 @@ def test_build_field_override_response_coerces_nested_non_json_types() -> None:
 def test_apply_field_override_rejection_keeps_field_unresolved() -> None:
     symbols = _load_symbols(
         {
+            "_document_matches_override_target",
             "_normalize_override_field_name",
             "_is_unresolved_field_state",
             "_remove_override_resolved_review_reasons",

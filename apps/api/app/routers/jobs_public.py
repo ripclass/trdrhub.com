@@ -671,8 +671,7 @@ def _apply_field_override_to_structured_result(
             if not isinstance(entry, dict):
                 next_collection.append(entry)
                 continue
-            entry_id = str(entry.get("document_id") or entry.get("id") or "")
-            if entry_id == document_id:
+            if _document_matches_override_target(entry, document_id):
                 patched = _apply_field_override_to_document(
                     entry,
                     field_name=field_name,
@@ -695,8 +694,7 @@ def _apply_field_override_to_structured_result(
             if not isinstance(entry, dict):
                 next_collection.append(entry)
                 continue
-            entry_id = str(entry.get("document_id") or entry.get("id") or "")
-            if entry_id == document_id:
+            if _document_matches_override_target(entry, document_id):
                 patched = _apply_field_override_to_document(
                     entry,
                     field_name=field_name,
@@ -728,8 +726,7 @@ def _apply_field_override_to_structured_result(
             if not isinstance(entry, dict):
                 next_collection.append(entry)
                 continue
-            entry_id = str(entry.get("document_id") or entry.get("id") or "")
-            if entry_id == document_id:
+            if _document_matches_override_target(entry, document_id):
                 patched = _apply_field_override_to_document(
                     entry,
                     field_name=field_name,
@@ -748,6 +745,24 @@ def _apply_field_override_to_structured_result(
     return updated_document
 
 
+def _document_matches_override_target(entry: Dict[str, Any], target: str) -> bool:
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return False
+
+    candidates = {
+        str(entry.get("document_id") or "").strip(),
+        str(entry.get("id") or "").strip(),
+        str(entry.get("filename") or "").strip(),
+        str(entry.get("name") or "").strip(),
+    }
+    if normalized_target in candidates:
+        return True
+
+    lowered_target = normalized_target.lower()
+    return any(candidate and candidate.lower() == lowered_target for candidate in candidates)
+
+
 def _get_document_from_structured_result(
     structured_result: Dict[str, Any],
     document_id: str,
@@ -763,8 +778,7 @@ def _get_document_from_structured_result(
         for entry in collection:
             if not isinstance(entry, dict):
                 continue
-            entry_id = str(entry.get("document_id") or entry.get("id") or "")
-            if entry_id == document_id:
+            if _document_matches_override_target(entry, document_id):
                 return copy.deepcopy(entry)
     return None
 
