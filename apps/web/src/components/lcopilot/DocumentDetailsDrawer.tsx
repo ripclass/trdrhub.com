@@ -535,6 +535,49 @@ const buildFieldEvidenceNote = (detail: Record<string, any> | undefined): string
   return snippet ? `${source || "Source evidence"}: ${snippet}` : null;
 };
 
+const buildManualResolutionGuidance = (
+  fieldName: string,
+  docType: string | undefined,
+): string => {
+  const normalizedField = normalizeReviewFieldKey(fieldName);
+  const normalizedDocType = normalizeReviewFieldKey(docType);
+
+  if (normalizedField.includes("date")) {
+    return "Check the document header, title block, or any dated line near the top of the file. Only enter a date if the document shows it clearly.";
+  }
+  if (
+    normalizedField.includes("issuer")
+    || normalizedField.includes("bank")
+    || normalizedField.includes("exporter")
+    || normalizedField.includes("importer")
+    || normalizedField.includes("beneficiary")
+    || normalizedField.includes("applicant")
+  ) {
+    return "Check the named party blocks, signature area, or certifier section. Only enter the party name if it is clearly written in the source document.";
+  }
+  if (
+    normalizedField.includes("amount")
+    || normalizedField.includes("currency")
+    || normalizedField.includes("price")
+    || normalizedField.includes("value")
+  ) {
+    return "Check the totals section, amount line, or currency label. Only enter a value if the number and currency are clearly shown together.";
+  }
+  if (normalizedField.includes("weight") || normalizedField.includes("quantity")) {
+    return "Check the totals or packing summary area where quantity, net weight, or gross weight are listed. Only enter the value if the label is clear.";
+  }
+  if (normalizedField.includes("lc_number") || normalizedField.includes("reference")) {
+    return "Check the reference block or the document header for the LC number or document reference. Only enter it if the identifier is clearly labeled.";
+  }
+  if (normalizedDocType === "bill_of_lading") {
+    return "Review the main shipment summary, carrier block, and ports section. Only enter the value if the bill of lading shows it clearly.";
+  }
+  if (normalizedDocType === "certificate_of_origin") {
+    return "Review the certificate body and certifier section. Only enter the value if the certificate states it clearly.";
+  }
+  return "Review the source document for a clearly labeled value before entering anything manually. If the file does not show it clearly, leave it unresolved for now.";
+};
+
 export function DocumentDetailsDrawer({
   document,
   open,
@@ -667,6 +710,21 @@ export function DocumentDetailsDrawer({
     if (verification === "not_found") return "No candidate value found";
     return verification ? humanizeFieldName(verification) : "Unresolved field";
   }, [activeResolutionDetail, activeResolutionField]);
+  const activeResolutionManualGuidance = useMemo(
+    () =>
+      activeResolutionField
+        ? buildManualResolutionGuidance(
+            activeResolutionField.key,
+            resolvedDocument.documentType || resolvedDocument.typeKey || resolvedDocument.type,
+          )
+        : "",
+    [
+      activeResolutionField,
+      resolvedDocument.documentType,
+      resolvedDocument.type,
+      resolvedDocument.typeKey,
+    ],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -682,7 +740,7 @@ export function DocumentDetailsDrawer({
       setSelectedResolutionField(activeResolutionField.key);
       setOverrideValue(activeResolutionField.currentValue ?? "");
       setOverrideNote("");
-      setShowManualOverrideEditor(!(activeResolutionField.currentValue ?? "").trim());
+      setShowManualOverrideEditor(false);
     }
   }, [activeResolutionField, open, selectedResolutionField]);
 
@@ -691,7 +749,7 @@ export function DocumentDetailsDrawer({
     setSelectedResolutionField(fieldName);
     setOverrideValue(nextField?.currentValue ?? "");
     setOverrideNote("");
-    setShowManualOverrideEditor(!String(nextField?.currentValue ?? "").trim());
+    setShowManualOverrideEditor(false);
   };
 
   const persistFieldOverride = async (
@@ -1039,7 +1097,40 @@ export function DocumentDetailsDrawer({
                           </div>
                         </div>
                       )}
-                    {(!activeResolutionHasCandidate || showManualOverrideEditor) && (
+                    {!activeResolutionHasCandidate && !showManualOverrideEditor && (
+                      <div className="rounded-md border border-primary/20 bg-background/70 p-3 space-y-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              No suggested value yet
+                            </p>
+                            <p className="text-sm">
+                              The system could not propose a reliable value for this field from the uploaded document.
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="border-primary/20 text-primary">
+                            {activeResolutionVerificationLabel}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {activeResolutionManualGuidance}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          If you cannot clearly confirm this value from the source document, leave it unresolved for now and continue with the other fields.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowManualOverrideEditor(true)}
+                            disabled={isSavingFieldOverride}
+                          >
+                            Enter value manually
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {showManualOverrideEditor && (
                       <div className="space-y-2">
                         <Label htmlFor="field-override-value">
                           {activeResolutionHasCandidate ? "Edit confirmed value" : "Confirmed value"}
@@ -1048,28 +1139,50 @@ export function DocumentDetailsDrawer({
                           id="field-override-value"
                           value={overrideValue}
                           onChange={(event) => setOverrideValue(event.target.value)}
-                          placeholder={`Enter ${activeResolutionField.label.toLowerCase()}`}
+                          placeholder={
+                            activeResolutionHasCandidate
+                              ? `Enter ${activeResolutionField.label.toLowerCase()}`
+                              : `Enter only if you can confirm ${activeResolutionField.label.toLowerCase()} from the source`
+                          }
                         />
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <Label htmlFor="field-override-note">Operator note</Label>
-                      <Textarea
-                        id="field-override-note"
-                        value={overrideNote}
-                        onChange={(event) => setOverrideNote(event.target.value)}
-                        placeholder="Optional note about how this value was confirmed from the source."
-                        rows={3}
-                      />
-                    </div>
-                    {(!activeResolutionHasCandidate || showManualOverrideEditor) && (
-                      <Button
-                        type="button"
-                        onClick={handleSaveFieldOverride}
-                        disabled={!overrideValue.trim() || isSavingFieldOverride}
-                      >
-                        {isSavingFieldOverride ? "Saving..." : activeResolutionHasCandidate ? "Save edited value" : "Confirm field value"}
-                      </Button>
+                    {(activeResolutionHasCandidate || showManualOverrideEditor) && (
+                      <div className="space-y-2">
+                        <Label htmlFor="field-override-note">Operator note</Label>
+                        <Textarea
+                          id="field-override-note"
+                          value={overrideNote}
+                          onChange={(event) => setOverrideNote(event.target.value)}
+                          placeholder="Optional note about how this value was confirmed from the source."
+                          rows={3}
+                        />
+                      </div>
+                    )}
+                    {showManualOverrideEditor && (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          onClick={handleSaveFieldOverride}
+                          disabled={!overrideValue.trim() || isSavingFieldOverride}
+                        >
+                          {isSavingFieldOverride ? "Saving..." : activeResolutionHasCandidate ? "Save edited value" : "Confirm field value"}
+                        </Button>
+                        {!activeResolutionHasCandidate && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setOverrideValue("");
+                              setOverrideNote("");
+                              setShowManualOverrideEditor(false);
+                            }}
+                            disabled={isSavingFieldOverride}
+                          >
+                            Back to source guidance
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}

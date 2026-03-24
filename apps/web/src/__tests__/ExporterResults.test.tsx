@@ -1251,6 +1251,13 @@ describe('ExporterResults', () => {
     expect(
       screen.getAllByText(/2 documents still need 4 fields confirmed before validation should be treated as final\./i).length,
     ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole('heading', { name: /Validation Results Unlock After Extraction Resolution/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Issues/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /Customs Pack/i })).toBeNull();
+    expect(screen.getByText(/Opens later: Issues/i)).toBeInTheDocument();
+    expect(screen.getByText(/Opens later: Customs Pack/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /Overview/i }));
     expect(screen.getByRole('heading', { name: /Current Stage: Extraction Resolution/i })).toBeInTheDocument();
@@ -1283,36 +1290,6 @@ describe('ExporterResults', () => {
     expect(within(packingDrawer).queryByText(/^Field not found$/i)).toBeNull();
 
     await user.keyboard('{Escape}');
-
-    await user.click(screen.getByRole('tab', { name: /Issues/i }));
-    expect(
-      screen.getByText(/Confirm the unresolved fields from source evidence first\./i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Provisional Validation Note/i)).toBeInTheDocument();
-    expect(screen.getByText(/Provisional Finding Filter/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^Provisional Findings$/i })).toBeInTheDocument();
-    expect(
-      screen.getByText(/Any discrepancy or compliance findings shown below should be treated as provisional until extraction resolution is complete\./i),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
-    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
-    expect(
-      within(customsPanel).getAllByText(/2 documents still need 4 fields confirmed before validation should be treated as final\./i)
-        .length,
-    ).toBeGreaterThan(0);
-    expect(within(customsPanel).getByRole('button', { name: /Generate Customs Pack/i })).toBeDisabled();
-    expect(within(customsPanel).queryByRole('button', { name: /Submit to Bank/i })).toBeNull();
-    expect(within(customsPanel).getByText(/^Paused$/i)).toBeInTheDocument();
-    expect(
-      within(customsPanel).getByText(/Extraction resolution is still open\. Customs-pack generation and presentation checks remain provisional until unresolved fields are confirmed\./i),
-    ).toBeInTheDocument();
-    expect(
-      within(customsPanel).getByText(/Final presentation blockers are deferred until extraction resolution is complete\./i),
-    ).toBeInTheDocument();
-    expect(
-      within(customsPanel).getByText(/Manifest generation is deferred/i),
-    ).toBeInTheDocument();
   });
 
   it('keeps an explicitly requested tab during extraction resolution instead of auto-switching to documents', async () => {
@@ -1333,6 +1310,27 @@ describe('ExporterResults', () => {
       expect(screen.getByRole('tab', { name: /Overview/i })).toHaveAttribute('aria-selected', 'true'),
     );
     expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument();
+  });
+
+  it('redirects blocked final-validation tabs back to documents during extraction resolution', async () => {
+    const structured = buildValidationResults().structured_result!;
+    structured.workflow_stage = {
+      stage: 'extraction_resolution',
+      provisional_validation: true,
+      ready_for_final_validation: false,
+      unresolved_documents: 1,
+      unresolved_fields: 1,
+      summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+    } as any;
+    activeResults = buildValidationResponse({ structured_result: structured });
+
+    render(renderWithProviders(<ExporterResults initialTab="discrepancies" />));
+
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
+    );
+    expect(screen.queryByRole('tab', { name: /Issues/i })).toBeNull();
+    expect(screen.getByRole('heading', { name: /Validation Results Unlock After Extraction Resolution/i })).toBeInTheDocument();
   });
 
   it('lets the operator directly confirm a suggested unresolved value when evidence already exists', async () => {
@@ -1576,6 +1574,12 @@ describe('ExporterResults', () => {
 
     const drawer = screen.getByRole('dialog');
     expect(within(drawer).getByText(/Confirm Unresolved Fields/i)).toBeInTheDocument();
+    expect(within(drawer).getByText(/No suggested value yet/i)).toBeInTheDocument();
+    expect(
+      within(drawer).getByText(/The system could not propose a reliable value for this field from the uploaded document\./i),
+    ).toBeInTheDocument();
+    expect(within(drawer).queryByLabelText(/Confirmed value/i)).toBeNull();
+    await user.click(within(drawer).getByRole('button', { name: /Enter value manually/i }));
     await user.type(within(drawer).getByLabelText(/Confirmed value/i), '2026-04-20');
     await user.type(within(drawer).getByLabelText(/Operator note/i), 'Confirmed from invoice header');
     await user.click(within(drawer).getByRole('button', { name: /Confirm field value/i }));

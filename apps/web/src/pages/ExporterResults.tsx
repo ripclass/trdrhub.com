@@ -1302,6 +1302,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     null;
   const workflowStage = resultData?.workflowStage ?? null;
   const isExtractionResolutionStage = workflowStage?.stage === 'extraction_resolution';
+  const visibleActiveTab: ResultsTab =
+    isExtractionResolutionStage && (activeTab === 'discrepancies' || activeTab === 'customs')
+      ? 'documents'
+      : activeTab;
   const pageTitle = isExtractionResolutionStage
     ? 'Export LC Extraction Resolution'
     : 'Export LC Validation Results';
@@ -3014,7 +3018,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
         {/* Detailed Results */}
         <Tabs
-          value={activeTab}
+          value={visibleActiveTab}
           onValueChange={(value) => {
             if (isResultsTab(value)) {
               handleActiveTabChange(value);
@@ -3022,17 +3026,55 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           }}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
-            <TabsTrigger value="discrepancies" className="relative">
-              Issues ({totalDiscrepancies})
-              {totalDiscrepancies > 0 && (
-                <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="customs">Customs Pack</TabsTrigger>
+          <TabsList className={cn("grid w-full", isExtractionResolutionStage ? "grid-cols-2" : "grid-cols-4")}>
+            {isExtractionResolutionStage ? (
+              <>
+                <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+              </>
+            ) : (
+              <>
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
+                <TabsTrigger value="discrepancies" className="relative">
+                  Issues ({totalDiscrepancies})
+                  {totalDiscrepancies > 0 && (
+                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="customs">Customs Pack</TabsTrigger>
+              </>
+            )}
           </TabsList>
+
+          {isExtractionResolutionStage && (
+            <Card className="border-amber-500/30 bg-amber-500/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">
+                  Validation Results Unlock After Extraction Resolution
+                </CardTitle>
+                <CardDescription>
+                  Focus on the Documents tab first. Final-validation workspaces stay closed until unresolved fields are confirmed from source evidence.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline" className="border-amber-500/30 text-amber-700 bg-amber-500/5">
+                    Active now: Documents
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
+                    Also available: Overview
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
+                    Opens later: Issues
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
+                    Opens later: Customs Pack
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <TabsContent value="overview" className="space-y-6">
             {/* Contract Validation Warnings (Output-First Layer) */}
