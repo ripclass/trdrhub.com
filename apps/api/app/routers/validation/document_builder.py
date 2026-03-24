@@ -239,6 +239,7 @@ def build_documents_section(
                 "extraction_status": extraction_status,
                 "extracted_fields": filter_user_facing_fields(doc.get("extractedFields") or doc.get("extracted_fields") or {}),
                 "field_details": doc.get("fieldDetails") or doc.get("field_details") or {},
+                "extraction_resolution": doc.get("extractionResolution") or doc.get("extraction_resolution"),
                 "issues_count": issue_counts.get(doc_id, 0),
                 "day1_runtime": doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {},
                 "document_type_resolution": doc.get("document_type_resolution"),

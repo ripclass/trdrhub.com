@@ -52,6 +52,7 @@ import { exporterApi, type BankSubmissionRead, type SubmissionEventRead, type Gu
 import { useCanonicalJobResult } from "@/hooks/use-lcopilot";
 import type {
   ValidationResults,
+  ValidationDocument,
   IssueCard,
   AIEnrichmentPayload,
   ReferenceIssue,
@@ -147,6 +148,8 @@ type ReviewReasonContext = {
   fieldDiagnostics?: Record<string, any>;
   missingRequiredFields?: unknown[];
 };
+
+type ExtractionResolutionState = NonNullable<ValidationDocument['extractionResolution']>;
 
 const _normalizeFieldKey = (value: unknown): string =>
   String(value || '')
@@ -294,12 +297,71 @@ const _humanizeDocumentReviewReason = (reason: string, context: ReviewReasonCont
   return key.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
 };
 
+const _buildExtractionResolutionState = ({
+  missingRequiredFields,
+  criticalFieldStates,
+  fieldDetails,
+  parseComplete,
+}: {
+  missingRequiredFields: unknown[];
+  criticalFieldStates?: Record<string, any>;
+  fieldDetails?: Record<string, any>;
+  parseComplete?: boolean;
+}): ExtractionResolutionState => {
+  const candidates = new Map<string, { fieldName: string; label: string; verification?: string }>();
+  const addCandidate = (fieldName: unknown, verification?: string) => {
+    const normalized = _normalizeFieldKey(fieldName);
+    if (!normalized || candidates.has(normalized)) {
+      return;
+    }
+    candidates.set(normalized, {
+      fieldName: normalized,
+      label: humanizeLabel(normalized),
+      verification,
+    });
+  };
+
+  (Array.isArray(missingRequiredFields) ? missingRequiredFields : []).forEach((field) => {
+    addCandidate(field, 'not_found');
+  });
+
+  Object.entries(criticalFieldStates || {}).forEach(([fieldName, state]) => {
+    const normalizedState = _normalizeFieldKey(state);
+    if (['missing', 'failed', 'parse_failed'].includes(normalizedState)) {
+      addCandidate(fieldName, normalizedState);
+    }
+  });
+
+  Object.entries(fieldDetails || {}).forEach(([fieldName, detail]) => {
+    const verification = _normalizeFieldKey((detail as Record<string, any>)?.verification);
+    if (verification && !['confirmed', 'operator_confirmed'].includes(verification)) {
+      addCandidate(fieldName, verification);
+    }
+  });
+
+  const fields = Array.from(candidates.values());
+  const unresolvedCount = fields.length;
+  const required = unresolvedCount > 0 || parseComplete === false;
+
+  return {
+    required,
+    unresolvedCount,
+    summary: required
+      ? unresolvedCount > 0
+        ? `${unresolvedCount} extracted field${unresolvedCount === 1 ? '' : 's'} still need confirmation before validation can be treated as final.`
+        : 'Extraction is still incomplete and needs confirmation before validation can be treated as final.'
+      : '',
+    fields,
+  };
+};
+
 const buildWarningReasons = ({
   extractionStatus,
   issuesCount,
   missingRequiredFields,
   parseComplete,
   reviewReasons,
+  extractionResolution,
   docType,
   rawText,
   criticalFieldStates,
@@ -310,6 +372,7 @@ const buildWarningReasons = ({
   missingRequiredFields: unknown[];
   parseComplete: boolean | undefined;
   reviewReasons: unknown[];
+  extractionResolution?: ExtractionResolutionState;
   docType?: string;
   rawText?: string;
   criticalFieldStates?: Record<string, any>;
@@ -330,6 +393,20 @@ const buildWarningReasons = ({
       .replace(/_/g, ' ')
       .replace(/\b\w/g, (c) => c.toUpperCase())
       .trim();
+
+  if (extractionResolution?.required) {
+    reasons.push(extractionResolution.summary);
+    if (extractionResolution.fields.length > 0) {
+      const labels = extractionResolution.fields.slice(0, 3).map((field) => field.label);
+      reasons.push(
+        `Confirm from source: ${labels.join(', ')}${
+          extractionResolution.fields.length > labels.length
+            ? ` and ${extractionResolution.fields.length - labels.length} more field${extractionResolution.fields.length - labels.length > 1 ? 's' : ''}`
+            : ''
+        }.`,
+      );
+    }
+  }
 
   if (specificMissingReasons.length > 0) {
     reasons.push(...specificMissingReasons);
@@ -371,6 +448,20 @@ const buildWarningReasons = ({
   }
   if (Array.isArray(reviewReasons)) {
     for (const rawReason of reviewReasons) {
+      const normalizedReason = _normalizeFieldKey(rawReason);
+      if (
+        extractionResolution?.required &&
+        (
+          normalizedReason === 'field_not_found' ||
+          normalizedReason === 'review_required' ||
+          normalizedReason === 'low_confidence' ||
+          normalizedReason === 'low_confidence_critical' ||
+          normalizedReason.startsWith('critical_') ||
+          normalizedReason.startsWith('missing:')
+        )
+      ) {
+        continue;
+      }
       const humanized = _humanizeDocumentReviewReason(String(rawReason || '').trim(), reasonContext);
       if (humanized) {
         reasons.push(humanized);
@@ -1141,6 +1232,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const parseComplete = typeof docAny.parse_complete === "boolean" ? docAny.parse_complete : docAny.parseComplete;
       const missingRequiredFields = docAny.missing_required_fields ?? [];
       const reviewReasons = docAny.review_reasons ?? docAny.reviewReasons ?? [];
+      const fieldDetails = docAny.field_details ?? docAny.fieldDetails ?? {};
+      const criticalFieldStates = docAny.critical_field_states ?? docAny.criticalFieldStates ?? {};
+      const fieldDiagnostics = docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {};
+      const rawText = docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '';
+      const extractionResolution = _buildExtractionResolutionState({
+        missingRequiredFields,
+        criticalFieldStates,
+        fieldDetails,
+        parseComplete,
+      });
       const typeLabel = safeString(doc.document_type_label ?? docAny.document_type_label ?? getTruthfulDocumentTypeLabel(filename, typeKey));
       return {
         id: documentId,
@@ -1161,18 +1262,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           missingRequiredFields,
           parseComplete,
           reviewReasons,
+          extractionResolution,
           docType: typeKey,
-          rawText: docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '',
-          criticalFieldStates: docAny.critical_field_states ?? docAny.criticalFieldStates ?? {},
-          fieldDiagnostics: docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {},
+          rawText,
+          criticalFieldStates,
+          fieldDiagnostics,
         }),
         reviewReasons,
-        criticalFieldStates: docAny.critical_field_states ?? docAny.criticalFieldStates ?? {},
-        fieldDiagnostics: docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {},
-        rawText: docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '',
+        criticalFieldStates,
+        fieldDiagnostics,
+        rawText,
         requiredFieldsFound: docAny.required_fields_found,
         requiredFieldsTotal: docAny.required_fields_total,
-        fieldDetails: docAny.field_details ?? docAny.fieldDetails ?? {},
+        fieldDetails,
+        extractionResolution,
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
       };
     });
@@ -1183,6 +1286,19 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
+  const extractionResolutionSummary = useMemo(() => {
+    const docsNeedingResolution = documents.filter((doc) => doc.extractionResolution?.required);
+    const unresolvedCount = docsNeedingResolution.reduce(
+      (count, doc) => count + (doc.extractionResolution?.unresolvedCount ?? 0),
+      0,
+    );
+    return {
+      required: docsNeedingResolution.length > 0,
+      documents: docsNeedingResolution,
+      documentCount: docsNeedingResolution.length,
+      unresolvedCount,
+    };
+  }, [documents]);
   const backendIssueCount = Math.max(summary?.total_issues ?? 0, issueCards.length);
   const severityBreakdown = summary?.severity_breakdown ?? {
     critical: 0,
@@ -1634,6 +1750,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           matchedDoc &&
             ((matchedDoc.warningReasons ?? []).length > 0 ||
               (matchedDoc.reviewReasons ?? []).length > 0 ||
+              matchedDoc.extractionResolution?.required ||
               matchedDoc.reviewState === 'needs_review' ||
               matchedDoc.reviewState === 'blocked'),
         );
@@ -1656,13 +1773,25 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           ? 'needs_review'
           : 'ready';
         const synthesizedReviewNotes = matchedDoc
-          ? _buildSpecificFieldMissingReasons({
-              docType: String(matchedDoc.typeKey || ''),
-              rawText: String((matchedDoc as any).rawText ?? ''),
-              criticalFieldStates: (matchedDoc as any).criticalFieldStates ?? {},
-              fieldDiagnostics: (matchedDoc as any).fieldDiagnostics ?? {},
-              missingRequiredFields: (matchedDoc as any).missingRequiredFields ?? [],
-            })
+          ? matchedDoc.extractionResolution?.required
+            ? [
+                matchedDoc.extractionResolution.summary,
+                ...(matchedDoc.extractionResolution.fields.length > 0
+                  ? [
+                      `Confirm from source: ${matchedDoc.extractionResolution.fields
+                        .slice(0, 3)
+                        .map((field) => field.label)
+                        .join(', ')}.`,
+                    ]
+                  : []),
+              ]
+            : _buildSpecificFieldMissingReasons({
+                docType: String(matchedDoc.typeKey || ''),
+                rawText: String((matchedDoc as any).rawText ?? ''),
+                criticalFieldStates: (matchedDoc as any).criticalFieldStates ?? {},
+                fieldDiagnostics: (matchedDoc as any).fieldDiagnostics ?? {},
+                missingRequiredFields: (matchedDoc as any).missingRequiredFields ?? [],
+              })
           : [];
         const reviewNotes = matchedDoc
           ? [...matchedDoc.warningReasons, ...matchedDoc.reviewReasons].filter(Boolean)
@@ -1763,6 +1892,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       reviewNotes: string[];
     }): string => {
       if (!matchedDoc) return 'Missing required document';
+      if (matchedDoc.extractionResolution?.required) return 'Extraction resolution';
       const combined = reviewNotes.join(' ').toLowerCase();
       if (combined.includes('does not show') || combined.includes('does not clearly show') || combined.includes('missing one or more core')) {
         return 'Source-document absence';
@@ -1792,6 +1922,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     }): string => {
       if (!matchedDoc) {
         return `This LC-required ${label.toLowerCase()} is not currently available in the document set, so the case cannot be treated as presentation-ready.`;
+      }
+      if (matchedDoc.extractionResolution?.required) {
+        return `The ${label.toLowerCase()} is uploaded, but one or more extracted fields still need confirmation before this requirement can be treated as fully resolved.`;
       }
       if (category === 'Presentation block') {
         return `This matched ${label.toLowerCase()} is currently blocked from clean presentation until the review issue is cleared.`;
@@ -1823,6 +1956,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     }): string => {
       if (!matchedDoc) {
         return `Upload a ${label.toLowerCase()} that satisfies this LC requirement: ${requirementText}`;
+      }
+      if (category === 'Extraction resolution') {
+        return `Open the ${label.toLowerCase()} detail view, confirm the unresolved extracted fields from source evidence, and refresh the same session before treating validation as final.`;
       }
       if (category === 'Source-document absence') {
         return `Confirm whether the bank will accept the current ${label.toLowerCase()} as presented, or obtain an amended document that shows the missing information clearly.`;
@@ -2718,6 +2854,33 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               }}
             />
           )}
+          {extractionResolutionSummary.required && (
+            <Alert className="mt-4 border-amber-500/40 bg-amber-500/5">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="font-semibold">
+                Extraction Resolution Required
+              </AlertTitle>
+              <AlertDescription className="mt-2 space-y-2 text-sm">
+                <p>
+                  Validation below is provisional until{' '}
+                  <span className="font-medium">{extractionResolutionSummary.unresolvedCount}</span>{' '}
+                  extracted field{extractionResolutionSummary.unresolvedCount === 1 ? '' : 's'} across{' '}
+                  <span className="font-medium">{extractionResolutionSummary.documentCount}</span>{' '}
+                  document{extractionResolutionSummary.documentCount === 1 ? '' : 's'} are confirmed.
+                </p>
+                <p className="text-muted-foreground">
+                  Open the Documents tab, review the source evidence, and confirm only the unresolved fields. This refreshes the same session and does not start a new paid validation run.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {extractionResolutionSummary.documents.slice(0, 4).map((document) => (
+                    <Badge key={`resolution-${document.id}`} variant="outline" className="border-amber-500/30 text-amber-700 bg-amber-500/5">
+                      {document.name}: {document.extractionResolution?.unresolvedCount ?? 0} field{(document.extractionResolution?.unresolvedCount ?? 0) === 1 ? '' : 's'}
+                    </Badge>
+                  ))}
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
 
         {/* Detailed Results */}
@@ -3311,6 +3474,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               const reviewReasons = ((document as any).reviewReasons ?? []) as string[];
               const requirementStatus = document.requirementStatus ?? 'matched';
               const reviewState = document.reviewState ?? 'ready';
+              const extractionResolution = document.extractionResolution;
               const isLcRequiredDocument = lcRequiredDocumentTypeSet.has(normalizedDocumentType);
               const isOptionalSupportingDocument =
                 normalizedDocumentType !== 'letter_of_credit' && !isLcRequiredDocument;
@@ -3321,6 +3485,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               const effectiveReviewState: typeof reviewState =
                 isOptionalSupportingDocument && discrepancyCount === 0 ? 'ready' : reviewState;
               const extractionLabel =
+                extractionResolution?.required
+                  ? 'Needs field confirmation'
+                  : 
                 document.status === 'success'
                   ? 'Structured read complete'
                   : document.status === 'error'
@@ -3337,6 +3504,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               const reviewMeta =
                 isOptionalSupportingDocument && discrepancyCount === 0
                   ? { label: 'Informational only', status: 'pending' as const, note: 'This extra supporting document does not block clean presentation.' }
+                  : extractionResolution?.required
+                  ? { label: 'Awaiting extraction confirmation', status: 'warning' as const, note: extractionResolution.summary }
                   : effectiveReviewState === 'ready'
                   ? { label: 'No review hold', status: 'success' as const, note: 'No active review hold is attached to this document.' }
                   : effectiveReviewState === 'blocked'
@@ -3392,6 +3561,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               missingRequiredFields: (document as any).missingRequiredFields ?? [],
                               rawText: (document as any).rawText ?? '',
                               fieldDetails: (document as any).fieldDetails ?? {},
+                              extractionResolution: (document as any).extractionResolution,
                               ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
                               sourceFormat: (document.extractedFields as any)?._source_format,
                               isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,

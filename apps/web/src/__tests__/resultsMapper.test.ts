@@ -207,5 +207,51 @@ describe('results mapper - option e payload', () => {
       ),
     ).toBe(true);
   });
+
+  it('prefers current document field state over stale backend extraction-resolution summaries', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        issues: [],
+        documents: [
+          {
+            document_id: 'doc-invoice',
+            document_type: 'commercial_invoice',
+            filename: 'Invoice.pdf',
+            extraction_status: 'success',
+            extracted_fields: {
+              issue_date: '2026-04-20',
+            },
+            field_details: {
+              issue_date: {
+                verification: 'operator_confirmed',
+              },
+            },
+            missing_required_fields: [],
+            parse_complete: true,
+            review_required: false,
+            review_reasons: [],
+            extraction_resolution: {
+              required: true,
+              unresolved_count: 1,
+              summary: 'Stale summary should be ignored.',
+              fields: [
+                {
+                  field_name: 'issue_date',
+                  label: 'Issue Date',
+                  verification: 'not_found',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.documents[0]?.extractionResolution?.required).toBe(false);
+  });
 });
 

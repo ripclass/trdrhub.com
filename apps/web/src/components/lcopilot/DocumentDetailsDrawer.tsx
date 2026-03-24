@@ -52,6 +52,16 @@ export interface DocumentForDrawer {
   ocrConfidence?: number;
   sourceFormat?: string;
   isElectronicBL?: boolean;
+  extractionResolution?: {
+    required: boolean;
+    unresolvedCount: number;
+    summary: string;
+    fields: Array<{
+      fieldName: string;
+      label: string;
+      verification?: string;
+    }>;
+  };
 }
 
 interface DocumentDetailsDrawerProps {
@@ -603,6 +613,9 @@ export function DocumentDetailsDrawer({
       });
     };
 
+    (resolvedDocument.extractionResolution?.fields || []).forEach((field) =>
+      addCandidate(field.fieldName, field.verification || "not_found"),
+    );
     (resolvedDocument.missingRequiredFields || []).forEach((field) => addCandidate(String(field), "not_found"));
     Object.entries(criticalFieldStates).forEach(([fieldName, state]) => {
       if (isFieldMarkedMissing({ ...reasonContext, criticalFieldStates }, fieldName)) {
@@ -623,6 +636,11 @@ export function DocumentDetailsDrawer({
     (selectedResolutionField && resolvableFields.find((entry) => entry.key === selectedResolutionField)) ||
     resolvableFields[0] ||
     null;
+  const activeResolutionDetail =
+    activeResolutionField && mergedFieldDetails && typeof mergedFieldDetails === "object"
+      ? mergedFieldDetails[activeResolutionField.key]
+      : undefined;
+  const activeResolutionEvidenceNote = buildFieldEvidenceNote(activeResolutionDetail);
 
   useEffect(() => {
     if (!open) {
@@ -893,12 +911,17 @@ export function DocumentDetailsDrawer({
               <div className="space-y-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4">
                 <div className="space-y-1">
                   <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                    Resolve Extraction Fields
+                    Confirm Unresolved Fields
                   </h4>
                   <p className="text-sm text-muted-foreground">
-                    Save an operator-confirmed value on this session for unresolved fields. This updates the saved case data, but it does not trigger a full revalidation rerun yet.
+                    Confirm or correct only the fields the system could not confidently establish from the uploaded source. Saving updates this same session and refreshes the results without starting a new paid validation run.
                   </p>
                 </div>
+                {resolvedDocument.extractionResolution?.summary && (
+                  <div className="rounded-md border border-primary/20 bg-background/70 p-3 text-sm text-muted-foreground">
+                    {resolvedDocument.extractionResolution.summary}
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {resolvableFields.map((field) => (
                     <Button
@@ -914,8 +937,16 @@ export function DocumentDetailsDrawer({
                 </div>
                 {activeResolutionField && (
                   <div className="space-y-3">
+                    <div className="rounded-md border border-border/60 bg-background/70 p-3 space-y-1">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Source Basis
+                      </p>
+                      <p className="text-sm">
+                        {activeResolutionEvidenceNote || "No direct source snippet was confirmed yet. Review the source document and enter the value you can verify."}
+                      </p>
+                    </div>
                     <div className="space-y-2">
-                      <Label htmlFor="field-override-value">Resolved value</Label>
+                      <Label htmlFor="field-override-value">Confirmed value</Label>
                       <Input
                         id="field-override-value"
                         value={overrideValue}
@@ -938,7 +969,7 @@ export function DocumentDetailsDrawer({
                       onClick={handleSaveFieldOverride}
                       disabled={!overrideValue.trim() || isSavingFieldOverride}
                     >
-                      {isSavingFieldOverride ? "Saving..." : "Save field override"}
+                      {isSavingFieldOverride ? "Saving..." : "Confirm field value"}
                     </Button>
                   </div>
                 )}

@@ -1153,7 +1153,7 @@ describe('ExporterResults', () => {
     expect(screen.queryByText(/^Field not found$/i)).toBeNull();
   });
 
-  it('uses source-aware review notes in the invoice and packing detail drawers instead of raw diagnostic codes', async () => {
+  it('marks unresolved extraction as provisional and uses source-aware review notes in the invoice and packing detail drawers', async () => {
     const structured = buildValidationResults().structured_result!;
     const documentsStructured = [
       {
@@ -1234,9 +1234,13 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
+    expect(screen.getByText(/Extraction Resolution Required/i)).toBeInTheDocument();
+    expect(screen.getByText(/Validation below is provisional until/i)).toBeInTheDocument();
+
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
 
     const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
+    expect(within(invoiceCard).getAllByText(/Needs field confirmation/i).length).toBeGreaterThan(0);
     await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
     const invoiceDrawer = screen.getByRole('dialog');
     expect(within(invoiceDrawer).getByText(/Source invoice does not show an invoice date\./i)).toBeInTheDocument();
@@ -1312,10 +1316,10 @@ describe('ExporterResults', () => {
     await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
 
     const drawer = screen.getByRole('dialog');
-    expect(within(drawer).getByText(/Resolve Extraction Fields/i)).toBeInTheDocument();
-    await user.type(within(drawer).getByLabelText(/Resolved value/i), '2026-04-20');
+    expect(within(drawer).getByText(/Confirm Unresolved Fields/i)).toBeInTheDocument();
+    await user.type(within(drawer).getByLabelText(/Confirmed value/i), '2026-04-20');
     await user.type(within(drawer).getByLabelText(/Operator note/i), 'Confirmed from invoice header');
-    await user.click(within(drawer).getByRole('button', { name: /Save field override/i }));
+    await user.click(within(drawer).getByRole('button', { name: /Confirm field value/i }));
 
     await waitFor(() =>
       expect(saveFieldOverride).toHaveBeenCalledWith('job-123', {

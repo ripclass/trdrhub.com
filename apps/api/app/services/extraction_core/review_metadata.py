@@ -7,7 +7,14 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .contract import DocumentExtraction, EvidenceRef, ExtractionBundle, FieldExtraction
+from .contract import (
+    DocumentExtraction,
+    EvidenceRef,
+    ExtractionBundle,
+    ExtractionResolution,
+    ExtractionResolutionField,
+    FieldExtraction,
+)
 from .field_states import infer_field_state
 from .gate import evaluate_review_gate
 from .profiles import load_profile
@@ -70,6 +77,19 @@ _PREPARSER_FIELDS = (
 )
 _FIELD_PRIORITY = {name: index for index, name in enumerate(_PREPARSER_FIELDS)}
 _TOP3_FIELD_NAMES = frozenset({"bin_tin", "gross_weight", "net_weight"})
+_EXTRACTION_RESOLUTION_REASON_CODES = frozenset(
+    {
+        "FIELD_NOT_FOUND",
+        "FORMAT_INVALID",
+        "EVIDENCE_MISSING",
+        "LOW_CONFIDENCE_CRITICAL",
+        "CROSS_FIELD_CONFLICT",
+        "OCR_EMPTY_RESULT",
+        "OCR_TIMEOUT",
+        "OCR_AUTH_ERROR",
+        "OCR_UNSUPPORTED_FORMAT",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -88,6 +108,73 @@ class _ParsedFieldCandidate:
 def _env_enabled(name: str) -> bool:
     raw = str(os.getenv(name, "1") or "1").strip().lower()
     return raw not in {"0", "false", "no", "off"}
+
+
+def _humanize_field_label(field_name: str) -> str:
+    return str(field_name or "").replace("_", " ").strip().title()
+
+
+def _is_extraction_resolution_reason(reason: Any) -> bool:
+    text = str(reason or "").strip()
+    if not text:
+        return False
+    upper = text.upper()
+    lower = text.lower()
+    if upper in _EXTRACTION_RESOLUTION_REASON_CODES:
+        return True
+    if lower.startswith("missing:"):
+        return True
+    if lower.endswith("_missing_critical_fields"):
+        return True
+    if lower.startswith("critical_") and lower.endswith("_missing"):
+        return True
+    if lower.startswith("cross_field_"):
+        return True
+    return False
+
+
+def _build_extraction_resolution_from_fields(
+    *,
+    fields: Sequence[FieldExtraction],
+    field_details: Dict[str, Dict[str, Any]],
+) -> Optional[ExtractionResolution]:
+    unresolved: List[ExtractionResolutionField] = []
+    for field in fields:
+        detail = field_details.get(field.name) if isinstance(field_details.get(field.name), dict) else {}
+        verification = str(detail.get("verification") or "").strip().lower() or None
+        resolved = field.state == "found" and verification in {None, "", "confirmed", "text_supported", "operator_confirmed"}
+        if resolved:
+            continue
+        reason_code = next(
+            (
+                str(code)
+                for code in (field.reason_codes or [])
+                if _is_extraction_resolution_reason(code)
+            ),
+            None,
+        )
+        unresolved.append(
+            ExtractionResolutionField(
+                field_name=field.name,
+                label=_humanize_field_label(field.name),
+                verification=verification or ("not_found" if field.state != "found" else "model_suggested"),
+                reason_code=reason_code,
+            )
+        )
+
+    if not unresolved:
+        return None
+
+    unresolved_count = len(unresolved)
+    return ExtractionResolution(
+        required=True,
+        unresolved_count=unresolved_count,
+        summary=(
+            f"{unresolved_count} extracted field"
+            f"{'' if unresolved_count == 1 else 's'} still need confirmation before validation can be treated as final."
+        ),
+        fields=unresolved,
+    )
 
 
 def extraction_core_v1_enabled() -> bool:
@@ -1801,6 +1888,10 @@ def build_document_extraction(document: Dict[str, Any]) -> DocumentExtraction:
             )
         )
 
+    extraction_resolution = _build_extraction_resolution_from_fields(
+        fields=fields,
+        field_details=field_details if isinstance(field_details, dict) else {},
+    )
     cross_field_reasons = _evaluate_cross_field_reasons(fields=fields, auxiliary_fields=preparsed_candidates, cross_checks=cross_checks)
     document_reason_codes = _collect_document_reason_codes(document, extraction_artifacts)
     decision = evaluate_review_gate(
@@ -1811,15 +1902,18 @@ def build_document_extraction(document: Dict[str, Any]) -> DocumentExtraction:
         document_reason_codes=document_reason_codes,
         cross_field_reasons=cross_field_reasons,
     )
-    _apply_artifact_metadata(document=document, fields=fields, preparsed_candidates=preparsed_candidates, review_reasons=decision.reasons)
+    review_reasons = [reason for reason in (decision.reasons or []) if not _is_extraction_resolution_reason(reason)]
+    review_required = bool(review_reasons) or bool(extraction_resolution and extraction_resolution.required)
+    _apply_artifact_metadata(document=document, fields=fields, preparsed_candidates=preparsed_candidates, review_reasons=review_reasons)
 
     return DocumentExtraction(
         doc_id=str(document.get("id") or document.get("document_id") or ""),
         doc_type_predicted=doc_type,
         doc_type_confidence=_coerce_confidence(document.get("doc_type_confidence")) or 0.0,
         fields=fields,
-        review_required=decision.review_required,
-        review_reasons=decision.reasons,
+        review_required=review_required,
+        review_reasons=review_reasons,
+        extraction_resolution=extraction_resolution,
         profile_version=str(profile.get("version") or "profiles-v1"),
     )
 
@@ -1859,11 +1953,19 @@ def annotate_documents_with_review_metadata(documents: List[Dict[str, Any]]) -> 
         }
         review_required = bool(extraction_doc.get("review_required", False))
         review_reasons = extraction_doc.get("review_reasons") or []
+        extraction_resolution = (
+            extraction_doc.get("extraction_resolution")
+            if isinstance(extraction_doc.get("extraction_resolution"), dict)
+            else None
+        )
 
         document["review_required"] = review_required
         document["reviewRequired"] = review_required
         document["review_reasons"] = review_reasons
         document["reviewReasons"] = review_reasons
+        if extraction_resolution:
+            document["extraction_resolution"] = extraction_resolution
+            document["extractionResolution"] = extraction_resolution
         document["critical_field_states"] = critical_field_states
         document["criticalFieldStates"] = critical_field_states
 

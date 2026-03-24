@@ -75,6 +75,8 @@ def _load_shape_lc_financial_payload():
         "_apply_canonical_normalization",
         "_extract_label_value",
         "_extract_amount_value",
+        "_coerce_mt700_date_iso",
+        "_extract_mt700_timeline_fields",
         "_shape_lc_financial_payload",
     }
     loaded = _load_symbols(LAUNCH_PIPELINE_PATH, symbols, namespace)
@@ -217,6 +219,7 @@ def _load_launch_supporting_pipeline():
         "_fields_to_flat_context",
         "_is_populated_field_value",
         "_assess_required_field_completeness",
+        "_build_extraction_resolution_metrics",
         "_assess_insurance_completeness",
         "_assess_inspection_completeness",
         "_detect_insurance_subtype",
@@ -445,4 +448,3 @@ def test_inspection_certificate_dispatch_extracts_plain_result_labels() -> None:
     assert result["doc_info_patch"]["inspection_subtype"] == "inspection_certificate"
     assert result["doc_info_patch"]["extraction_status"] in {"success", "partial"}
     assert result["context_payload"]["inspection_result"] == "SATISFACTORY"
-

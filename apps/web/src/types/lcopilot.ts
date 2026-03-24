@@ -248,6 +248,16 @@ export interface ValidationDocument {
   reviewState?: 'ready' | 'needs_review' | 'blocked';
   reviewReasons?: string[];
   criticalFieldStates?: Record<string, string>;
+  extractionResolution?: {
+    required: boolean;
+    unresolvedCount: number;
+    summary: string;
+    fields: Array<{
+      fieldName: string;
+      label: string;
+      verification?: string;
+    }>;
+  };
 }
 
 export type DocumentRiskEntry = SharedDocumentRiskEntry;

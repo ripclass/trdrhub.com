@@ -480,6 +480,8 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 "extraction_status": extraction_status,
                 "extracted_fields": doc.get("extractedFields") or doc.get("extracted_fields") or {},
                 "field_details": doc.get("field_details") or doc.get("fieldDetails") or doc.get("_field_details") or {},
+                "extraction_resolution": doc.get("extraction_resolution") or doc.get("extractionResolution"),
+                "extractionResolution": doc.get("extractionResolution") or doc.get("extraction_resolution"),
                 "issues_count": doc.get("discrepancyCount")
                 or doc.get("issues_count")
                 or doc.get("issuesCount")

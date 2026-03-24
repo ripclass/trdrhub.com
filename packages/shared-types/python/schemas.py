@@ -279,6 +279,21 @@ class ExtractionFieldDetail(BaseModel):
     evidence: Optional[ExtractionFieldEvidence] = None
 
 
+class ExtractionResolutionField(BaseModel):
+    field_name: str
+    label: str
+    verification: Optional[str] = None
+    reason_code: Optional[str] = None
+
+
+class ExtractionResolution(BaseModel):
+    required: bool
+    unresolved_count: int = Field(ge=0)
+    summary: str
+    fields: List[ExtractionResolutionField] = Field(default_factory=list)
+    source: Optional[str] = None
+
+
 class FieldOverrideRequest(BaseModel):
     document_id: str
     field_name: str
@@ -294,6 +309,7 @@ class DocumentExtractionDocument(BaseModel):
     extraction_status: Optional[str] = None
     extracted_fields: Optional[Dict[str, Any]] = None
     field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
+    extraction_resolution: Optional[ExtractionResolution] = None
     issues_count: Optional[int] = Field(default=None, ge=0)
     ocr_confidence: Optional[float] = None
     review_required: Optional[bool] = None
@@ -336,6 +352,7 @@ class StructuredResultDocument(BaseModel):
     extraction_status: str
     extracted_fields: Dict[str, Any]
     field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
+    extraction_resolution: Optional[ExtractionResolution] = None
     issues_count: int = Field(ge=0)
     review_required: Optional[bool] = None
     review_reasons: List[str] = Field(default_factory=list)
@@ -811,6 +828,7 @@ class ValidationDocument(BaseModel):
     reviewRequired: Optional[bool] = None
     reviewReasons: Optional[List[str]] = None
     criticalFieldStates: Optional[Dict[str, str]] = None
+    extractionResolution: Optional[Dict[str, Any]] = None
     requirementStatus: Optional[DocumentRequirementStatus] = None
     reviewState: Optional[DocumentReviewState] = None
 

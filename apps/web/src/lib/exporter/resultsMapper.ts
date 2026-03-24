@@ -102,12 +102,14 @@ const deriveReviewState = ({
   reviewRequired,
   reviewReasons,
   issuesCount,
+  extractionResolutionRequired,
 }: {
   status: 'success' | 'warning' | 'error';
   extractionStatus: string;
   reviewRequired: boolean;
   reviewReasons: string[];
   issuesCount: number;
+  extractionResolutionRequired?: boolean;
 }): 'ready' | 'needs_review' | 'blocked' => {
   const normalizedExtractionStatus = extractionStatus.toLowerCase();
   if (status === 'error' || ['error', 'failed', 'empty'].includes(normalizedExtractionStatus)) {
@@ -115,6 +117,7 @@ const deriveReviewState = ({
   }
 
   if (
+    extractionResolutionRequired ||
     reviewRequired ||
     reviewReasons.length > 0 ||
     issuesCount > 0 ||
@@ -125,6 +128,111 @@ const deriveReviewState = ({
   }
 
   return 'ready';
+};
+
+const humanizeFieldLabel = (field: string): string =>
+  String(field || '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+const normalizeFieldKey = (value: unknown): string =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+const buildExtractionResolution = ({
+  existingResolution,
+  missingRequiredFields,
+  fieldDetails,
+  criticalFieldStates,
+  parseComplete,
+}: {
+  existingResolution?: any;
+  missingRequiredFields: string[];
+  fieldDetails: Record<string, any>;
+  criticalFieldStates: Record<string, any>;
+  parseComplete?: boolean;
+}) => {
+  const candidates = new Map<string, { fieldName: string; label: string; verification?: string }>();
+  const addField = (rawField: unknown, verification?: string) => {
+    const fieldName = normalizeFieldKey(rawField);
+    if (!fieldName) return;
+    if (!candidates.has(fieldName)) {
+      candidates.set(fieldName, {
+        fieldName,
+        label: humanizeFieldLabel(fieldName),
+        verification,
+      });
+    }
+  };
+
+  missingRequiredFields.forEach((field) => addField(field, 'not_found'));
+  Object.entries(criticalFieldStates || {}).forEach(([fieldName, state]) => {
+    const normalizedState = normalizeFieldKey(state);
+    if (normalizedState === 'missing' || normalizedState === 'failed' || normalizedState === 'parse_failed') {
+      addField(fieldName, normalizedState);
+    }
+  });
+  Object.entries(fieldDetails || {}).forEach(([fieldName, detail]) => {
+    const verification = normalizeFieldKey((detail as Record<string, any>)?.verification);
+    if (verification && !['confirmed', 'operator_confirmed'].includes(verification)) {
+      addField(fieldName, verification);
+    }
+  });
+
+  const fields = Array.from(candidates.values());
+  const required = fields.length > 0 || parseComplete === false;
+  const unresolvedCount = fields.length;
+  const summary = required
+    ? unresolvedCount > 0
+      ? `${unresolvedCount} extracted field${unresolvedCount === 1 ? '' : 's'} still need confirmation before validation can be treated as final.`
+      : 'Extraction is still incomplete and needs confirmation before validation can be treated as final.'
+    : '';
+
+  const derived = {
+    required,
+    unresolvedCount,
+    summary,
+    fields,
+  };
+
+  if (existingResolution && typeof existingResolution === 'object') {
+    const existingFields = Array.isArray(existingResolution.fields)
+      ? existingResolution.fields
+          .map((field: any) => ({
+            fieldName: String(field?.field_name ?? field?.fieldName ?? ''),
+            label: String(field?.label ?? humanizeFieldLabel(field?.field_name ?? field?.fieldName ?? '')),
+            verification:
+              field?.verification !== undefined && field?.verification !== null
+                ? String(field.verification)
+                : undefined,
+          }))
+          .filter((field: { fieldName: string }) => field.fieldName)
+      : [];
+    const existing = {
+      required: Boolean(existingResolution.required),
+      unresolvedCount:
+        typeof existingResolution.unresolved_count === 'number'
+          ? existingResolution.unresolved_count
+          : typeof existingResolution.unresolvedCount === 'number'
+          ? existingResolution.unresolvedCount
+          : existingFields.length,
+      summary: String(existingResolution.summary ?? ''),
+      fields: existingFields,
+    };
+    if (existing.required === derived.required && existing.unresolvedCount === derived.unresolvedCount) {
+      return {
+        ...existing,
+        fields: existing.fields.length > 0 ? existing.fields : derived.fields,
+        summary: existing.summary || derived.summary,
+      };
+    }
+  }
+
+  return derived;
 };
 
 const formatTextValue = (value: any): string => {
@@ -321,12 +429,21 @@ const mapDocuments = (docs: any[] = []) => {
       : [];
     const criticalFieldStates = doc?.critical_field_states ?? doc?.criticalFieldStates ?? {};
     const fieldDetails = doc?.field_details ?? doc?.fieldDetails ?? {};
+    const existingExtractionResolution = doc?.extraction_resolution ?? doc?.extractionResolution;
     const fieldDiagnostics = doc?.extraction_artifacts_v1?.field_diagnostics ?? doc?.field_diagnostics ?? {};
     const rawText =
       doc?.extraction_artifacts_v1?.raw_text ??
       doc?.raw_text ??
       doc?.rawText ??
       '';
+    const extractionResolution = buildExtractionResolution({
+      existingResolution: existingExtractionResolution,
+      missingRequiredFields,
+      fieldDetails,
+      criticalFieldStates,
+      parseComplete:
+        typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
+    });
     const requirementStatus = deriveRequirementStatus({
       missingRequiredFields,
       requiredFieldsFound,
@@ -338,6 +455,7 @@ const mapDocuments = (docs: any[] = []) => {
       reviewRequired,
       reviewReasons,
       issuesCount,
+      extractionResolutionRequired: extractionResolution.required,
     });
 
     return {
@@ -363,6 +481,7 @@ const mapDocuments = (docs: any[] = []) => {
       rawText,
       requirementStatus,
       reviewState,
+      extractionResolution,
       extractedFields: doc?.extracted_fields ?? {},
     };
   });

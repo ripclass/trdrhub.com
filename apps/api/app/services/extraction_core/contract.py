@@ -27,6 +27,23 @@ class FieldExtraction:
 
 
 @dataclass(frozen=True)
+class ExtractionResolutionField:
+    field_name: str
+    label: str
+    verification: Optional[str] = None
+    reason_code: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ExtractionResolution:
+    required: bool
+    unresolved_count: int
+    summary: str
+    fields: List[ExtractionResolutionField] = field(default_factory=list)
+    source: str = "ai_extraction"
+
+
+@dataclass(frozen=True)
 class DocumentExtraction:
     doc_id: str
     doc_type_predicted: str
@@ -34,6 +51,7 @@ class DocumentExtraction:
     fields: List[FieldExtraction]
     review_required: bool
     review_reasons: List[str] = field(default_factory=list)
+    extraction_resolution: Optional[ExtractionResolution] = None
     pipeline_version: str = "extraction-core-v1"
     profile_version: str = "profiles-v1"
     model_route_version: str = "routing-v1"

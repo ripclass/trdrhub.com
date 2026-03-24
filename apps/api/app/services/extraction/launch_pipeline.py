@@ -1131,6 +1131,39 @@ def _assess_required_field_completeness(extracted_fields: Optional[Dict[str, Any
     }
 
 
+def _build_extraction_resolution_metrics(
+    *,
+    missing_required_fields: List[str],
+    parse_complete: bool,
+) -> Dict[str, Any]:
+    normalized_missing = [str(field).strip() for field in (missing_required_fields or []) if str(field or "").strip()]
+    unresolved_count = len(normalized_missing)
+    required = unresolved_count > 0 or parse_complete is False
+    if unresolved_count > 0:
+        summary = (
+            f"{unresolved_count} extracted field"
+            f"{'' if unresolved_count == 1 else 's'} still need confirmation before validation can be treated as final."
+        )
+    elif required:
+        summary = "Extraction is still incomplete and needs confirmation before validation can be treated as final."
+    else:
+        summary = ""
+    return {
+        "required": required,
+        "unresolved_count": unresolved_count,
+        "summary": summary,
+        "fields": [
+            {
+                "field_name": field,
+                "label": str(field).replace("_", " ").strip().title(),
+                "verification": "not_found",
+            }
+            for field in normalized_missing
+        ],
+        "source": "ai_extraction",
+    }
+
+
 def _assess_coo_parse_completeness(extracted_fields: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     required_fields = [
         "country_of_origin",
@@ -1148,6 +1181,11 @@ def _assess_coo_parse_completeness(extracted_fields: Optional[Dict[str, Any]]) -
             "has_country_of_origin": has_country,
             "has_certificate_number": _is_populated_field_value((extracted_fields or {}).get("certificate_number")),
             "parse_complete": parse_complete,
+            "review_reasons": [],
+            "extraction_resolution": _build_extraction_resolution_metrics(
+                missing_required_fields=metrics.get("missing_required_fields") or [],
+                parse_complete=parse_complete,
+            ),
         }
     )
     return metrics
@@ -1304,12 +1342,16 @@ def _assess_invoice_financial_completeness(payload: Optional[Dict[str, Any]], *,
     required_fields = subtype_required.get(invoice_subtype, ["invoice_number", "amount"])
     metrics = _assess_required_field_completeness(payload, required_fields)
     parse_complete = metrics.get("required_found", 0) >= max(1, min(2, metrics.get("required_total", 0)))
-    review_reasons = []
-    if not parse_complete:
-        review_reasons.append(f"invoice_{invoice_subtype}_missing_critical_fields")
-    if metrics.get("missing_required_fields"):
-        review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
-    metrics.update({"parse_complete": parse_complete, "review_reasons": review_reasons})
+    metrics.update(
+        {
+            "parse_complete": parse_complete,
+            "review_reasons": [],
+            "extraction_resolution": _build_extraction_resolution_metrics(
+                missing_required_fields=metrics.get("missing_required_fields") or [],
+                parse_complete=parse_complete,
+            ),
+        }
+    )
     return metrics
 
 
@@ -1395,12 +1437,16 @@ def _assess_lc_financial_completeness(payload: Optional[Dict[str, Any]], *, lc_s
     required_fields = subtype_required.get(lc_subtype, ["applicant", "beneficiary"])
     metrics = _assess_required_field_completeness(payload, required_fields)
     parse_complete = metrics.get("required_found", 0) >= max(1, min(3, metrics.get("required_total", 0)))
-    review_reasons = []
-    if not parse_complete:
-        review_reasons.append(f"lc_{lc_subtype}_missing_critical_fields")
-    if metrics.get("missing_required_fields"):
-        review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
-    metrics.update({"parse_complete": parse_complete, "review_reasons": review_reasons})
+    metrics.update(
+        {
+            "parse_complete": parse_complete,
+            "review_reasons": [],
+            "extraction_resolution": _build_extraction_resolution_metrics(
+                missing_required_fields=metrics.get("missing_required_fields") or [],
+                parse_complete=parse_complete,
+            ),
+        }
+    )
     return metrics
 
 
@@ -1762,12 +1808,16 @@ def _assess_insurance_completeness(payload: Optional[Dict[str, Any]], *, insuran
         required_fields = subtype_required.get(insurance_subtype, ["policy_number"])
         metrics = _assess_required_field_completeness(payload, required_fields)
         parse_complete = metrics.get("required_found", 0) >= max(1, min(2, metrics.get("required_total", 0)))
-    review_reasons = []
-    if not parse_complete:
-        review_reasons.append(f"insurance_{insurance_subtype}_missing_critical_fields")
-    if metrics.get("missing_required_fields") and not (insurance_subtype in attestation_style_subtypes and parse_complete):
-        review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
-    metrics.update({"parse_complete": parse_complete, "review_reasons": review_reasons})
+    metrics.update(
+        {
+            "parse_complete": parse_complete,
+            "review_reasons": [],
+            "extraction_resolution": _build_extraction_resolution_metrics(
+                missing_required_fields=metrics.get("missing_required_fields") or [],
+                parse_complete=parse_complete,
+            ),
+        }
+    )
     return metrics
 
 
@@ -1856,12 +1906,15 @@ def _assess_regulatory_completeness(payload: Optional[Dict[str, Any]], *, regula
         metrics = _assess_coo_parse_completeness(payload)
         if metrics.get("parse_complete"):
             metrics["missing_required_fields"] = []
-        review_reasons = []
-        if not metrics.get("parse_complete"):
-            review_reasons.append("regulatory_certificate_of_origin_missing_critical_fields")
-        if metrics.get("missing_required_fields"):
-            review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
-        metrics.update({"review_reasons": review_reasons})
+        metrics.update(
+            {
+                "review_reasons": [],
+                "extraction_resolution": _build_extraction_resolution_metrics(
+                    missing_required_fields=metrics.get("missing_required_fields") or [],
+                    parse_complete=bool(metrics.get("parse_complete")),
+                ),
+            }
+        )
         return metrics
 
     subtype_required = {
@@ -1881,12 +1934,16 @@ def _assess_regulatory_completeness(payload: Optional[Dict[str, Any]], *, regula
     required_fields = subtype_required.get(regulatory_subtype, ["certificate_number"])
     metrics = _assess_required_field_completeness(payload, required_fields)
     parse_complete = metrics.get("required_found", 0) >= max(1, min(2, metrics.get("required_total", 0)))
-    review_reasons = []
-    if not parse_complete:
-        review_reasons.append(f"regulatory_{regulatory_subtype}_missing_critical_fields")
-    if metrics.get("missing_required_fields"):
-        review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
-    metrics.update({"parse_complete": parse_complete, "review_reasons": review_reasons})
+    metrics.update(
+        {
+            "parse_complete": parse_complete,
+            "review_reasons": [],
+            "extraction_resolution": _build_extraction_resolution_metrics(
+                missing_required_fields=metrics.get("missing_required_fields") or [],
+                parse_complete=parse_complete,
+            ),
+        }
+    )
     return metrics
 
 
@@ -2003,15 +2060,16 @@ def _assess_inspection_completeness(payload: Optional[Dict[str, Any]], *, inspec
     required_fields = subtype_required.get(inspection_subtype, ["inspection_agency", "inspection_result"])
     metrics = _assess_required_field_completeness(payload, required_fields)
     parse_complete = metrics.get("required_found", 0) >= max(1, min(2, metrics.get("required_total", 0)))
-    review_reasons = []
-    if not parse_complete:
-        review_reasons.append(f"inspection_{inspection_subtype}_missing_critical_fields")
-    if metrics.get("missing_required_fields"):
-        review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
-    metrics.update({
-        "parse_complete": parse_complete,
-        "review_reasons": review_reasons,
-    })
+    metrics.update(
+        {
+            "parse_complete": parse_complete,
+            "review_reasons": [],
+            "extraction_resolution": _build_extraction_resolution_metrics(
+                missing_required_fields=metrics.get("missing_required_fields") or [],
+                parse_complete=parse_complete,
+            ),
+        }
+    )
     return metrics
 
 
@@ -2112,15 +2170,16 @@ def _assess_transport_completeness(payload: Optional[Dict[str, Any]], *, transpo
     required_fields = subtype_required.get(transport_subtype, ["shipper", "consignee"])
     metrics = _assess_required_field_completeness(payload, required_fields)
     parse_complete = metrics.get("required_found", 0) >= max(1, min(3, metrics.get("required_total", 0)))
-    review_reasons = []
-    if not parse_complete:
-        review_reasons.append(f"transport_{transport_subtype}_missing_critical_fields")
-    if metrics.get("missing_required_fields"):
-        review_reasons.extend([f"missing:{field}" for field in metrics["missing_required_fields"]])
-    metrics.update({
-        "parse_complete": parse_complete,
-        "review_reasons": review_reasons,
-    })
+    metrics.update(
+        {
+            "parse_complete": parse_complete,
+            "review_reasons": [],
+            "extraction_resolution": _build_extraction_resolution_metrics(
+                missing_required_fields=metrics.get("missing_required_fields") or [],
+                parse_complete=parse_complete,
+            ),
+        }
+    )
     return metrics
 
 

@@ -266,6 +266,23 @@ export const ExtractionFieldDetailSchema = z.object({
 }).passthrough();
 export type ExtractionFieldDetail = z.infer<typeof ExtractionFieldDetailSchema>;
 
+export const ExtractionResolutionFieldSchema = z.object({
+  field_name: z.string(),
+  label: z.string(),
+  verification: z.string().optional(),
+  reason_code: z.string().optional().nullable(),
+}).passthrough();
+export type ExtractionResolutionField = z.infer<typeof ExtractionResolutionFieldSchema>;
+
+export const ExtractionResolutionSchema = z.object({
+  required: z.boolean(),
+  unresolved_count: z.number().nonnegative(),
+  summary: z.string(),
+  fields: z.array(ExtractionResolutionFieldSchema).optional(),
+  source: z.string().optional(),
+}).passthrough();
+export type ExtractionResolution = z.infer<typeof ExtractionResolutionSchema>;
+
 export const FieldOverrideRequestSchema = z.object({
   document_id: z.string(),
   field_name: z.string(),
@@ -283,6 +300,8 @@ export const DocumentExtractionDocumentSchema = z.object({
   extracted_fields: z.record(z.unknown()).optional(),
   field_details: z.record(ExtractionFieldDetailSchema).optional(),
   fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
+  extraction_resolution: ExtractionResolutionSchema.optional(),
+  extractionResolution: ExtractionResolutionSchema.optional(),
   issues_count: z.number().nonnegative().optional(),
   ocr_confidence: z.number().optional(),
   review_required: z.boolean().optional(),
@@ -335,6 +354,8 @@ export const StructuredResultDocumentSchema = z.object({
   extracted_fields: z.record(z.unknown()).optional(),
   field_details: z.record(ExtractionFieldDetailSchema).optional(),
   fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
+  extraction_resolution: ExtractionResolutionSchema.optional(),
+  extractionResolution: ExtractionResolutionSchema.optional(),
   issues_count: z.number().nonnegative().optional(),
   review_required: z.boolean().optional(),
   review_reasons: z.array(z.string()).optional(),
@@ -836,6 +857,18 @@ export const ValidationDocumentSchema = z.object({
   reviewRequired: z.boolean().optional(),
   reviewReasons: z.array(z.string()).optional(),
   criticalFieldStates: z.record(z.string()).optional(),
+  extractionResolution: z.object({
+    required: z.boolean(),
+    unresolvedCount: z.number().nonnegative(),
+    summary: z.string(),
+    fields: z.array(
+      z.object({
+        fieldName: z.string(),
+        label: z.string(),
+        verification: z.string().optional(),
+      })
+    ),
+  }).optional(),
   requirementStatus: DocumentRequirementStatusSchema.optional(),
   reviewState: DocumentReviewStateSchema.optional(),
 });

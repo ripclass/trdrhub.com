@@ -452,6 +452,21 @@ def _log_document_extraction_telemetry(
     logger.info("validate.extraction.telemetry %s", json.dumps(payload, default=str))
 
 
+def _extract_extraction_resolution_from_context_payload(context_payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(context_payload, dict):
+        return None
+    direct = context_payload.get("extraction_resolution")
+    if isinstance(direct, dict):
+        return direct
+    for key, value in context_payload.items():
+        if not str(key or "").endswith("_review") or not isinstance(value, dict):
+            continue
+        extraction_resolution = value.get("extraction_resolution")
+        if isinstance(extraction_resolution, dict):
+            return extraction_resolution
+    return None
+
+
 
 
 
@@ -998,6 +1013,8 @@ def _build_document_summaries(
             "extractedFields": _filter_user_facing_fields(detail.get("extracted_fields") or {}),
             "field_details": detail.get("field_details") or detail.get("fieldDetails") or detail.get("_field_details") or {},
             "fieldDetails": detail.get("fieldDetails") or detail.get("field_details") or detail.get("_field_details") or {},
+            "extraction_resolution": detail.get("extraction_resolution") or detail.get("extractionResolution"),
+            "extractionResolution": detail.get("extractionResolution") or detail.get("extraction_resolution"),
             "ocrConfidence": detail.get("ocr_confidence"),
             "extractionStatus": detail.get("extraction_status"),
             "parse_complete": parse_complete_flag,
@@ -1716,6 +1733,10 @@ async def _build_document_context(
                         doc_info["extracted_fields"] = context_payload.get("extracted_fields")
                     if isinstance(context_payload.get("_field_details"), dict):
                         doc_info["field_details"] = context_payload.get("_field_details")
+                    extraction_resolution = _extract_extraction_resolution_from_context_payload(context_payload)
+                    if extraction_resolution:
+                        doc_info["extraction_resolution"] = extraction_resolution
+                        doc_info["extractionResolution"] = extraction_resolution
 
                 doc_info.setdefault("_day1_runtime_hook", {})
                 doc_info["_day1_runtime_hook"]["callsite_reached"] = True
@@ -2152,6 +2173,7 @@ def _build_blocked_structured_result(
             "review_required": bool(doc.get("review_required") or doc.get("reviewRequired")),
             "review_reasons": doc.get("review_reasons") or doc.get("reviewReasons") or [],
             "critical_field_states": doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
+            "extraction_resolution": doc.get("extraction_resolution") or doc.get("extractionResolution"),
             "extraction_artifacts_v1": doc.get("extraction_artifacts_v1") or fallback_artifacts,
         })
     
