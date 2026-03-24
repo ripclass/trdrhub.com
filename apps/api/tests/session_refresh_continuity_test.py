@@ -82,6 +82,35 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             "final_verdict": "pass" if bank_verdict.get("can_submit") and not issues else "review",
             "issue_count": len(issues or []),
             "eligibility_status": "eligible" if eligibility.get("can_submit") else "review_required",
+            "review_required_reason": list(eligibility.get("reasons") or []),
+            "escalation_triggers": list(eligibility.get("missing_reason_codes") or []),
+            "rules_evidence": {
+                "missing_reason_codes": list(eligibility.get("missing_reason_codes") or []),
+                "unresolved_critical_fields": copy.deepcopy(
+                    list(eligibility.get("unresolved_critical_fields") or [])
+                ),
+                "reason_semantics": {
+                    "extraction_failures": list(eligibility.get("missing_reason_codes") or []),
+                    "missing_fields": [
+                        str(item.get("field") or "")
+                        for item in (eligibility.get("unresolved_critical_fields") or [])
+                        if isinstance(item, dict) and str(item.get("field") or "").strip()
+                    ],
+                    "parse_failures": [],
+                },
+            },
+            "evidence_summary": {
+                "submission_readiness": "ready" if eligibility.get("can_submit") else "not_ready",
+                "reason_semantics": {
+                    "extraction_failures": list(eligibility.get("missing_reason_codes") or []),
+                    "missing_fields": [
+                        str(item.get("field") or "")
+                        for item in (eligibility.get("unresolved_critical_fields") or [])
+                        if isinstance(item, dict) and str(item.get("field") or "").strip()
+                    ],
+                    "parse_failures": [],
+                },
+            },
         }
 
     def _fake_build_processing_summary_v2(processing_summary, documents, issues, compliance_rate=None):
@@ -141,7 +170,18 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             }
         return documents
 
-    def _fake_build_resolution_queue_v1(documents):
+    def _fake_build_resolution_queue_v1(documents, *, workflow_stage=None):
+        if str((workflow_stage or {}).get("stage") or "").strip().lower() == "validation_results":
+            return {
+                "version": "resolution_queue_v1",
+                "items": [],
+                "summary": {
+                    "total_items": 0,
+                    "user_resolvable_items": 0,
+                    "unresolved_documents": 0,
+                    "document_counts": {},
+                },
+            }
         items = []
         unresolved_documents = 0
         for document in documents or []:
@@ -175,7 +215,7 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         queue = (
             resolution_queue
             if isinstance(resolution_queue, dict)
-            else _fake_build_resolution_queue_v1(documents)
+            else _fake_build_resolution_queue_v1(documents, workflow_stage=workflow_stage)
         )
         items = list(queue.get("items") or [])
         documents_payload = []
@@ -244,11 +284,13 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         bank_verdict,
         submission_eligibility,
         validation_contract=None,
+        resolution_queue=None,
     ):
         stage = str((workflow_stage or {}).get("stage") or "").strip().lower()
         bank_verdict = copy.deepcopy(bank_verdict or {})
         submission_eligibility = copy.deepcopy(submission_eligibility or {})
         validation_contract = copy.deepcopy(validation_contract or {})
+        resolution_queue = copy.deepcopy(resolution_queue or {})
         if stage == "extraction_resolution":
             bank_verdict["verdict"] = "CAUTION"
             bank_verdict["can_submit"] = False
@@ -258,6 +300,42 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             ]
             validation_contract["final_verdict"] = "review"
             validation_contract["override_reason"] = "extraction_resolution_pending"
+        elif stage == "validation_results":
+            submission_eligibility["missing_reason_codes"] = []
+            submission_eligibility["unresolved_critical_fields"] = []
+            submission_eligibility["unresolved_critical_statuses"] = []
+            submission_eligibility["reasons"] = [
+                reason
+                for reason in list(submission_eligibility.get("reasons") or [])
+                if str(reason).strip().lower() != "workflow_stage_extraction_resolution"
+            ]
+            validation_contract.setdefault("rules_evidence", {})
+            validation_contract.setdefault("evidence_summary", {})
+            validation_contract["rules_evidence"]["missing_reason_codes"] = []
+            validation_contract["rules_evidence"]["unresolved_critical_fields"] = []
+            validation_contract["rules_evidence"]["reason_semantics"] = {
+                "extraction_failures": [],
+                "missing_fields": [],
+                "parse_failures": [],
+            }
+            validation_contract["evidence_summary"]["reason_semantics"] = {
+                "extraction_failures": [],
+                "missing_fields": [],
+                "parse_failures": [],
+            }
+            validation_contract["review_required_reason"] = [
+                reason
+                for reason in list(validation_contract.get("review_required_reason") or [])
+                if str(reason).strip().lower() != "workflow_stage_extraction_resolution"
+            ]
+            validation_contract["provisional_validation"] = False
+            resolution_queue["items"] = []
+            resolution_queue["summary"] = {
+                "total_items": 0,
+                "user_resolvable_items": 0,
+                "unresolved_documents": 0,
+                "document_counts": {},
+            }
         return {
             "bank_verdict": bank_verdict,
             "submission_eligibility": submission_eligibility,
@@ -578,3 +656,118 @@ def test_refresh_structured_result_after_rejection_keeps_extraction_issue_open()
     assert len(refreshed["_provisional_issues"]) == 1
     assert refreshed["_provisional_issues"][0]["reason_code"] == "FIELD_NOT_FOUND"
     assert refreshed["_operator_field_refresh"]["verification"] == "operator_rejected"
+
+
+def test_refresh_structured_result_clears_stale_resolution_contract_state_after_stage_flip() -> None:
+    symbols = _load_symbols(
+        {
+            "sync_structured_result_collections",
+            "_normalize_field_key",
+            "_normalize_issue_document_ids",
+            "_issue_targets_overridden_field",
+            "_is_override_resolved_extraction_issue",
+            "_filter_resolved_override_issues",
+            "_build_field_decisions_from_documents",
+            "_copy_documents_to_secondary_surfaces",
+            "_resolve_documents_for_refresh",
+            "refresh_structured_result_after_field_override",
+        }
+    )
+    refresh = symbols["refresh_structured_result_after_field_override"]
+
+    document = {
+        "document_id": "doc-invoice",
+        "document_type": "commercial_invoice",
+        "name": "Invoice.pdf",
+        "extracted_fields": {
+            "invoice_number": "DKEL/EXP/2026/114",
+            "invoice_date": None,
+        },
+        "field_details": {
+            "invoice_date": {
+                "verification": "not_found",
+                "source": "ai_first",
+                "confidence": 0.0,
+            }
+        },
+        "review_reasons": [],
+        "critical_field_states": {"invoice_date": "missing"},
+        "status": "warning",
+    }
+    structured_result = {
+        "documents": [copy.deepcopy(document)],
+        "documents_structured": [copy.deepcopy(document)],
+        "document_extraction_v1": {"documents": [copy.deepcopy(document)]},
+        "processing_summary": {
+            "documents": [copy.deepcopy(document)],
+            "processing_time_seconds": 12.3,
+            "processing_time_display": "12.3s",
+            "processing_time_ms": 12300,
+            "extraction_quality": 96,
+        },
+        "processing_summary_v2": {"documents": [copy.deepcopy(document)]},
+        "issues": [],
+        "analytics": {},
+        "gate_result": {"completeness": 0.95},
+        "validation_blocked": False,
+        "submission_eligibility": {
+            "can_submit": True,
+            "reasons": ["workflow_stage_extraction_resolution"],
+            "missing_reason_codes": ["field_not_found"],
+            "unresolved_critical_fields": [
+                {"field": "invoice_date", "status": "retry", "reason_code": "field_not_found"}
+            ],
+            "unresolved_critical_statuses": ["retry"],
+        },
+        "effective_submission_eligibility": {
+            "can_submit": True,
+            "reasons": ["workflow_stage_extraction_resolution"],
+            "missing_reason_codes": ["field_not_found"],
+            "unresolved_critical_fields": [
+                {"field": "invoice_date", "status": "retry", "reason_code": "field_not_found"}
+            ],
+            "unresolved_critical_statuses": ["retry"],
+        },
+        "validation_contract_v1": {
+            "final_verdict": "review",
+            "review_required_reason": ["workflow_stage_extraction_resolution"],
+            "rules_evidence": {
+                "missing_reason_codes": ["field_not_found"],
+                "unresolved_critical_fields": [
+                    {"field": "invoice_date", "status": "retry", "reason_code": "field_not_found"}
+                ],
+                "reason_semantics": {
+                    "extraction_failures": ["field_not_found"],
+                    "missing_fields": ["invoice_date"],
+                    "parse_failures": [],
+                },
+            },
+            "evidence_summary": {
+                "submission_readiness": "not_ready",
+                "reason_semantics": {
+                    "extraction_failures": ["field_not_found"],
+                    "missing_fields": ["invoice_date"],
+                    "parse_failures": [],
+                },
+            },
+        },
+    }
+
+    refreshed = asyncio.run(
+        refresh(
+            structured_result,
+            document_id="doc-invoice",
+            field_name="invoice_number",
+            verification="operator_confirmed",
+        )
+    )
+
+    assert refreshed["workflow_stage"]["stage"] == "validation_results"
+    assert refreshed["resolution_queue_v1"]["summary"]["total_items"] == 0
+    assert refreshed["submission_eligibility"]["missing_reason_codes"] == []
+    assert refreshed["submission_eligibility"]["unresolved_critical_fields"] == []
+    assert "workflow_stage_extraction_resolution" not in refreshed["submission_eligibility"]["reasons"]
+    assert refreshed["validation_contract_v1"]["rules_evidence"]["missing_reason_codes"] == []
+    assert refreshed["validation_contract_v1"]["rules_evidence"]["unresolved_critical_fields"] == []
+    assert refreshed["validation_contract_v1"]["rules_evidence"]["reason_semantics"]["missing_fields"] == []
+    assert refreshed["validation_contract_v1"]["evidence_summary"]["reason_semantics"]["missing_fields"] == []

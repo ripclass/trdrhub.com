@@ -607,9 +607,41 @@ def materialize_document_fact_graphs_v1(documents: List[Dict[str, Any]]) -> List
     return _materialize_document_fact_graphs_v1(documents)
 
 
-def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _empty_resolution_queue_v1() -> Dict[str, Any]:
+    return {
+        "version": "resolution_queue_v1",
+        "items": [],
+        "summary": {
+            "total_items": 0,
+            "user_resolvable_items": 0,
+            "unresolved_documents": 0,
+            "document_counts": {},
+        },
+    }
+
+
+def _normalize_resolution_queue_for_workflow_stage(
+    queue_payload: Optional[Dict[str, Any]],
+    workflow_stage: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    stage = str((workflow_stage or {}).get("stage") or "").strip().lower()
+    if stage == "validation_results":
+        return _empty_resolution_queue_v1()
+    if isinstance(queue_payload, dict):
+        return queue_payload
+    return _empty_resolution_queue_v1()
+
+
+def build_resolution_queue_v1(
+    documents: List[Dict[str, Any]],
+    *,
+    workflow_stage: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     materialize_document_fact_graphs_v1(documents)
-    return _build_resolution_queue_payload(documents)
+    return _normalize_resolution_queue_for_workflow_stage(
+        _build_resolution_queue_payload(documents),
+        workflow_stage,
+    )
 
 
 def build_fact_resolution_v1(
@@ -624,10 +656,16 @@ def build_fact_resolution_v1(
         if isinstance(workflow_stage, dict)
         else build_workflow_stage(documents)
     )
-    queue_payload = (
-        resolution_queue
-        if isinstance(resolution_queue, dict)
-        else build_resolution_queue_v1(documents)
+    queue_payload = _normalize_resolution_queue_for_workflow_stage(
+        (
+            resolution_queue
+            if isinstance(resolution_queue, dict)
+            else build_resolution_queue_v1(
+                documents,
+                workflow_stage=effective_workflow_stage,
+            )
+        ),
+        effective_workflow_stage,
     )
 
     queue_items = (

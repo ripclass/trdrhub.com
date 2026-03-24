@@ -344,14 +344,6 @@ export const FactResolutionSummarySchema = z.object({
 }).passthrough();
 export type FactResolutionSummary = z.infer<typeof FactResolutionSummarySchema>;
 
-export const FactResolutionV1Schema = z.object({
-  version: z.literal('fact_resolution_v1').default('fact_resolution_v1'),
-  workflow_stage: WorkflowStageInfoSchema.optional(),
-  documents: z.array(FactResolutionDocumentSchema).default([]),
-  summary: FactResolutionSummarySchema,
-}).passthrough();
-export type FactResolutionV1 = z.infer<typeof FactResolutionV1Schema>;
-
 export const ExtractionResolutionFieldSchema = z.object({
   field_name: z.string(),
   label: z.string(),
@@ -379,6 +371,14 @@ export const WorkflowStageInfoSchema = z.object({
   summary: z.string(),
 }).passthrough();
 export type WorkflowStageInfo = z.infer<typeof WorkflowStageInfoSchema>;
+
+export const FactResolutionV1Schema = z.object({
+  version: z.literal('fact_resolution_v1').default('fact_resolution_v1'),
+  workflow_stage: WorkflowStageInfoSchema.optional(),
+  documents: z.array(FactResolutionDocumentSchema).default([]),
+  summary: FactResolutionSummarySchema,
+}).passthrough();
+export type FactResolutionV1 = z.infer<typeof FactResolutionV1Schema>;
 
 export const FieldOverrideRequestSchema = z.object({
   document_id: z.string(),

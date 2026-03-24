@@ -464,6 +464,7 @@ def _apply_workflow_stage_contract_overrides(
     bank_verdict: Optional[Dict[str, Any]],
     submission_eligibility: Optional[Dict[str, Any]],
     validation_contract: Optional[Dict[str, Any]] = None,
+    resolution_queue: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     workflow_stage = workflow_stage or {}
     stage = str(workflow_stage.get("stage") or "").strip().lower()
@@ -471,6 +472,157 @@ def _apply_workflow_stage_contract_overrides(
     bank_verdict = dict(bank_verdict or {})
     submission_eligibility = dict(submission_eligibility or {})
     validation_contract = dict(validation_contract or {})
+    resolution_queue = dict(resolution_queue or {})
+
+    if stage == "validation_results":
+        summary = (
+            str(workflow_stage.get("summary") or "").strip()
+            or "Extraction is sufficiently resolved. Validation findings reflect the current confirmed document set."
+        )
+        queue_items = []
+        queue_summary = {
+            "total_items": 0,
+            "user_resolvable_items": 0,
+            "unresolved_documents": 0,
+            "document_counts": {},
+        }
+        if isinstance(resolution_queue.get("summary"), dict):
+            queue_summary.update(
+                {
+                    "total_items": 0,
+                    "user_resolvable_items": 0,
+                    "unresolved_documents": 0,
+                    "document_counts": {},
+                }
+            )
+        bank_reasons = [
+            str(item).strip()
+            for item in (bank_verdict.get("reasons") or [])
+            if str(item).strip()
+            and str(item).strip().lower() != "workflow_stage_extraction_resolution"
+        ]
+        action_items = [
+            item
+            for item in (bank_verdict.get("action_items") or [])
+            if not (
+                isinstance(item, dict)
+                and str(item.get("issue") or "").strip().lower()
+                == "confirm unresolved extracted fields"
+            )
+        ]
+        bank_verdict.update(
+            {
+                "reasons": bank_reasons,
+                "action_items": action_items,
+                "action_items_count": len(action_items),
+                "provisional_validation": False,
+                "workflow_stage": dict(workflow_stage),
+            }
+        )
+        submission_reasons = [
+            str(item).strip()
+            for item in (submission_eligibility.get("reasons") or [])
+            if str(item).strip()
+            and str(item).strip().lower() != "workflow_stage_extraction_resolution"
+        ]
+        submission_eligibility.update(
+            {
+                "reasons": submission_reasons,
+                "missing_reason_codes": [],
+                "unresolved_critical_fields": [],
+                "unresolved_critical_statuses": [],
+                "provisional_validation": False,
+                "workflow_stage": dict(workflow_stage),
+                "workflow_stage_summary": summary,
+            }
+        )
+
+        review_required_reason = [
+            str(item).strip()
+            for item in (validation_contract.get("review_required_reason") or [])
+            if str(item).strip()
+            and str(item).strip().lower() != "workflow_stage_extraction_resolution"
+            and not (
+                submission_eligibility.get("can_submit", True)
+                and str(item).strip().lower() == "submission_not_ready"
+            )
+        ]
+        escalation_triggers = [
+            str(item).strip()
+            for item in (validation_contract.get("escalation_triggers") or [])
+            if str(item).strip()
+            and str(item).strip().lower() != "workflow_stage_extraction_resolution"
+            and not (
+                submission_eligibility.get("can_submit", True)
+                and str(item).strip().lower() == "submission_not_ready"
+            )
+        ]
+
+        rules_evidence = dict(validation_contract.get("rules_evidence") or {})
+        reason_semantics = dict(rules_evidence.get("reason_semantics") or {})
+        reason_semantics.update(
+            {
+                "extraction_failures": [],
+                "missing_fields": [],
+                "parse_failures": [],
+            }
+        )
+        rules_evidence.update(
+            {
+                "missing_reason_codes": [],
+                "unresolved_critical_fields": [],
+                "submission_can_submit": bool(submission_eligibility.get("can_submit", True)),
+                "workflow_stage": dict(workflow_stage),
+                "workflow_stage_summary": summary,
+                "reason_semantics": reason_semantics,
+                "resolution_queue_v1": {
+                    "version": "resolution_queue_v1",
+                    "items": queue_items,
+                    "summary": queue_summary,
+                },
+            }
+        )
+
+        evidence_summary = dict(validation_contract.get("evidence_summary") or {})
+        summary_reason_semantics = dict(evidence_summary.get("reason_semantics") or {})
+        summary_reason_semantics.update(
+            {
+                "extraction_failures": [],
+                "missing_fields": [],
+                "parse_failures": [],
+            }
+        )
+        evidence_summary.update(
+            {
+                "submission_readiness": "ready" if submission_eligibility.get("can_submit", True) else "not_ready",
+                "workflow_stage": stage,
+                "workflow_stage_summary": summary,
+                "provisional_validation": False,
+                "reason_semantics": summary_reason_semantics,
+            }
+        )
+
+        if str(validation_contract.get("override_reason") or "").strip().lower() == "extraction_resolution_pending":
+            validation_contract["override_reason"] = None
+        if str(validation_contract.get("arbitration_mode") or "").strip().lower() == "workflow_stage_resolution":
+            validation_contract["arbitration_mode"] = "aligned"
+
+        validation_contract.update(
+            {
+                "review_required_reason": sorted(set(review_required_reason)),
+                "escalation_triggers": sorted(set(escalation_triggers)),
+                "rules_evidence": rules_evidence,
+                "evidence_summary": evidence_summary,
+                "provisional_validation": False,
+                "workflow_stage": dict(workflow_stage),
+            }
+        )
+
+        return {
+            "bank_verdict": bank_verdict,
+            "submission_eligibility": submission_eligibility,
+            "validation_contract": validation_contract,
+        }
 
     if stage != "extraction_resolution":
         return {

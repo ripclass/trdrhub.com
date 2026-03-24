@@ -681,7 +681,10 @@ async def refresh_structured_result_after_field_override(
     )
     structured_result["workflow_stage"] = workflow_stage
     structured_result["workflowStage"] = workflow_stage
-    structured_result["resolution_queue_v1"] = build_resolution_queue_v1(documents)
+    structured_result["resolution_queue_v1"] = build_resolution_queue_v1(
+        documents,
+        workflow_stage=workflow_stage,
+    )
     structured_result["fact_resolution_v1"] = build_fact_resolution_v1(
         documents,
         workflow_stage=workflow_stage,
@@ -713,6 +716,7 @@ async def refresh_structured_result_after_field_override(
         structured_result.get("effective_submission_eligibility")
         or structured_result.get("submission_eligibility"),
         structured_result.get("validation_contract_v1"),
+        resolution_queue=structured_result.get("resolution_queue_v1"),
     )
     structured_result["bank_verdict"] = workflow_overrides["bank_verdict"]
     structured_result["submission_eligibility"] = workflow_overrides["submission_eligibility"]

@@ -12,7 +12,12 @@ RESPONSE_SHAPING_PATH = ROOT / "app" / "routers" / "validation" / "response_shap
 def _load_symbols() -> Dict[str, Any]:
     source = RESPONSE_SHAPING_PATH.read_text(encoding="utf-8")
     parsed = ast.parse(source)
-    target_functions = {"build_workflow_stage", "build_fact_resolution_v1"}
+    target_functions = {
+        "_empty_resolution_queue_v1",
+        "_normalize_resolution_queue_for_workflow_stage",
+        "build_workflow_stage",
+        "build_fact_resolution_v1",
+    }
     selected_nodes = [
         node
         for node in parsed.body
@@ -22,7 +27,7 @@ def _load_symbols() -> Dict[str, Any]:
     ast.fix_missing_locations(module_ast)
     namespace: Dict[str, Any] = {"Any": Any, "Dict": Dict, "List": List, "Optional": Optional}
     namespace["materialize_document_fact_graphs_v1"] = lambda documents: documents
-    namespace["build_resolution_queue_v1"] = lambda documents: {
+    namespace["build_resolution_queue_v1"] = lambda documents, *, workflow_stage=None: {
         "version": "resolution_queue_v1",
         "items": [],
         "summary": {
@@ -176,3 +181,67 @@ def test_build_fact_resolution_v1_includes_rendered_lc_but_skips_unbacked_struct
     assert payload["documents"][0]["document_id"] == "doc-lc-ai"
     assert payload["documents"][0]["document_type"] == "letter_of_credit"
     assert payload["documents"][0]["resolution_items"][0]["field_name"] == "lc_number"
+
+
+def test_build_fact_resolution_v1_clears_stale_queue_when_stage_is_validation_results() -> None:
+    symbols = _load_symbols()
+    build_fact_resolution_v1 = symbols["build_fact_resolution_v1"]
+
+    documents = [
+        {
+            "document_id": "doc-invoice",
+            "document_type": "commercial_invoice",
+            "filename": "Invoice.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "commercial_invoice",
+                "facts": [{"field_name": "invoice_date", "verification_state": "unconfirmed"}],
+            },
+        }
+    ]
+    workflow_stage = {
+        "stage": "validation_results",
+        "provisional_validation": False,
+        "ready_for_final_validation": True,
+        "unresolved_documents": 0,
+        "unresolved_fields": 0,
+        "summary": "Validation findings reflect the current confirmed document set.",
+    }
+    stale_resolution_queue = {
+        "version": "resolution_queue_v1",
+        "items": [
+            {
+                "document_id": "doc-invoice",
+                "document_type": "commercial_invoice",
+                "filename": "Invoice.pdf",
+                "field_name": "invoice_date",
+                "label": "Invoice Date",
+                "priority": "high",
+                "candidate_value": "2026-04-20",
+                "normalized_value": "2026-04-20",
+                "reason": "system_could_not_confirm",
+                "verification_state": "unconfirmed",
+                "resolvable_by_user": True,
+            }
+        ],
+        "summary": {
+            "total_items": 1,
+            "user_resolvable_items": 1,
+            "unresolved_documents": 1,
+            "document_counts": {"commercial_invoice": 1},
+        },
+    }
+
+    payload = build_fact_resolution_v1(
+        documents,
+        workflow_stage=workflow_stage,
+        resolution_queue=stale_resolution_queue,
+    )
+
+    assert payload["workflow_stage"]["stage"] == "validation_results"
+    assert payload["summary"]["total_items"] == 0
+    assert payload["summary"]["unresolved_documents"] == 0
+    assert payload["summary"]["ready_for_validation"] is True
+    assert payload["documents"][0]["resolution_required"] is False
+    assert payload["documents"][0]["unresolved_count"] == 0
+    assert payload["documents"][0]["resolution_items"] == []
