@@ -143,6 +143,84 @@ const normalizeFieldKey = (value: unknown): string =>
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
 
+const INVOICE_DOCUMENT_TYPES = new Set(['commercial_invoice', 'proforma_invoice']);
+
+type ResolutionQueueItemLike = {
+  documentId: string;
+  filename?: string;
+  fieldName: string;
+  label: string;
+  verification: string;
+  candidateValue?: unknown;
+  normalizedValue?: unknown;
+  evidenceSnippet?: string | null;
+  evidenceSource?: string | null;
+  page?: number | null;
+  reason?: string;
+  origin?: string | null;
+};
+
+const normalizeResolutionQueueItems = (resolutionQueue?: any): ResolutionQueueItemLike[] =>
+  ensureArray(resolutionQueue?.items)
+    .map((item) => ({
+      documentId: String(item?.document_id ?? '').trim(),
+      filename: item?.filename ? String(item.filename) : undefined,
+      fieldName: normalizeFieldKey(item?.field_name),
+      label: String(item?.label ?? humanizeFieldLabel(item?.field_name ?? '')),
+      verification: normalizeFieldKey(item?.verification_state ?? item?.verification),
+      candidateValue: item?.candidate_value,
+      normalizedValue: item?.normalized_value,
+      evidenceSnippet: item?.evidence_snippet ? String(item.evidence_snippet) : null,
+      evidenceSource: item?.evidence_source ? String(item.evidence_source) : null,
+      page: typeof item?.page === 'number' ? item.page : null,
+      reason: item?.reason ? String(item.reason) : undefined,
+      origin: item?.origin ? String(item.origin) : null,
+    }))
+    .filter((item) => item.documentId && item.fieldName);
+
+const buildQueueBackedExtractionResolution = (
+  resolutionItems: ResolutionQueueItemLike[],
+  workflowStageHint?: string | null,
+) => {
+  const normalizedStageHint = String(workflowStageHint ?? '').trim().toLowerCase();
+  if (normalizedStageHint === 'validation_results') {
+    return {
+      required: false,
+      unresolvedCount: 0,
+      summary: '',
+      fields: [],
+    };
+  }
+
+  if (resolutionItems.length === 0) {
+    return {
+      required: false,
+      unresolvedCount: 0,
+      summary: '',
+      fields: [],
+    };
+  }
+
+  const unresolvedCount = resolutionItems.length;
+  return {
+    required: true,
+    unresolvedCount,
+    summary: `${unresolvedCount} extracted field${unresolvedCount === 1 ? '' : 's'} still need confirmation before validation can be treated as final.`,
+    fields: resolutionItems.map((item) => ({
+      fieldName: item.fieldName,
+      label: item.label,
+      verification: item.verification,
+      candidateValue: item.candidateValue,
+      normalizedValue: item.normalizedValue,
+      evidenceSnippet: item.evidenceSnippet,
+      evidenceSource: item.evidenceSource,
+      page: item.page,
+      reason: item.reason,
+      origin: item.origin,
+    })),
+  };
+};
+
 const buildExtractionResolution = ({
   existingResolution,
   missingRequiredFields,
@@ -482,7 +560,13 @@ const buildNextAction = (bucket: string, suggestion: string): string => {
   return 'Correct the document field and revalidate before submission.';
 };
 
-const mapDocuments = (docs: any[] = [], workflowStageHint?: string | null) => {
+const mapDocuments = (
+  docs: any[] = [],
+  workflowStageHint?: string | null,
+  resolutionQueue?: any,
+) => {
+  const normalizedResolutionItems = normalizeResolutionQueueItems(resolutionQueue);
+
   return docs.map((doc, index) => {
     const documentId = String(doc?.document_id ?? doc?.id ?? index);
     const filename = doc?.filename ?? doc?.name ?? `Document ${index + 1}`;
@@ -536,21 +620,31 @@ const mapDocuments = (docs: any[] = [], workflowStageHint?: string | null) => {
     const criticalFieldStates = doc?.critical_field_states ?? doc?.criticalFieldStates ?? {};
     const fieldDetails = doc?.field_details ?? doc?.fieldDetails ?? {};
     const existingExtractionResolution = doc?.extraction_resolution ?? doc?.extractionResolution;
+    const resolutionItems = INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase())
+      ? normalizedResolutionItems.filter(
+          (item) =>
+            item.documentId === documentId ||
+            (!!item.filename && item.filename.toLowerCase() === String(filename).toLowerCase()),
+        )
+      : [];
     const fieldDiagnostics = doc?.extraction_artifacts_v1?.field_diagnostics ?? doc?.field_diagnostics ?? {};
     const rawText =
       doc?.extraction_artifacts_v1?.raw_text ??
       doc?.raw_text ??
       doc?.rawText ??
       '';
-    const extractionResolution = buildExtractionResolution({
-      existingResolution: existingExtractionResolution,
-      missingRequiredFields,
-      fieldDetails,
-      criticalFieldStates,
-      workflowStageHint,
-      parseComplete:
-        typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
-    });
+    const extractionResolution =
+      INVOICE_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && resolutionQueue
+        ? buildQueueBackedExtractionResolution(resolutionItems, workflowStageHint)
+        : buildExtractionResolution({
+            existingResolution: existingExtractionResolution,
+            missingRequiredFields,
+            fieldDetails,
+            criticalFieldStates,
+            workflowStageHint,
+            parseComplete:
+              typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
+          });
     const requirementStatus = deriveRequirementStatus({
       missingRequiredFields,
       requiredFieldsFound,
@@ -587,6 +681,7 @@ const mapDocuments = (docs: any[] = [], workflowStageHint?: string | null) => {
       criticalFieldStates,
       fieldDiagnostics,
       rawText,
+      resolutionItems: resolutionQueue ? resolutionItems : undefined,
       requirementStatus,
       reviewState,
       extractionResolution,
@@ -882,12 +977,14 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   }
   const optionEDocuments = ensureArray(rawDocs);
   const existingWorkflowStage = (structured as any)?.workflow_stage ?? (structured as any)?.workflowStage ?? null;
+  const resolutionQueue = (structured as any)?.resolution_queue_v1 ?? null;
 
   const documents = mapDocuments(
     optionEDocuments,
     existingWorkflowStage && typeof existingWorkflowStage === 'object'
       ? String(existingWorkflowStage.stage ?? '')
       : null,
+    resolutionQueue,
   );
   const workflowStage = deriveWorkflowStage({
     existingStage: existingWorkflowStage,
@@ -987,6 +1084,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     workflowStage,
     complianceLevel,
     complianceCapReason,
+    resolutionQueue,
     
     // Sanctions Screening additions
     sanctionsScreening,

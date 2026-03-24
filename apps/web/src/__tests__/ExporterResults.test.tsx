@@ -1425,6 +1425,92 @@ describe('ExporterResults', () => {
     await waitFor(() => expect(refreshResults).toHaveBeenCalledWith('manual'));
   });
 
+  it('uses backend resolution queue items for invoice confirmation instead of deriving invoice misses from raw field metadata', async () => {
+    const structured = buildValidationResults().structured_result!;
+    const documentsStructured = [
+      {
+        document_id: 'doc-invoice',
+        document_type: 'commercial_invoice',
+        filename: 'Invoice.pdf',
+        extraction_status: 'success',
+        review_required: true,
+        review_reasons: ['FIELD_NOT_FOUND'],
+        critical_field_states: { seller: 'missing' },
+        field_details: {
+          seller: {
+            verification: 'not_found',
+          },
+        },
+        missing_required_fields: ['seller'],
+        extracted_fields: { invoice_number: 'DKEL/EXP/2026/114' },
+        extraction_artifacts_v1: {
+          raw_text: 'Commercial Invoice\nInvoice Date: 20 Apr 2026\nLC No: EXP2026BD001\n',
+          field_diagnostics: {
+            seller: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+          },
+        },
+      },
+    ];
+
+    structured.document_extraction_v1 = { documents: documentsStructured } as any;
+    structured.documents_structured = documentsStructured as any;
+    structured.documents = documentsStructured as any;
+    structured.lc_structured.documents_structured = documentsStructured as any;
+    structured.resolution_queue_v1 = {
+      version: 'resolution_queue_v1',
+      items: [
+        {
+          document_id: 'doc-invoice',
+          document_type: 'commercial_invoice',
+          filename: 'Invoice.pdf',
+          field_name: 'invoice_date',
+          label: 'Invoice Date',
+          priority: 'high',
+          candidate_value: '2026-04-20',
+          normalized_value: '2026-04-20',
+          evidence_snippet: 'Invoice Date: 20 Apr 2026',
+          evidence_source: 'native_text',
+          page: 1,
+          reason: 'system_could_not_confirm',
+          verification_state: 'model_suggested',
+          resolvable_by_user: true,
+          origin: 'document_ai',
+        },
+      ],
+      summary: {
+        total_items: 1,
+        user_resolvable_items: 1,
+        unresolved_documents: 1,
+        document_counts: { commercial_invoice: 1 },
+      },
+    } as any;
+    structured.workflow_stage = {
+      stage: 'extraction_resolution',
+      provisional_validation: true,
+      ready_for_final_validation: false,
+      unresolved_documents: 1,
+      unresolved_fields: 1,
+      summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+    } as any;
+
+    activeResults = buildValidationResponse({ structured_result: structured });
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults jobId="job-123" />));
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
+    );
+
+    const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
+    await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
+
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByRole('button', { name: /^Invoice Date$/i })).toBeInTheDocument();
+    expect(within(drawer).queryByRole('button', { name: /^Seller$/i })).toBeNull();
+    expect(within(drawer).getByText('2026-04-20')).toBeInTheDocument();
+    expect(within(drawer).getByText(/Invoice Date: 20 Apr 2026/i)).toBeInTheDocument();
+  });
+
   it('lets the operator reject a suggested unresolved value and keep the session provisional', async () => {
     const structured = buildValidationResults().structured_result!;
     const refreshResults = vi.fn().mockResolvedValue(activeResults);

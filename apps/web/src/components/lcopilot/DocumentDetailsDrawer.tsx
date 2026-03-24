@@ -37,6 +37,7 @@ export interface DocumentForDrawer {
   name: string;
   filename?: string;
   type: string;
+  documentType?: string;
   typeKey?: string;
   status: "success" | "warning" | "error";
   extractionStatus?: string;
@@ -60,8 +61,29 @@ export interface DocumentForDrawer {
       fieldName: string;
       label: string;
       verification?: string;
+      candidateValue?: unknown;
+      normalizedValue?: unknown;
+      evidenceSnippet?: string | null;
+      evidenceSource?: string | null;
+      page?: number | null;
+      reason?: string;
+      origin?: string | null;
     }>;
   };
+  resolutionItems?: Array<{
+    documentId: string;
+    filename?: string;
+    fieldName: string;
+    label: string;
+    verification: string;
+    candidateValue?: unknown;
+    normalizedValue?: unknown;
+    evidenceSnippet?: string | null;
+    evidenceSource?: string | null;
+    page?: number | null;
+    reason?: string;
+    origin?: string | null;
+  }>;
 }
 
 interface DocumentDetailsDrawerProps {
@@ -535,6 +557,46 @@ const buildFieldEvidenceNote = (detail: Record<string, any> | undefined): string
   return snippet ? `${source || "Source evidence"}: ${snippet}` : null;
 };
 
+const isInvoiceLikeDocument = (docType: string | undefined): boolean => {
+  const normalized = normalizeReviewFieldKey(docType);
+  return normalized === "commercial_invoice" || normalized === "proforma_invoice";
+};
+
+const buildResolutionItemEvidenceNote = (
+  item:
+    | {
+        evidenceSnippet?: string | null;
+        evidenceSource?: string | null;
+        verification?: string;
+      }
+    | undefined,
+): string | null => {
+  if (!item) return null;
+  const verification = normalizeReviewFieldKey(item.verification);
+  const snippet = typeof item.evidenceSnippet === "string" ? item.evidenceSnippet.trim() : "";
+  const source = typeof item.evidenceSource === "string" ? item.evidenceSource.trim() : "";
+
+  if (snippet && verification === "operator_confirmed") {
+    return `Operator confirmed for this session: ${snippet}`;
+  }
+  if (snippet && verification === "operator_rejected") {
+    return `Operator rejected this suggested value for this session: ${snippet}`;
+  }
+  if (snippet && verification === "confirmed") {
+    return `Confirmed from ${source || "source text"}: ${snippet}`;
+  }
+  if (snippet) {
+    return `${source || "Source evidence"}: ${snippet}`;
+  }
+  if (verification === "model_suggested") {
+    return "Model suggested this value, but the source text did not confirm it directly.";
+  }
+  if (verification === "not_found" || verification === "unconfirmed") {
+    return "The extraction pipeline did not confirm a value for this field.";
+  }
+  return null;
+};
+
 const buildManualResolutionGuidance = (
   fieldName: string,
   docType: string | undefined,
@@ -638,7 +700,24 @@ export function DocumentDetailsDrawer({
     ),
   );
   const displayFieldChecks = buildDisplayFieldChecks(criticalFieldStates, reasonContext);
+  const hasQueueBackedResolution =
+    isInvoiceLikeDocument(resolvedDocument.documentType || resolvedDocument.typeKey || resolvedDocument.type) &&
+    Array.isArray(resolvedDocument.resolutionItems);
   const resolvableFields = useMemo(() => {
+    if (hasQueueBackedResolution) {
+      return (resolvedDocument.resolutionItems || []).map((item) => ({
+        key: normalizeReviewFieldKey(item.fieldName),
+        currentValue:
+          item.normalizedValue === null || item.normalizedValue === undefined
+            ? item.candidateValue === null || item.candidateValue === undefined
+              ? ""
+              : String(item.candidateValue)
+            : String(item.normalizedValue),
+        label: item.label || humanizeFieldName(item.fieldName),
+        verification: item.verification,
+      }));
+    }
+
     const candidates = new Map<string, { key: string; currentValue: string; label: string; verification: string }>();
     const addCandidate = (fieldName: string, verification = "not_found") => {
       const normalized = resolvePreferredOverrideFieldKey(
@@ -680,7 +759,15 @@ export function DocumentDetailsDrawer({
     });
 
     return Array.from(candidates.values());
-  }, [criticalFieldStates, resolvedDocument.missingRequiredFields, extractedFields, mergedFieldDetails, reasonContext]);
+  }, [
+    criticalFieldStates,
+    extractedFields,
+    hasQueueBackedResolution,
+    mergedFieldDetails,
+    reasonContext,
+    resolvedDocument.missingRequiredFields,
+    resolvedDocument.resolutionItems,
+  ]);
 
   const activeResolutionField =
     (selectedResolutionField && resolvableFields.find((entry) => entry.key === selectedResolutionField)) ||
@@ -690,18 +777,31 @@ export function DocumentDetailsDrawer({
     activeResolutionField && mergedFieldDetails && typeof mergedFieldDetails === "object"
       ? mergedFieldDetails[activeResolutionField.key]
       : undefined;
-  const activeResolutionEvidenceNote = buildFieldEvidenceNote(activeResolutionDetail);
+  const activeResolutionItem =
+    activeResolutionField && Array.isArray(resolvedDocument.resolutionItems)
+      ? resolvedDocument.resolutionItems.find(
+          (item) => normalizeReviewFieldKey(item.fieldName) === activeResolutionField.key,
+        )
+      : undefined;
+  const activeResolutionEvidenceNote =
+    buildResolutionItemEvidenceNote({
+      evidenceSnippet: activeResolutionItem?.evidenceSnippet,
+      evidenceSource: activeResolutionItem?.evidenceSource,
+      verification: activeResolutionItem?.verification,
+    }) || buildFieldEvidenceNote(activeResolutionDetail);
   const activeResolutionCandidateValue = useMemo(() => {
     const rawValue =
+      activeResolutionItem?.normalizedValue ??
+      activeResolutionItem?.candidateValue ??
       activeResolutionDetail?.value ??
       activeResolutionField?.currentValue ??
       "";
     return rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
-  }, [activeResolutionDetail, activeResolutionField]);
+  }, [activeResolutionDetail, activeResolutionField, activeResolutionItem]);
   const activeResolutionHasCandidate = activeResolutionCandidateValue.length > 0;
   const activeResolutionVerificationLabel = useMemo(() => {
     const verification = normalizeReviewFieldKey(
-      activeResolutionDetail?.verification || activeResolutionField?.verification,
+      activeResolutionItem?.verification || activeResolutionDetail?.verification || activeResolutionField?.verification,
     );
     if (verification === "text_supported") return "Text-supported candidate";
     if (verification === "model_suggested") return "Model-suggested candidate";
@@ -709,7 +809,7 @@ export function DocumentDetailsDrawer({
     if (verification === "operator_rejected") return "Rejected candidate";
     if (verification === "not_found") return "No candidate value found";
     return verification ? humanizeFieldName(verification) : "Unresolved field";
-  }, [activeResolutionDetail, activeResolutionField]);
+  }, [activeResolutionDetail, activeResolutionField, activeResolutionItem]);
   const activeResolutionManualGuidance = useMemo(
     () =>
       activeResolutionField

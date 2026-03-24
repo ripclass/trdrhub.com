@@ -31,6 +31,8 @@ import type {
   ContractWarning as SharedContractWarning,
   ContractValidation as SharedContractValidation,
   ExtractionFieldDetail as SharedExtractionFieldDetail,
+  ResolutionQueueItem as SharedResolutionQueueItem,
+  ResolutionQueueV1 as SharedResolutionQueueV1,
 } from '@shared/types';
 
 // Re-export schema-first types for use across the app
@@ -54,6 +56,8 @@ export type {
   SharedAmendmentsAvailable,
   SharedContractWarning,
   SharedContractValidation,
+  SharedResolutionQueueItem,
+  SharedResolutionQueueV1,
 };
 
 export type OptionEDocument = {
@@ -258,8 +262,16 @@ export interface ValidationDocument {
       fieldName: string;
       label: string;
       verification?: string;
+      candidateValue?: unknown;
+      normalizedValue?: unknown;
+      evidenceSnippet?: string | null;
+      evidenceSource?: string | null;
+      page?: number | null;
+      reason?: string;
+      origin?: string | null;
     }>;
   };
+  resolutionItems?: ResolutionQueueItem[];
 }
 
 export type DocumentRiskEntry = SharedDocumentRiskEntry;
@@ -281,6 +293,8 @@ export type StructuredResultBankVerdict = SharedBankVerdict;
 export type StructuredResultBankProfile = SharedBankProfile;
 export type StructuredResultAmendmentsAvailable = SharedAmendmentsAvailable;
 export type WorkflowStageInfo = SharedWorkflowStageInfo;
+export type ResolutionQueueItem = SharedResolutionQueueItem;
+export type ResolutionQueueV1 = SharedResolutionQueueV1;
 
 // Sanctions Screening Types - now using schema-first shared types
 export type SanctionsScreeningIssue = SharedSanctionsScreeningIssue;
@@ -319,6 +333,7 @@ export interface ValidationResults {
   workflowStage?: WorkflowStageInfo | null;
   complianceLevel?: string;
   complianceCapReason?: string | null;
+  resolutionQueue?: ResolutionQueueV1 | null;
   
   // Sanctions Screening additions
   sanctionsScreening?: SanctionsScreeningSummary | null;

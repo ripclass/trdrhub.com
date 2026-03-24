@@ -254,6 +254,82 @@ describe('results mapper - option e payload', () => {
     expect(mapped.documents[0]?.extractionResolution?.required).toBe(false);
   });
 
+  it('uses resolution_queue_v1 as the invoice unresolved source of truth', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        workflow_stage: {
+          stage: 'extraction_resolution',
+          provisional_validation: true,
+          ready_for_final_validation: false,
+          unresolved_documents: 1,
+          unresolved_fields: 1,
+          summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+        },
+        resolution_queue_v1: {
+          version: 'resolution_queue_v1',
+          items: [
+            {
+              document_id: 'doc-invoice',
+              document_type: 'commercial_invoice',
+              filename: 'Invoice.pdf',
+              field_name: 'invoice_date',
+              label: 'Invoice Date',
+              priority: 'high',
+              candidate_value: '2026-04-20',
+              normalized_value: '2026-04-20',
+              evidence_snippet: 'Invoice Date: 20 Apr 2026',
+              evidence_source: 'native_text',
+              page: 1,
+              reason: 'system_could_not_confirm',
+              verification_state: 'model_suggested',
+              resolvable_by_user: true,
+              origin: 'document_ai',
+            },
+          ],
+          summary: {
+            total_items: 1,
+            user_resolvable_items: 1,
+            unresolved_documents: 1,
+            document_counts: { commercial_invoice: 1 },
+          },
+        },
+        document_extraction_v1: {
+          documents: [
+            {
+              document_id: 'doc-invoice',
+              document_type: 'commercial_invoice',
+              filename: 'Invoice.pdf',
+              extraction_status: 'success',
+              extracted_fields: {
+                invoice_number: 'INV-022',
+              },
+              field_details: {
+                seller: {
+                  verification: 'not_found',
+                },
+              },
+              missing_required_fields: ['seller'],
+              parse_complete: true,
+              review_required: true,
+              review_reasons: ['FIELD_NOT_FOUND'],
+            },
+          ],
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.documents[0]?.resolutionItems).toHaveLength(1);
+    expect(mapped.documents[0]?.extractionResolution?.required).toBe(true);
+    expect(mapped.documents[0]?.extractionResolution?.fields.map((field) => field.fieldName)).toEqual([
+      'invoice_date',
+    ]);
+    expect(mapped.documents[0]?.extractionResolution?.fields[0]?.candidateValue).toBe('2026-04-20');
+  });
+
   it('preserves extraction lanes from canonical document payloads', () => {
     const seeded = buildValidationResults();
     const documents = [

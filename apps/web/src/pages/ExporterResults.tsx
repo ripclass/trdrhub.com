@@ -150,6 +150,7 @@ type ReviewReasonContext = {
 };
 
 type ExtractionResolutionState = NonNullable<ValidationDocument['extractionResolution']>;
+type ResolutionQueueItemState = NonNullable<ValidationDocument['resolutionItems']>[number];
 
 const _normalizeFieldKey = (value: unknown): string =>
   String(value || '')
@@ -352,6 +353,56 @@ const _buildExtractionResolutionState = ({
         : 'Extraction is still incomplete and needs confirmation before validation can be treated as final.'
       : '',
     fields,
+  };
+};
+
+const _normalizeResolutionQueueItems = (resolutionQueue?: any): ResolutionQueueItemState[] =>
+  (Array.isArray(resolutionQueue?.items) ? resolutionQueue.items : [])
+    .map((item: any) => ({
+      documentId: String(item?.document_id ?? '').trim(),
+      filename: item?.filename ? String(item.filename) : undefined,
+      fieldName: _normalizeFieldKey(item?.field_name),
+      label: String(item?.label ?? humanizeLabel(item?.field_name ?? '')),
+      verification: _normalizeFieldKey(item?.verification_state ?? item?.verification),
+      candidateValue: item?.candidate_value,
+      normalizedValue: item?.normalized_value,
+      evidenceSnippet: item?.evidence_snippet ? String(item.evidence_snippet) : null,
+      evidenceSource: item?.evidence_source ? String(item.evidence_source) : null,
+      page: typeof item?.page === 'number' ? item.page : null,
+      reason: item?.reason ? String(item.reason) : undefined,
+      origin: item?.origin ? String(item.origin) : null,
+    }))
+    .filter((item) => item.documentId && item.fieldName);
+
+const _buildQueueBackedExtractionResolutionState = (
+  items: ResolutionQueueItemState[],
+): ExtractionResolutionState => {
+  if (items.length === 0) {
+    return {
+      required: false,
+      unresolvedCount: 0,
+      summary: '',
+      fields: [],
+    };
+  }
+
+  const unresolvedCount = items.length;
+  return {
+    required: true,
+    unresolvedCount,
+    summary: `${unresolvedCount} extracted field${unresolvedCount === 1 ? '' : 's'} still need confirmation before validation can be treated as final.`,
+    fields: items.map((item) => ({
+      fieldName: item.fieldName,
+      label: item.label,
+      verification: item.verification,
+      candidateValue: item.candidateValue,
+      normalizedValue: item.normalizedValue,
+      evidenceSnippet: item.evidenceSnippet,
+      evidenceSource: item.evidenceSource,
+      page: item.page,
+      reason: item.reason,
+      origin: item.origin,
+    })),
   };
 };
 
@@ -1217,6 +1268,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     
     return "unknown";
   }, [summary, extractionDocumentsPayload, lcStructured]);
+  const backendResolutionQueue = resultData?.resolutionQueue ?? (structuredResult as any)?.resolution_queue_v1 ?? null;
+  const normalizedResolutionQueueItems = useMemo(
+    () => _normalizeResolutionQueueItems(backendResolutionQueue),
+    [backendResolutionQueue],
+  );
   const fallbackDocuments = useMemo(() => {
     return extractionDocumentsPayload.map((doc, index) => {
       const docAny = doc as Record<string, any>;
@@ -1245,14 +1301,25 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const reviewReasons = docAny.review_reasons ?? docAny.reviewReasons ?? [];
       const fieldDetails = docAny.field_details ?? docAny.fieldDetails ?? {};
       const criticalFieldStates = docAny.critical_field_states ?? docAny.criticalFieldStates ?? {};
+      const resolutionItems =
+        ['commercial_invoice', 'proforma_invoice'].includes(typeKey.toLowerCase())
+          ? normalizedResolutionQueueItems.filter(
+              (item) =>
+                item.documentId === documentId ||
+                (!!item.filename && item.filename.toLowerCase() === String(filename).toLowerCase()),
+            )
+          : [];
       const fieldDiagnostics = docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {};
       const rawText = docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '';
-      const extractionResolution = _buildExtractionResolutionState({
-        missingRequiredFields,
-        criticalFieldStates,
-        fieldDetails,
-        parseComplete,
-      });
+      const extractionResolution =
+        ['commercial_invoice', 'proforma_invoice'].includes(typeKey.toLowerCase()) && backendResolutionQueue
+          ? _buildQueueBackedExtractionResolutionState(resolutionItems)
+          : _buildExtractionResolutionState({
+              missingRequiredFields,
+              criticalFieldStates,
+              fieldDetails,
+              parseComplete,
+            });
       const typeLabel = safeString(doc.document_type_label ?? docAny.document_type_label ?? getTruthfulDocumentTypeLabel(filename, typeKey));
       return {
         id: documentId,
@@ -1283,6 +1350,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         criticalFieldStates,
         fieldDiagnostics,
         rawText,
+        resolutionItems: backendResolutionQueue ? resolutionItems : undefined,
         requiredFieldsFound: docAny.required_fields_found,
         requiredFieldsTotal: docAny.required_fields_total,
         fieldDetails,
@@ -1290,7 +1358,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},
       };
     });
-  }, [extractionDocumentsPayload]);
+  }, [backendResolutionQueue, extractionDocumentsPayload, normalizedResolutionQueueItems]);
   const documents = resultData?.documents?.length ? resultData.documents : fallbackDocuments;
   resultsLogger.debug('Documents loaded', { count: documents.length });
   const issueCards = resultData?.issues ?? [];
@@ -3760,6 +3828,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               name: document.name,
                               filename: document.filename,
                               type: document.type,
+                              documentType: document.typeKey,
                               typeKey: document.typeKey,
                               status: document.status,
                               extractionStatus: document.extractionStatus,
@@ -3777,6 +3846,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                               rawText: (document as any).rawText ?? '',
                               fieldDetails: (document as any).fieldDetails ?? {},
                               extractionResolution: (document as any).extractionResolution,
+                              resolutionItems: (document as any).resolutionItems,
                               ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
                               sourceFormat: (document.extractedFields as any)?._source_format,
                               isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,
