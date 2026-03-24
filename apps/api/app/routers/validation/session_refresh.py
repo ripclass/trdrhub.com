@@ -18,6 +18,7 @@ from app.services.validation.response_contract_validator import (
     validate_and_annotate_response,
 )
 
+from .issues_pipeline import _partition_workflow_stage_issues
 from .presentation_contract import (
     _apply_workflow_stage_contract_overrides,
     _build_submission_eligibility_context,
@@ -663,6 +664,26 @@ async def refresh_structured_result_after_field_override(
     )
     structured_result["workflow_stage"] = workflow_stage
     structured_result["workflowStage"] = workflow_stage
+    issue_partition = _partition_workflow_stage_issues(
+        structured_result.get("issues") or [],
+        documents,
+        workflow_stage,
+    )
+    if issue_partition["provisional_issues"]:
+        structured_result["issues"] = issue_partition["final_issues"]
+        structured_result["_provisional_issues"] = issue_partition["provisional_issues"]
+        analytics["issue_counts"] = count_issue_severity(structured_result["issues"])
+        processing_summary_v2["total_issues"] = len(structured_result["issues"])
+        processing_summary_v2["discrepancies"] = len(structured_result["issues"])
+        processing_summary_v2["severity_breakdown"] = {
+            "critical": analytics["issue_counts"].get("critical", 0),
+            "major": analytics["issue_counts"].get("major", 0),
+            "medium": 0,
+            "minor": analytics["issue_counts"].get("minor", 0),
+        }
+        processing_summary["total_issues"] = processing_summary_v2["total_issues"]
+        processing_summary["discrepancies"] = processing_summary_v2["discrepancies"]
+        processing_summary["severity_breakdown"] = processing_summary_v2["severity_breakdown"]
     workflow_overrides = _apply_workflow_stage_contract_overrides(
         workflow_stage,
         structured_result.get("bank_verdict"),

@@ -541,6 +541,7 @@ export function DocumentDetailsDrawer({
   const [selectedResolutionField, setSelectedResolutionField] = useState<string | null>(null);
   const [overrideValue, setOverrideValue] = useState("");
   const [overrideNote, setOverrideNote] = useState("");
+  const [showManualOverrideEditor, setShowManualOverrideEditor] = useState(false);
   const resolvedDocument: DocumentForDrawer = document ?? {
     id: "",
     name: "",
@@ -641,6 +642,24 @@ export function DocumentDetailsDrawer({
       ? mergedFieldDetails[activeResolutionField.key]
       : undefined;
   const activeResolutionEvidenceNote = buildFieldEvidenceNote(activeResolutionDetail);
+  const activeResolutionCandidateValue = useMemo(() => {
+    const rawValue =
+      activeResolutionDetail?.value ??
+      activeResolutionField?.currentValue ??
+      "";
+    return rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
+  }, [activeResolutionDetail, activeResolutionField]);
+  const activeResolutionHasCandidate = activeResolutionCandidateValue.length > 0;
+  const activeResolutionVerificationLabel = useMemo(() => {
+    const verification = normalizeReviewFieldKey(
+      activeResolutionDetail?.verification || activeResolutionField?.verification,
+    );
+    if (verification === "text_supported") return "Text-supported candidate";
+    if (verification === "model_suggested") return "Model-suggested candidate";
+    if (verification === "operator_confirmed") return "Operator-confirmed value";
+    if (verification === "not_found") return "No candidate value found";
+    return verification ? humanizeFieldName(verification) : "Unresolved field";
+  }, [activeResolutionDetail, activeResolutionField]);
 
   useEffect(() => {
     if (!open) {
@@ -656,6 +675,7 @@ export function DocumentDetailsDrawer({
       setSelectedResolutionField(activeResolutionField.key);
       setOverrideValue(activeResolutionField.currentValue ?? "");
       setOverrideNote("");
+      setShowManualOverrideEditor(!(activeResolutionField.currentValue ?? "").trim());
     }
   }, [activeResolutionField, open, selectedResolutionField]);
 
@@ -664,19 +684,32 @@ export function DocumentDetailsDrawer({
     setSelectedResolutionField(fieldName);
     setOverrideValue(nextField?.currentValue ?? "");
     setOverrideNote("");
+    setShowManualOverrideEditor(!String(nextField?.currentValue ?? "").trim());
   };
 
-  const handleSaveFieldOverride = async () => {
+  const persistFieldOverride = async (value: string) => {
     if (!resolvedDocument.id || !activeResolutionField || !onSaveFieldOverride) {
+      return;
+    }
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
       return;
     }
     await onSaveFieldOverride({
       documentId: resolvedDocument.id,
       fieldName: activeResolutionField.key,
-      overrideValue: overrideValue.trim(),
+      overrideValue: trimmedValue,
       note: overrideNote.trim() || undefined,
     });
     setOverrideNote("");
+  };
+
+  const handleSaveFieldOverride = async () => {
+    await persistFieldOverride(overrideValue);
+  };
+
+  const handleConfirmSuggestedValue = async () => {
+    await persistFieldOverride(activeResolutionCandidateValue);
   };
 
   const extractionStatus = (resolvedDocument.extractionStatus ?? '').toLowerCase();
@@ -945,15 +978,57 @@ export function DocumentDetailsDrawer({
                         {activeResolutionEvidenceNote || "No direct source snippet was confirmed yet. Review the source document and enter the value you can verify."}
                       </p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="field-override-value">Confirmed value</Label>
-                      <Input
-                        id="field-override-value"
-                        value={overrideValue}
-                        onChange={(event) => setOverrideValue(event.target.value)}
-                        placeholder={`Enter ${activeResolutionField.label.toLowerCase()}`}
-                      />
-                    </div>
+                    {activeResolutionHasCandidate && !showManualOverrideEditor && (
+                      <div className="rounded-md border border-primary/20 bg-background/70 p-3 space-y-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              Suggested value
+                            </p>
+                            <p className="text-sm font-semibold">{activeResolutionCandidateValue}</p>
+                          </div>
+                          <Badge variant="outline" className="border-primary/20 text-primary">
+                            {activeResolutionVerificationLabel}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          If this matches the source document, confirm it directly. If not, edit the value before saving.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            onClick={handleConfirmSuggestedValue}
+                            disabled={isSavingFieldOverride}
+                          >
+                            {isSavingFieldOverride ? "Saving..." : "Confirm suggested value"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setOverrideValue(activeResolutionCandidateValue);
+                              setShowManualOverrideEditor(true);
+                            }}
+                            disabled={isSavingFieldOverride}
+                          >
+                            Edit value instead
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {(!activeResolutionHasCandidate || showManualOverrideEditor) && (
+                      <div className="space-y-2">
+                        <Label htmlFor="field-override-value">
+                          {activeResolutionHasCandidate ? "Edit confirmed value" : "Confirmed value"}
+                        </Label>
+                        <Input
+                          id="field-override-value"
+                          value={overrideValue}
+                          onChange={(event) => setOverrideValue(event.target.value)}
+                          placeholder={`Enter ${activeResolutionField.label.toLowerCase()}`}
+                        />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label htmlFor="field-override-note">Operator note</Label>
                       <Textarea
@@ -964,13 +1039,15 @@ export function DocumentDetailsDrawer({
                         rows={3}
                       />
                     </div>
-                    <Button
-                      type="button"
-                      onClick={handleSaveFieldOverride}
-                      disabled={!overrideValue.trim() || isSavingFieldOverride}
-                    >
-                      {isSavingFieldOverride ? "Saving..." : "Confirm field value"}
-                    </Button>
+                    {(!activeResolutionHasCandidate || showManualOverrideEditor) && (
+                      <Button
+                        type="button"
+                        onClick={handleSaveFieldOverride}
+                        disabled={!overrideValue.trim() || isSavingFieldOverride}
+                      >
+                        {isSavingFieldOverride ? "Saving..." : activeResolutionHasCandidate ? "Save edited value" : "Confirm field value"}
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>

@@ -11,6 +11,7 @@ LAUNCH_PIPELINE_PATH = ROOT / "app" / "services" / "extraction" / "launch_pipeli
 CONTRACT_PATH = ROOT / "app" / "services" / "extraction_core" / "contract.py"
 REVIEW_METADATA_PATH = ROOT / "app" / "services" / "extraction_core" / "review_metadata.py"
 RESPONSE_SHAPING_PATH = ROOT / "app" / "routers" / "validation" / "response_shaping.py"
+VALIDATION_EXECUTION_PATH = ROOT / "app" / "routers" / "validation" / "validation_execution.py"
 
 
 def _load_symbols(path: Path, names: set[str], namespace: Dict[str, Any]) -> Dict[str, Any]:
@@ -103,6 +104,27 @@ def _load_response_shaping_symbols() -> Dict[str, Any]:
     )
 
 
+def _load_issues_pipeline_symbols() -> Dict[str, Any]:
+    namespace: Dict[str, Any] = {
+        "Any": Any,
+        "Dict": Dict,
+        "List": List,
+        "Optional": Optional,
+        "Set": set,
+        "_priority_to_severity": lambda priority, severity=None: severity or priority or "minor",
+    }
+    return _load_symbols(
+        ROOT / "app" / "routers" / "validation" / "issues_pipeline.py",
+        {
+            "_normalize_issue_field_key",
+            "_normalize_issue_document_ids",
+            "_is_extraction_provisional_issue",
+            "_partition_workflow_stage_issues",
+        },
+        namespace,
+    )
+
+
 def _load_presentation_contract_symbols() -> Dict[str, Any]:
     namespace: Dict[str, Any] = {
         "Any": Any,
@@ -120,6 +142,27 @@ def _load_presentation_contract_symbols() -> Dict[str, Any]:
         ROOT / "app" / "routers" / "validation" / "presentation_contract.py",
         {
             "_apply_workflow_stage_contract_overrides",
+        },
+        namespace,
+    )
+
+
+def _load_validation_execution_symbols() -> Dict[str, Any]:
+    response_shaping_symbols = _load_response_shaping_symbols()
+    namespace: Dict[str, Any] = {
+        "Any": Any,
+        "Dict": Dict,
+        "Optional": Optional,
+        "_response_shaping": type(
+            "_ResponseShapingStub",
+            (),
+            {"build_workflow_stage": staticmethod(response_shaping_symbols["build_workflow_stage"])},
+        )(),
+    }
+    return _load_symbols(
+        VALIDATION_EXECUTION_PATH,
+        {
+            "_should_defer_final_validation",
         },
         namespace,
     )
@@ -307,6 +350,66 @@ def test_workflow_stage_contract_override_downgrades_submission_and_bank_verdict
     assert "workflow_stage_extraction_resolution" in overridden["submission_eligibility"]["reasons"]
     assert overridden["validation_contract"]["final_verdict"] == "review"
     assert overridden["validation_contract"]["override_reason"] == "extraction_resolution_pending"
+
+
+def test_workflow_stage_issue_partition_moves_extraction_dependent_items_out_of_final_issues() -> None:
+    symbols = _load_issues_pipeline_symbols()
+    partition = symbols["_partition_workflow_stage_issues"]
+
+    result = partition(
+        [
+            {
+                "title": "Invoice date could not be confirmed",
+                "field": "invoice_date",
+                "document_ids": ["doc-1"],
+                "reason_code": "FIELD_NOT_FOUND",
+            },
+            {
+                "title": "Invoice amount mismatches packing list",
+                "field": "amount",
+                "document_ids": ["doc-1"],
+                "reason_code": "crossdoc_mismatch",
+                "description": "Cross-document discrepancy on amount.",
+            },
+        ],
+        [
+            {
+                "document_id": "doc-1",
+                "extraction_resolution": {
+                    "required": True,
+                    "unresolved_count": 1,
+                    "fields": [{"field_name": "invoice_date"}],
+                },
+            }
+        ],
+        {"stage": "extraction_resolution"},
+    )
+
+    assert len(result["final_issues"]) == 1
+    assert result["final_issues"][0]["reason_code"] == "crossdoc_mismatch"
+    assert len(result["provisional_issues"]) == 1
+    assert result["provisional_issues"][0]["reason_code"] == "FIELD_NOT_FOUND"
+
+
+def test_validation_execution_defers_final_validation_when_extraction_resolution_is_open() -> None:
+    symbols = _load_validation_execution_symbols()
+    should_defer = symbols["_should_defer_final_validation"]
+
+    state = should_defer(
+        [
+            {
+                "document_id": "doc-1",
+                "extraction_resolution": {
+                    "required": True,
+                    "unresolved_count": 1,
+                    "fields": [{"field_name": "invoice_date"}],
+                },
+            }
+        ]
+    )
+
+    assert state["defer"] is True
+    assert state["workflow_stage"]["stage"] == "extraction_resolution"
 
 
 def test_review_metadata_does_not_promote_preparser_guess_over_existing_extraction_state() -> None:

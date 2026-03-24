@@ -6,6 +6,161 @@ from typing import Any, Dict, List, Optional, Set
 
 from .utilities import priority_to_severity as _priority_to_severity
 
+
+def _normalize_issue_field_key(value: Any) -> str:
+    return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _normalize_issue_document_ids(issue: Dict[str, Any]) -> List[str]:
+    raw_ids = issue.get("document_ids")
+    if raw_ids in (None, ""):
+        raw_ids = issue.get("documentId")
+    if raw_ids in (None, ""):
+        raw_ids = issue.get("document_id")
+    if isinstance(raw_ids, list):
+        items = raw_ids
+    elif raw_ids in (None, ""):
+        items = []
+    else:
+        items = [raw_ids]
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
+def _is_extraction_provisional_issue(
+    issue: Dict[str, Any],
+    *,
+    unresolved_doc_ids: Set[str],
+    unresolved_fields_by_doc: Dict[str, Set[str]],
+    unresolved_fields_any: Set[str],
+) -> bool:
+    if not isinstance(issue, dict):
+        return False
+
+    reason_candidates = {
+        _normalize_issue_field_key(issue.get("reason_code")),
+        _normalize_issue_field_key(issue.get("decision_status")),
+        _normalize_issue_field_key((issue.get("decision") or {}).get("reason_code"))
+        if isinstance(issue.get("decision"), dict)
+        else "",
+        _normalize_issue_field_key((issue.get("decision") or {}).get("status"))
+        if isinstance(issue.get("decision"), dict)
+        else "",
+    }
+    reason_candidates.discard("")
+    extraction_reason_codes = {
+        "field_not_found",
+        "missing_in_source",
+        "extraction_failed",
+        "format_invalid",
+        "critical_missing",
+        "rejected",
+        "retry",
+    }
+    if reason_candidates.intersection(extraction_reason_codes):
+        return True
+
+    issue_fields = {
+        _normalize_issue_field_key(issue.get("field")),
+        _normalize_issue_field_key(issue.get("field_name")),
+        _normalize_issue_field_key(issue.get("source_field")),
+        _normalize_issue_field_key(issue.get("lc_field")),
+    }
+    issue_fields.discard("")
+    issue_doc_ids = set(_normalize_issue_document_ids(issue))
+    if issue_doc_ids and unresolved_doc_ids and not issue_doc_ids.intersection(unresolved_doc_ids):
+        return False
+
+    if issue_doc_ids:
+        for doc_id in issue_doc_ids.intersection(unresolved_doc_ids):
+            if issue_fields.intersection(unresolved_fields_by_doc.get(doc_id) or set()):
+                return True
+    elif issue_fields.intersection(unresolved_fields_any):
+        return True
+
+    signal_text = " ".join(
+        str(issue.get(key) or "").lower()
+        for key in ("rule", "title", "message", "description", "found", "actual", "expected")
+    )
+    if any(token in signal_text for token in ("conflict", "mismatch", "discrepancy")):
+        return False
+    if issue_doc_ids.intersection(unresolved_doc_ids):
+        return any(
+            token in signal_text
+            for token in (
+                "field not found",
+                "could not confirm",
+                "could not be extracted",
+                "missing required field",
+                "source does not show",
+                "extraction",
+            )
+        )
+    return False
+
+
+def _partition_workflow_stage_issues(
+    issues: List[Dict[str, Any]],
+    documents: Optional[List[Dict[str, Any]]] = None,
+    workflow_stage: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    stage = str((workflow_stage or {}).get("stage") or "").strip().lower()
+    if stage != "extraction_resolution":
+        return {"final_issues": list(issues or []), "provisional_issues": []}
+
+    unresolved_doc_ids: Set[str] = set()
+    unresolved_fields_by_doc: Dict[str, Set[str]] = {}
+    unresolved_fields_any: Set[str] = set()
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        extraction_resolution = (
+            document.get("extraction_resolution")
+            if isinstance(document.get("extraction_resolution"), dict)
+            else document.get("extractionResolution")
+            if isinstance(document.get("extractionResolution"), dict)
+            else {}
+        )
+        if not bool(extraction_resolution.get("required")):
+            continue
+        doc_id = str(
+            document.get("document_id")
+            or document.get("documentId")
+            or document.get("id")
+            or ""
+        ).strip()
+        if not doc_id:
+            continue
+        unresolved_doc_ids.add(doc_id)
+        field_names = {
+            _normalize_issue_field_key(field.get("field_name") or field.get("fieldName"))
+            for field in (extraction_resolution.get("fields") or [])
+            if isinstance(field, dict)
+        }
+        field_names.discard("")
+        unresolved_fields_by_doc[doc_id] = field_names
+        unresolved_fields_any.update(field_names)
+
+    final_issues: List[Dict[str, Any]] = []
+    provisional_issues: List[Dict[str, Any]] = []
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            final_issues.append(issue)
+            continue
+        if _is_extraction_provisional_issue(
+            issue,
+            unresolved_doc_ids=unresolved_doc_ids,
+            unresolved_fields_by_doc=unresolved_fields_by_doc,
+            unresolved_fields_any=unresolved_fields_any,
+        ):
+            provisional_issues.append(issue)
+            continue
+        final_issues.append(issue)
+
+    return {
+        "final_issues": final_issues,
+        "provisional_issues": provisional_issues,
+    }
+
 def _build_issue_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Build a context snapshot from the validation payload for AI issue rewriting.

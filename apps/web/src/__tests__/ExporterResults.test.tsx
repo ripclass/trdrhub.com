@@ -1145,7 +1145,7 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
     expect(screen.getAllByText(/Source invoice does not show an invoice date/i).length).toBeGreaterThan(0);
@@ -1240,13 +1240,25 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
+    expect(screen.getByRole('heading', { name: /Export LC Extraction Resolution/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Confirm unresolved extracted fields from source evidence before treating validation as final\./i),
+    ).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Extraction Resolution Required/i })).toBeInTheDocument();
     expect(
       screen.getAllByText(/2 documents still need 4 fields confirmed before validation should be treated as final\./i).length,
     ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('tab', { name: /Overview/i }));
+    expect(screen.getByRole('heading', { name: /Current Stage: Extraction Resolution/i })).toBeInTheDocument();
+    expect(screen.getByText(/LC-required documents, uploaded files, and provisional requirement coverage/i)).toBeInTheDocument();
+    expect(screen.getByText(/Checklist coverage is still provisional/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Use the Documents tab to review source evidence and confirm only the unresolved fields\./i),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /Documents/i }));
 
@@ -1276,6 +1288,12 @@ describe('ExporterResults', () => {
     expect(
       screen.getByText(/Confirm the unresolved fields from source evidence first\./i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Provisional Validation Note/i)).toBeInTheDocument();
+    expect(screen.getByText(/Provisional Finding Filter/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Provisional Findings$/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Any discrepancy or compliance findings shown below should be treated as provisional until extraction resolution is complete\./i),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
@@ -1285,6 +1303,127 @@ describe('ExporterResults', () => {
     ).toBeGreaterThan(0);
     expect(within(customsPanel).getByRole('button', { name: /Generate Customs Pack/i })).toBeDisabled();
     expect(within(customsPanel).queryByRole('button', { name: /Submit to Bank/i })).toBeNull();
+    expect(within(customsPanel).getByText(/^Paused$/i)).toBeInTheDocument();
+    expect(
+      within(customsPanel).getByText(/Extraction resolution is still open\. Customs-pack generation and presentation checks remain provisional until unresolved fields are confirmed\./i),
+    ).toBeInTheDocument();
+    expect(
+      within(customsPanel).getByText(/Final presentation blockers are deferred until extraction resolution is complete\./i),
+    ).toBeInTheDocument();
+    expect(
+      within(customsPanel).getByText(/Manifest generation is deferred/i),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps an explicitly requested tab during extraction resolution instead of auto-switching to documents', async () => {
+    const structured = buildValidationResults().structured_result!;
+    structured.workflow_stage = {
+      stage: 'extraction_resolution',
+      provisional_validation: true,
+      ready_for_final_validation: false,
+      unresolved_documents: 1,
+      unresolved_fields: 1,
+      summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+    } as any;
+    activeResults = buildValidationResponse({ structured_result: structured });
+
+    render(renderWithProviders(<ExporterResults initialTab="overview" />));
+
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Overview/i })).toHaveAttribute('aria-selected', 'true'),
+    );
+    expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument();
+  });
+
+  it('lets the operator directly confirm a suggested unresolved value when evidence already exists', async () => {
+    const structured = buildValidationResults().structured_result!;
+    const refreshResults = vi.fn().mockResolvedValue(activeResults);
+    const { exporterApi } = await import('@/api/exporter');
+    const saveFieldOverride = vi.mocked(exporterApi.saveFieldOverride);
+
+    const documentsStructured = [
+      {
+        document_id: 'doc-invoice',
+        document_type: 'commercial_invoice',
+        filename: 'Invoice.pdf',
+        extraction_status: 'success',
+        review_required: true,
+        review_reasons: ['critical_issue_date_missing'],
+        critical_field_states: { issue_date: 'missing' },
+        field_details: {
+          invoice_date: {
+            verification: 'model_suggested',
+            status: 'missing',
+            value: '2026-04-20',
+            evidence: {
+              source: 'native_text',
+              snippet: 'Invoice Date: 20 Apr 2026',
+            },
+          },
+        },
+        extraction_resolution: {
+          required: true,
+          unresolved_count: 1,
+          summary: 'Invoice date still needs confirmation from source evidence.',
+          fields: [{ field_name: 'invoice_date', label: 'Invoice Date', verification: 'model_suggested' }],
+        },
+        extracted_fields: { invoice_number: 'DKEL/EXP/2026/114' },
+        extraction_artifacts_v1: {
+          raw_text: 'Commercial Invoice\nInvoice Date: 20 Apr 2026\nLC No: EXP2026BD001\n',
+          field_diagnostics: {
+            issue_date: { state: 'missing', reason_codes: ['FIELD_NOT_FOUND'] },
+          },
+        },
+      },
+    ];
+
+    structured.documents_structured = documentsStructured;
+    structured.documents = documentsStructured as any;
+    structured.lc_structured.documents_structured = documentsStructured;
+    structured.workflow_stage = {
+      stage: 'extraction_resolution',
+      provisional_validation: true,
+      ready_for_final_validation: false,
+      unresolved_documents: 1,
+      unresolved_fields: 1,
+      summary: '1 document still needs 1 field confirmed before validation should be treated as final.',
+    } as any;
+    activeResults = buildValidationResponse({ structured_result: structured });
+    refreshResults.mockResolvedValue(activeResults);
+    mockUseCanonicalJobResult.mockReturnValue({
+      jobStatus: { status: 'completed' },
+      results: activeResults,
+      isLoading: false,
+      resultsError: null,
+      jobError: null,
+      refreshResults,
+    });
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults jobId="job-123" />));
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
+    );
+
+    const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
+    await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
+
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getAllByText(/Suggested value/i).length).toBeGreaterThan(0);
+    expect(within(drawer).getByText('2026-04-20')).toBeInTheDocument();
+    expect(within(drawer).getByText(/Model-suggested candidate/i)).toBeInTheDocument();
+    expect(within(drawer).queryByLabelText(/^Confirmed value$/i)).toBeNull();
+    await user.click(within(drawer).getByRole('button', { name: /Confirm suggested value/i }));
+
+    await waitFor(() =>
+      expect(saveFieldOverride).toHaveBeenCalledWith('job-123', {
+        document_id: 'doc-invoice',
+        field_name: 'invoice_date',
+        override_value: '2026-04-20',
+        note: undefined,
+      }),
+    );
+    await waitFor(() => expect(refreshResults).toHaveBeenCalledWith('manual'));
   });
 
   it('saves an operator-confirmed field override from the document detail drawer and refreshes the same session results', async () => {
@@ -1335,10 +1474,9 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults jobId="job-123" />));
     await waitFor(() =>
-      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
-    await user.click(screen.getByRole('tab', { name: /Documents/i }));
     const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
     await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
 

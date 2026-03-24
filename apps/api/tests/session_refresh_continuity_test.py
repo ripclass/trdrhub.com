@@ -162,6 +162,25 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             "validation_contract": validation_contract,
         }
 
+    def _fake_partition_workflow_stage_issues(issues, documents=None, workflow_stage=None):
+        stage = str((workflow_stage or {}).get("stage") or "").strip().lower()
+        if stage != "extraction_resolution":
+            return {
+                "final_issues": copy.deepcopy(list(issues or [])),
+                "provisional_issues": [],
+            }
+        final_issues = []
+        provisional_issues = []
+        for issue in issues or []:
+            if str((issue or {}).get("reason_code") or "").strip().upper() == "FIELD_NOT_FOUND":
+                provisional_issues.append(copy.deepcopy(issue))
+            else:
+                final_issues.append(copy.deepcopy(issue))
+        return {
+            "final_issues": final_issues,
+            "provisional_issues": provisional_issues,
+        }
+
     namespace: Dict[str, Any] = {
         "Any": Any,
         "Dict": Dict,
@@ -174,6 +193,7 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "_build_validation_contract": _fake_build_validation_contract,
         "_run_validation_arbitration_escalation": _fake_run_validation_arbitration_escalation,
         "_apply_workflow_stage_contract_overrides": _fake_apply_workflow_stage_contract_overrides,
+        "_partition_workflow_stage_issues": _fake_partition_workflow_stage_issues,
         "build_processing_summary_v2": _fake_build_processing_summary_v2,
         "count_issue_severity": _fake_count_issue_severity,
         "build_workflow_stage": _fake_build_workflow_stage,
@@ -321,7 +341,22 @@ def test_refresh_structured_result_keeps_submission_provisional_while_extraction
             "extraction_quality": 96,
         },
         "processing_summary_v2": {"documents": [copy.deepcopy(document)]},
-        "issues": [],
+        "issues": [
+            {
+                "title": "Invoice date could not be confirmed",
+                "severity": "major",
+                "field": "invoice_date",
+                "document_ids": ["doc-invoice"],
+                "reason_code": "FIELD_NOT_FOUND",
+            },
+            {
+                "title": "Invoice amount mismatches packing list",
+                "severity": "major",
+                "field": "amount",
+                "document_ids": ["doc-invoice"],
+                "reason_code": "crossdoc_mismatch",
+            },
+        ],
         "analytics": {},
         "gate_result": {"completeness": 0.95},
         "validation_blocked": False,
@@ -343,3 +378,7 @@ def test_refresh_structured_result_keeps_submission_provisional_while_extraction
     assert "workflow_stage_extraction_resolution" in refreshed["submission_eligibility"]["reasons"]
     assert refreshed["bank_verdict"]["verdict"] == "CAUTION"
     assert refreshed["validation_contract_v1"]["final_verdict"] == "review"
+    assert len(refreshed["issues"]) == 1
+    assert refreshed["issues"][0]["reason_code"] == "crossdoc_mismatch"
+    assert len(refreshed["_provisional_issues"]) == 1
+    assert refreshed["_provisional_issues"][0]["reason_code"] == "FIELD_NOT_FOUND"

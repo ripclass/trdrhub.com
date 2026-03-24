@@ -908,6 +908,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const [showRawLcJson, setShowRawLcJson] = useState(false);
   const [selectedDocumentForDrawer, setSelectedDocumentForDrawer] = useState<DocumentForDrawer | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const hasAutoDirectedExtractionStageRef = useRef(false);
   
   useEffect(() => {
     if (!initialTab) {
@@ -1291,6 +1292,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     null;
   const workflowStage = resultData?.workflowStage ?? null;
   const isExtractionResolutionStage = workflowStage?.stage === 'extraction_resolution';
+  const pageTitle = isExtractionResolutionStage
+    ? 'Export LC Extraction Resolution'
+    : 'Export LC Validation Results';
+  const pageSubtitle = isExtractionResolutionStage
+    ? 'Confirm unresolved extracted fields from source evidence before treating validation as final.'
+    : 'Review the results of your latest document validation';
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
   const extractionResolutionSummary = useMemo(() => {
     const docsNeedingResolution = documents.filter((doc) => doc.extractionResolution?.required);
@@ -1317,6 +1324,25 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           : null,
     };
   }, [backendWorkflowStage, documents, workflowStage]);
+
+  useEffect(() => {
+    if (embedded || initialTab || tabParam || !isExtractionResolutionStage) {
+      return;
+    }
+    if (hasAutoDirectedExtractionStageRef.current || activeTab !== DEFAULT_TAB) {
+      return;
+    }
+    hasAutoDirectedExtractionStageRef.current = true;
+    handleActiveTabChange("documents");
+  }, [
+    activeTab,
+    embedded,
+    handleActiveTabChange,
+    initialTab,
+    isExtractionResolutionStage,
+    tabParam,
+  ]);
+
   const backendIssueCount = Math.max(summary?.total_issues ?? 0, issueCards.length);
   const severityBreakdown = summary?.severity_breakdown ?? {
     critical: 0,
@@ -2838,8 +2864,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <FileText className="w-6 h-6 text-primary-foreground" />
                   </div>
                   <div>
-                    <h1 className="text-xl font-bold text-foreground">Export LC Validation Results</h1>
-                    <p className="text-sm text-muted-foreground">Review the results of your latest document validation</p>
+                    <h1 className="text-xl font-bold text-foreground">{pageTitle}</h1>
+                    <p className="text-sm text-muted-foreground">{pageSubtitle}</p>
                   </div>
                 </div>
               </div>
@@ -3041,6 +3067,28 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </Alert>
             )}
             <div className="space-y-6">
+              {isExtractionResolutionStage && (
+                <Card className="shadow-soft border border-amber-500/40 bg-amber-500/5">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-600" />
+                      Current Stage: Extraction Resolution
+                    </CardTitle>
+                    <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      Confirm unresolved extracted fields before relying on final validation findings
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      {workflowStage?.summary ||
+                        'The system is still resolving extracted fields from the uploaded documents. Validation remains provisional until those fields are confirmed.'}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Use the Documents tab to review source evidence and confirm only the unresolved fields. The checklist below remains useful, but final discrepancy and readiness decisions are not settled yet.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
               {hasTimeline && (
                 <Card className="shadow-soft border border-border/60">
                   <CardHeader className="pb-3">
@@ -3165,10 +3213,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold">Required Documents Checklist</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    LC-required documents, uploaded files, and requirement coverage
+                    {isExtractionResolutionStage
+                      ? 'LC-required documents, uploaded files, and provisional requirement coverage'
+                      : 'LC-required documents, uploaded files, and requirement coverage'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {isExtractionResolutionStage && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                      <p className="text-sm font-medium text-amber-800">Checklist coverage is still provisional</p>
+                      <p className="mt-1 text-xs text-amber-700">
+                        Uploaded-document coverage shown below is based on the current extracted field set and may change after unresolved fields are confirmed in the Documents tab.
+                      </p>
+                    </div>
+                  )}
                   {requirementChecklist.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No explicit LC requirements were parsed into checklist items yet.</p>
                   ) : (
@@ -3296,13 +3354,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Status</p>
                     <div className="flex items-center gap-2">
-                      <StatusBadge status={packGenerated ? "success" : "warning"}>
-                        {packGenerated ? "Ready" : "Pending"}
+                      <StatusBadge status={isExtractionResolutionStage ? "warning" : packGenerated ? "success" : "warning"}>
+                        {isExtractionResolutionStage ? "Paused" : packGenerated ? "Ready" : "Pending"}
                       </StatusBadge>
                       <Badge variant="outline">{customsPack?.format ?? "zip"}</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {packGenerated
+                      {isExtractionResolutionStage
+                        ? "Extraction resolution is still open. Customs-pack generation and presentation checks remain provisional until unresolved fields are confirmed."
+                        : packGenerated
                         ? "Customs pack generated and ready to download."
                         : "Generate your customs pack to create the manifest and bundle documents."}
                     </p>
@@ -3350,7 +3410,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </Button>
                       {!canGenerateCustomsPack && (
                         <p className="text-xs text-muted-foreground">
-                          Resolve blocked required-document or review states before generating a customs pack.
+                          {isExtractionResolutionStage
+                            ? 'Confirm unresolved extracted fields in the Documents tab before generating a customs pack.'
+                            : 'Resolve blocked required-document or review states before generating a customs pack.'}
                         </p>
                       )}
                       {/* Show Download only when manifest exists (pack was generated) */}
@@ -3411,7 +3473,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <Badge variant="outline">{customsPackReadiness.blockers.length}</Badge>
                       </div>
                       {customsPackReadiness.blockers.length === 0 ? (
-                        <p className="text-sm text-muted-foreground mt-3">No hard blockers are currently preventing customs-pack generation.</p>
+                        <p className="text-sm text-muted-foreground mt-3">
+                          {isExtractionResolutionStage
+                            ? 'Final presentation blockers are deferred until extraction resolution is complete.'
+                            : 'No hard blockers are currently preventing customs-pack generation.'}
+                        </p>
                       ) : (
                         <ul className="mt-3 space-y-2 text-sm">
                           {customsPackReadiness.blockers.map((item) => (
@@ -3501,9 +3567,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       <Card className="border-dashed bg-muted/20">
                         <CardContent className="py-8 text-center">
                           <Package className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
-                          <p className="text-sm text-muted-foreground mb-1">No manifest generated yet</p>
+                          <p className="text-sm text-muted-foreground mb-1">
+                            {isExtractionResolutionStage ? 'Manifest generation is deferred' : 'No manifest generated yet'}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            Click "Generate Customs Pack" above to create your customs manifest.
+                            {isExtractionResolutionStage
+                              ? 'Confirm unresolved extracted fields first. Then generate the customs pack once readiness is no longer provisional.'
+                              : 'Click "Generate Customs Pack" above to create your customs manifest.'}
                           </p>
                         </CardContent>
                       </Card>

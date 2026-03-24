@@ -123,12 +123,12 @@ export function IssuesTab({
     if (workflowStage?.stage === "extraction_resolution") {
       return {
         tone: "warning" as const,
-        title: "Overall Validation Note",
+        title: "Provisional Validation Note",
         summary:
           workflowStage.summary ||
           "Validation is still provisional because extracted fields remain unresolved.",
         nextStep:
-          "Confirm the unresolved fields from source evidence first. Treat discrepancy and compliance surfaces as provisional until extraction resolution is complete.",
+          "Confirm the unresolved fields from source evidence first. Any discrepancy or compliance findings shown below should be treated as provisional until extraction resolution is complete.",
         Icon: AlertTriangle,
       };
     }
@@ -181,6 +181,7 @@ export function IssuesTab({
     overallValidationNote.tone === "success"
       ? "border-success/40 bg-success/5 text-success"
       : "border-warning/40 bg-warning/5";
+  const isExtractionResolutionStage = workflowStage?.stage === "extraction_resolution";
 
   return (
     <>
@@ -218,9 +219,13 @@ export function IssuesTab({
       {issueCards.length > 0 && (
         <Card className="shadow-soft border border-border/60">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Discrepancy Filter</CardTitle>
+            <CardTitle className="text-base">
+              {isExtractionResolutionStage ? "Provisional Finding Filter" : "Discrepancy Filter"}
+            </CardTitle>
             <CardDescription>
-              Filter formal discrepancy cards by severity. Review findings stay visible separately because they are not discrepancy cards.
+              {isExtractionResolutionStage
+                ? "Filter provisional documentary findings by severity while extraction resolution is still open."
+                : "Filter formal discrepancy cards by severity. Review findings stay visible separately because they are not discrepancy cards."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -249,9 +254,13 @@ export function IssuesTab({
         {Array.from(grouped.documentary.values()).some((cards) => cards.length > 0) && (
           <section className="space-y-4">
             <div className="space-y-1">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Discrepancy Findings</h3>
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {isExtractionResolutionStage ? "Provisional Findings" : "Discrepancy Findings"}
+              </h3>
               <p className="text-sm text-muted-foreground">
-                Formal documentary findings backed by rule or discrepancy-card logic.
+                {isExtractionResolutionStage
+                  ? "Candidate documentary findings generated before extraction resolution is complete. These will be re-evaluated after unresolved fields are confirmed."
+                  : "Formal documentary findings backed by rule or discrepancy-card logic."}
               </p>
             </div>
             {Array.from(grouped.documentary.entries()).map(([bucket, cards]) => {
@@ -288,7 +297,9 @@ export function IssuesTab({
             <div className="space-y-1">
               <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Compliance Alerts</h3>
               <p className="text-sm text-muted-foreground">
-                Findings that should be routed through compliance or internal risk review rather than treated as ordinary documentary discrepancies.
+                {isExtractionResolutionStage
+                  ? "Compliance or internal risk findings that remain provisional until extraction resolution is complete."
+                  : "Findings that should be routed through compliance or internal risk review rather than treated as ordinary documentary discrepancies."}
               </p>
             </div>
             {grouped.complianceRisk.map((card, index) => {

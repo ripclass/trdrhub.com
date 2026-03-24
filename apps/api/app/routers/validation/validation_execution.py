@@ -32,6 +32,10 @@ def bind_shared(shared: Any) -> None:
             continue
 
 
+class _DeferredValidationFlow(Exception):
+    """Short-circuit final validation stages while extraction resolution remains open."""
+
+
 async def _await_with_timeout(stage_label: str, coro, timeout_seconds: float, default: Any):
     try:
         return await asyncio.wait_for(coro, timeout_seconds), False
@@ -42,6 +46,18 @@ async def _await_with_timeout(stage_label: str, coro, timeout_seconds: float, de
             timeout_seconds,
         )
         return default, True
+
+
+def _should_defer_final_validation(documents: Any) -> Dict[str, Any]:
+    workflow_stage = _response_shaping.build_workflow_stage(
+        documents if isinstance(documents, list) else [],
+        validation_status="review",
+    )
+    return {
+        "defer": str(workflow_stage.get("stage") or "").strip().lower()
+        == "extraction_resolution",
+        "workflow_stage": workflow_stage,
+    }
 
 
 async def execute_validation_pipeline(
@@ -72,6 +88,8 @@ async def execute_validation_pipeline(
     v2_issues = []
     v2_crossdoc_issues = []
     ai_validation_summary = None
+    defer_final_validation = False
+    workflow_stage_hint = None
 
     try:
         # Build LCBaseline from extracted context
@@ -144,6 +162,38 @@ async def execute_validation_pipeline(
 
         v2_issues = issue_engine.generate_extraction_issues(v2_baseline)
         logger.info("V2 IssueEngine generated %d extraction issues", len(v2_issues))
+        workflow_stage_hint = _should_defer_final_validation(
+            payload.get("documents") or extracted_context.get("documents") or []
+        )
+        defer_final_validation = bool(workflow_stage_hint.get("defer"))
+        if defer_final_validation:
+            db_rule_issues = []
+            db_rules_debug = {
+                "enabled": False,
+                "status": "deferred",
+                "reason": "extraction_resolution",
+                "workflow_stage": workflow_stage_hint.get("workflow_stage"),
+            }
+            bank_profile = None
+            requirement_graph = None
+            extraction_confidence_summary = None
+            ai_validation_summary = {
+                "issue_count": 0,
+                "critical_issues": 0,
+                "major_issues": 0,
+                "minor_issues": 0,
+                "documents_checked": len(payload.get("documents") or extracted_context.get("documents") or []),
+                "derived_ai_verdict": "review",
+                "metadata": {"deferred": True, "reason": "extraction_resolution"},
+                "timed_out": False,
+                "deferred": True,
+                "reason": "extraction_resolution",
+            }
+            logger.info(
+                "Deferring final validation stages while extraction remains unresolved: %s",
+                (workflow_stage_hint.get("workflow_stage") or {}).get("summary"),
+            )
+            raise _DeferredValidationFlow()
 
         # =================================================================
         # EXECUTE DATABASE RULES (2500+ rules from DB)
@@ -516,6 +566,8 @@ async def execute_validation_pipeline(
         except Exception as e:
             logger.warning(f"Extraction confidence calculation failed: {e}")
 
+    except _DeferredValidationFlow:
+        logger.info("Validation stage execution deferred until extraction resolution is complete")
     except Exception as e:
         logger.error("V2 pipeline error: %s", e, exc_info=True)
         # Don't fall back to legacy - just log the error
@@ -862,6 +914,8 @@ async def execute_validation_pipeline(
         "requirement_graph": requirement_graph if 'requirement_graph' in locals() else None,
         "extraction_confidence_summary": extraction_confidence_summary if 'extraction_confidence_summary' in locals() else None,
         "ai_validation_summary": ai_validation_summary,
+        "validation_deferred": defer_final_validation,
+        "workflow_stage_hint": workflow_stage_hint,
         "request_user_type": request_user_type,
         "results": results,
         "failed_results": failed_results,
