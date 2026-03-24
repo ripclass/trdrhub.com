@@ -12,6 +12,7 @@ from app.services.facts import (
     apply_insurance_fact_graph_to_validation_inputs,
     apply_inspection_fact_graph_to_validation_inputs,
     apply_invoice_fact_graph_to_validation_inputs,
+    apply_lc_fact_graph_to_validation_inputs,
     apply_packing_list_fact_graph_to_validation_inputs,
 )
 
@@ -101,6 +102,7 @@ async def execute_validation_pipeline(
     workflow_stage_hint = None
 
     try:
+        lc_context = apply_lc_fact_graph_to_validation_inputs(payload, extracted_context)
         apply_invoice_fact_graph_to_validation_inputs(payload, extracted_context)
         apply_bl_fact_graph_to_validation_inputs(payload, extracted_context)
         apply_packing_list_fact_graph_to_validation_inputs(payload, extracted_context)

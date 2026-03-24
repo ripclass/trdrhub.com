@@ -25,6 +25,17 @@ _LC_FACT_FIELDS: Dict[str, Tuple[str, ...]] = {
     "currency": ("currency",),
     "port_of_loading": ("port_of_loading",),
     "port_of_discharge": ("port_of_discharge",),
+    "incoterm": ("incoterm",),
+    "goods_description": ("goods_description",),
+    "documents_required": ("documents_required",),
+    "ucp_reference": ("ucp_reference",),
+}
+
+_LC_SYSTEM_AUTHORITY_FIELDS = {
+    "incoterm",
+    "goods_description",
+    "documents_required",
+    "ucp_reference",
 }
 
 
@@ -110,6 +121,10 @@ def _payload_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
     flattened.setdefault("currency", payload.get("currency"))
     flattened.setdefault("port_of_loading", payload.get("port_of_loading"))
     flattened.setdefault("port_of_discharge", payload.get("port_of_discharge"))
+    flattened.setdefault("incoterm", payload.get("incoterm"))
+    flattened.setdefault("goods_description", payload.get("goods_description"))
+    flattened.setdefault("documents_required", payload.get("documents_required"))
+    flattened.setdefault("ucp_reference", payload.get("ucp_reference"))
 
     return flattened
 
@@ -161,10 +176,14 @@ def _normalize_fact_value(field_name: str, value: Any) -> Optional[Any]:
         return normalize_currency(value)
     if field_name in {"applicant", "beneficiary", "issuing_bank", "advising_bank"}:
         return normalize_party_name(value)
+    if field_name == "documents_required":
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return normalize_reference(value)
     return normalize_reference(value)
 
 
-def _verification_state(value: Any, detail: Dict[str, Any]) -> str:
+def _verification_state(field_name: str, value: Any, detail: Dict[str, Any]) -> str:
     verification = str(detail.get("verification") or "").strip().lower()
     if verification == "operator_confirmed":
         return "operator_confirmed"
@@ -178,6 +197,8 @@ def _verification_state(value: Any, detail: Dict[str, Any]) -> str:
         if str(detail.get("reason_code") or "").strip().lower() == "source_absent":
             return "absent_in_source"
         return "unconfirmed"
+    if field_name in _LC_SYSTEM_AUTHORITY_FIELDS and _is_populated(value):
+        return "confirmed"
     if not _is_populated(value):
         return "unconfirmed"
     if detail.get("evidence"):
@@ -243,7 +264,7 @@ def build_lc_fact_set(document_payload: Dict[str, Any]) -> Dict[str, Any]:
                 value=value,
                 normalized_value=_normalize_fact_value(field_name, value),
                 confidence=confidence,
-                verification_state=_verification_state(value, detail),
+                verification_state=_verification_state(field_name, value, detail),
                 origin=_origin(payload, detail),
                 source_field_name=source_field_name,
                 evidence_snippet=evidence_snippet,

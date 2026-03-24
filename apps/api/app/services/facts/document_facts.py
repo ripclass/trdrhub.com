@@ -99,6 +99,30 @@ _SUPPORTING_DOCUMENT_TYPES = {
     "supporting_document",
 }
 _RESOLVED_FACT_STATES = {"confirmed", "operator_confirmed"}
+_LC_PRESERVE_ON_PROJECTION = {
+    "incoterm",
+    "goods_description",
+    "documents_required",
+    "ucp_reference",
+}
+_LC_VALIDATION_ALIASES = {
+    "lc_number": ("lc_number", "number", "reference", "documentaryCredit", "doc_credit_number"),
+    "issue_date": ("issue_date", "date_of_issue"),
+    "expiry_date": ("expiry_date", "expiry", "validity_date"),
+    "latest_shipment_date": ("latest_shipment", "latest_shipment_date", "shipment_date"),
+    "applicant": ("applicant", "applicant_name", "buyer"),
+    "beneficiary": ("beneficiary", "beneficiary_name", "seller"),
+    "issuing_bank": ("issuing_bank", "issuer", "issuing_bank_name"),
+    "advising_bank": ("advising_bank", "advising_bank_name"),
+    "amount": ("amount", "credit_amount", "value"),
+    "currency": ("currency", "ccy"),
+    "port_of_loading": ("port_of_loading", "loading_port", "pol"),
+    "port_of_discharge": ("port_of_discharge", "discharge_port", "pod"),
+    "incoterm": ("incoterm",),
+    "goods_description": ("goods_description",),
+    "documents_required": ("documents_required",),
+    "ucp_reference": ("ucp_reference",),
+}
 _INVOICE_VALIDATION_ALIASES = {
     "invoice_number": ("invoice_number", "invoice_no", "inv_no"),
     "instrument_number": ("instrument_number", "invoice_number", "invoice_no", "inv_no"),
@@ -263,6 +287,14 @@ def _iter_invoice_documents(documents: Iterable[Dict[str, Any]]) -> Iterable[Dic
             yield document
 
 
+def _iter_lc_documents(documents: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        if _document_type(document) in _LC_DOCUMENT_TYPES:
+            yield document
+
+
 def _iter_bl_documents(documents: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
     for document in documents or []:
         if not isinstance(document, dict):
@@ -301,6 +333,130 @@ def _iter_inspection_documents(documents: Iterable[Dict[str, Any]]) -> Iterable[
             continue
         if _document_type(document) in _INSPECTION_DOCUMENT_TYPES:
             yield document
+
+
+def project_lc_validation_context(
+    base_context: Optional[Dict[str, Any]],
+    *,
+    document: Optional[Dict[str, Any]] = None,
+    fact_graph: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    source_context = base_context if isinstance(base_context, dict) else {}
+    projected: Dict[str, Any] = dict(source_context)
+
+    document_lane = str(
+        (document or {}).get("extraction_lane")
+        or (document or {}).get("extractionLane")
+        or projected.get("extraction_lane")
+        or projected.get("extractionLane")
+        or ""
+    ).strip().lower()
+
+    selected_fact_graph = fact_graph if isinstance(fact_graph, dict) else None
+    if selected_fact_graph is None and isinstance(document, dict):
+        selected_fact_graph = document.get("fact_graph_v1") or document.get("factGraphV1")
+    if selected_fact_graph is None and isinstance(document, dict):
+        selected_fact_graph = materialize_document_fact_graph_v1(document)
+
+    if document_lane != "document_ai" or not isinstance(selected_fact_graph, dict):
+        if isinstance(selected_fact_graph, dict):
+            projected["fact_graph_v1"] = selected_fact_graph
+            projected["factGraphV1"] = selected_fact_graph
+        return projected
+
+    for field_name, aliases in _LC_VALIDATION_ALIASES.items():
+        if field_name in _LC_PRESERVE_ON_PROJECTION:
+            continue
+        for alias in aliases:
+            projected.pop(alias, None)
+
+    if isinstance(projected.get("dates"), dict):
+        projected["dates"] = {
+            key: value
+            for key, value in projected["dates"].items()
+            if key not in {"issue", "issue_date", "expiry", "expiry_date", "latest_shipment", "latest_shipment_date"}
+        }
+    else:
+        projected["dates"] = {}
+
+    if isinstance(projected.get("ports"), dict):
+        projected["ports"] = {
+            key: value
+            for key, value in projected["ports"].items()
+            if key not in {"loading", "port_of_loading", "discharge", "port_of_discharge"}
+        }
+    else:
+        projected["ports"] = {}
+
+    projected["amount"] = None
+
+    for fact in selected_fact_graph.get("facts") or []:
+        if not isinstance(fact, dict):
+            continue
+        field_name = str(fact.get("field_name") or "").strip().lower()
+        aliases = _LC_VALIDATION_ALIASES.get(field_name)
+        if not aliases:
+            continue
+        verification_state = str(fact.get("verification_state") or "").strip().lower()
+        if verification_state not in _RESOLVED_FACT_STATES:
+            continue
+        fact_value = fact.get("normalized_value")
+        if fact_value in (None, ""):
+            fact_value = fact.get("value")
+        if fact_value in (None, "", []):
+            continue
+
+        if field_name == "lc_number":
+            projected["lc_number"] = fact_value
+            projected["number"] = fact_value
+            projected["reference"] = fact_value
+            continue
+        if field_name == "issue_date":
+            projected["issue_date"] = fact_value
+            projected.setdefault("dates", {})
+            projected["dates"]["issue"] = fact_value
+            projected["dates"]["issue_date"] = fact_value
+            continue
+        if field_name == "expiry_date":
+            projected["expiry_date"] = fact_value
+            projected.setdefault("dates", {})
+            projected["dates"]["expiry"] = fact_value
+            projected["dates"]["expiry_date"] = fact_value
+            continue
+        if field_name == "latest_shipment_date":
+            projected["latest_shipment"] = fact_value
+            projected["latest_shipment_date"] = fact_value
+            projected.setdefault("dates", {})
+            projected["dates"]["latest_shipment"] = fact_value
+            projected["dates"]["latest_shipment_date"] = fact_value
+            continue
+        if field_name == "port_of_loading":
+            projected["port_of_loading"] = fact_value
+            projected.setdefault("ports", {})
+            projected["ports"]["loading"] = fact_value
+            projected["ports"]["port_of_loading"] = fact_value
+            continue
+        if field_name == "port_of_discharge":
+            projected["port_of_discharge"] = fact_value
+            projected.setdefault("ports", {})
+            projected["ports"]["discharge"] = fact_value
+            projected["ports"]["port_of_discharge"] = fact_value
+            continue
+        if field_name == "amount":
+            currency = projected.get("currency")
+            projected["amount"] = {"value": fact_value, "currency": currency} if currency else {"value": fact_value}
+            projected["credit_amount"] = fact_value
+            continue
+        if field_name == "currency":
+            projected["currency"] = fact_value
+            if isinstance(projected.get("amount"), dict):
+                projected["amount"]["currency"] = fact_value
+            continue
+        projected[field_name] = fact_value
+
+    projected["fact_graph_v1"] = selected_fact_graph
+    projected["factGraphV1"] = selected_fact_graph
+    return projected
 
 
 def project_invoice_validation_context(
@@ -641,6 +797,41 @@ def apply_invoice_fact_graph_to_validation_inputs(
         payload["invoice"] = projected
     if isinstance(extracted_context, dict):
         extracted_context["invoice"] = projected
+    return projected
+
+
+def apply_lc_fact_graph_to_validation_inputs(
+    payload: Dict[str, Any],
+    extracted_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    payload_docs = payload.get("documents") if isinstance(payload, dict) else None
+    context_docs = extracted_context.get("documents") if isinstance(extracted_context, dict) else None
+    lc_document = next(
+        _iter_lc_documents(payload_docs if isinstance(payload_docs, list) else context_docs if isinstance(context_docs, list) else []),
+        None,
+    )
+
+    payload_lc = payload.get("lc") if isinstance(payload, dict) and isinstance(payload.get("lc"), dict) else {}
+    context_lc = (
+        extracted_context.get("lc")
+        if isinstance(extracted_context, dict) and isinstance(extracted_context.get("lc"), dict)
+        else {}
+    )
+    base_lc_context = payload_lc or context_lc
+    fact_graph = None
+    if isinstance(lc_document, dict):
+        fact_graph = lc_document.get("fact_graph_v1") or lc_document.get("factGraphV1")
+
+    projected = project_lc_validation_context(
+        base_lc_context,
+        document=lc_document,
+        fact_graph=fact_graph,
+    )
+
+    if isinstance(payload, dict):
+        payload["lc"] = projected
+    if isinstance(extracted_context, dict):
+        extracted_context["lc"] = projected
     return projected
 
 
