@@ -152,6 +152,11 @@ type ReviewReasonContext = {
 type ExtractionResolutionState = NonNullable<ValidationDocument['extractionResolution']>;
 type ResolutionQueueItemState = NonNullable<ValidationDocument['resolutionItems']>[number];
 const FACT_RESOLUTION_DOCUMENT_TYPES = new Set([
+  'letter_of_credit',
+  'swift_message',
+  'lc_application',
+  'bank_guarantee',
+  'standby_letter_of_credit',
   'commercial_invoice',
   'proforma_invoice',
   'draft_bill_of_exchange',
@@ -1406,10 +1411,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 (!!item.filename && item.filename.toLowerCase() === String(filename).toLowerCase()),
             )
           : [];
+      const factGraph = docAny.fact_graph_v1 ?? docAny.factGraphV1;
+      const usesFactResolution =
+        FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) &&
+        (resolutionItems.length > 0 || Boolean(factGraph));
       const fieldDiagnostics = docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {};
       const rawText = docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '';
       const extractionResolution =
-        FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && backendResolutionQueue
+        usesFactResolution && backendResolutionQueue
           ? _buildQueueBackedExtractionResolutionState(resolutionItems)
           : _buildExtractionResolutionState({
               missingRequiredFields,
@@ -1447,7 +1456,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         criticalFieldStates,
         fieldDiagnostics,
         rawText,
-        resolutionItems: backendResolutionQueue ? resolutionItems : undefined,
+        resolutionItems: usesFactResolution && backendResolutionQueue ? resolutionItems : undefined,
         requiredFieldsFound: docAny.required_fields_found,
         requiredFieldsTotal: docAny.required_fields_total,
         fieldDetails,

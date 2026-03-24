@@ -592,6 +592,11 @@ const buildFieldEvidenceNote = (detail: Record<string, any> | undefined): string
 const isFactResolutionBackedDocument = (docType: string | undefined): boolean => {
   const normalized = normalizeReviewFieldKey(docType);
   return [
+    "letter_of_credit",
+    "swift_message",
+    "lc_application",
+    "bank_guarantee",
+    "standby_letter_of_credit",
     "commercial_invoice",
     "proforma_invoice",
     "draft_bill_of_exchange",

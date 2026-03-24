@@ -151,6 +151,11 @@ const normalizeFieldKey = (value: unknown): string =>
     .replace(/[\s-]+/g, '_');
 
 const FACT_RESOLUTION_DOCUMENT_TYPES = new Set([
+  'letter_of_credit',
+  'swift_message',
+  'lc_application',
+  'bank_guarantee',
+  'standby_letter_of_credit',
   'commercial_invoice',
   'proforma_invoice',
   'draft_bill_of_exchange',
@@ -768,6 +773,10 @@ const mapDocuments = (
             (!!item.filename && item.filename.toLowerCase() === String(filename).toLowerCase()),
         )
       : [];
+    const factGraph = doc?.fact_graph_v1 ?? doc?.factGraphV1;
+    const usesFactResolution =
+      FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) &&
+      (Boolean(matchedFactResolution) || resolutionItems.length > 0 || Boolean(factGraph));
     const fieldDiagnostics = doc?.extraction_artifacts_v1?.field_diagnostics ?? doc?.field_diagnostics ?? {};
     const rawText =
       doc?.extraction_artifacts_v1?.raw_text ??
@@ -775,9 +784,9 @@ const mapDocuments = (
       doc?.rawText ??
       '';
     const extractionResolution =
-      FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && matchedFactResolution
+      usesFactResolution && matchedFactResolution
         ? buildFactResolutionExtractionResolution(matchedFactResolution)
-        : FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) && resolutionQueue
+        : usesFactResolution && resolutionQueue
         ? buildQueueBackedExtractionResolution(resolutionItems, workflowStageHint)
         : buildExtractionResolution({
             existingResolution: existingExtractionResolution,
@@ -824,7 +833,7 @@ const mapDocuments = (
       criticalFieldStates,
       fieldDiagnostics,
       rawText,
-      resolutionItems: matchedFactResolution ? resolutionItems : resolutionQueue ? resolutionItems : undefined,
+      resolutionItems: usesFactResolution && (matchedFactResolution || resolutionQueue) ? resolutionItems : undefined,
       requirementStatus,
       reviewState,
       extractionResolution,

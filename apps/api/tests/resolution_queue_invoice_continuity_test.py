@@ -484,3 +484,68 @@ def test_build_resolution_queue_v1_collects_courier_transport_unresolved_facts()
     assert queue["summary"]["total_items"] == 2
     assert queue["summary"]["document_counts"] == {"courier_or_post_receipt_or_certificate_of_posting": 2}
     assert [item["field_name"] for item in queue["items"]] == ["consignment_reference", "consignee"]
+
+
+def test_build_resolution_queue_v1_collects_rendered_lc_unresolved_facts_only() -> None:
+    documents = [
+        {
+            "document_id": "doc-lc",
+            "document_type": "letter_of_credit",
+            "filename": "LC.pdf",
+            "extraction_lane": "document_ai",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "letter_of_credit",
+                "document_subtype": "letter_of_credit",
+                "facts": [
+                    {
+                        "field_name": "lc_number",
+                        "value": "EXP2026BD001",
+                        "normalized_value": "EXP2026BD001",
+                        "verification_state": "candidate",
+                        "origin": "document_ai",
+                        "evidence_snippet": "20: EXP2026BD001",
+                        "evidence_source": "native_text",
+                        "page": 1,
+                    },
+                    {
+                        "field_name": "issue_date",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "goods_description",
+                        "value": "100% Cotton T-Shirts",
+                        "normalized_value": "100% Cotton T-Shirts",
+                        "verification_state": "candidate",
+                        "origin": "document_ai",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 2
+    assert queue["summary"]["document_counts"] == {"letter_of_credit": 2}
+    assert [item["field_name"] for item in queue["items"]] == ["lc_number", "issue_date"]
+    assert queue["items"][0]["priority"] == "high"
+
+
+def test_build_resolution_queue_v1_skips_structured_lc_without_fact_graph() -> None:
+    documents = [
+        {
+            "document_id": "doc-lc",
+            "document_type": "letter_of_credit",
+            "filename": "LC.txt",
+            "extraction_lane": "structured_mt",
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 0
+    assert queue["summary"]["document_counts"] == {}

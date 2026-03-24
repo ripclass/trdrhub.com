@@ -7,10 +7,18 @@ from .coo_facts import build_coo_fact_set
 from .insurance_facts import build_insurance_fact_set
 from .inspection_facts import build_inspection_fact_set
 from .invoice_facts import build_invoice_fact_set
+from .lc_facts import build_lc_fact_set
 from .packing_list_facts import build_packing_list_fact_set
 from .supporting_facts import build_supporting_fact_set
 
 
+_LC_DOCUMENT_TYPES = {
+    "letter_of_credit",
+    "swift_message",
+    "lc_application",
+    "bank_guarantee",
+    "standby_letter_of_credit",
+}
 _INVOICE_DOCUMENT_TYPES = {
     "commercial_invoice",
     "proforma_invoice",
@@ -183,6 +191,19 @@ def materialize_document_fact_graph_v1(document: Dict[str, Any]) -> Optional[Dic
         return None
 
     document_type = _document_type(document)
+    if document_type in _LC_DOCUMENT_TYPES:
+        lane = str(document.get("extraction_lane") or document.get("extractionLane") or "").strip().lower()
+        if lane == "document_ai":
+            fact_graph = build_lc_fact_set(document)
+            document["fact_graph_v1"] = fact_graph
+            document["factGraphV1"] = fact_graph
+            return fact_graph
+        existing = document.get("fact_graph_v1") or document.get("factGraphV1")
+        if isinstance(existing, dict):
+            document["fact_graph_v1"] = existing
+            document["factGraphV1"] = existing
+            return existing
+        return None
     if document_type in _INVOICE_DOCUMENT_TYPES:
         fact_graph = build_invoice_fact_set(document)
         document["fact_graph_v1"] = fact_graph

@@ -14,6 +14,13 @@ _INVOICE_DOCUMENT_TYPES = {
     "debit_note",
     "credit_note",
 }
+_LC_DOCUMENT_TYPES = {
+    "letter_of_credit",
+    "swift_message",
+    "lc_application",
+    "bank_guarantee",
+    "standby_letter_of_credit",
+}
 _BL_DOCUMENT_TYPES = {
     "bill_of_lading",
     "ocean_bill_of_lading",
@@ -88,6 +95,30 @@ _HIGH_PRIORITY_FIELDS = {
     "amount",
     "currency",
 }
+_LC_HIGH_PRIORITY_FIELDS = {
+    "lc_number",
+    "issue_date",
+    "expiry_date",
+    "latest_shipment_date",
+    "applicant",
+    "beneficiary",
+    "amount",
+    "currency",
+}
+_LC_USER_RESOLVABLE_FIELDS = {
+    "lc_number",
+    "issue_date",
+    "expiry_date",
+    "latest_shipment_date",
+    "applicant",
+    "beneficiary",
+    "issuing_bank",
+    "advising_bank",
+    "amount",
+    "currency",
+    "port_of_loading",
+    "port_of_discharge",
+}
 _BL_HIGH_PRIORITY_FIELDS = {"bl_number", "on_board_date", "port_of_loading", "port_of_discharge"}
 _BL_HIGH_PRIORITY_FIELDS.update(
     {
@@ -147,6 +178,7 @@ def _priority_for_field(field_name: str) -> str:
     normalized = str(field_name or "").strip().lower()
     if (
         normalized in _HIGH_PRIORITY_FIELDS
+        or normalized in _LC_HIGH_PRIORITY_FIELDS
         or normalized in _BL_HIGH_PRIORITY_FIELDS
         or normalized in _PACKING_LIST_HIGH_PRIORITY_FIELDS
         or normalized in _COO_HIGH_PRIORITY_FIELDS
@@ -179,7 +211,8 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
             or ""
         ).strip().lower()
         if (
-            document_type not in _INVOICE_DOCUMENT_TYPES
+            document_type not in _LC_DOCUMENT_TYPES
+            and document_type not in _INVOICE_DOCUMENT_TYPES
             and document_type not in _BL_DOCUMENT_TYPES
             and document_type not in _PACKING_LIST_DOCUMENT_TYPES
             and document_type not in _COO_DOCUMENT_TYPES
@@ -187,6 +220,16 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
             and document_type not in _INSPECTION_DOCUMENT_TYPES
         ):
             continue
+
+        if document_type in _LC_DOCUMENT_TYPES:
+            extraction_lane = str(
+                document.get("extraction_lane")
+                or document.get("extractionLane")
+                or ""
+            ).strip().lower()
+            existing_fact_graph = document.get("fact_graph_v1") or document.get("factGraphV1")
+            if extraction_lane != "document_ai" and not isinstance(existing_fact_graph, dict):
+                continue
 
         fact_graph = document.get("fact_graph_v1") or document.get("factGraphV1")
         if not isinstance(fact_graph, dict):
@@ -201,6 +244,11 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
                 continue
             field_name = str(fact.get("field_name") or "").strip()
             if not field_name:
+                continue
+            if (
+                document_type in _LC_DOCUMENT_TYPES
+                and field_name.strip().lower() not in _LC_USER_RESOLVABLE_FIELDS
+            ):
                 continue
 
             items.append(

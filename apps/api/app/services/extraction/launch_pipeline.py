@@ -31,6 +31,7 @@ from app.services.facts import (
     build_insurance_fact_set,
     build_inspection_fact_set,
     build_invoice_fact_set,
+    build_lc_fact_set,
     build_packing_list_fact_set,
     build_supporting_fact_set,
 )
@@ -392,6 +393,10 @@ class LaunchExtractionPipeline:
             lc_struct = multimodal_struct or await extract_lc_ai_first(extracted_text)
             extraction_status = lc_struct.get("_status", "unknown") if isinstance(lc_struct, dict) else "unknown"
             if lc_struct and extraction_status != "failed":
+                extraction_method = lc_struct.get("_extraction_method", "unknown")
+                extraction_lane = _resolve_extraction_lane(
+                    extraction_method=extraction_method,
+                )
                 shaped_payload = _shape_lc_financial_payload(
                     lc_struct,
                     lc_subtype=lc_subtype,
@@ -402,20 +407,37 @@ class LaunchExtractionPipeline:
                 )
                 lc_review = _assess_lc_financial_completeness(shaped_payload, lc_subtype=lc_subtype)
                 user_facing_fields = _build_lc_user_facing_extracted_fields(shaped_payload)
+                fact_graph_v1 = (
+                    build_lc_fact_set(
+                        {
+                            **shaped_payload,
+                            "document_type": document_type,
+                            "lc_subtype": lc_subtype,
+                            "extraction_lane": extraction_lane,
+                            "extraction_method": extraction_method,
+                            "extracted_fields": user_facing_fields,
+                            "field_details": lc_struct.get("_field_details"),
+                        }
+                    )
+                    if extraction_lane == "document_ai"
+                    else None
+                )
                 return {
                     "handled": True,
                     "context_key": "lc",
-                    "context_payload": {**shaped_payload, "lc_review": lc_review},
+                    "context_payload": {
+                        **shaped_payload,
+                        "lc_review": lc_review,
+                        **({"fact_graph_v1": fact_graph_v1} if isinstance(fact_graph_v1, dict) else {}),
+                    },
                     "doc_info_patch": {
                         **base_patch,
                         "lc_subtype": lc_subtype,
                         "lc_family": shaped_payload.get("lc_family"),
                         "extracted_fields": user_facing_fields or (lc_struct.get("extracted_fields") if isinstance(lc_struct.get("extracted_fields"), dict) else lc_struct),
                         "extraction_status": "success" if lc_review.get("parse_complete") else "partial",
-                        "extraction_method": lc_struct.get("_extraction_method", "unknown"),
-                        "extraction_lane": _resolve_extraction_lane(
-                            extraction_method=lc_struct.get("_extraction_method", "unknown"),
-                        ),
+                        "extraction_method": extraction_method,
+                        "extraction_lane": extraction_lane,
                         "extraction_confidence": lc_struct.get("_extraction_confidence", 0.0),
                         "ai_first_status": extraction_status,
                         "field_details": lc_struct.get("_field_details"),
@@ -426,6 +448,7 @@ class LaunchExtractionPipeline:
                         "required_fields_found": lc_review.get("required_found"),
                         "required_fields_total": lc_review.get("required_total"),
                         "review_reasons": list(base_patch.get("review_reasons") or []) + list(lc_review.get("review_reasons") or []),
+                        **({"fact_graph_v1": fact_graph_v1} if isinstance(fact_graph_v1, dict) else {}),
                     },
                     "has_structured_data": True,
                     "lc_number": (

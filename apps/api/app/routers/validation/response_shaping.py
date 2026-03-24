@@ -648,6 +648,11 @@ def build_fact_resolution_v1(
             queue_by_filename.setdefault(filename, []).append(item)
 
     fact_resolution_document_types = {
+        "letter_of_credit",
+        "swift_message",
+        "lc_application",
+        "bank_guarantee",
+        "standby_letter_of_credit",
         "commercial_invoice",
         "proforma_invoice",
         "draft_bill_of_exchange",
@@ -736,9 +741,22 @@ def build_fact_resolution_v1(
             or ""
         ).strip()
         filename = str(document.get("filename") or document.get("name") or "").strip()
+        document_fact_graph = document.get("fact_graph_v1") or document.get("factGraphV1")
         resolution_items = list(queue_by_document_id.get(document_id) or [])
         if not resolution_items and filename:
             resolution_items = list(queue_by_filename.get(filename.lower()) or [])
+        if (
+            document_type in {
+                "letter_of_credit",
+                "swift_message",
+                "lc_application",
+                "bank_guarantee",
+                "standby_letter_of_credit",
+            }
+            and not isinstance(document_fact_graph, dict)
+            and not resolution_items
+        ):
+            continue
 
         unresolved_count = len(resolution_items)
         resolution_required = unresolved_count > 0
@@ -765,7 +783,7 @@ def build_fact_resolution_v1(
                     if resolution_required
                     else "Document facts required for validation are resolved."
                 ),
-                "fact_graph_v1": document.get("fact_graph_v1") or document.get("factGraphV1"),
+                "fact_graph_v1": document_fact_graph,
                 "resolution_items": resolution_items,
             }
         )
