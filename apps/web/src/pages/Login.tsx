@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { readPendingExporterReviewRoute, clearPendingExporterReviewRoute } from "@/lib/exporter/pendingReviewRoute";
 
 const FEATURES = [
   { icon: FileCheck, label: "LC Validation" },
@@ -32,20 +33,35 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, isLoading: authLoading, loginWithEmail } = useAuth();
 
-  // Get returnUrl from query params (e.g., /login?returnUrl=/tracking/dashboard)
   const returnUrl = searchParams.get("returnUrl");
+
+  const destination = useMemo(() => {
+    const candidate = returnUrl || readPendingExporterReviewRoute() || "/lcopilot/dashboard";
+
+    try {
+      const url = new URL(candidate, window.location.origin);
+      if (url.origin !== window.location.origin) {
+        return "/lcopilot/dashboard";
+      }
+
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+      return candidate.startsWith("/") ? candidate : "/lcopilot/dashboard";
+    }
+  }, [returnUrl]);
 
   useEffect(() => {
     if (authLoading || !user) {
       return;
     }
 
-    const destination = returnUrl || "/lcopilot/dashboard";
-    window.location.href = destination;
-  }, [authLoading, returnUrl, user]);
+    clearPendingExporterReviewRoute();
+    navigate(destination, { replace: true });
+  }, [authLoading, destination, navigate, user]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +75,8 @@ export default function Login() {
       });
 
       setIsLoading(false);
-      window.location.href = returnUrl || "/lcopilot/dashboard";
+      clearPendingExporterReviewRoute();
+      navigate(destination, { replace: true });
     } catch (error: any) {
       const message = error?.message || "Please check your credentials and try again.";
       toast({

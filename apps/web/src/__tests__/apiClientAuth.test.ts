@@ -66,4 +66,18 @@ describe('api client auth token resolution', () => {
       }),
     ).toBe('https://api.trdrhub.com');
   });
+
+  it('preserves the current route when building a login redirect URL', async () => {
+    const client = await import('@/api/client');
+
+    expect(
+      client.__internal.buildLoginRedirectUrl({
+        pathname: '/lcopilot/exporter-dashboard',
+        search: '?section=reviews&jobId=job-123',
+        hash: '#details',
+      }),
+    ).toBe(
+      '/login?returnUrl=%2Flcopilot%2Fexporter-dashboard%3Fsection%3Dreviews%26jobId%3Djob-123%23details',
+    );
+  });
 });

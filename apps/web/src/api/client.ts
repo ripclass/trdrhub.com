@@ -50,6 +50,17 @@ const resolveApiBaseUrl = (
   return 'https://api.trdrhub.com'
 }
 
+const buildLoginRedirectUrl = (
+  locationOverride?: { pathname?: string; search?: string; hash?: string },
+): string => {
+  const pathname = locationOverride?.pathname || ''
+  const search = locationOverride?.search || ''
+  const hash = locationOverride?.hash || ''
+  const returnUrl = `${pathname}${search}${hash}` || '/'
+
+  return `/login?returnUrl=${encodeURIComponent(returnUrl)}`
+}
+
 const API_BASE_URL_VALUE = resolveApiBaseUrl()
 const GUEST_MODE = (import.meta.env.VITE_GUEST_MODE || '').toString().toLowerCase() === 'true'
 const AUTH_FREE_PATHS = ['/auth/login', '/auth/register']
@@ -266,7 +277,7 @@ api.interceptors.response.use(
         } else {
           clearSupabaseSession()
           if (typeof window !== 'undefined' && !currentPath.startsWith('/login')) {
-            window.location.href = '/login'
+            window.location.href = buildLoginRedirectUrl(window.location)
           }
         }
       }
@@ -312,6 +323,7 @@ export { api }
 export const API_BASE_URL = api.defaults.baseURL || API_BASE_URL_VALUE
 export const __internal = {
   resolveApiBaseUrl,
+  buildLoginRedirectUrl,
   getStoredSupabaseAccessToken,
   getSupabaseAccessToken,
 }
