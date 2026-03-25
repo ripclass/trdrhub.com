@@ -54,6 +54,36 @@ def test_parse_lc_requirements_from_graph_extracts_critical_docs_and_bl_fields()
     assert requirements["bl_must_show"] == ["voyage_number", "gross_weight", "net_weight"]
 
 
+def test_parse_lc_requirements_from_graph_prefers_structured_bl_field_requirements() -> None:
+    ns = _load_ai_validator_symbols()
+    parse_from_graph = ns["_parse_lc_requirements_from_graph"]
+    requirements = parse_from_graph(
+        {
+            "required_document_types": ["inspection_certificate"],
+            "documentary_conditions": [
+                "This condition text should not be needed when structured requirements exist."
+            ],
+            "condition_requirements": [
+                {
+                    "requirement_type": "document_field_presence",
+                    "document_type": "bill_of_lading",
+                    "field_name": "gross_weight",
+                },
+                {
+                    "requirement_type": "document_field_presence",
+                    "document_type": "bill_of_lading",
+                    "field_name": "voyage_number",
+                },
+            ],
+        }
+    )
+
+    assert [doc["document_type"] for doc in requirements["required_documents"]] == [
+        "inspection_certificate",
+    ]
+    assert requirements["bl_must_show"] == ["gross_weight", "voyage_number"]
+
+
 def test_parse_lc_requirements_from_graph_returns_empty_for_noncritical_graph() -> None:
     ns = _load_ai_validator_symbols()
     parse_from_graph = ns["_parse_lc_requirements_from_graph"]

@@ -169,22 +169,35 @@ def _parse_lc_requirements_from_graph(requirements_graph: Dict[str, Any]) -> Dic
                 }
             )
 
-    conditions_text = " ".join(
-        str(item or "").strip()
-        for item in (
-            list(requirements_graph.get("documentary_conditions") or [])
-            + list(requirements_graph.get("ambiguous_conditions") or [])
-        )
-        if str(item or "").strip()
-    ).upper()
+    for item in requirements_graph.get("condition_requirements") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("requirement_type") or "").strip().lower() != "document_field_presence":
+            continue
+        document_type = str(item.get("document_type") or "").strip().lower()
+        field_name = str(item.get("field_name") or "").strip()
+        if document_type != "bill_of_lading" or not field_name:
+            continue
+        if field_name not in bl_must_show:
+            bl_must_show.append(field_name)
 
-    if conditions_text:
-        if "VOYAGE" in conditions_text or " VOY " in f" {conditions_text} ":
-            bl_must_show.append("voyage_number")
-        if "GROSS" in conditions_text and "WEIGHT" in conditions_text:
-            bl_must_show.append("gross_weight")
-        if "NET" in conditions_text and "WEIGHT" in conditions_text:
-            bl_must_show.append("net_weight")
+    if not bl_must_show:
+        conditions_text = " ".join(
+            str(item or "").strip()
+            for item in (
+                list(requirements_graph.get("documentary_conditions") or [])
+                + list(requirements_graph.get("ambiguous_conditions") or [])
+            )
+            if str(item or "").strip()
+        ).upper()
+
+        if conditions_text:
+            if "VOYAGE" in conditions_text or " VOY " in f" {conditions_text} ":
+                bl_must_show.append("voyage_number")
+            if "GROSS" in conditions_text and "WEIGHT" in conditions_text:
+                bl_must_show.append("gross_weight")
+            if "NET" in conditions_text and "WEIGHT" in conditions_text:
+                bl_must_show.append("net_weight")
 
     return {
         "required_documents": required_docs,

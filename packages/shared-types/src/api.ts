@@ -313,6 +313,11 @@ export const RequirementsGraphConditionRequirementSchema = z.object({
   identifier_type: z.string().nullable().optional(),
   value: z.string().nullable().optional(),
   applies_to: z.string().nullable().optional(),
+  document_type: z.string().nullable().optional(),
+  field_name: z.string().nullable().optional(),
+  originals_required: z.number().int().nullable().optional(),
+  copies_required: z.number().int().nullable().optional(),
+  exact_wording: z.string().nullable().optional(),
   source_text: z.string().nullable().optional(),
   source_bucket: z.string().nullable().optional(),
 }).passthrough();

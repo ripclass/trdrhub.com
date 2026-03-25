@@ -356,6 +356,11 @@ class RequirementsGraphConditionRequirement(BaseModel):
     identifier_type: Optional[str] = None
     value: Optional[str] = None
     applies_to: Optional[str] = None
+    document_type: Optional[str] = None
+    field_name: Optional[str] = None
+    originals_required: Optional[int] = None
+    copies_required: Optional[int] = None
+    exact_wording: Optional[str] = None
     source_text: Optional[str] = None
     source_bucket: Optional[str] = None
 

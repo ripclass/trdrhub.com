@@ -94,6 +94,11 @@ _TIN_REGEX_PATTERNS = (
     r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s*ID(?:ENTIFICATION)?|TAXPAYER\s*ID|ETIN|E[\-\s]?TIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
     r"(?:TAX\s+IDENTIFICATION|TAXPAYER\s+IDENTIFICATION)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
 )
+_TRANSPORT_FIELD_PATTERNS = (
+    ("voyage_number", lambda text: "VOYAGE" in text or " VOY " in f" {text} "),
+    ("gross_weight", lambda text: "GROSS" in text and "WEIGHT" in text),
+    ("net_weight", lambda text: "NET" in text and "WEIGHT" in text),
+)
 
 
 def _document_type(document: Dict[str, Any]) -> str:
@@ -153,6 +158,7 @@ def _normalize_condition_texts(items: Iterable[Any]) -> List[str]:
 def _build_condition_requirements(
     documentary_conditions: List[str],
     ambiguous_conditions: List[str],
+    required_documents: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     requirements: List[Dict[str, Any]] = []
     seen: Set[tuple[str, str, str]] = set()
@@ -231,6 +237,68 @@ def _build_condition_requirements(
                 source_bucket,
             )
 
+            for field_name, detector in _TRANSPORT_FIELD_PATTERNS:
+                if detector(upper_text):
+                    key = ("document_field_presence", "bill_of_lading", field_name)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    requirements.append(
+                        {
+                            "requirement_type": "document_field_presence",
+                            "document_type": "bill_of_lading",
+                            "field_name": field_name,
+                            "applies_to": "bill_of_lading",
+                            "source_text": normalized_text,
+                            "source_bucket": source_bucket,
+                        }
+                    )
+
+    for document in required_documents or []:
+        if not isinstance(document, dict):
+            continue
+        document_type = str(document.get("code") or "").strip()
+        if not document_type:
+            continue
+        raw_text = str(
+            document.get("raw_text")
+            or document.get("display_name")
+            or document.get("exact_wording")
+            or document_type
+        ).strip()
+        originals = document.get("originals")
+        copies = document.get("copies")
+        if originals is not None or copies is not None:
+            key = ("document_quantity", document_type, f"{originals}:{copies}")
+            if key not in seen:
+                seen.add(key)
+                requirements.append(
+                    {
+                        "requirement_type": "document_quantity",
+                        "document_type": document_type,
+                        "originals_required": originals,
+                        "copies_required": copies,
+                        "applies_to": document_type,
+                        "source_text": raw_text,
+                        "source_bucket": "required_documents",
+                    }
+                )
+        exact_wording = str(document.get("exact_wording") or "").strip()
+        if exact_wording:
+            key = ("document_exact_wording", document_type, exact_wording)
+            if key not in seen:
+                seen.add(key)
+                requirements.append(
+                    {
+                        "requirement_type": "document_exact_wording",
+                        "document_type": document_type,
+                        "exact_wording": exact_wording,
+                        "applies_to": document_type,
+                        "source_text": raw_text,
+                        "source_bucket": "required_documents",
+                    }
+                )
+
     return requirements
 
 
@@ -286,6 +354,7 @@ def build_lc_requirements_graph_v1(document_payload: Dict[str, Any]) -> Optional
     condition_requirements = _build_condition_requirements(
         requirement_conditions,
         unmapped_requirements,
+        required_documents,
     )
 
     fact_graph = payload.get("fact_graph_v1") or payload.get("factGraphV1")
