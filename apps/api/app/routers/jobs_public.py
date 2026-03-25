@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc
 import logging
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import User, ValidationSession, SessionStatus
 from app.core.security import get_current_user
 from app.core.rbac import RBACPolicyEngine, Permission
@@ -1029,6 +1029,8 @@ async def save_job_field_override(
     verification = str(payload.verification or "operator_confirmed").strip().lower()
     applied_at = datetime.now(timezone.utc)
     applied_at_iso = applied_at.isoformat()
+    session_id = str(session.id)
+    lc_number = _extract_lc_number(session)
 
     updated_document = _apply_field_override_to_structured_result(
         structured_result,
@@ -1073,42 +1075,8 @@ async def save_job_field_override(
         applied_at_iso=applied_at_iso,
     )
 
-    db.commit()
-
-    try:
-        audit_context = create_audit_context(request)
-        request_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
-        AuditService(db).log_action(
-            action="field_override",
-            user=current_user,
-            correlation_id=audit_context.get("correlation_id"),
-            session_id=audit_context.get("session_id"),
-            resource_type="validation_session_field",
-            resource_id=str(session.id),
-            lc_number=_extract_lc_number(session),
-            result=AuditResult.SUCCESS,
-            ip_address=audit_context.get("ip_address"),
-            user_agent=audit_context.get("user_agent"),
-            endpoint=audit_context.get("endpoint"),
-            http_method=audit_context.get("http_method"),
-            status_code=status.HTTP_200_OK,
-            request_data=request_data,
-            response_data={
-                "document_id": document_id,
-                "field_name": field_name,
-                "verification": verification,
-            },
-            audit_metadata={
-                "override_scope": "session_structured_result",
-                "applied_at": applied_at_iso,
-                "downstream_refresh_applied": True,
-            },
-        )
-    except Exception as audit_error:
-        logger.warning("Field override saved but audit logging failed: %s", audit_error)
-
-    return _build_field_override_response(
-        session_id=str(session.id),
+    response_payload = _build_field_override_response(
+        session_id=session_id,
         document_id=document_id,
         field_name=field_name,
         override_value=payload.override_value,
@@ -1116,6 +1084,47 @@ async def save_job_field_override(
         applied_at_iso=applied_at_iso,
         updated_document=None,
     )
+
+    db.commit()
+
+    try:
+        audit_context = create_audit_context(request)
+        request_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+        audit_db = SessionLocal()
+        try:
+            AuditService(audit_db).log_action(
+                action="field_override",
+                user=current_user,
+                correlation_id=audit_context.get("correlation_id"),
+                session_id=audit_context.get("session_id"),
+                resource_type="validation_session_field",
+                resource_id=session_id,
+                lc_number=lc_number,
+                result=AuditResult.SUCCESS,
+                ip_address=audit_context.get("ip_address"),
+                user_agent=audit_context.get("user_agent"),
+                endpoint=audit_context.get("endpoint"),
+                http_method=audit_context.get("http_method"),
+                status_code=status.HTTP_200_OK,
+                request_data=request_data,
+                response_data={
+                    "document_id": document_id,
+                    "field_name": field_name,
+                    "verification": verification,
+                },
+                audit_metadata={
+                    "override_scope": "session_structured_result",
+                    "applied_at": applied_at_iso,
+                    "downstream_refresh_applied": True,
+                },
+            )
+        finally:
+            audit_db.close()
+    except Exception as audit_error:
+        db.rollback()
+        logger.warning("Field override saved but audit logging failed: %s", audit_error)
+
+    return response_payload
 
 
 @router.get("/api/jobs")
