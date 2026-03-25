@@ -654,6 +654,9 @@ async def finalize_validation_result(
         )
         structured_result["workflow_stage"] = workflow_stage
         structured_result["workflowStage"] = workflow_stage
+        structured_result["requirements_graph_v1"] = _response_shaping.build_requirements_graph_v1(
+            structured_result["document_extraction_v1"].get("documents", []),
+        )
         structured_result["resolution_queue_v1"] = _response_shaping.build_resolution_queue_v1(
             structured_result["document_extraction_v1"].get("documents", []),
             workflow_stage=workflow_stage,

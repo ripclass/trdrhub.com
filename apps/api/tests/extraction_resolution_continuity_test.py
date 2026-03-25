@@ -92,6 +92,7 @@ def _load_response_shaping_symbols() -> Dict[str, Any]:
         "List": List,
         "Optional": Optional,
         "materialize_document_fact_graphs_v1": lambda docs: docs,
+        "materialize_document_requirements_graphs_v1": lambda docs: docs,
         "_build_resolution_queue_payload": lambda docs: {
             "summary": {
                 "total_items": 0,

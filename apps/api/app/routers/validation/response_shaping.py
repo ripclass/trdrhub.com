@@ -11,6 +11,10 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from app.services.facts import materialize_document_fact_graphs_v1 as _materialize_document_fact_graphs_v1
+from app.services.requirements import (
+    materialize_document_requirements_graphs_v1 as _materialize_document_requirements_graphs_v1,
+    resolve_case_requirements_graph_v1 as _resolve_case_requirements_graph_v1,
+)
 from app.services.resolution import build_resolution_queue_v1 as _build_resolution_queue_payload
 
 from .utilities import format_duration, normalize_issue_severity
@@ -645,6 +649,7 @@ def _normalize_doc_status(
 
 
 def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+    materialize_document_requirements_graphs_v1(documents)
     normalized_docs: List[Dict[str, Any]] = []
     for doc in documents or []:
         extraction_status = (
@@ -678,6 +683,8 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 "field_details": doc.get("field_details") or doc.get("fieldDetails") or doc.get("_field_details") or {},
                 "fact_graph_v1": doc.get("fact_graph_v1") or doc.get("factGraphV1"),
                 "factGraphV1": doc.get("factGraphV1") or doc.get("fact_graph_v1"),
+                "requirements_graph_v1": doc.get("requirements_graph_v1") or doc.get("requirementsGraphV1"),
+                "requirementsGraphV1": doc.get("requirementsGraphV1") or doc.get("requirements_graph_v1"),
                 "extraction_lane": doc.get("extraction_lane") or doc.get("extractionLane"),
                 "extractionLane": doc.get("extractionLane") or doc.get("extraction_lane"),
                 "extraction_resolution": doc.get("extraction_resolution") or doc.get("extractionResolution"),
@@ -719,6 +726,15 @@ def materialize_document_fact_graphs_v1(documents: List[Dict[str, Any]]) -> List
     return _materialize_document_fact_graphs_v1(documents)
 
 
+def materialize_document_requirements_graphs_v1(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return _materialize_document_requirements_graphs_v1(documents)
+
+
+def build_requirements_graph_v1(documents: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    materialize_document_requirements_graphs_v1(documents)
+    return _resolve_case_requirements_graph_v1(documents)
+
+
 def _empty_resolution_queue_v1() -> Dict[str, Any]:
     return {
         "version": "resolution_queue_v1",
@@ -750,6 +766,7 @@ def build_resolution_queue_v1(
     workflow_stage: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     materialize_document_fact_graphs_v1(documents)
+    materialize_document_requirements_graphs_v1(documents)
     return _normalize_resolution_queue_for_workflow_stage(
         _build_resolution_queue_payload(documents),
         workflow_stage,
@@ -763,6 +780,7 @@ def build_fact_resolution_v1(
     resolution_queue: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     materialize_document_fact_graphs_v1(documents)
+    materialize_document_requirements_graphs_v1(documents)
     effective_workflow_stage = (
         workflow_stage
         if isinstance(workflow_stage, dict)
@@ -934,6 +952,7 @@ def build_fact_resolution_v1(
                     else "Document facts required for validation are resolved."
                 ),
                 "fact_graph_v1": document_fact_graph,
+                "requirements_graph_v1": document.get("requirements_graph_v1") or document.get("requirementsGraphV1"),
                 "resolution_items": resolution_items,
             }
         )

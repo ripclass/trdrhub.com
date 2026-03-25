@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from app.services.requirements import (
+    is_document_type_required_by_graph,
+    is_lc_fact_required_by_graph,
+    resolve_case_requirements_graph_v1,
+)
+
 from .models import ResolutionQueue, ResolutionQueueItem, ResolutionQueueSummary
 
 
@@ -365,6 +371,7 @@ def _fact_is_user_resolvable(
     *,
     document: Dict[str, Any],
     fact_graph: Dict[str, Any],
+    requirements_graph: Dict[str, Any] | None,
 ) -> bool:
     verification_state = str(fact.get("verification_state") or "").strip().lower()
     if verification_state not in _USER_RESOLVABLE_STATES:
@@ -376,6 +383,12 @@ def _fact_is_user_resolvable(
 
     allowed_fields = _allowed_fields_for_document(document, fact_graph, document_type)
     if field_name not in allowed_fields:
+        return False
+
+    if document_type in _LC_DOCUMENT_TYPES and not is_lc_fact_required_by_graph(
+        field_name,
+        requirements_graph,
+    ):
         return False
 
     # If the system could not produce a bounded candidate value, do not push the
@@ -390,6 +403,7 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
     items: List[ResolutionQueueItem] = []
     document_counts: Dict[str, int] = {}
     unresolved_document_ids: List[str] = []
+    requirements_graph = resolve_case_requirements_graph_v1(documents)
 
     for document in documents or []:
         if not isinstance(document, dict):
@@ -408,6 +422,12 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
             and document_type not in _COO_DOCUMENT_TYPES
             and document_type not in _INSURANCE_DOCUMENT_TYPES
             and document_type not in _INSPECTION_DOCUMENT_TYPES
+        ):
+            continue
+
+        if document_type not in _LC_DOCUMENT_TYPES and not is_document_type_required_by_graph(
+            document_type,
+            requirements_graph,
         ):
             continue
 
@@ -434,6 +454,7 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
                 fact,
                 document=document,
                 fact_graph=fact_graph,
+                requirements_graph=requirements_graph,
             ):
                 continue
 

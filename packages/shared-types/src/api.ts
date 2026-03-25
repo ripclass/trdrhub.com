@@ -288,6 +288,43 @@ export const DocumentFactSetSchema = z.object({
 }).passthrough();
 export type DocumentFactSet = z.infer<typeof DocumentFactSetSchema>;
 
+export const RequirementsGraphDocumentSchema = z.object({
+  code: z.string(),
+  display_name: z.string().optional(),
+  category: z.string().optional(),
+  raw_text: z.string().optional(),
+  aliases_matched: z.array(z.string()).optional(),
+  originals: z.number().int().nullable().optional(),
+  copies: z.number().int().nullable().optional(),
+  signed: z.boolean().nullable().optional(),
+  negotiable: z.boolean().nullable().optional(),
+  issuer: z.string().nullable().optional(),
+  exact_wording: z.string().nullable().optional(),
+  legalized: z.boolean().nullable().optional(),
+  transport_mode: z.string().nullable().optional(),
+  detection_source: z.string().optional(),
+  confidence: z.number().optional(),
+  evidence: z.array(z.string()).optional(),
+}).passthrough();
+export type RequirementsGraphDocument = z.infer<typeof RequirementsGraphDocumentSchema>;
+
+export const RequirementsGraphV1Schema = z.object({
+  version: z.literal('requirements_graph_v1').default('requirements_graph_v1'),
+  source_document_id: z.string().nullable().optional(),
+  source_document_type: z.string().nullable().optional(),
+  source_lane: z.string().nullable().optional(),
+  workflow_orientation: z.string().nullable().optional(),
+  applicable_rules: z.string().nullable().optional(),
+  required_documents: z.array(RequirementsGraphDocumentSchema).default([]),
+  required_document_types: z.array(z.string()).default([]),
+  documentary_conditions: z.array(z.string()).default([]),
+  non_documentary_conditions: z.array(z.string()).default([]),
+  ambiguous_conditions: z.array(z.string()).default([]),
+  required_fact_fields: z.array(z.string()).default([]),
+  core_terms: z.record(z.unknown()).default({}),
+}).passthrough();
+export type RequirementsGraphV1 = z.infer<typeof RequirementsGraphV1Schema>;
+
 export const ResolutionQueueItemSchema = z.object({
   document_id: z.string(),
   document_type: z.string(),
@@ -331,6 +368,7 @@ export const FactResolutionDocumentSchema = z.object({
   unresolved_count: z.number().nonnegative(),
   summary: z.string(),
   fact_graph_v1: DocumentFactSetSchema.optional(),
+  requirements_graph_v1: RequirementsGraphV1Schema.optional(),
   resolution_items: z.array(ResolutionQueueItemSchema).default([]),
 }).passthrough();
 export type FactResolutionDocument = z.infer<typeof FactResolutionDocumentSchema>;
@@ -402,6 +440,8 @@ export const DocumentExtractionDocumentSchema = z.object({
   fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
   fact_graph_v1: DocumentFactSetSchema.optional(),
   factGraphV1: DocumentFactSetSchema.optional(),
+  requirements_graph_v1: RequirementsGraphV1Schema.optional(),
+  requirementsGraphV1: RequirementsGraphV1Schema.optional(),
   extraction_resolution: ExtractionResolutionSchema.optional(),
   extractionResolution: ExtractionResolutionSchema.optional(),
   issues_count: z.number().nonnegative().optional(),
@@ -460,6 +500,8 @@ export const StructuredResultDocumentSchema = z.object({
   fieldDetails: z.record(ExtractionFieldDetailSchema).optional(),
   fact_graph_v1: DocumentFactSetSchema.optional(),
   factGraphV1: DocumentFactSetSchema.optional(),
+  requirements_graph_v1: RequirementsGraphV1Schema.optional(),
+  requirementsGraphV1: RequirementsGraphV1Schema.optional(),
   extraction_resolution: ExtractionResolutionSchema.optional(),
   extractionResolution: ExtractionResolutionSchema.optional(),
   issues_count: z.number().nonnegative().optional(),
@@ -715,6 +757,7 @@ export const StructuredResultSchema = z.object({
   processing_summary: ProcessingSummarySchema,
   processing_summary_v2: ProcessingSummaryV2Schema.optional(),
   document_extraction_v1: DocumentExtractionV1Schema.optional(),
+  requirements_graph_v1: RequirementsGraphV1Schema.optional(),
   resolution_queue_v1: ResolutionQueueV1Schema.optional(),
   fact_resolution_v1: FactResolutionV1Schema.optional(),
   issue_provenance_v1: IssueProvenanceV1Schema.optional(),

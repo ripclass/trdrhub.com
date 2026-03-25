@@ -2232,6 +2232,9 @@ def _build_blocked_structured_result(
         document_extraction.get("documents", []),
         validation_status="blocked",
     )
+    requirements_graph_v1 = _response_shaping.build_requirements_graph_v1(
+        document_extraction.get("documents", [])
+    )
     resolution_queue_v1 = _response_shaping.build_resolution_queue_v1(
         document_extraction.get("documents", [])
     )
@@ -2321,6 +2324,7 @@ def _build_blocked_structured_result(
         "processing_summary": processing_summary,
         "processing_summary_v2": processing_summary_v2,
         "document_extraction_v1": document_extraction,
+        "requirements_graph_v1": requirements_graph_v1,
         "resolution_queue_v1": resolution_queue_v1,
         "fact_resolution_v1": fact_resolution_v1,
         "workflow_stage": workflow_stage,

@@ -27,6 +27,7 @@ def _load_symbols() -> Dict[str, Any]:
     ast.fix_missing_locations(module_ast)
     namespace: Dict[str, Any] = {"Any": Any, "Dict": Dict, "List": List, "Optional": Optional}
     namespace["materialize_document_fact_graphs_v1"] = lambda documents: documents
+    namespace["materialize_document_requirements_graphs_v1"] = lambda documents: documents
     namespace["build_resolution_queue_v1"] = lambda documents, *, workflow_stage=None: {
         "version": "resolution_queue_v1",
         "items": [],
@@ -130,6 +131,11 @@ def test_build_fact_resolution_v1_includes_rendered_lc_but_skips_unbacked_struct
                 "document_type": "letter_of_credit",
                 "facts": [{"field_name": "lc_number", "verification_state": "candidate"}],
             },
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "required_document_types": ["commercial_invoice", "bill_of_lading"],
+                "required_fact_fields": ["lc_number", "amount", "currency"],
+            },
         },
         {
             "document_id": "doc-lc-structured",
@@ -180,6 +186,11 @@ def test_build_fact_resolution_v1_includes_rendered_lc_but_skips_unbacked_struct
     assert payload["summary"]["total_documents"] == 1
     assert payload["documents"][0]["document_id"] == "doc-lc-ai"
     assert payload["documents"][0]["document_type"] == "letter_of_credit"
+    assert payload["documents"][0]["requirements_graph_v1"]["required_fact_fields"] == [
+        "lc_number",
+        "amount",
+        "currency",
+    ]
     assert payload["documents"][0]["resolution_items"][0]["field_name"] == "lc_number"
 
 

@@ -5,6 +5,7 @@ This folder documents the current LCopilot Public Beta architecture.
 Use the files below as canonical launch architecture truth:
 
 - `high-level-architecture.md`
+- `extraction-validation-decision-record.md`
 - `core-workflows.md`
 - `api-specification.md`
 - `source-tree.md`

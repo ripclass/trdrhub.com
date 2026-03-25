@@ -332,6 +332,41 @@ class DocumentFactSet(BaseModel):
     facts: List[DocumentFact] = Field(default_factory=list)
 
 
+class RequirementsGraphDocument(BaseModel):
+    code: str
+    display_name: Optional[str] = None
+    category: Optional[str] = None
+    raw_text: Optional[str] = None
+    aliases_matched: Optional[List[str]] = None
+    originals: Optional[int] = None
+    copies: Optional[int] = None
+    signed: Optional[bool] = None
+    negotiable: Optional[bool] = None
+    issuer: Optional[str] = None
+    exact_wording: Optional[str] = None
+    legalized: Optional[bool] = None
+    transport_mode: Optional[str] = None
+    detection_source: Optional[str] = None
+    confidence: Optional[float] = None
+    evidence: Optional[List[str]] = None
+
+
+class RequirementsGraphV1(BaseModel):
+    version: str = Field(default="requirements_graph_v1")
+    source_document_id: Optional[str] = None
+    source_document_type: Optional[str] = None
+    source_lane: Optional[str] = None
+    workflow_orientation: Optional[str] = None
+    applicable_rules: Optional[str] = None
+    required_documents: List[RequirementsGraphDocument] = Field(default_factory=list)
+    required_document_types: List[str] = Field(default_factory=list)
+    documentary_conditions: List[str] = Field(default_factory=list)
+    non_documentary_conditions: List[str] = Field(default_factory=list)
+    ambiguous_conditions: List[str] = Field(default_factory=list)
+    required_fact_fields: List[str] = Field(default_factory=list)
+    core_terms: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ResolutionQueueItem(BaseModel):
     document_id: str
     document_type: str
@@ -372,6 +407,7 @@ class FactResolutionDocument(BaseModel):
     unresolved_count: int = Field(ge=0)
     summary: str
     fact_graph_v1: Optional[DocumentFactSet] = None
+    requirements_graph_v1: Optional[RequirementsGraphV1] = None
     resolution_items: List[ResolutionQueueItem] = Field(default_factory=list)
 
 
@@ -400,6 +436,7 @@ class DocumentExtractionDocument(BaseModel):
     extracted_fields: Optional[Dict[str, Any]] = None
     field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
     fact_graph_v1: Optional[DocumentFactSet] = None
+    requirements_graph_v1: Optional[RequirementsGraphV1] = None
     extraction_resolution: Optional[ExtractionResolution] = None
     issues_count: Optional[int] = Field(default=None, ge=0)
     ocr_confidence: Optional[float] = None
@@ -445,6 +482,7 @@ class StructuredResultDocument(BaseModel):
     extracted_fields: Dict[str, Any]
     field_details: Dict[str, ExtractionFieldDetail] = Field(default_factory=dict)
     fact_graph_v1: Optional[DocumentFactSet] = None
+    requirements_graph_v1: Optional[RequirementsGraphV1] = None
     extraction_resolution: Optional[ExtractionResolution] = None
     issues_count: int = Field(ge=0)
     review_required: Optional[bool] = None
@@ -669,6 +707,7 @@ class StructuredResultPayload(BaseModel):
     processing_summary: StructuredProcessingSummary
     processing_summary_v2: Optional[ProcessingSummaryV2] = None
     document_extraction_v1: Optional[DocumentExtractionV1] = None
+    requirements_graph_v1: Optional[RequirementsGraphV1] = None
     resolution_queue_v1: Optional[ResolutionQueueV1] = None
     fact_resolution_v1: Optional[FactResolutionV1] = None
     issue_provenance_v1: Optional[IssueProvenanceV1] = None

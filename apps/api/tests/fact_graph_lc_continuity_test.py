@@ -20,7 +20,14 @@ RESPONSE_SHAPING_PATH = ROOT / "app" / "routers" / "validation" / "response_shap
 def _load_response_shaping_symbols() -> Dict[str, Any]:
     source = RESPONSE_SHAPING_PATH.read_text(encoding="utf-8")
     parsed = ast.parse(source)
-    target_functions = {"_normalize_doc_status", "summarize_document_statuses", "build_document_extraction_v1"}
+    target_functions = {
+        "_normalize_doc_status",
+        "_uses_fact_resolution_contract",
+        "_is_legacy_extraction_review_reason",
+        "sanitize_public_document_contract_v1",
+        "summarize_document_statuses",
+        "build_document_extraction_v1",
+    }
     selected_nodes = [
         node
         for node in parsed.body
@@ -29,6 +36,7 @@ def _load_response_shaping_symbols() -> Dict[str, Any]:
     module_ast = ast.Module(body=selected_nodes, type_ignores=[])
     ast.fix_missing_locations(module_ast)
     namespace: Dict[str, Any] = {"Any": Any, "Dict": Dict, "List": List, "Optional": Optional}
+    namespace["materialize_document_requirements_graphs_v1"] = lambda documents: documents
     exec(compile(module_ast, str(RESPONSE_SHAPING_PATH), "exec"), namespace)
     return namespace
 
@@ -54,6 +62,31 @@ def test_document_extraction_v1_preserves_lc_fact_graph() -> None:
     )
 
     assert payload["documents"][0]["fact_graph_v1"]["facts"][0]["field_name"] == "lc_number"
+
+
+def test_document_extraction_v1_preserves_lc_requirements_graph() -> None:
+    response_shaping = _load_response_shaping_symbols()
+    payload = response_shaping["build_document_extraction_v1"](
+        [
+            {
+                "id": "doc-lc-1",
+                "documentType": "letter_of_credit",
+                "name": "LC.pdf",
+                "status": "warning",
+                "extractionStatus": "partial",
+                "requirements_graph_v1": {
+                    "version": "requirements_graph_v1",
+                    "required_document_types": ["commercial_invoice", "bill_of_lading"],
+                    "required_fact_fields": ["lc_number", "amount", "currency"],
+                },
+            }
+        ]
+    )
+
+    assert payload["documents"][0]["requirements_graph_v1"]["required_document_types"] == [
+        "commercial_invoice",
+        "bill_of_lading",
+    ]
 
 
 def test_materialize_document_fact_graph_v1_only_builds_rendered_lc_lane() -> None:

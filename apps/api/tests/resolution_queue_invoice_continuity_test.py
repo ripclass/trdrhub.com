@@ -106,6 +106,91 @@ def test_build_resolution_queue_v1_collects_only_unresolved_invoice_facts() -> N
     assert queue["items"][0]["reason"] == "system_could_not_confirm"
 
 
+def test_build_resolution_queue_v1_skips_nonrequired_support_doc_when_lc_graph_present() -> None:
+    documents = [
+        {
+            "document_id": "doc-lc",
+            "document_type": "letter_of_credit",
+            "filename": "LC.pdf",
+            "extraction_lane": "document_ai",
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "required_document_types": ["commercial_invoice", "bill_of_lading"],
+                "required_fact_fields": ["lc_number", "amount", "currency"],
+            },
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "letter_of_credit",
+                "facts": [],
+            },
+        },
+        {
+            "document_id": "doc-coo",
+            "document_type": "certificate_of_origin",
+            "filename": "Certificate_of_Origin.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "certificate_of_origin",
+                "facts": [
+                    {
+                        "field_name": "certificate_number",
+                        "value": "COO-2026-001",
+                        "normalized_value": "COO-2026-001",
+                        "verification_state": "candidate",
+                        "origin": "document_ai",
+                    }
+                ],
+            },
+        },
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 0
+    assert queue["items"] == []
+
+
+def test_build_resolution_queue_v1_uses_required_fact_fields_for_lc_tasks() -> None:
+    documents = [
+        {
+            "document_id": "doc-lc",
+            "document_type": "letter_of_credit",
+            "filename": "LC.pdf",
+            "extraction_lane": "document_ai",
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "required_document_types": ["commercial_invoice"],
+                "required_fact_fields": ["lc_number", "amount", "currency"],
+            },
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "letter_of_credit",
+                "facts": [
+                    {
+                        "field_name": "lc_number",
+                        "value": "EXP2026BD001",
+                        "normalized_value": "EXP2026BD001",
+                        "verification_state": "candidate",
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "port_of_loading",
+                        "value": "Chittagong",
+                        "normalized_value": "Chittagong",
+                        "verification_state": "candidate",
+                        "origin": "document_ai",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 1
+    assert [item["field_name"] for item in queue["items"]] == ["lc_number"]
+
+
 def test_build_resolution_queue_v1_keeps_rejected_candidate_visible() -> None:
     documents = [
         {
