@@ -138,6 +138,47 @@ _BL_USER_RESOLVABLE_FIELDS = {
     "airport_of_destination",
     "on_board_date",
 }
+_SEA_TRANSPORT_SUBTYPES = {
+    "bill_of_lading",
+    "ocean_bill_of_lading",
+    "charter_party_bill_of_lading",
+    "house_bill_of_lading",
+    "master_bill_of_lading",
+    "sea_waybill",
+    "mates_receipt",
+    "shipping_company_certificate",
+}
+_AIR_TRANSPORT_SUBTYPES = {"air_waybill"}
+_MULTIMODAL_TRANSPORT_SUBTYPES = {"multimodal_transport_document", "combined_transport_document"}
+_CONSIGNMENT_TRANSPORT_SUBTYPES = {
+    "railway_consignment_note",
+    "road_transport_document",
+    "courier_or_post_receipt_or_certificate_of_posting",
+    "forwarders_certificate_of_receipt",
+    "forwarder_certificate_of_receipt",
+    "delivery_order",
+    "warehouse_receipt",
+    "cargo_manifest",
+}
+_SEA_BL_USER_RESOLVABLE_FIELDS = {
+    "bl_number",
+    "port_of_loading",
+    "port_of_discharge",
+    "on_board_date",
+}
+_AIR_BL_USER_RESOLVABLE_FIELDS = {
+    "airway_bill_number",
+    "airport_of_departure",
+    "airport_of_destination",
+    "on_board_date",
+}
+_MULTIMODAL_BL_USER_RESOLVABLE_FIELDS = {
+    "consignment_reference",
+    "port_of_loading",
+    "port_of_discharge",
+    "on_board_date",
+}
+_CONSIGNMENT_BL_USER_RESOLVABLE_FIELDS = {"consignment_reference"}
 _BL_HIGH_PRIORITY_FIELDS = {"bl_number", "on_board_date", "port_of_loading", "port_of_discharge"}
 _BL_HIGH_PRIORITY_FIELDS.update(
     {
@@ -262,13 +303,51 @@ def _candidate_value_for_fact(fact: Dict[str, Any]) -> Any:
     return None
 
 
-def _allowed_fields_for_document_type(document_type: str) -> set[str]:
+def _transport_subtype_for_document(document: Dict[str, Any], fact_graph: Dict[str, Any], document_type: str) -> str:
+    subtype = str(
+        fact_graph.get("document_subtype")
+        or document.get("transport_subtype")
+        or document.get("transportSubtype")
+        or document.get("document_subtype")
+        or document_type
+    ).strip().lower()
+    if subtype:
+        return subtype
+
+    transport_mode = str(
+        document.get("transport_mode")
+        or document.get("transportMode")
+        or ""
+    ).strip().lower()
+    if transport_mode == "air":
+        return "air_waybill"
+    if transport_mode == "multimodal":
+        return "multimodal_transport_document"
+    if transport_mode in {"rail", "road", "courier", "forwarder", "delivery"}:
+        return "road_transport_document"
+    return document_type
+
+
+def _allowed_bl_fields_for_document(document: Dict[str, Any], fact_graph: Dict[str, Any], document_type: str) -> set[str]:
+    subtype = _transport_subtype_for_document(document, fact_graph, document_type)
+    if subtype in _SEA_TRANSPORT_SUBTYPES:
+        return _SEA_BL_USER_RESOLVABLE_FIELDS
+    if subtype in _AIR_TRANSPORT_SUBTYPES:
+        return _AIR_BL_USER_RESOLVABLE_FIELDS
+    if subtype in _MULTIMODAL_TRANSPORT_SUBTYPES:
+        return _MULTIMODAL_BL_USER_RESOLVABLE_FIELDS
+    if subtype in _CONSIGNMENT_TRANSPORT_SUBTYPES:
+        return _CONSIGNMENT_BL_USER_RESOLVABLE_FIELDS
+    return _BL_USER_RESOLVABLE_FIELDS
+
+
+def _allowed_fields_for_document(document: Dict[str, Any], fact_graph: Dict[str, Any], document_type: str) -> set[str]:
     if document_type in _LC_DOCUMENT_TYPES:
         return _LC_USER_RESOLVABLE_FIELDS
     if document_type in _INVOICE_DOCUMENT_TYPES:
         return _INVOICE_USER_RESOLVABLE_FIELDS
     if document_type in _BL_DOCUMENT_TYPES:
-        return _BL_USER_RESOLVABLE_FIELDS
+        return _allowed_bl_fields_for_document(document, fact_graph, document_type)
     if document_type in _PACKING_LIST_DOCUMENT_TYPES:
         return _PACKING_LIST_USER_RESOLVABLE_FIELDS
     if document_type in _COO_DOCUMENT_TYPES:
@@ -280,7 +359,13 @@ def _allowed_fields_for_document_type(document_type: str) -> set[str]:
     return set()
 
 
-def _fact_is_user_resolvable(document_type: str, fact: Dict[str, Any]) -> bool:
+def _fact_is_user_resolvable(
+    document_type: str,
+    fact: Dict[str, Any],
+    *,
+    document: Dict[str, Any],
+    fact_graph: Dict[str, Any],
+) -> bool:
     verification_state = str(fact.get("verification_state") or "").strip().lower()
     if verification_state not in _USER_RESOLVABLE_STATES:
         return False
@@ -289,7 +374,7 @@ def _fact_is_user_resolvable(document_type: str, fact: Dict[str, Any]) -> bool:
     if not field_name:
         return False
 
-    allowed_fields = _allowed_fields_for_document_type(document_type)
+    allowed_fields = _allowed_fields_for_document(document, fact_graph, document_type)
     if field_name not in allowed_fields:
         return False
 
@@ -344,7 +429,12 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
         for fact in fact_graph.get("facts") or []:
             if not isinstance(fact, dict):
                 continue
-            if not _fact_is_user_resolvable(document_type, fact):
+            if not _fact_is_user_resolvable(
+                document_type,
+                fact,
+                document=document,
+                fact_graph=fact_graph,
+            ):
                 continue
 
             verification_state = str(fact.get("verification_state") or "").strip().lower()

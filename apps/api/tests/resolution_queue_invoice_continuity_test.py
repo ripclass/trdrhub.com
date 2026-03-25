@@ -564,6 +564,111 @@ def test_build_resolution_queue_v1_hides_unbounded_no_candidate_fields_from_user
     assert queue["summary"]["document_counts"] == {}
 
 
+def test_build_resolution_queue_v1_hides_airport_aliases_for_sea_transport_docs() -> None:
+    documents = [
+        {
+            "document_id": "doc-bl-sea",
+            "document_type": "bill_of_lading",
+            "transport_subtype": "bill_of_lading",
+            "filename": "Bill_of_Lading.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "bill_of_lading",
+                "document_subtype": "bill_of_lading",
+                "facts": [
+                    {
+                        "field_name": "port_of_loading",
+                        "value": "Chittagong Sea Port, Bangladesh",
+                        "normalized_value": "Chittagong Sea Port, Bangladesh",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "port_of_discharge",
+                        "value": "New York, USA",
+                        "normalized_value": "New York, USA",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "airport_of_departure",
+                        "value": "Chittagong Sea Port, Bangladesh",
+                        "normalized_value": "Chittagong Sea Port, Bangladesh",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "airport_of_destination",
+                        "value": "New York, USA",
+                        "normalized_value": "New York, USA",
+                        "verification_state": "candidate",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert sorted(item["field_name"] for item in queue["items"]) == [
+        "port_of_discharge",
+        "port_of_loading",
+    ]
+
+
+def test_build_resolution_queue_v1_hides_sea_port_aliases_for_air_transport_docs() -> None:
+    documents = [
+        {
+            "document_id": "doc-awb",
+            "document_type": "air_waybill",
+            "transport_subtype": "air_waybill",
+            "filename": "Air_Waybill.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "air_waybill",
+                "document_subtype": "air_waybill",
+                "facts": [
+                    {
+                        "field_name": "airway_bill_number",
+                        "value": "AWB-2026-001",
+                        "normalized_value": "AWB-2026-001",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "airport_of_departure",
+                        "value": "DAC",
+                        "normalized_value": "DAC",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "airport_of_destination",
+                        "value": "JFK",
+                        "normalized_value": "JFK",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "port_of_loading",
+                        "value": "DAC",
+                        "normalized_value": "DAC",
+                        "verification_state": "candidate",
+                    },
+                    {
+                        "field_name": "port_of_discharge",
+                        "value": "JFK",
+                        "normalized_value": "JFK",
+                        "verification_state": "candidate",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert sorted(item["field_name"] for item in queue["items"]) == [
+        "airport_of_departure",
+        "airport_of_destination",
+        "airway_bill_number",
+    ]
+
+
 def test_build_resolution_queue_v1_skips_structured_lc_without_fact_graph() -> None:
     documents = [
         {
