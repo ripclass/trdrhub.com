@@ -266,7 +266,11 @@ async def finalize_validation_result(
         logger.info(f"Document composition analysis: {detected_types_debug}")
 
         # Extract LC terms for requirement detection
-        lc_terms = structured_result.get("lc_data", {})
+        lc_terms = dict(structured_result.get("lc_data", {}) or {})
+        requirements_graph_v1 = structured_result.get("requirements_graph_v1")
+        if isinstance(requirements_graph_v1, dict):
+            lc_terms["requirements_graph_v1"] = requirements_graph_v1
+            lc_terms["requirementsGraphV1"] = requirements_graph_v1
 
         # Check if LC is already confirmed present (from earlier checks or extraction)
         # This prevents duplicate "Missing LC" issues

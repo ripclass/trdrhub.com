@@ -121,6 +121,32 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     def _text_signature(value: str) -> str:
         return re.sub(r"[^a-z0-9]+", "", value.lower())
 
+    def _required_document_types_from_graph(requirements_graph: Any) -> List[str]:
+        if not isinstance(requirements_graph, dict):
+            return []
+        graph_types = [
+            str(item or "").strip().lower()
+            for item in (requirements_graph.get("required_document_types") or [])
+            if str(item or "").strip()
+        ]
+        if graph_types:
+            return graph_types
+        derived: List[str] = []
+        for entry in requirements_graph.get("required_documents") or []:
+            if isinstance(entry, dict):
+                token = (
+                    entry.get("code")
+                    or entry.get("document_code")
+                    or entry.get("document_type")
+                    or entry.get("type")
+                )
+            else:
+                token = entry
+            normalized = str(token or "").strip().lower()
+            if normalized and normalized not in derived:
+                derived.append(normalized)
+        return derived
+
     # 1. Goods description mismatch (LC vs Commercial Invoice)
     lc_goods = _clean_text(lc_context.get("goods_description") or lc_context.get("description"))
     invoice_goods = _clean_text(
@@ -185,8 +211,14 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         })
 
     # 3. Insurance certificate missing when LC references insurance
+    requirements_graph = (
+        lc_context.get("requirements_graph_v1")
+        or lc_context.get("requirementsGraphV1")
+        or payload.get("requirements_graph_v1")
+    )
+    required_document_types = set(_required_document_types_from_graph(requirements_graph))
     lc_text = (payload.get("lc_text") or "").lower()
-    insurance_required = "insurance" in lc_text
+    insurance_required = bool(required_document_types & {"insurance_certificate", "insurance_policy"}) or "insurance" in lc_text
     insurance_presence = documents_presence.get("insurance_certificate", {})
     insurance_present = insurance_presence.get("present", False)
     if insurance_required and not insurance_present:

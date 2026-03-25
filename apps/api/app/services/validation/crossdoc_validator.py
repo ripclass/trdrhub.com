@@ -56,6 +56,36 @@ class DocumentType(str, Enum):
     DRAFT = "draft"
 
 
+_INSURANCE_REQUIREMENT_TYPES = {"insurance_certificate", "insurance_policy"}
+
+
+def _required_document_types_from_graph(requirements_graph: Optional[Dict[str, Any]]) -> Set[str]:
+    if not isinstance(requirements_graph, dict):
+        return set()
+
+    required_types: Set[str] = set()
+    for item in requirements_graph.get("required_document_types") or []:
+        token = str(item or "").strip().lower()
+        if token:
+            required_types.add(token)
+
+    if required_types:
+        return required_types
+
+    for entry in requirements_graph.get("required_documents") or []:
+        if not isinstance(entry, dict):
+            token = str(entry or "").strip().lower()
+            if token:
+                required_types.add(token)
+            continue
+        for key in ("code", "document_code", "document_type", "type", "name", "display_name"):
+            token = str(entry.get(key) or "").strip().lower()
+            if token:
+                required_types.add(token)
+                break
+    return required_types
+
+
 @dataclass
 class CrossDocIssue:
     """A cross-document validation issue."""
@@ -2377,6 +2407,15 @@ class DocumentSetValidator:
     def _detect_required_documents(self):
         """Detect which documents are required based on LC terms."""
         self.required_docs: Set[str] = {"letter_of_credit"}  # Always required
+
+        requirements_graph = (
+            self.lc_terms.get("requirements_graph_v1")
+            or self.lc_terms.get("requirementsGraphV1")
+        )
+        required_from_graph = _required_document_types_from_graph(requirements_graph)
+        if required_from_graph:
+            self.required_docs.update(required_from_graph)
+            return
         
         # Field 46A (Documents Required) parsing
         docs_required_field = self.lc_terms.get("documents_required", "") or ""
