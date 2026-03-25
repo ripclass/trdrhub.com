@@ -55,4 +55,15 @@ describe('api client auth token resolution', () => {
     await expect(client.__internal.getSupabaseAccessToken()).resolves.toBe('session-token');
     expect(getSessionMock).toHaveBeenCalledTimes(1);
   });
+
+  it('uses the hardened production API fallback for trdrhub hosts', async () => {
+    const client = await import('@/api/client');
+
+    expect(
+      client.__internal.resolveApiBaseUrl({
+        hostname: 'trdrhub.com',
+        protocol: 'https:',
+      }),
+    ).toBe('https://api.trdrhub.com');
+  });
 });

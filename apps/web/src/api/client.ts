@@ -12,14 +12,22 @@ const clearSupabaseSession = async () => {
   }
 }
 
-const resolveApiBaseUrl = (): string => {
+const resolveApiBaseUrl = (
+  locationOverride?: { hostname?: string; protocol?: string },
+): string => {
   const envUrl = import.meta.env.VITE_API_URL
   if (envUrl && envUrl.trim().length > 0) {
     return envUrl
   }
 
-  if (typeof window !== 'undefined') {
-    const { hostname, protocol } = window.location
+  const currentLocation =
+    locationOverride ||
+    (typeof window !== 'undefined'
+      ? { hostname: window.location.hostname, protocol: window.location.protocol }
+      : undefined)
+
+  if (currentLocation) {
+    const { hostname = '', protocol = '' } = currentLocation
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1'
 
     if (isLocalhost) {
@@ -29,17 +37,17 @@ const resolveApiBaseUrl = (): string => {
 
     // Production/previews fallback
     if (hostname.endsWith('trdrhub.com') || hostname.endsWith('.vercel.app')) {
-      return 'https://trdrhub-api.onrender.com'
+      return 'https://api.trdrhub.com'
     }
 
     // Generic HTTPS fallback to avoid mixed-content issues
     if (protocol === 'https:') {
-      return 'https://trdrhub-api.onrender.com'
+      return 'https://api.trdrhub.com'
     }
   }
 
   // Default fallback (node/server contexts)
-  return 'https://trdrhub-api.onrender.com'
+  return 'https://api.trdrhub.com'
 }
 
 const API_BASE_URL_VALUE = resolveApiBaseUrl()
@@ -303,6 +311,7 @@ api.interceptors.response.use(
 export { api }
 export const API_BASE_URL = api.defaults.baseURL || API_BASE_URL_VALUE
 export const __internal = {
+  resolveApiBaseUrl,
   getStoredSupabaseAccessToken,
   getSupabaseAccessToken,
 }

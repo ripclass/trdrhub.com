@@ -64,6 +64,85 @@ const mapBackendRole = (backendRole: string): Role => {
   return roleMap[backendRole] || 'exporter'
 }
 
+function getStoredSupabaseSessionPayload(): Record<string, any> | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith('sb-') || !key.endsWith('-auth-token')) {
+      continue
+    }
+
+    const raw = localStorage.getItem(key)
+    if (!raw) {
+      continue
+    }
+
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        const resolved =
+          (parsed.currentSession && typeof parsed.currentSession === 'object' && parsed.currentSession) ||
+          (parsed.session && typeof parsed.session === 'object' && parsed.session) ||
+          parsed
+        return resolved as Record<string, any>
+      }
+    } catch {
+      // Ignore malformed storage and continue scanning other Supabase keys.
+    }
+  }
+
+  return null
+}
+
+function buildFallbackUserFromSupabaseSession(sessionUser?: any): User | null {
+  const userPayload = sessionUser || getStoredSupabaseSessionPayload()?.user
+  if (!userPayload || typeof userPayload !== 'object') {
+    return null
+  }
+
+  const email =
+    typeof userPayload.email === 'string' && userPayload.email.trim().length > 0
+      ? userPayload.email.trim()
+      : null
+  if (!email) {
+    return null
+  }
+
+  const metadata = userPayload.user_metadata && typeof userPayload.user_metadata === 'object'
+    ? userPayload.user_metadata
+    : {}
+  const appMetadata = userPayload.app_metadata && typeof userPayload.app_metadata === 'object'
+    ? userPayload.app_metadata
+    : {}
+  const roleCandidate =
+    metadata.role ||
+    appMetadata.role ||
+    userPayload.role ||
+    'exporter'
+
+  return {
+    id: String(userPayload.id || metadata.sub || email),
+    email,
+    full_name:
+      (typeof metadata.full_name === 'string' && metadata.full_name.trim()) ||
+      (typeof metadata.name === 'string' && metadata.name.trim()) ||
+      email,
+    username:
+      (typeof metadata.full_name === 'string' && metadata.full_name.trim()) ||
+      (typeof metadata.name === 'string' && metadata.name.trim()) ||
+      email,
+    role: mapBackendRole(String(roleCandidate || 'exporter')),
+    isActive: true,
+  }
+}
+
+function isDefinitiveProfileAuthFailure(error: any): boolean {
+  const statusCode = error?.response?.status
+  return statusCode === 401 || statusCode === 403
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<User | null>(null)
   const [session, setSession] = React.useState<Session | null>(null)
@@ -177,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const fetchUserProfile = React.useCallback(async (providedToken?: string): Promise<User> => {
+  const fetchUserProfile = React.useCallback(async (providedToken?: string, providedSessionUser?: any): Promise<User> => {
     try {
       authLogger.debug('fetchUserProfile starting', providedToken ? 'with token' : 'will get token')
       
@@ -257,6 +336,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return mapped
     } catch (error) {
       authLogger.error('Failed to load user profile', error)
+      const fallbackUser = buildFallbackUserFromSupabaseSession(providedSessionUser)
+      if (fallbackUser && !isDefinitiveProfileAuthFailure(error)) {
+        authLogger.warn('Using session-backed fallback user while profile fetch recovers')
+        setUser(fallbackUser)
+        return fallbackUser
+      }
       if (GUEST_MODE) {
         return setGuest()
       }
@@ -299,7 +384,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         setIsLoading(true)
         try {
-          await fetchUserProfile(supabaseSession.access_token)
+          await fetchUserProfile(supabaseSession.access_token, supabaseSession.user)
+        } catch (error) {
+          profileFetchedRef.current = false
+          authLogger.error('Auth state profile bootstrap failed', error)
         } finally {
           if (mounted) setIsLoading(false)
         }
@@ -319,6 +407,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const init = async () => {
       setIsLoading(true)
       try {
+        const storedSession = getStoredSupabaseSessionPayload()
+        if (storedSession?.access_token) {
+          setSession({
+            access_token: storedSession.access_token,
+            refresh_token: storedSession.refresh_token,
+            expires_at: storedSession.expires_at,
+            user: storedSession.user,
+          })
+
+          if (!profileFetchedRef.current) {
+            profileFetchedRef.current = true
+            try {
+              await fetchUserProfile(storedSession.access_token, storedSession.user)
+            } catch (error) {
+              profileFetchedRef.current = false
+              authLogger.error('Stored session bootstrap failed', error)
+            } finally {
+              if (mounted) setIsLoading(false)
+            }
+          } else if (mounted) {
+            setIsLoading(false)
+          }
+          return
+        }
+
         const { data } = await Promise.race([
           supabase.auth.getSession(),
           new Promise((_, reject) => 
@@ -331,7 +444,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!profileFetchedRef.current) {
             profileFetchedRef.current = true
             try {
-              await fetchUserProfile(data.session.access_token)
+              await fetchUserProfile(data.session.access_token, data.session.user)
+            } catch (error) {
+              profileFetchedRef.current = false
+              authLogger.error('Initial profile bootstrap failed', error)
             } finally {
               if (mounted) setIsLoading(false)
             }
@@ -624,6 +740,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AuthContext.Provider>
   )
+}
+
+export const __internal = {
+  buildFallbackUserFromSupabaseSession,
+  getStoredSupabaseSessionPayload,
+  isDefinitiveProfileAuthFailure,
 }
 
 export function useAuth() {
