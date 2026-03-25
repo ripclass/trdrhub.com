@@ -308,6 +308,16 @@ export const RequirementsGraphDocumentSchema = z.object({
 }).passthrough();
 export type RequirementsGraphDocument = z.infer<typeof RequirementsGraphDocumentSchema>;
 
+export const RequirementsGraphConditionRequirementSchema = z.object({
+  requirement_type: z.string(),
+  identifier_type: z.string().nullable().optional(),
+  value: z.string().nullable().optional(),
+  applies_to: z.string().nullable().optional(),
+  source_text: z.string().nullable().optional(),
+  source_bucket: z.string().nullable().optional(),
+}).passthrough();
+export type RequirementsGraphConditionRequirement = z.infer<typeof RequirementsGraphConditionRequirementSchema>;
+
 export const RequirementsGraphV1Schema = z.object({
   version: z.literal('requirements_graph_v1').default('requirements_graph_v1'),
   source_document_id: z.string().nullable().optional(),
@@ -320,6 +330,7 @@ export const RequirementsGraphV1Schema = z.object({
   documentary_conditions: z.array(z.string()).default([]),
   non_documentary_conditions: z.array(z.string()).default([]),
   ambiguous_conditions: z.array(z.string()).default([]),
+  condition_requirements: z.array(RequirementsGraphConditionRequirementSchema).default([]),
   required_fact_fields: z.array(z.string()).default([]),
   core_terms: z.record(z.unknown()).default({}),
 }).passthrough();

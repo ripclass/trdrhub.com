@@ -105,6 +105,52 @@ def _condition_texts_from_graph(requirements_graph: Optional[Dict[str, Any]]) ->
     return []
 
 
+def _identifier_requirements_from_graph(requirements_graph: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    requirements = {
+        "po_number": None,
+        "bin_number": None,
+        "tin_number": None,
+        "lc_number_required_on_all": False,
+        "all_docs_require_po": False,
+        "all_docs_require_bin": False,
+        "all_docs_require_tin": False,
+        "raw_conditions": [],
+    }
+    if not isinstance(requirements_graph, dict):
+        return requirements
+
+    for item in requirements_graph.get("condition_requirements") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("requirement_type") or "").strip().lower() != "identifier_presence":
+            continue
+
+        identifier_type = str(item.get("identifier_type") or "").strip().lower()
+        value = str(item.get("value") or "").strip()
+        applies_to_all = str(item.get("applies_to") or "").strip().lower() == "all_documents"
+        source_text = str(item.get("source_text") or "").strip()
+        if source_text and source_text not in requirements["raw_conditions"]:
+            requirements["raw_conditions"].append(source_text)
+        if not value:
+            continue
+
+        if identifier_type == "po_number":
+            requirements["po_number"] = requirements["po_number"] or value
+            requirements["all_docs_require_po"] = requirements["all_docs_require_po"] or applies_to_all
+        elif identifier_type == "bin_number":
+            requirements["bin_number"] = requirements["bin_number"] or value
+            requirements["all_docs_require_bin"] = requirements["all_docs_require_bin"] or applies_to_all
+        elif identifier_type == "tin_number":
+            requirements["tin_number"] = requirements["tin_number"] or value
+            requirements["all_docs_require_tin"] = requirements["all_docs_require_tin"] or applies_to_all
+        elif identifier_type == "lc_number":
+            requirements["lc_number_required_on_all"] = (
+                requirements["lc_number_required_on_all"] or applies_to_all
+            )
+
+    return requirements
+
+
 @dataclass
 class CrossDocIssue:
     """A cross-document validation issue."""
@@ -1691,6 +1737,18 @@ class CrossDocValidator:
             lc_data.get("requirements_graph_v1")
             or lc_data.get("requirementsGraphV1")
         )
+        structured_requirements = _identifier_requirements_from_graph(requirements_graph)
+        if any(
+            structured_requirements.get(key)
+            for key in ("po_number", "bin_number", "tin_number")
+        ):
+            logger.info(
+                "47A Parser: source=requirements_graph_v1.condition_requirements PO=%s BIN=%s TIN=%s",
+                structured_requirements["po_number"],
+                structured_requirements["bin_number"],
+                structured_requirements["tin_number"],
+            )
+            return structured_requirements
         graph_conditions = _condition_texts_from_graph(requirements_graph)
         conditions = graph_conditions or lc_data.get("additional_conditions", [])
         condition_source = "requirements_graph_v1" if graph_conditions else "additional_conditions"

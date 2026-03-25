@@ -25,7 +25,10 @@ def test_build_lc_requirements_graph_v1_compiles_required_docs_and_core_terms() 
                     {"code": "commercial_invoice", "display_name": "Commercial Invoice"},
                     {"code": "bill_of_lading", "display_name": "Bill Of Lading"},
                 ],
-                "requirement_conditions": ["Invoice must mention LC number"],
+                "requirement_conditions": [
+                    "Invoice must mention LC number",
+                    "BUYER PURCHASE ORDER NO. GBE-44592 MUST APPEAR ON ALL DOCUMENTS",
+                ],
                 "unmapped_requirements": ["Third-party docs clause needs interpretation"],
             },
             "fact_graph_v1": {
@@ -62,5 +65,18 @@ def test_build_lc_requirements_graph_v1_compiles_required_docs_and_core_terms() 
     assert graph["required_document_types"] == ["commercial_invoice", "bill_of_lading"]
     assert graph["core_terms"]["lc_number"] == "EXP2026BD001"
     assert "port_of_loading" in graph["required_fact_fields"]
-    assert graph["documentary_conditions"] == ["Invoice must mention LC number"]
+    assert graph["documentary_conditions"] == [
+        "Invoice must mention LC number",
+        "BUYER PURCHASE ORDER NO. GBE-44592 MUST APPEAR ON ALL DOCUMENTS",
+    ]
     assert graph["ambiguous_conditions"] == ["Third-party docs clause needs interpretation"]
+    assert graph["condition_requirements"] == [
+        {
+            "requirement_type": "identifier_presence",
+            "identifier_type": "po_number",
+            "value": "GBE-44592",
+            "applies_to": "all_documents",
+            "source_text": "BUYER PURCHASE ORDER NO. GBE-44592 MUST APPEAR ON ALL DOCUMENTS",
+            "source_bucket": "documentary_conditions",
+        }
+    ]

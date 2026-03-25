@@ -351,6 +351,15 @@ class RequirementsGraphDocument(BaseModel):
     evidence: Optional[List[str]] = None
 
 
+class RequirementsGraphConditionRequirement(BaseModel):
+    requirement_type: str
+    identifier_type: Optional[str] = None
+    value: Optional[str] = None
+    applies_to: Optional[str] = None
+    source_text: Optional[str] = None
+    source_bucket: Optional[str] = None
+
+
 class RequirementsGraphV1(BaseModel):
     version: str = Field(default="requirements_graph_v1")
     source_document_id: Optional[str] = None
@@ -363,6 +372,7 @@ class RequirementsGraphV1(BaseModel):
     documentary_conditions: List[str] = Field(default_factory=list)
     non_documentary_conditions: List[str] = Field(default_factory=list)
     ambiguous_conditions: List[str] = Field(default_factory=list)
+    condition_requirements: List[RequirementsGraphConditionRequirement] = Field(default_factory=list)
     required_fact_fields: List[str] = Field(default_factory=list)
     core_terms: Dict[str, Any] = Field(default_factory=dict)
 

@@ -26,6 +26,8 @@ def _load_crossdoc_47a_symbols() -> Dict[str, Any]:
     for node in parsed.body:
         if isinstance(node, ast.FunctionDef) and node.name == "_condition_texts_from_graph":
             selected_nodes.append(node)
+        if isinstance(node, ast.FunctionDef) and node.name == "_identifier_requirements_from_graph":
+            selected_nodes.append(node)
         if isinstance(node, ast.ClassDef) and node.name == "CrossDocValidator":
             for item in node.body:
                 if isinstance(item, ast.FunctionDef) and item.name == "_parse_47a_requirements":
@@ -58,6 +60,37 @@ def test_parse_47a_requirements_prefers_requirements_graph_conditions() -> None:
             "requirements_graph_v1": {
                 "documentary_conditions": [
                     "BUYER PURCHASE ORDER NO. GBE-44592 MUST APPEAR ON ALL DOCUMENTS",
+                ],
+            },
+        },
+    )
+
+    assert requirements["po_number"] == "GBE-44592"
+    assert requirements["all_docs_require_po"] is True
+    assert requirements["raw_conditions"] == [
+        "BUYER PURCHASE ORDER NO. GBE-44592 MUST APPEAR ON ALL DOCUMENTS",
+    ]
+
+
+def test_parse_47a_requirements_prefers_structured_condition_requirements() -> None:
+    ns = _load_crossdoc_47a_symbols()
+    parse_requirements = ns["_parse_47a_requirements"]
+
+    requirements = parse_requirements(
+        object(),
+        {
+            "additional_conditions": [
+                "BUYER PURCHASE ORDER NO. WRONG-0001 MUST APPEAR ON ALL DOCUMENTS",
+            ],
+            "requirements_graph_v1": {
+                "condition_requirements": [
+                    {
+                        "requirement_type": "identifier_presence",
+                        "identifier_type": "po_number",
+                        "value": "GBE-44592",
+                        "applies_to": "all_documents",
+                        "source_text": "BUYER PURCHASE ORDER NO. GBE-44592 MUST APPEAR ON ALL DOCUMENTS",
+                    }
                 ],
             },
         },

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from app.services.extraction.lc_taxonomy import build_lc_classification, normalize_required_documents
@@ -72,6 +73,27 @@ _LC_OPTIONAL_FACT_FIELDS = {
     "port_of_loading",
     "port_of_discharge",
 }
+_ALL_DOCUMENTS_PATTERNS = (
+    r"ALL\s+DOCUMENTS\s+MUST\s+SHOW",
+    r"ALL\s+DOCUMENTS\s+SHOULD\s+SHOW",
+    r"MUST\s+APPEAR\s+ON\s+ALL\s+DOCUMENTS",
+    r"MUST\s+BE\s+SHOWN\s+ON\s+ALL\s+DOCUMENTS",
+    r"SHOULD\s+APPEAR\s+ON\s+ALL\s+DOCUMENTS",
+    r"ON\s+ALL\s+DOCUMENTS",
+)
+_PO_PATTERNS = (
+    r"(?:BUYER\s+)?PURCHASE\s+ORDER\s+(?:NO\.?|NUMBER)[:\s]*([A-Z0-9\-]+)",
+    r"P\.?O\.?\s+(?:NO\.?|NUMBER)[:\s]*([A-Z0-9\-]+)",
+    r"PO[:\s]+([A-Z0-9\-]+)",
+)
+_BIN_REGEX_PATTERNS = (
+    r"(?:EXPORTER\s+)?(?:B\.?I\.?N\.?|BIN|VAT\s*REG(?:ISTRATION)?|VAT\s*REG\.?|VAT\s*NO\.?|VAT\s*REG\s*NO\.?|VAT\s*REGISTRATION\s*NO\.?|VAT\s*REGISTRATION\s*NUMBER)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+    r"(?:BUSINESS\s+IDENTIFICATION|BUSINESS\s+ID(?:ENTIFICATION)?)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+)
+_TIN_REGEX_PATTERNS = (
+    r"(?:EXPORTER\s+)?(?:T\.?I\.?N\.?|TIN|TAX\s*ID(?:ENTIFICATION)?|TAXPAYER\s*ID|ETIN|E[\-\s]?TIN)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+    r"(?:TAX\s+IDENTIFICATION|TAXPAYER\s+IDENTIFICATION)\s*(?:NO\.?|NUMBER|#|:)?\s*([0-9][0-9\-]+)",
+)
 
 
 def _document_type(document: Dict[str, Any]) -> str:
@@ -119,6 +141,99 @@ def _required_document_types(required_documents: Iterable[Dict[str, Any]]) -> Li
     return codes
 
 
+def _normalize_condition_texts(items: Iterable[Any]) -> List[str]:
+    texts: List[str] = []
+    for item in items or []:
+        text = str(item or "").strip()
+        if text:
+            texts.append(text)
+    return texts
+
+
+def _build_condition_requirements(
+    documentary_conditions: List[str],
+    ambiguous_conditions: List[str],
+) -> List[Dict[str, Any]]:
+    requirements: List[Dict[str, Any]] = []
+    seen: Set[tuple[str, str, str]] = set()
+    condition_buckets = (
+        ("documentary_conditions", documentary_conditions),
+        ("ambiguous_conditions", ambiguous_conditions),
+    )
+
+    def _append_requirement(
+        identifier_type: str,
+        value: Optional[str],
+        applies_to: str,
+        source_text: str,
+        source_bucket: str,
+    ) -> None:
+        token = str(value or "").strip()
+        if not token:
+            return
+        key = (identifier_type, token, applies_to)
+        if key in seen:
+            return
+        seen.add(key)
+        requirements.append(
+            {
+                "requirement_type": "identifier_presence",
+                "identifier_type": identifier_type,
+                "value": token,
+                "applies_to": applies_to,
+                "source_text": source_text,
+                "source_bucket": source_bucket,
+            }
+        )
+
+    for source_bucket, condition_texts in condition_buckets:
+        for text in condition_texts:
+            normalized_text = str(text or "").strip()
+            if not normalized_text:
+                continue
+            upper_text = normalized_text.upper()
+            applies_to = (
+                "all_documents"
+                if any(re.search(pattern, upper_text) for pattern in _ALL_DOCUMENTS_PATTERNS)
+                else "unspecified"
+            )
+
+            po_number = None
+            for pattern in _PO_PATTERNS:
+                match = re.search(pattern, upper_text)
+                if match:
+                    po_number = match.group(1).strip()
+                    break
+            _append_requirement("po_number", po_number, applies_to, normalized_text, source_bucket)
+
+            bin_number = None
+            for pattern in _BIN_REGEX_PATTERNS:
+                match = re.search(pattern, upper_text)
+                if match:
+                    bin_number = match.group(1).strip()
+                    break
+            _append_requirement("bin_number", bin_number, applies_to, normalized_text, source_bucket)
+
+            tin_number = None
+            for pattern in _TIN_REGEX_PATTERNS:
+                match = re.search(pattern, upper_text)
+                if match:
+                    tin_number = match.group(1).strip()
+                    break
+            _append_requirement("tin_number", tin_number, applies_to, normalized_text, source_bucket)
+
+            lc_number_match = re.search(r"LC\s+(?:NO\.?|NUMBER)[:\s]*([A-Z0-9\-]+)", upper_text)
+            _append_requirement(
+                "lc_number",
+                lc_number_match.group(1).strip() if lc_number_match else None,
+                applies_to,
+                normalized_text,
+                source_bucket,
+            )
+
+    return requirements
+
+
 def _required_fact_fields(required_document_types: Set[str], fact_values: Dict[str, Any]) -> List[str]:
     required = set(_LC_BASE_REQUIRED_FACT_FIELDS)
     for field_name in _LC_OPTIONAL_FACT_FIELDS:
@@ -158,24 +273,20 @@ def build_lc_requirements_graph_v1(document_payload: Dict[str, Any]) -> Optional
             if isinstance(item, dict)
         ]
     required_document_types = _required_document_types(required_documents)
-    requirement_conditions = [
-        str(item).strip()
-        for item in (
-            payload.get("requirement_conditions")
-            or lc_classification.get("requirement_conditions")
-            or []
-        )
-        if str(item or "").strip()
-    ]
-    unmapped_requirements = [
-        str(item).strip()
-        for item in (
-            payload.get("unmapped_requirements")
-            or lc_classification.get("unmapped_requirements")
-            or []
-        )
-        if str(item or "").strip()
-    ]
+    requirement_conditions = _normalize_condition_texts(
+        payload.get("requirement_conditions")
+        or lc_classification.get("requirement_conditions")
+        or []
+    )
+    unmapped_requirements = _normalize_condition_texts(
+        payload.get("unmapped_requirements")
+        or lc_classification.get("unmapped_requirements")
+        or []
+    )
+    condition_requirements = _build_condition_requirements(
+        requirement_conditions,
+        unmapped_requirements,
+    )
 
     fact_graph = payload.get("fact_graph_v1") or payload.get("factGraphV1")
     if not isinstance(fact_graph, dict):
@@ -217,6 +328,7 @@ def build_lc_requirements_graph_v1(document_payload: Dict[str, Any]) -> Optional
         "documentary_conditions": requirement_conditions,
         "non_documentary_conditions": [],
         "ambiguous_conditions": unmapped_requirements,
+        "condition_requirements": condition_requirements,
         "required_fact_fields": _required_fact_fields(set(required_document_types), fact_values),
         "core_terms": core_terms,
     }
