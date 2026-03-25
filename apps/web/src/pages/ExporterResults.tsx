@@ -276,7 +276,8 @@ const _isLegacyExtractionReviewReason = (reason: unknown): boolean => {
     upper === 'OCR_EMPTY_RESULT' ||
     upper === 'OCR_TIMEOUT' ||
     upper === 'OCR_AUTH_ERROR' ||
-    upper === 'OCR_UNSUPPORTED_FORMAT'
+    upper === 'OCR_UNSUPPORTED_FORMAT' ||
+    upper === 'PARSE_FAILED'
   ) {
     return true;
   }
@@ -289,10 +290,16 @@ const _isLegacyExtractionReviewReason = (reason: unknown): boolean => {
   if (normalized.endsWith('_missing_critical_fields')) {
     return true;
   }
-  if (normalized.startsWith('critical_') && normalized.endsWith('_missing')) {
+  if (
+    normalized.startsWith('critical_') &&
+    (normalized.endsWith('_missing') || normalized.endsWith('_parse_failed') || normalized.includes('low_confidence'))
+  ) {
     return true;
   }
   if (normalized.startsWith('cross_field_')) {
+    return true;
+  }
+  if (normalized.includes('parse_failed') || normalized.includes('low_confidence') || normalized.includes('sparse_text')) {
     return true;
   }
   return false;
@@ -1459,6 +1466,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         ? (Array.isArray(reviewReasons) ? reviewReasons : []).filter((reason) => !_isLegacyExtractionReviewReason(reason))
         : reviewReasons;
       const sanitizedParseComplete = usesFactResolution ? undefined : parseComplete;
+      const sanitizedRequiredFieldsFound = usesFactResolution
+        ? undefined
+        : typeof docAny.required_fields_found === 'number'
+        ? docAny.required_fields_found
+        : typeof docAny.requiredFieldsFound === 'number'
+        ? docAny.requiredFieldsFound
+        : undefined;
+      const sanitizedRequiredFieldsTotal = usesFactResolution
+        ? undefined
+        : typeof docAny.required_fields_total === 'number'
+        ? docAny.required_fields_total
+        : typeof docAny.requiredFieldsTotal === 'number'
+        ? docAny.requiredFieldsTotal
+        : undefined;
       const fieldDiagnostics = docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {};
       const rawText = docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '';
       const extractionResolution =
@@ -1509,8 +1530,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         fieldDiagnostics,
         rawText,
         resolutionItems: usesFactResolution && backendResolutionQueue ? resolutionItems : undefined,
-        requiredFieldsFound: docAny.required_fields_found,
-        requiredFieldsTotal: docAny.required_fields_total,
+        requiredFieldsFound: sanitizedRequiredFieldsFound,
+        requiredFieldsTotal: sanitizedRequiredFieldsTotal,
         fieldDetails,
         extractionResolution,
         extractedFields: doc.extracted_fields ?? docAny.extractedFields ?? {},

@@ -375,8 +375,12 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "_apply_workflow_stage_contract_overrides": _fake_apply_workflow_stage_contract_overrides,
         "_partition_workflow_stage_issues": _fake_partition_workflow_stage_issues,
         "materialize_document_fact_graphs_v1": _fake_materialize_document_fact_graphs_v1,
+        "build_document_extraction_v1": lambda documents: {
+            "documents": copy.deepcopy(list(documents or [])),
+        },
         "build_resolution_queue_v1": _fake_build_resolution_queue_v1,
         "build_fact_resolution_v1": _fake_build_fact_resolution_v1,
+        "sanitize_public_document_contract_v1": lambda document: copy.deepcopy(document),
         "build_processing_summary_v2": _fake_build_processing_summary_v2,
         "count_issue_severity": _fake_count_issue_severity,
         "build_workflow_stage": _fake_build_workflow_stage,

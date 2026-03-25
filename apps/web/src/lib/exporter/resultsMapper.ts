@@ -166,7 +166,8 @@ const isLegacyExtractionReviewReason = (reason: unknown): boolean => {
     upper === 'OCR_EMPTY_RESULT' ||
     upper === 'OCR_TIMEOUT' ||
     upper === 'OCR_AUTH_ERROR' ||
-    upper === 'OCR_UNSUPPORTED_FORMAT'
+    upper === 'OCR_UNSUPPORTED_FORMAT' ||
+    upper === 'PARSE_FAILED'
   ) {
     return true;
   }
@@ -179,10 +180,16 @@ const isLegacyExtractionReviewReason = (reason: unknown): boolean => {
   if (normalized.endsWith('_missing_critical_fields')) {
     return true;
   }
-  if (normalized.startsWith('critical_') && normalized.endsWith('_missing')) {
+  if (
+    normalized.startsWith('critical_') &&
+    (normalized.endsWith('_missing') || normalized.endsWith('_parse_failed') || normalized.includes('low_confidence'))
+  ) {
     return true;
   }
   if (normalized.startsWith('cross_field_')) {
+    return true;
+  }
+  if (normalized.includes('parse_failed') || normalized.includes('low_confidence') || normalized.includes('sparse_text')) {
     return true;
   }
   return false;
@@ -823,6 +830,8 @@ const mapDocuments = (
     const sanitizedReviewRequired = usesFactResolution
       ? Boolean(reviewRequired && sanitizedReviewReasons.length > 0)
       : reviewRequired;
+    const sanitizedRequiredFieldsFound = usesFactResolution ? undefined : requiredFieldsFound;
+    const sanitizedRequiredFieldsTotal = usesFactResolution ? undefined : requiredFieldsTotal;
     const sanitizedParseComplete = usesFactResolution
       ? undefined
       : typeof doc?.parse_complete === 'boolean'
@@ -852,8 +861,8 @@ const mapDocuments = (
           });
     const requirementStatus = deriveRequirementStatus({
       missingRequiredFields: sanitizedMissingRequiredFields,
-      requiredFieldsFound,
-      requiredFieldsTotal,
+      requiredFieldsFound: sanitizedRequiredFieldsFound,
+      requiredFieldsTotal: sanitizedRequiredFieldsTotal,
     });
     const status =
       usesFactResolution &&
@@ -888,8 +897,8 @@ const mapDocuments = (
       parseCompleteness: sanitizedParseCompleteness,
       fieldDetails,
       missingRequiredFields: sanitizedMissingRequiredFields,
-      requiredFieldsFound,
-      requiredFieldsTotal,
+      requiredFieldsFound: sanitizedRequiredFieldsFound,
+      requiredFieldsTotal: sanitizedRequiredFieldsTotal,
       reviewRequired: sanitizedReviewRequired,
       reviewReasons: sanitizedReviewReasons,
       criticalFieldStates,

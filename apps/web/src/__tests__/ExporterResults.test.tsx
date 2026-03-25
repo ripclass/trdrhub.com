@@ -1442,6 +1442,9 @@ describe('ExporterResults', () => {
           },
         },
         missing_required_fields: ['seller'],
+        required_fields_found: 0,
+        required_fields_total: 1,
+        parse_complete: false,
         extracted_fields: { invoice_number: 'DKEL/EXP/2026/114' },
         extraction_artifacts_v1: {
           raw_text: 'Commercial Invoice\nInvoice Date: 20 Apr 2026\nLC No: EXP2026BD001\n',
@@ -1502,6 +1505,7 @@ describe('ExporterResults', () => {
     );
 
     const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
+    expect(within(invoiceCard).queryByText(/extraction-required fields found/i)).toBeNull();
     await user.click(within(invoiceCard).getByRole('button', { name: /View Details/i }));
 
     const drawer = screen.getByRole('dialog');

@@ -102,6 +102,9 @@ def _load_response_shaping_symbols() -> Dict[str, Any]:
     return _load_symbols(
         RESPONSE_SHAPING_PATH,
         {
+            "_uses_fact_resolution_contract",
+            "_is_legacy_extraction_review_reason",
+            "sanitize_public_document_contract_v1",
             "build_workflow_stage",
             "_normalize_doc_status",
             "build_document_extraction_v1",

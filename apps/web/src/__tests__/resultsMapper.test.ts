@@ -427,6 +427,8 @@ describe('results mapper - option e payload', () => {
     expect(mapped.documents[0]?.reviewReasons ?? []).toEqual([]);
     expect(mapped.documents[0]?.reviewRequired).toBe(false);
     expect(mapped.documents[0]?.parseComplete).toBeUndefined();
+    expect(mapped.documents[0]?.requiredFieldsFound).toBeUndefined();
+    expect(mapped.documents[0]?.requiredFieldsTotal).toBeUndefined();
     expect(mapped.documents[0]?.status).toBe('success');
   });
 

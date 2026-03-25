@@ -1074,7 +1074,6 @@ async def save_job_field_override(
     )
 
     db.commit()
-    db.refresh(session)
 
     try:
         audit_context = create_audit_context(request)

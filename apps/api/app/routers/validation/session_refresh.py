@@ -28,8 +28,10 @@ from .presentation_contract import (
 from .response_shaping import (
     build_bank_submission_verdict,
     build_fact_resolution_v1,
+    build_document_extraction_v1,
     build_resolution_queue_v1,
     materialize_document_fact_graphs_v1,
+    sanitize_public_document_contract_v1,
     build_workflow_stage,
     build_processing_summary_v2,
     count_issue_severity,
@@ -44,15 +46,24 @@ def sync_structured_result_collections(structured_result: Dict[str, Any]) -> Non
         return
 
     lc_structured = structured_result.get("lc_structured") or {}
-    documents = structured_result.get("documents") or structured_result.get(
-        "documents_structured"
+    document_extraction = (
+        structured_result.get("document_extraction_v1")
+        if isinstance(structured_result.get("document_extraction_v1"), dict)
+        else {}
     )
+    documents = document_extraction.get("documents") if isinstance(document_extraction.get("documents"), list) else None
+    if not documents:
+        documents = structured_result.get("documents") or structured_result.get(
+            "documents_structured"
+        )
     if not documents and isinstance(lc_structured, dict):
         documents = lc_structured.get("documents_structured")
 
     if isinstance(documents, list):
         structured_result["documents"] = documents
         structured_result["documents_structured"] = documents
+        if isinstance(lc_structured, dict):
+            lc_structured["documents_structured"] = documents
 
     if "timeline" not in structured_result and isinstance(lc_structured, dict):
         timeline = lc_structured.get("timeline")
@@ -480,12 +491,18 @@ def _copy_documents_to_secondary_surfaces(
 
 
 def _resolve_documents_for_refresh(structured_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    document_extraction = structured_result.get("document_extraction_v1")
+    if isinstance(document_extraction, dict):
+        documents = document_extraction.get("documents")
+        if isinstance(documents, list):
+            return [sanitize_public_document_contract_v1(doc) for doc in documents if isinstance(doc, dict)]
+
     documents = structured_result.get("documents")
     if isinstance(documents, list):
-        return [doc for doc in documents if isinstance(doc, dict)]
+        return [sanitize_public_document_contract_v1(doc) for doc in documents if isinstance(doc, dict)]
     documents = structured_result.get("documents_structured")
     if isinstance(documents, list):
-        return [doc for doc in documents if isinstance(doc, dict)]
+        return [sanitize_public_document_contract_v1(doc) for doc in documents if isinstance(doc, dict)]
     return []
 
 
@@ -503,6 +520,13 @@ async def refresh_structured_result_after_field_override(
     sync_structured_result_collections(structured_result)
     documents = _resolve_documents_for_refresh(structured_result)
     materialize_document_fact_graphs_v1(documents)
+    normalized_document_extraction = build_document_extraction_v1(documents)
+    documents = [
+        doc
+        for doc in (normalized_document_extraction.get("documents") or [])
+        if isinstance(doc, dict)
+    ]
+    structured_result["document_extraction_v1"] = normalized_document_extraction
     _copy_documents_to_secondary_surfaces(structured_result, documents)
 
     issues = structured_result.get("issues") or []

@@ -1000,15 +1000,16 @@ def _build_document_summaries(
             parse_complete_flag = detail.get("parseComplete")
         if parse_complete_flag is not None:
             parse_complete_flag = bool(parse_complete_flag)
+        uses_fact_resolution = _response_shaping._uses_fact_resolution_contract(detail)
 
         status = _derive_document_status(
             detail.get("extraction_status"),
             stats.get("max_severity") if stats else None,
-            parse_complete=parse_complete_flag,
+            parse_complete=None if uses_fact_resolution else parse_complete_flag,
         )
         discrepancy_count = stats.get("count", 0) if stats else 0
 
-        return {
+        summary = {
             "id": detail_id,
             "name": filename or f"Document {index + 1}",
             "type": _humanize_doc_type(normalized_type),
@@ -1042,6 +1043,7 @@ def _build_document_summaries(
                 ocr_confidence=detail.get("ocr_confidence"),
             ),
         }
+        return _response_shaping.sanitize_public_document_contract_v1(summary)
 
     if details:
         logger.info(
