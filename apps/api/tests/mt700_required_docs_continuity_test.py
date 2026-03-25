@@ -114,6 +114,21 @@ def test_validate_inference_keeps_compact_mt700_required_doc_tokens_consistent()
     assert "other_specified_document" not in required_codes
 
 
+def test_validate_inference_prefers_requirements_graph_when_present():
+    ns = _load_validate_required_doc_symbols()
+    infer_required_document_types = ns["infer_required_document_types_from_lc"]
+    required_codes = infer_required_document_types(
+        {
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "required_document_types": ["commercial_invoice", "air_waybill"],
+            },
+            "documents_required": ["INVOICE/BL/PL/COO/INSURANCE"],
+        }
+    )
+    assert required_codes == ["air_waybill", "commercial_invoice"]
+
+
 def test_prepare_extractor_outputs_rebuilds_classification_after_required_doc_backfill():
     ns = _load_validate_required_doc_symbols()
     prepare_structured = ns["prepare_extractor_outputs_for_structured_result"]

@@ -685,6 +685,28 @@ DOC_SYNONYMS = {
     "beneficiary_certificate": "beneficiary_certificate",
 }
 
+REQUIREMENTS_GRAPH_TRANSPORT_TYPES = {
+    "bill_of_lading",
+    "ocean_bill_of_lading",
+    "charter_party_bill_of_lading",
+    "house_bill_of_lading",
+    "master_bill_of_lading",
+    "sea_waybill",
+    "air_waybill",
+    "multimodal_transport_document",
+    "combined_transport_document",
+    "road_transport_document",
+    "railway_consignment_note",
+    "forwarders_certificate_of_receipt",
+    "forwarder_certificate_of_receipt",
+    "courier_or_post_receipt_or_certificate_of_posting",
+    "shipping_company_certificate",
+    "warehouse_receipt",
+    "cargo_manifest",
+}
+REQUIREMENTS_GRAPH_INVOICE_TYPES = {"commercial_invoice", "proforma_invoice"}
+REQUIREMENTS_GRAPH_INSURANCE_TYPES = {"insurance_certificate", "insurance_policy"}
+
 FIELD_PREFIX_TO_DOC = {
     "lc.": "lc",
     "letter_of_credit.": "lc",
@@ -733,6 +755,60 @@ def _build_lc_text_blob(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> 
     return " ".join(parts).lower()
 
 
+def _resolve_requirements_graph(
+    lc_context: Dict[str, Any],
+    doc_set: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    candidates = [
+        lc_context.get("requirements_graph_v1"),
+        lc_context.get("requirementsGraphV1"),
+        doc_set.get("requirements_graph_v1"),
+        doc_set.get("requirementsGraphV1"),
+    ]
+    extracted_context = doc_set.get("extracted_context")
+    if isinstance(extracted_context, dict):
+        candidates.extend(
+            [
+                extracted_context.get("requirements_graph_v1"),
+                extracted_context.get("requirementsGraphV1"),
+            ]
+        )
+        extracted_lc = extracted_context.get("lc")
+        if isinstance(extracted_lc, dict):
+            candidates.extend(
+                [
+                    extracted_lc.get("requirements_graph_v1"),
+                    extracted_lc.get("requirementsGraphV1"),
+                ]
+            )
+    lc_payload = doc_set.get("lc")
+    if isinstance(lc_payload, dict):
+        candidates.extend(
+            [
+                lc_payload.get("requirements_graph_v1"),
+                lc_payload.get("requirementsGraphV1"),
+            ]
+        )
+
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            return candidate
+
+    for documents in (
+        doc_set.get("documents"),
+        extracted_context.get("documents") if isinstance(extracted_context, dict) else None,
+    ):
+        if not isinstance(documents, list):
+            continue
+        for document in documents:
+            if not isinstance(document, dict):
+                continue
+            candidate = document.get("requirements_graph_v1") or document.get("requirementsGraphV1")
+            if isinstance(candidate, dict):
+                return candidate
+    return None
+
+
 def _infer_document_requirements(
     lc_context: Dict[str, Any],
     lc_text: str,
@@ -749,6 +825,29 @@ def _infer_document_requirements(
     ]
     requirements = {doc: False for doc in canonical_docs}
     requirements["lc"] = True
+
+    requirements_graph = _resolve_requirements_graph(lc_context, doc_set)
+    if isinstance(requirements_graph, dict):
+        required_types = {
+            str(item).strip().lower()
+            for item in (requirements_graph.get("required_document_types") or [])
+            if str(item or "").strip()
+        }
+        if required_types:
+            requirements["commercial_invoice"] = bool(
+                required_types & REQUIREMENTS_GRAPH_INVOICE_TYPES
+            )
+            requirements["bill_of_lading"] = bool(
+                required_types & REQUIREMENTS_GRAPH_TRANSPORT_TYPES
+            )
+            requirements["packing_list"] = "packing_list" in required_types
+            requirements["certificate_of_origin"] = "certificate_of_origin" in required_types
+            requirements["insurance_certificate"] = bool(
+                required_types & REQUIREMENTS_GRAPH_INSURANCE_TYPES
+            )
+            requirements["inspection_certificate"] = "inspection_certificate" in required_types
+            requirements["beneficiary_certificate"] = "beneficiary_certificate" in required_types
+            return requirements
 
     requested_docs = _extract_requested_documents(lc_context, lc_text, doc_set)
     if not requested_docs:

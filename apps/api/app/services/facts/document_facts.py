@@ -358,6 +358,15 @@ def project_lc_validation_context(
     if selected_fact_graph is None and isinstance(document, dict):
         selected_fact_graph = materialize_document_fact_graph_v1(document)
 
+    requirements_graph = None
+    if isinstance(document, dict):
+        requirements_graph = document.get("requirements_graph_v1") or document.get("requirementsGraphV1")
+    if not isinstance(requirements_graph, dict):
+        requirements_graph = projected.get("requirements_graph_v1") or projected.get("requirementsGraphV1")
+    if isinstance(requirements_graph, dict):
+        projected["requirements_graph_v1"] = requirements_graph
+        projected["requirementsGraphV1"] = requirements_graph
+
     if document_lane != "document_ai" or not isinstance(selected_fact_graph, dict):
         if isinstance(selected_fact_graph, dict):
             projected["fact_graph_v1"] = selected_fact_graph

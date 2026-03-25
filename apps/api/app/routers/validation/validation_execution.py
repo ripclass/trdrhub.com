@@ -225,6 +225,14 @@ async def execute_validation_pipeline(
             # Detects relevant rulesets based on LC and document content
             # =============================================================
             lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
+            requirements_graph_v1 = payload.get("requirements_graph_v1")
+            if not isinstance(requirements_graph_v1, dict):
+                requirements_graph_v1 = _response_shaping.build_requirements_graph_v1(
+                    payload.get("documents") or extracted_context.get("documents") or []
+                )
+            if isinstance(lc_ctx, dict) and isinstance(requirements_graph_v1, dict):
+                lc_ctx.setdefault("requirements_graph_v1", requirements_graph_v1)
+                lc_ctx.setdefault("requirementsGraphV1", requirements_graph_v1)
             if isinstance(lc_ctx, dict) and not isinstance(lc_ctx.get("lc_classification"), dict):
                 lc_ctx["lc_classification"] = build_lc_classification(lc_ctx, payload)
             mt700 = lc_ctx.get("mt700") or {}
@@ -352,6 +360,7 @@ async def execute_validation_pipeline(
                 "packing_list": payload.get("packing_list"),
                 # Extracted context
                 "extracted_context": extracted_context,
+                "requirements_graph_v1": requirements_graph_v1 if isinstance(requirements_graph_v1, dict) else None,
             }
 
             # Determine primary document type for filtering

@@ -222,6 +222,7 @@ from app.services.extraction.lc_taxonomy import (
     extract_unmapped_requirements,
 )
 from app.services.extraction.structured_lc_builder import build_unified_structured_result
+from app.services.requirements import build_lc_requirements_graph_v1
 from app.services.risk.customs_risk import compute_customs_risk_from_option_e
 
 # V2 Validation Pipeline imports
@@ -1727,6 +1728,15 @@ async def _build_document_context(
                     context["lc_number"] = launch_pipeline_result.get("lc_number")
 
                 if context_key == "lc" and not support_only:
+                    requirements_graph = build_lc_requirements_graph_v1(
+                        {
+                            **(context.get("lc") or {}),
+                            "document_type": "letter_of_credit",
+                        }
+                    )
+                    if isinstance(requirements_graph, dict):
+                        context.setdefault("lc", {})["requirements_graph_v1"] = requirements_graph
+                        context["lc"]["requirementsGraphV1"] = requirements_graph
                     lc_required_document_types = _infer_required_document_types_from_lc(context.get("lc") or {})
                     primary_lc_anchor_seen = True
 
@@ -2418,6 +2428,10 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     blocks = mt700.get("blocks", {}) if isinstance(mt700, dict) else {}
 
     raw_text = lc_context.get("raw_text") or (lc_context.get("lc_structured") or {}).get("raw_text") or ""
+    requirements_graph = (
+        lc_context.get("requirements_graph_v1")
+        or lc_context.get("requirementsGraphV1")
+    )
     evidence_map = (
         lc_context.get("field_evidence")
         or lc_context.get("_field_evidence")
@@ -2733,10 +2747,23 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     documents_required = get_value("documents_required", "required_documents")
     if not documents_required:
         documents_required = blocks.get("46A")  # MT700 field 46A - Documents Required
-    
+    if not documents_required and isinstance(requirements_graph, dict):
+        documents_required = requirements_graph.get("required_documents")
+        if not documents_required:
+            documents_required = requirements_graph.get("required_document_types")
+
     if documents_required:
         if isinstance(documents_required, list):
-            baseline._documents_list = documents_required
+            baseline._documents_list = [
+                item.get("display_name")
+                or item.get("name")
+                or item.get("code")
+                or item.get("document_type")
+                or item.get("type")
+                if isinstance(item, dict)
+                else item
+                for item in documents_required
+            ]
         elif isinstance(documents_required, str):
             baseline._documents_list = [documents_required]
     set_field(baseline.documents_required, documents_required)

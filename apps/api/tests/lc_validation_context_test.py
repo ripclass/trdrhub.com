@@ -37,6 +37,10 @@ def test_project_lc_validation_context_uses_only_resolved_rendered_lc_facts() ->
         document={
             "document_type": "letter_of_credit",
             "extraction_lane": "document_ai",
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "required_document_types": ["commercial_invoice", "packing_list"],
+            },
         },
         fact_graph={
             "version": "fact_graph_v1",
@@ -129,6 +133,10 @@ def test_project_lc_validation_context_uses_only_resolved_rendered_lc_facts() ->
     assert projected["documents_required"] == ["Commercial Invoice", "Packing List"]
     assert projected["incoterm"] == "FOB"
     assert projected["raw_text"] == "original lc text"
+    assert projected["requirements_graph_v1"]["required_document_types"] == [
+        "commercial_invoice",
+        "packing_list",
+    ]
 
 
 def test_project_lc_validation_context_leaves_structured_lc_context_intact() -> None:

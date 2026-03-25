@@ -88,6 +88,19 @@ _DOC_REQUIREMENT_HINTS: List[Tuple[str, Tuple[str, ...]]] = [
 
 
 def infer_required_document_types_from_lc(lc_payload: Dict[str, Any]) -> List[str]:
+    requirements_graph = (
+        (lc_payload or {}).get("requirements_graph_v1")
+        or (lc_payload or {}).get("requirementsGraphV1")
+    )
+    if isinstance(requirements_graph, dict):
+        graph_types = [
+            str(item).strip().lower()
+            for item in (requirements_graph.get("required_document_types") or [])
+            if str(item or "").strip()
+        ]
+        if graph_types:
+            return sorted(set(graph_types))
+
     normalized_required_documents = normalize_required_documents(lc_payload or {})
     normalized_codes = [
         str(entry.get("code")).strip().lower()

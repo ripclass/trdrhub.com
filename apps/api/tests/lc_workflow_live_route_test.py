@@ -260,6 +260,13 @@ def test_live_route_detector_classifies_export_from_flat_lc_ports_without_shipme
     assert guess["detection_basis"] == "lane_only_context"
 
 
+def test_validate_route_materializes_requirements_graph_on_lc_context_after_launch_pipeline() -> None:
+    source = VALIDATE_PATH.read_text(encoding="utf-8-sig")
+
+    assert "build_lc_requirements_graph_v1" in source
+    assert 'context.setdefault("lc", {})["requirements_graph_v1"] = requirements_graph' in source
+
+
 def test_live_route_response_builder_preserves_prepared_workflow_fields_for_live_shaped_payload() -> None:
     validate_symbols = _load_validate_workflow_symbols()
     prepare_structured = validate_symbols["_prepare_extractor_outputs_for_structured_result"]
