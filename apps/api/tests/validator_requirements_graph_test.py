@@ -29,6 +29,7 @@ def _load_validator_requirement_symbols() -> Dict[str, Any]:
         "FIELD_PREFIX_TO_DOC",
         "NEGOTIABILITY_TAGS",
         "SIGNED_INVOICE_TAGS",
+        "INSURANCE_TAGS",
         "REQUIREMENTS_GRAPH_TRANSPORT_TYPES",
         "REQUIREMENTS_GRAPH_INVOICE_TYPES",
         "REQUIREMENTS_GRAPH_INSURANCE_TYPES",
@@ -49,6 +50,7 @@ def _load_validator_requirement_symbols() -> Dict[str, Any]:
         "_derive_structured_requirement_context_from_graph",
         "_rule_targets_negotiability",
         "_rule_targets_signed_invoice",
+        "_rule_targets_insurance",
         "_rule_targets_documents",
     }
 
@@ -155,12 +157,17 @@ def test_derive_rule_toggles_prefers_structured_required_document_metadata() -> 
                     "negotiable": False,
                     "exact_wording": "NON-NEGOTIABLE SEA WAYBILL ACCEPTABLE",
                 },
+                {
+                    "code": "insurance_policy",
+                    "exact_wording": "INSURANCE POLICY REQUIRED",
+                },
             ]
         },
     )
 
     assert toggles["signed_invoice_required"] is True
     assert toggles["non_negotiable_allowed"] is True
+    assert toggles["insurance_required"] is True
 
 
 def test_derive_rule_toggles_prefers_structured_exact_wording_requirements() -> None:
@@ -240,6 +247,20 @@ def test_derive_structured_requirement_context_from_graph_compiles_quantities_wo
     assert structured["toggles"]["non_negotiable_allowed"] is True
 
 
+def test_derive_rule_toggles_reads_insurance_required_from_required_document_types() -> None:
+    ns = _load_validator_requirement_symbols()
+    derive_rule_toggles = ns["_derive_rule_toggles"]
+
+    toggles = derive_rule_toggles(
+        {},
+        "",
+        {"insurance_certificate": False},
+        {"required_document_types": ["insurance_policy"]},
+    )
+
+    assert toggles["insurance_required"] is True
+
+
 def test_validate_document_async_injects_requirements_structured_context_before_rule_evaluation() -> None:
     source = VALIDATOR_PATH.read_text(encoding="utf-8")
 
@@ -253,6 +274,7 @@ def test_rule_target_helpers_detect_structured_toggle_paths() -> None:
     extract_rule_field_paths = ns["_extract_rule_field_paths"]
     rule_targets_negotiability = ns["_rule_targets_negotiability"]
     rule_targets_signed_invoice = ns["_rule_targets_signed_invoice"]
+    rule_targets_insurance = ns["_rule_targets_insurance"]
 
     negotiability_rule = {
         "applies_if": [
@@ -271,12 +293,26 @@ def test_rule_target_helpers_detect_structured_toggle_paths() -> None:
             {"field": "_requirements_structured_v1.toggles.signed_invoice_required", "operator": "equals", "value": True}
         ]
     }
+    insurance_rule = {
+        "applies_if": [
+            {
+                "field": "lc.requirements_structured_v1.toggles.insurance_required",
+                "operator": "equals",
+                "value": True,
+            }
+        ],
+        "conditions": [{"field": "insurance_doc.originals_presented", "operator": "exists"}],
+    }
 
     assert "lc.requirements_structured_v1.toggles.non_negotiable_allowed" in extract_rule_field_paths(
         negotiability_rule
     )
+    assert "lc.requirements_structured_v1.toggles.insurance_required" in extract_rule_field_paths(
+        insurance_rule
+    )
     assert rule_targets_negotiability(negotiability_rule) is True
     assert rule_targets_signed_invoice(signed_invoice_rule) is True
+    assert rule_targets_insurance(insurance_rule) is True
 
 
 def test_rule_targets_documents_infers_doc_from_structured_requirement_paths() -> None:
@@ -299,3 +335,20 @@ def test_rule_targets_documents_infers_doc_from_structured_requirement_paths() -
     }
 
     assert rule_targets_documents(rule) == {"bill_of_lading"}
+
+
+def test_rule_targets_documents_infers_insurance_from_structured_quantity_path() -> None:
+    ns = _load_validator_requirement_symbols()
+    rule_targets_documents = ns["_rule_targets_documents"]
+
+    rule = {
+        "conditions": [
+            {
+                "field": "insurance_doc.originals_presented",
+                "operator": "greater_than_or_equal",
+                "value_ref": "lc.requirements_structured_v1.document_quantities.insurance_certificate.originals_required",
+            }
+        ]
+    }
+
+    assert rule_targets_documents(rule) == {"insurance_certificate"}

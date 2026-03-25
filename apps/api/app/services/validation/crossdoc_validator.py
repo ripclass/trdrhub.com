@@ -57,6 +57,17 @@ class DocumentType(str, Enum):
 
 
 _INSURANCE_REQUIREMENT_TYPES = {"insurance_certificate", "insurance_policy"}
+_EXACT_WORDING_DOC_TYPE_MAP = {
+    "commercial_invoice": "invoice",
+    "proforma_invoice": "invoice",
+    "bill_of_lading": "bill_of_lading",
+    "sea_waybill": "bill_of_lading",
+    "air_waybill": "bill_of_lading",
+    "packing_list": "packing_list",
+    "certificate_of_origin": "certificate_of_origin",
+    "insurance_certificate": "insurance",
+    "insurance_policy": "insurance",
+}
 
 
 def _required_document_types_from_graph(requirements_graph: Optional[Dict[str, Any]]) -> Set[str]:
@@ -147,6 +158,48 @@ def _identifier_requirements_from_graph(requirements_graph: Optional[Dict[str, A
             requirements["lc_number_required_on_all"] = (
                 requirements["lc_number_required_on_all"] or applies_to_all
             )
+
+    return requirements
+
+
+def _exact_wording_requirements_from_graph(requirements_graph: Optional[Dict[str, Any]]) -> Dict[str, List[str]]:
+    requirements: Dict[str, List[str]] = {}
+    if not isinstance(requirements_graph, dict):
+        return requirements
+
+    def _append(doc_key: Optional[str], wording: Any) -> None:
+        normalized_wording = str(wording or "").strip()
+        if not doc_key or not normalized_wording:
+            return
+        bucket = requirements.setdefault(doc_key, [])
+        if normalized_wording not in bucket:
+            bucket.append(normalized_wording)
+
+    def _map_doc_type(value: Any) -> Optional[str]:
+        token = str(value or "").strip().lower()
+        if not token:
+            return None
+        return _EXACT_WORDING_DOC_TYPE_MAP.get(token)
+
+    for entry in requirements_graph.get("required_documents") or []:
+        if not isinstance(entry, dict):
+            continue
+        doc_key = _map_doc_type(
+            entry.get("code")
+            or entry.get("document_type")
+            or entry.get("type")
+            or entry.get("name")
+            or entry.get("display_name")
+        )
+        _append(doc_key, entry.get("exact_wording"))
+
+    for item in requirements_graph.get("condition_requirements") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("requirement_type") or "").strip().lower() != "document_exact_wording":
+            continue
+        doc_key = _map_doc_type(item.get("document_type"))
+        _append(doc_key, item.get("exact_wording"))
 
     return requirements
 
@@ -412,6 +465,16 @@ class CrossDocValidator:
                 all_issues.extend(tin_issues)
                 rules_executed += tin_exec
                 rules_passed += tin_pass
+
+            exact_wording_requirements = _exact_wording_requirements_from_graph(requirements_graph)
+            if exact_wording_requirements:
+                wording_issues, wording_exec, wording_pass = self._validate_exact_wording_requirements(
+                    exact_wording_requirements,
+                    available_docs,
+                )
+                all_issues.extend(wording_issues)
+                rules_executed += wording_exec
+                rules_passed += wording_pass
         
         # Build result
         result = self._build_result(all_issues, rules_executed, rules_passed)
@@ -2209,6 +2272,70 @@ class CrossDocValidator:
                 isbp_paragraph="A33",
             ))
         
+        return issues, executed, passed
+
+    def _validate_exact_wording_requirements(
+        self,
+        wording_requirements: Dict[str, List[str]],
+        docs: Dict[str, Dict[str, Any]],
+    ) -> Tuple[List[CrossDocIssue], int, int]:
+        issues: List[CrossDocIssue] = []
+        executed = 0
+        passed = 0
+
+        doc_names = {
+            "invoice": ("Commercial Invoice", DocumentType.INVOICE),
+            "bill_of_lading": ("Bill of Lading", DocumentType.BILL_OF_LADING),
+            "packing_list": ("Packing List", DocumentType.PACKING_LIST),
+            "certificate_of_origin": ("Certificate of Origin", DocumentType.CERTIFICATE_OF_ORIGIN),
+            "insurance": ("Insurance Certificate", DocumentType.INSURANCE),
+        }
+
+        for doc_key, wordings in wording_requirements.items():
+            doc_data = docs.get(doc_key)
+            if doc_data is None:
+                continue
+
+            doc_name, doc_type = doc_names.get(doc_key, (doc_key, DocumentType.LC))
+            for wording in wordings:
+                executed += 1
+                status = self._presence_state_for_document(doc_data, wording)
+                if status == "found":
+                    passed += 1
+                    continue
+
+                if status == "parse_failed":
+                    found = f"{doc_name} extraction could not be trusted for the required wording."
+                    suggestion = (
+                        f"Re-extract or review {doc_name}, then confirm it includes the exact LC wording: '{wording}'."
+                    )
+                else:
+                    found = f"{doc_name} does not contain the required wording."
+                    suggestion = (
+                        f"Add the exact LC wording '{wording}' to the {doc_name} or seek an LC amendment."
+                    )
+
+                issues.append(
+                    CrossDocIssue(
+                        rule_id="CROSSDOC-EXACT-WORDING",
+                        title=f"LC-required wording missing from {doc_name}",
+                        severity=IssueSeverity.CRITICAL,
+                        message=(
+                            f"LC requires exact wording on {doc_name}; deterministic token check did not find the required text "
+                            f"'{wording}'."
+                        ),
+                        expected=f"{doc_name} contains exact wording '{wording}'",
+                        found=found,
+                        suggestion=suggestion,
+                        source_doc=DocumentType.LC,
+                        target_doc=doc_type,
+                        source_field="Required wording",
+                        target_field="Document text",
+                        ucp_article="14(d)",
+                        isbp_paragraph="A33",
+                    )
+                )
+
         return issues, executed, passed
     
     def _normalize_text(self, text: Any) -> str:

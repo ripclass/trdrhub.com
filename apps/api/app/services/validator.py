@@ -963,7 +963,7 @@ def _derive_rule_toggles(
         "non_negotiable_allowed": graph_toggles["non_negotiable_allowed"] or _text_contains_any(text, ["non-negotiable documents acceptable", "non negotiable documents acceptable"]),
         "hs_code_required": _text_contains_any(text, ["hs code", "harmonized system", "hs-code"]),
         "signed_invoice_required": graph_toggles["signed_invoice_required"] or _text_contains_any(text, ["signed commercial invoice", "signed invoice"]),
-        "insurance_required": doc_requirements.get("insurance_certificate", False),
+        "insurance_required": graph_toggles["insurance_required"] or doc_requirements.get("insurance_certificate", False),
     }
     return toggles
 
@@ -972,6 +972,7 @@ def _derive_rule_toggles_from_graph(requirements_graph: Optional[Dict[str, Any]]
     toggles = {
         "non_negotiable_allowed": False,
         "signed_invoice_required": False,
+        "insurance_required": False,
     }
     if not isinstance(requirements_graph, dict):
         return toggles
@@ -1009,10 +1010,18 @@ def _derive_rule_toggles_from_graph(requirements_graph: Optional[Dict[str, Any]]
             if entry.get("signed") is True or "signed" in text_blob:
                 toggles["signed_invoice_required"] = True
 
+        if document_type in REQUIREMENTS_GRAPH_INSURANCE_TYPES:
+            toggles["insurance_required"] = True
+
         if document_type in REQUIREMENTS_GRAPH_TRANSPORT_TYPES:
             negotiable = entry.get("negotiable")
             if negotiable is False or "non-negotiable" in text_blob or "non negotiable" in text_blob:
                 toggles["non_negotiable_allowed"] = True
+
+    for raw_doc_type in requirements_graph.get("required_document_types") or []:
+        document_type = _graph_document_type(raw_doc_type)
+        if document_type in REQUIREMENTS_GRAPH_INSURANCE_TYPES:
+            toggles["insurance_required"] = True
 
     for requirement in requirements_graph.get("condition_requirements") or []:
         if not isinstance(requirement, dict):
@@ -1270,6 +1279,8 @@ def _rule_targets_insurance(rule: Dict[str, Any]) -> bool:
     if tags.intersection(INSURANCE_TAGS):
         return True
     for path in _extract_rule_field_paths(rule):
+        if "requirements_structured_v1.toggles.insurance_required" in path:
+            return True
         if "insurance" in path:
             return True
     return False
