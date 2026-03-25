@@ -2779,7 +2779,21 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     if not additional_conditions:
         lc_structured = lc_context.get("lc_structured", {})
         additional_conditions = lc_structured.get("additional_conditions") or lc_structured.get("clauses_47a")
-    
+    if not additional_conditions and isinstance(requirements_graph, dict):
+        graph_documentary_conditions = [
+            str(item).strip()
+            for item in (requirements_graph.get("documentary_conditions") or [])
+            if str(item or "").strip()
+        ]
+        graph_ambiguous_conditions = [
+            str(item).strip()
+            for item in (requirements_graph.get("ambiguous_conditions") or [])
+            if str(item or "").strip()
+        ]
+        graph_conditions = graph_documentary_conditions or graph_ambiguous_conditions
+        if graph_conditions:
+            additional_conditions = graph_conditions
+
     if additional_conditions:
         if isinstance(additional_conditions, list):
             baseline._conditions_list = additional_conditions
