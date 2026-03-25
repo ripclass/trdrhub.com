@@ -549,15 +549,17 @@ def _normalize_doc_status(
     value: Optional[str],
     extraction_status: Optional[str],
     parse_complete: Optional[bool] = None,
+    *,
+    ignore_parse_complete: bool = False,
 ) -> str:
     status = (value or "").lower().strip()
     if status in {"success", "warning", "error"}:
-        if status == "success" and parse_complete is False:
+        if not ignore_parse_complete and status == "success" and parse_complete is False:
             return "warning"
         return status
     extraction = (extraction_status or "").lower().strip()
     if extraction in {"success", "completed"}:
-        return "success" if parse_complete is not False else "warning"
+        return "success" if ignore_parse_complete or parse_complete is not False else "warning"
     if extraction in {"failed", "error", "empty"}:
         return "error"
     if extraction in {"partial", "text_only", "pending", "unknown", "parse_failed"}:
@@ -568,19 +570,73 @@ def _normalize_doc_status(
 def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
     normalized_docs: List[Dict[str, Any]] = []
     for doc in documents or []:
+        def _is_legacy_extraction_review_reason(reason: Any) -> bool:
+            text = str(reason or "").strip()
+            if not text:
+                return False
+            upper = text.upper()
+            lower = text.lower()
+            if upper in {
+                "FIELD_NOT_FOUND",
+                "FORMAT_INVALID",
+                "EVIDENCE_MISSING",
+                "LOW_CONFIDENCE",
+                "LOW_CONFIDENCE_CRITICAL",
+                "CROSS_FIELD_CONFLICT",
+                "OCR_EMPTY_RESULT",
+                "OCR_TIMEOUT",
+                "OCR_AUTH_ERROR",
+                "OCR_UNSUPPORTED_FORMAT",
+            }:
+                return True
+            if lower == "review_required":
+                return True
+            if lower.startswith("missing:"):
+                return True
+            if lower.endswith("_missing_critical_fields"):
+                return True
+            if lower.startswith("critical_") and lower.endswith("_missing"):
+                return True
+            if lower.startswith("cross_field_"):
+                return True
+            return False
+
         extraction_status = (
             doc.get("extractionStatus")
             or doc.get("extraction_status")
             or doc.get("status")
             or "unknown"
         )
+        fact_graph = doc.get("fact_graph_v1") or doc.get("factGraphV1")
+        uses_fact_resolution = isinstance(fact_graph, dict) and bool(fact_graph)
         parse_complete = doc.get("parse_complete")
         if parse_complete is None:
             parse_complete = doc.get("parseComplete")
         if parse_complete is not None:
             parse_complete = bool(parse_complete)
+        missing_required_fields = doc.get("missing_required_fields") or []
+        raw_review_reasons = doc.get("review_reasons") or doc.get("reviewReasons") or []
+        review_reasons = [
+            str(reason).strip()
+            for reason in raw_review_reasons
+            if str(reason or "").strip()
+            and (not uses_fact_resolution or not _is_legacy_extraction_review_reason(reason))
+        ]
+        review_required = bool(doc.get("review_required") or doc.get("reviewRequired"))
+        public_parse_complete = parse_complete
+        public_parse_completeness = doc.get("parse_completeness") or doc.get("parseCompleteness")
+        if uses_fact_resolution:
+            missing_required_fields = []
+            review_required = review_required and bool(review_reasons)
+            public_parse_complete = None
+            public_parse_completeness = None
 
-        status = _normalize_doc_status(doc.get("status"), extraction_status, parse_complete)
+        status = _normalize_doc_status(
+            doc.get("status"),
+            extraction_status,
+            parse_complete,
+            ignore_parse_complete=uses_fact_resolution,
+        )
         normalized_docs.append(
             {
                 "document_id": doc.get("id") or doc.get("document_id") or doc.get("documentId"),
@@ -601,13 +657,13 @@ def build_document_extraction_v1(documents: List[Dict[str, Any]]) -> Dict[str, A
                 or doc.get("issuesCount")
                 or 0,
                 "ocr_confidence": doc.get("ocrConfidence") or doc.get("ocr_confidence"),
-                "parse_complete": parse_complete,
-                "parse_completeness": doc.get("parse_completeness") or doc.get("parseCompleteness"),
-                "missing_required_fields": doc.get("missing_required_fields") or [],
+                "parse_complete": public_parse_complete,
+                "parse_completeness": public_parse_completeness,
+                "missing_required_fields": missing_required_fields,
                 "required_fields_found": doc.get("required_fields_found"),
                 "required_fields_total": doc.get("required_fields_total"),
-                "review_required": bool(doc.get("review_required") or doc.get("reviewRequired")),
-                "review_reasons": doc.get("review_reasons") or doc.get("reviewReasons") or [],
+                "review_required": review_required,
+                "review_reasons": review_reasons,
                 "critical_field_states": doc.get("critical_field_states") or doc.get("criticalFieldStates") or {},
                 "extraction_debug": doc.get("extraction_debug") or doc.get("extractionDebug"),
                 "day1_runtime": doc.get("day1_runtime") if isinstance(doc.get("day1_runtime"), dict) else {},

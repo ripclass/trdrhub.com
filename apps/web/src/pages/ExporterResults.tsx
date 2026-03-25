@@ -260,6 +260,44 @@ const _normalizeFieldKey = (value: unknown): string =>
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
 
+const _isLegacyExtractionReviewReason = (reason: unknown): boolean => {
+  const normalized = _normalizeFieldKey(reason);
+  const upper = String(reason ?? '').trim().toUpperCase();
+  if (!normalized) {
+    return false;
+  }
+  if (
+    upper === 'FIELD_NOT_FOUND' ||
+    upper === 'FORMAT_INVALID' ||
+    upper === 'EVIDENCE_MISSING' ||
+    upper === 'LOW_CONFIDENCE' ||
+    upper === 'LOW_CONFIDENCE_CRITICAL' ||
+    upper === 'CROSS_FIELD_CONFLICT' ||
+    upper === 'OCR_EMPTY_RESULT' ||
+    upper === 'OCR_TIMEOUT' ||
+    upper === 'OCR_AUTH_ERROR' ||
+    upper === 'OCR_UNSUPPORTED_FORMAT'
+  ) {
+    return true;
+  }
+  if (normalized === 'review_required') {
+    return true;
+  }
+  if (normalized.startsWith('missing:')) {
+    return true;
+  }
+  if (normalized.endsWith('_missing_critical_fields')) {
+    return true;
+  }
+  if (normalized.startsWith('critical_') && normalized.endsWith('_missing')) {
+    return true;
+  }
+  if (normalized.startsWith('cross_field_')) {
+    return true;
+  }
+  return false;
+};
+
 const _textHasAny = (text: string, patterns: RegExp[]): boolean =>
   patterns.some((pattern) => pattern.test(text));
 
@@ -1415,17 +1453,31 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const usesFactResolution =
         FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) &&
         (resolutionItems.length > 0 || Boolean(factGraph));
+      const normalizedExtractionStatus = extractionStatus.toLowerCase();
+      const sanitizedMissingRequiredFields = usesFactResolution ? [] : missingRequiredFields;
+      const sanitizedReviewReasons = usesFactResolution
+        ? (Array.isArray(reviewReasons) ? reviewReasons : []).filter((reason) => !_isLegacyExtractionReviewReason(reason))
+        : reviewReasons;
+      const sanitizedParseComplete = usesFactResolution ? undefined : parseComplete;
       const fieldDiagnostics = docAny.extraction_artifacts_v1?.field_diagnostics ?? docAny.extractionDebug?.field_diagnostics ?? {};
       const rawText = docAny.extraction_artifacts_v1?.raw_text ?? docAny.raw_text ?? docAny.rawText ?? '';
       const extractionResolution =
         usesFactResolution && backendResolutionQueue
           ? _buildQueueBackedExtractionResolutionState(resolutionItems)
           : _buildExtractionResolutionState({
-              missingRequiredFields,
+              missingRequiredFields: sanitizedMissingRequiredFields,
               criticalFieldStates,
               fieldDetails,
-              parseComplete,
+              parseComplete: sanitizedParseComplete,
             });
+      const finalStatus: "success" | "warning" | "error" =
+        usesFactResolution &&
+        !extractionResolution.required &&
+        issuesCount <= 0 &&
+        sanitizedReviewReasons.length === 0 &&
+        !['error', 'failed', 'empty'].includes(normalizedExtractionStatus)
+          ? 'success'
+          : status;
       const typeLabel = safeString(doc.document_type_label ?? docAny.document_type_label ?? getTruthfulDocumentTypeLabel(filename, typeKey));
       return {
         id: documentId,
@@ -1435,24 +1487,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         type: safeString(typeLabel),
         typeKey,
         extractionStatus,
-        status,
+        status: finalStatus,
         issuesCount,
-        parseComplete,
+        parseComplete: sanitizedParseComplete,
         parseCompleteness: docAny.parse_completeness ?? docAny.parseCompleteness,
-        missingRequiredFields,
+        missingRequiredFields: sanitizedMissingRequiredFields,
         warningReasons: buildWarningReasons({
           extractionStatus,
           issuesCount,
-          missingRequiredFields,
-          parseComplete,
-          reviewReasons,
+          missingRequiredFields: sanitizedMissingRequiredFields,
+          parseComplete: sanitizedParseComplete,
+          reviewReasons: sanitizedReviewReasons,
           extractionResolution,
           docType: typeKey,
           rawText,
           criticalFieldStates,
           fieldDiagnostics,
         }),
-        reviewReasons,
+        reviewReasons: sanitizedReviewReasons,
         criticalFieldStates,
         fieldDiagnostics,
         rawText,

@@ -423,6 +423,11 @@ describe('results mapper - option e payload', () => {
     expect(mapped.factResolution?.summary.ready_for_validation).toBe(true);
     expect(mapped.documents[0]?.resolutionItems ?? []).toHaveLength(0);
     expect(mapped.documents[0]?.extractionResolution?.required).toBe(false);
+    expect(mapped.documents[0]?.missingRequiredFields ?? []).toEqual([]);
+    expect(mapped.documents[0]?.reviewReasons ?? []).toEqual([]);
+    expect(mapped.documents[0]?.reviewRequired).toBe(false);
+    expect(mapped.documents[0]?.parseComplete).toBeUndefined();
+    expect(mapped.documents[0]?.status).toBe('success');
   });
 
   it('uses fact_resolution_v1 as the B/L unresolved source of truth', () => {

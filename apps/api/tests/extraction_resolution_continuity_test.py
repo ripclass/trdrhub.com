@@ -255,6 +255,40 @@ def test_document_extraction_contract_preserves_extraction_resolution() -> None:
     assert document["extraction_resolution"]["unresolved_count"] == 1
 
 
+def test_document_extraction_contract_clears_legacy_parser_debt_for_fact_backed_docs() -> None:
+    symbols = _load_response_shaping_symbols()
+    build_document_extraction_v1 = symbols["build_document_extraction_v1"]
+
+    payload = build_document_extraction_v1(
+        [
+            {
+                "document_id": "doc-invoice",
+                "document_type": "commercial_invoice",
+                "filename": "Invoice.pdf",
+                "status": "success",
+                "extraction_status": "success",
+                "parse_complete": False,
+                "parse_completeness": 0.42,
+                "missing_required_fields": ["seller"],
+                "review_required": True,
+                "review_reasons": ["FIELD_NOT_FOUND", "manual_policy_review_required"],
+                "fact_graph_v1": {
+                    "document_type": "commercial_invoice",
+                    "facts": [],
+                },
+            }
+        ]
+    )
+
+    document = payload["documents"][0]
+    assert document["status"] == "success"
+    assert document["parse_complete"] is None
+    assert document["parse_completeness"] is None
+    assert document["missing_required_fields"] == []
+    assert document["review_required"] is True
+    assert document["review_reasons"] == ["manual_policy_review_required"]
+
+
 def test_workflow_stage_marks_extraction_resolution_until_unresolved_fields_clear() -> None:
     symbols = _load_response_shaping_symbols()
     build_workflow_stage = symbols["build_workflow_stage"]

@@ -150,6 +150,44 @@ const normalizeFieldKey = (value: unknown): string =>
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
 
+const isLegacyExtractionReviewReason = (reason: unknown): boolean => {
+  const normalized = normalizeFieldKey(reason);
+  const upper = String(reason ?? '').trim().toUpperCase();
+  if (!normalized) {
+    return false;
+  }
+  if (
+    upper === 'FIELD_NOT_FOUND' ||
+    upper === 'FORMAT_INVALID' ||
+    upper === 'EVIDENCE_MISSING' ||
+    upper === 'LOW_CONFIDENCE' ||
+    upper === 'LOW_CONFIDENCE_CRITICAL' ||
+    upper === 'CROSS_FIELD_CONFLICT' ||
+    upper === 'OCR_EMPTY_RESULT' ||
+    upper === 'OCR_TIMEOUT' ||
+    upper === 'OCR_AUTH_ERROR' ||
+    upper === 'OCR_UNSUPPORTED_FORMAT'
+  ) {
+    return true;
+  }
+  if (normalized === 'review_required') {
+    return true;
+  }
+  if (normalized.startsWith('missing:')) {
+    return true;
+  }
+  if (normalized.endsWith('_missing_critical_fields')) {
+    return true;
+  }
+  if (normalized.startsWith('critical_') && normalized.endsWith('_missing')) {
+    return true;
+  }
+  if (normalized.startsWith('cross_field_')) {
+    return true;
+  }
+  return false;
+};
+
 const FACT_RESOLUTION_DOCUMENT_TYPES = new Set([
   'letter_of_credit',
   'swift_message',
@@ -719,6 +757,7 @@ const mapDocuments = (
       doc?.extraction?.extraction_status ??
       'unknown'
     ).toString();
+    const normalizedExtractionStatus = extractionStatus.toLowerCase();
     const extractionLane = (
       doc?.extraction_lane ??
       doc?.extractionLane ??
@@ -727,7 +766,7 @@ const mapDocuments = (
     ).toString();
     const rawStatus = doc?.status;
     const normalizedStatus = typeof rawStatus === 'string' ? rawStatus.toLowerCase() : null;
-    const status =
+    const baseStatus =
       normalizedStatus === 'success' || normalizedStatus === 'warning' || normalizedStatus === 'error'
         ? (normalizedStatus as 'success' | 'warning' | 'error')
         : deriveDocumentStatus(extractionStatus, issuesCount);
@@ -777,6 +816,21 @@ const mapDocuments = (
     const usesFactResolution =
       FACT_RESOLUTION_DOCUMENT_TYPES.has(typeKey.toLowerCase()) &&
       (Boolean(matchedFactResolution) || resolutionItems.length > 0 || Boolean(factGraph));
+    const sanitizedMissingRequiredFields = usesFactResolution ? [] : missingRequiredFields;
+    const sanitizedReviewReasons = usesFactResolution
+      ? reviewReasons.filter((reason) => !isLegacyExtractionReviewReason(reason))
+      : reviewReasons;
+    const sanitizedReviewRequired = usesFactResolution
+      ? Boolean(reviewRequired && sanitizedReviewReasons.length > 0)
+      : reviewRequired;
+    const sanitizedParseComplete = usesFactResolution
+      ? undefined
+      : typeof doc?.parse_complete === 'boolean'
+      ? doc.parse_complete
+      : doc?.parseComplete;
+    const sanitizedParseCompleteness = usesFactResolution
+      ? undefined
+      : doc?.parse_completeness ?? doc?.parseCompleteness;
     const fieldDiagnostics = doc?.extraction_artifacts_v1?.field_diagnostics ?? doc?.field_diagnostics ?? {};
     const rawText =
       doc?.extraction_artifacts_v1?.raw_text ??
@@ -790,23 +844,31 @@ const mapDocuments = (
         ? buildQueueBackedExtractionResolution(resolutionItems, workflowStageHint)
         : buildExtractionResolution({
             existingResolution: existingExtractionResolution,
-            missingRequiredFields,
+            missingRequiredFields: sanitizedMissingRequiredFields,
             fieldDetails,
             criticalFieldStates,
             workflowStageHint,
-            parseComplete:
-              typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
+            parseComplete: sanitizedParseComplete,
           });
     const requirementStatus = deriveRequirementStatus({
-      missingRequiredFields,
+      missingRequiredFields: sanitizedMissingRequiredFields,
       requiredFieldsFound,
       requiredFieldsTotal,
     });
+    const status =
+      usesFactResolution &&
+      !extractionResolution.required &&
+      issuesCount <= 0 &&
+      sanitizedReviewReasons.length === 0 &&
+      !sanitizedReviewRequired &&
+      !['error', 'failed', 'empty'].includes(normalizedExtractionStatus)
+        ? 'success'
+        : baseStatus;
     const reviewState = deriveReviewState({
       status,
       extractionStatus,
-      reviewRequired,
-      reviewReasons,
+      reviewRequired: sanitizedReviewRequired,
+      reviewReasons: sanitizedReviewReasons,
       issuesCount,
       extractionResolutionRequired: extractionResolution.required,
     });
@@ -822,14 +884,14 @@ const mapDocuments = (
       extractionLane,
       status,
       issuesCount,
-      parseComplete: typeof doc?.parse_complete === 'boolean' ? doc.parse_complete : doc?.parseComplete,
-      parseCompleteness: doc?.parse_completeness ?? doc?.parseCompleteness,
+      parseComplete: sanitizedParseComplete,
+      parseCompleteness: sanitizedParseCompleteness,
       fieldDetails,
-      missingRequiredFields,
+      missingRequiredFields: sanitizedMissingRequiredFields,
       requiredFieldsFound,
       requiredFieldsTotal,
-      reviewRequired,
-      reviewReasons,
+      reviewRequired: sanitizedReviewRequired,
+      reviewReasons: sanitizedReviewReasons,
       criticalFieldStates,
       fieldDiagnostics,
       rawText,
