@@ -83,3 +83,50 @@ def test_launch_pipeline_supporting_path_wires_build_supporting_fact_set() -> No
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
     assert "fact_graph_v1" in supporting_constants
+
+
+def _load_launch_pipeline_symbols() -> Dict[str, Any]:
+    source = LAUNCH_PIPELINE_PATH.read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+    target_assignments = {
+        "TRANSPORT_DOC_ALIASES",
+        "REGULATORY_DOC_ALIASES",
+        "INSURANCE_DOC_ALIASES",
+        "INSPECTION_DOC_ALIASES",
+    }
+    selected_nodes = []
+    for node in parsed.body:
+        if isinstance(node, ast.Assign):
+            target_names = {
+                target.id
+                for target in node.targets
+                if isinstance(target, ast.Name)
+            }
+            if target_names & target_assignments:
+                selected_nodes.append(node)
+        elif isinstance(node, ast.FunctionDef) and node.name == "_canonicalize_launch_doc_type":
+            selected_nodes.append(node)
+
+    module_ast = ast.Module(body=selected_nodes, type_ignores=[])
+    ast.fix_missing_locations(module_ast)
+    namespace: Dict[str, Any] = {}
+    exec(compile(module_ast, str(LAUNCH_PIPELINE_PATH), "exec"), namespace)
+    return namespace
+
+
+def test_launch_pipeline_canonicalize_preserves_transport_subtypes() -> None:
+    namespace = _load_launch_pipeline_symbols()
+    canonicalize = namespace["_canonicalize_launch_doc_type"]
+
+    assert canonicalize("air_waybill") == "air_waybill"
+    assert canonicalize("sea_waybill") == "sea_waybill"
+    assert canonicalize("road_transport_document") == "road_transport_document"
+
+
+def test_launch_pipeline_canonicalize_preserves_non_transport_supporting_subtypes() -> None:
+    namespace = _load_launch_pipeline_symbols()
+    canonicalize = namespace["_canonicalize_launch_doc_type"]
+
+    assert canonicalize("veterinary_certificate") == "veterinary_certificate"
+    assert canonicalize("lab_test_report") == "lab_test_report"
+    assert canonicalize("conformity_certificate") == "conformity_certificate"

@@ -2070,13 +2070,13 @@ def _canonicalize_launch_doc_type(doc_type: str) -> str:
     insurance_aliases = globals().get("INSURANCE_DOC_ALIASES", set()) or set()
     inspection_aliases = globals().get("INSPECTION_DOC_ALIASES", set()) or set()
     if normalized in transport_aliases:
-        return "bill_of_lading"
+        return normalized
     if normalized in regulatory_aliases:
-        return "certificate_of_origin"
+        return normalized
     if normalized in insurance_aliases:
-        return "insurance_certificate"
+        return normalized
     if normalized in inspection_aliases:
-        return "inspection_certificate"
+        return normalized
     return normalized
 
 
