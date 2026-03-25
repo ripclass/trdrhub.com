@@ -71,22 +71,76 @@ DOCUMENT_TYPE_ALIASES: Dict[str, list[str]] = {
         "bl",
         "shipping document",
         "transport document",
+    ],
+    "ocean_bill_of_lading": [
         "ocean bill of lading",
+        "ocean_bill_of_lading",
+        "ocean b/l",
+    ],
+    "sea_waybill": [
         "sea waybill",
+        "sea_waybill",
+        "seawaybill",
+        "sea-waybill",
+        "swb",
+    ],
+    "air_waybill": [
         "air waybill",
+        "air_waybill",
+        "airway bill",
+        "airwaybill",
         "awb",
+        "hawb",
+        "mawb",
+    ],
+    "multimodal_transport_document": [
         "multimodal transport document",
+        "multimodal_transport_document",
         "combined transport document",
+        "combined_transport_document",
+    ],
+    "railway_consignment_note": [
         "railway consignment note",
+        "railway_consignment_note",
+        "rail consignment",
+    ],
+    "road_transport_document": [
         "road transport document",
+        "road_transport_document",
+        "cmr",
+        "road consignment",
+    ],
+    "forwarder_certificate_of_receipt": [
         "forwarder's certificate of receipt",
+        "forwarders certificate of receipt",
+        "forwarder_certificate_of_receipt",
+        "forwarders_certificate_of_receipt",
         "fcr",
+    ],
+    "house_bill_of_lading": [
         "house bill of lading",
+        "house_bill_of_lading",
+        "house b/l",
+        "hbl",
+    ],
+    "master_bill_of_lading": [
         "master bill of lading",
+        "master_bill_of_lading",
+        "master b/l",
+        "mbl",
+    ],
+    "delivery_order": [
         "delivery order",
+        "delivery_order",
+    ],
+    "mates_receipt": [
         "mate's receipt",
         "mates receipt",
+        "mates_receipt",
+    ],
+    "shipping_company_certificate": [
         "shipping company certificate",
+        "shipping_company_certificate",
     ],
     "packing_list": [
         "packing list",
@@ -226,6 +280,30 @@ def infer_document_type(filename: Optional[str], index: int) -> str:
         lower = filename.lower()
         if lower in {"lc.pdf", "lc"} or any(token in lower for token in ("bank guarantee", "bank_guarantee", "standby letter of credit", "standby lc", "sblc")):
             return "letter_of_credit"
+        if any(token in lower for token in ("air waybill", "air_waybill", "airway bill", "airwaybill", "awb", "hawb", "mawb")):
+            return "air_waybill"
+        if any(token in lower for token in ("sea waybill", "sea_waybill", "seawaybill", "sea-waybill", "swb")):
+            return "sea_waybill"
+        if any(token in lower for token in ("ocean bill", "ocean_bill_of_lading")):
+            return "ocean_bill_of_lading"
+        if any(token in lower for token in ("multimodal", "combined transport", "multimodal_transport_document")):
+            return "multimodal_transport_document"
+        if any(token in lower for token in ("railway consignment", "railway_consignment_note", "rail consignment")):
+            return "railway_consignment_note"
+        if any(token in lower for token in ("road transport", "road_transport_document", "cmr", "road consignment")):
+            return "road_transport_document"
+        if any(token in lower for token in ("forwarder's certificate of receipt", "forwarders certificate of receipt", "forwarder_certificate_of_receipt", "forwarders_certificate_of_receipt", "fcr")):
+            return "forwarder_certificate_of_receipt"
+        if any(token in lower for token in ("house bill", "house_bill_of_lading", "house b/l", "hbl")):
+            return "house_bill_of_lading"
+        if any(token in lower for token in ("master bill", "master_bill_of_lading", "master b/l", "mbl")):
+            return "master_bill_of_lading"
+        if any(token in lower for token in ("delivery order", "delivery_order")):
+            return "delivery_order"
+        if any(token in lower for token in ("mate's receipt", "mates receipt", "mates_receipt")):
+            return "mates_receipt"
+        if any(token in lower for token in ("shipping company certificate", "shipping_company_certificate")):
+            return "shipping_company_certificate"
         if any(token in lower for token in ("invoice", "inv", "bill of exchange", "draft", "promissory note", "promissory_note", "payment receipt", "receipt", "debit note", "credit note")):
             return "commercial_invoice"
         if any(token in lower for token in (
@@ -237,20 +315,6 @@ def infer_document_type(filename: Optional[str], index: int) -> str:
             "bl",
             "shipping",
             "bol",
-            "ocean bill",
-            "sea waybill",
-            "air waybill",
-            "awb",
-            "multimodal",
-            "combined transport",
-            "railway consignment",
-            "road transport",
-            "forwarder",
-            "fcr",
-            "house bill",
-            "master bill",
-            "delivery order",
-            "mate",
         )):
             return "bill_of_lading"
         if any(token in lower for token in ("packing", "packlist")):
@@ -336,6 +400,30 @@ def infer_document_type_from_name(filename: Optional[str], index: int) -> str:
         name = filename.lower()
         if name in {"lc.pdf", "lc"} or any(token in name for token in ("bank guarantee", "bank_guarantee", "standby letter of credit", "standby lc", "sblc")):
             return "letter_of_credit"
+        if any(token in name for token in ("air waybill", "air_waybill", "airway bill", "airwaybill", "awb", "hawb", "mawb")):
+            return "air_waybill"
+        if any(token in name for token in ("sea waybill", "sea_waybill", "seawaybill", "sea-waybill", "swb")):
+            return "sea_waybill"
+        if any(token in name for token in ("ocean bill", "ocean_bill_of_lading")):
+            return "ocean_bill_of_lading"
+        if any(token in name for token in ("multimodal", "combined transport", "multimodal_transport_document")):
+            return "multimodal_transport_document"
+        if any(token in name for token in ("railway consignment", "railway_consignment_note", "rail consignment")):
+            return "railway_consignment_note"
+        if any(token in name for token in ("road transport", "road_transport_document", "cmr", "road consignment")):
+            return "road_transport_document"
+        if any(token in name for token in ("forwarder's certificate of receipt", "forwarders certificate of receipt", "forwarder_certificate_of_receipt", "forwarders_certificate_of_receipt", "fcr")):
+            return "forwarder_certificate_of_receipt"
+        if any(token in name for token in ("house bill", "house_bill_of_lading", "house b/l", "hbl")):
+            return "house_bill_of_lading"
+        if any(token in name for token in ("master bill", "master_bill_of_lading", "master b/l", "mbl")):
+            return "master_bill_of_lading"
+        if any(token in name for token in ("delivery order", "delivery_order")):
+            return "delivery_order"
+        if any(token in name for token in ("mate's receipt", "mates receipt", "mates_receipt")):
+            return "mates_receipt"
+        if any(token in name for token in ("shipping company certificate", "shipping_company_certificate")):
+            return "shipping_company_certificate"
         if any(token in name for token in ("invoice", "inv", "bill of exchange", "draft", "promissory note", "promissory_note", "payment receipt", "receipt", "debit note", "credit note")):
             return "commercial_invoice"
         if any(token in name for token in (
@@ -346,20 +434,6 @@ def infer_document_type_from_name(filename: Optional[str], index: int) -> str:
             "bl",
             "shipping",
             "bol",
-            "ocean bill",
-            "sea waybill",
-            "air waybill",
-            "awb",
-            "multimodal",
-            "combined transport",
-            "railway consignment",
-            "road transport",
-            "forwarder",
-            "fcr",
-            "house bill",
-            "master bill",
-            "delivery order",
-            "mate",
         )):
             return "bill_of_lading"
         if any(token in name for token in ("packing", "packlist")):
