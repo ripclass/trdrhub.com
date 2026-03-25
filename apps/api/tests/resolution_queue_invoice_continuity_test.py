@@ -97,12 +97,12 @@ def test_build_resolution_queue_v1_collects_only_unresolved_invoice_facts() -> N
     queue = build_resolution_queue_v1(documents)
 
     assert queue["version"] == "resolution_queue_v1"
-    assert queue["summary"]["total_items"] == 3
-    assert queue["summary"]["user_resolvable_items"] == 3
-    assert queue["summary"]["unresolved_documents"] == 2
-    assert queue["summary"]["document_counts"]["commercial_invoice"] == 2
-    assert queue["summary"]["document_counts"]["packing_list"] == 1
-    assert [item["field_name"] for item in queue["items"]] == ["invoice_number", "invoice_date", "packing_list_number"]
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["user_resolvable_items"] == 1
+    assert queue["summary"]["unresolved_documents"] == 1
+    assert queue["summary"]["document_counts"]["commercial_invoice"] == 1
+    assert "packing_list" not in queue["summary"]["document_counts"]
+    assert [item["field_name"] for item in queue["items"]] == ["invoice_number"]
     assert queue["items"][0]["reason"] == "system_could_not_confirm"
 
 
@@ -174,11 +174,11 @@ def test_build_resolution_queue_v1_collects_bl_unresolved_facts() -> None:
 
     queue = build_resolution_queue_v1(documents)
 
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["user_resolvable_items"] == 2
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["user_resolvable_items"] == 1
     assert queue["summary"]["unresolved_documents"] == 1
-    assert queue["summary"]["document_counts"]["bill_of_lading"] == 2
-    assert [item["field_name"] for item in queue["items"]] == ["bl_number", "port_of_loading"]
+    assert queue["summary"]["document_counts"]["bill_of_lading"] == 1
+    assert [item["field_name"] for item in queue["items"]] == ["bl_number"]
 
 
 def test_build_resolution_queue_v1_collects_packing_list_unresolved_facts() -> None:
@@ -273,12 +273,11 @@ def test_build_resolution_queue_v1_collects_coo_unresolved_facts() -> None:
 
     queue = build_resolution_queue_v1(documents)
 
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["document_counts"] == {"certificate_of_origin": 2}
-    items = sorted(queue["items"], key=lambda item: item["field_name"])
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["document_counts"] == {"certificate_of_origin": 1}
+    items = queue["items"]
     assert items[0]["field_name"] == "country_of_origin"
     assert items[0]["priority"] == "high"
-    assert items[1]["field_name"] == "goods_description"
 
 
 def test_build_resolution_queue_v1_collects_insurance_unresolved_facts() -> None:
@@ -321,12 +320,10 @@ def test_build_resolution_queue_v1_collects_insurance_unresolved_facts() -> None
 
     queue = build_resolution_queue_v1(documents)
 
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["document_counts"] == {"insurance_certificate": 2}
-    items = sorted(queue["items"], key=lambda item: item["field_name"])
-    assert items[0]["field_name"] == "issuer_name"
-    assert items[0]["priority"] == "high"
-    assert items[1]["field_name"] == "policy_number"
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["document_counts"] == {"insurance_certificate": 1}
+    items = queue["items"]
+    assert items[0]["field_name"] == "policy_number"
 
 
 def test_build_resolution_queue_v1_collects_inspection_unresolved_facts() -> None:
@@ -369,12 +366,10 @@ def test_build_resolution_queue_v1_collects_inspection_unresolved_facts() -> Non
 
     queue = build_resolution_queue_v1(documents)
 
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["document_counts"] == {"inspection_certificate": 2}
-    items = sorted(queue["items"], key=lambda item: item["field_name"])
-    assert items[0]["field_name"] == "inspection_agency"
-    assert items[0]["priority"] == "high"
-    assert items[1]["field_name"] == "inspection_result"
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["document_counts"] == {"inspection_certificate": 1}
+    items = queue["items"]
+    assert items[0]["field_name"] == "inspection_result"
 
 
 def test_build_resolution_queue_v1_collects_regulatory_unresolved_facts() -> None:
@@ -411,11 +406,10 @@ def test_build_resolution_queue_v1_collects_regulatory_unresolved_facts() -> Non
 
     queue = build_resolution_queue_v1(documents)
 
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["document_counts"] == {"phytosanitary_certificate": 2}
-    items = sorted(queue["items"], key=lambda item: item["field_name"])
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["document_counts"] == {"phytosanitary_certificate": 1}
+    items = queue["items"]
     assert items[0]["field_name"] == "certificate_number"
-    assert items[1]["field_name"] == "certifying_authority"
 
 
 def test_build_resolution_queue_v1_collects_payment_receipt_unresolved_facts() -> None:
@@ -447,9 +441,9 @@ def test_build_resolution_queue_v1_collects_payment_receipt_unresolved_facts() -
 
     queue = build_resolution_queue_v1(documents)
 
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["document_counts"] == {"payment_receipt": 2}
-    assert [item["field_name"] for item in queue["items"]] == ["receipt_number", "amount"]
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["document_counts"] == {"payment_receipt": 1}
+    assert [item["field_name"] for item in queue["items"]] == ["receipt_number"]
 
 
 def test_build_resolution_queue_v1_collects_courier_transport_unresolved_facts() -> None:
@@ -481,9 +475,9 @@ def test_build_resolution_queue_v1_collects_courier_transport_unresolved_facts()
 
     queue = build_resolution_queue_v1(documents)
 
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["document_counts"] == {"courier_or_post_receipt_or_certificate_of_posting": 2}
-    assert [item["field_name"] for item in queue["items"]] == ["consignment_reference", "consignee"]
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["document_counts"] == {"courier_or_post_receipt_or_certificate_of_posting": 1}
+    assert [item["field_name"] for item in queue["items"]] == ["consignment_reference"]
 
 
 def test_build_resolution_queue_v1_collects_rendered_lc_unresolved_facts_only() -> None:
@@ -529,10 +523,45 @@ def test_build_resolution_queue_v1_collects_rendered_lc_unresolved_facts_only() 
 
     queue = build_resolution_queue_v1(documents)
 
-    assert queue["summary"]["total_items"] == 2
-    assert queue["summary"]["document_counts"] == {"letter_of_credit": 2}
-    assert [item["field_name"] for item in queue["items"]] == ["lc_number", "issue_date"]
+    assert queue["summary"]["total_items"] == 1
+    assert queue["summary"]["document_counts"] == {"letter_of_credit": 1}
+    assert [item["field_name"] for item in queue["items"]] == ["lc_number"]
     assert queue["items"][0]["priority"] == "high"
+
+
+def test_build_resolution_queue_v1_hides_unbounded_no_candidate_fields_from_user_queue() -> None:
+    documents = [
+        {
+            "document_id": "doc-bl",
+            "document_type": "bill_of_lading",
+            "filename": "Bill_of_Lading.pdf",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "bill_of_lading",
+                "facts": [
+                    {
+                        "field_name": "consignee",
+                        "value": None,
+                        "normalized_value": None,
+                        "verification_state": "unconfirmed",
+                        "origin": "document_ai",
+                    },
+                    {
+                        "field_name": "carriage_vessel_name",
+                        "value": "MV TEST VESSEL",
+                        "normalized_value": "MV TEST VESSEL",
+                        "verification_state": "candidate",
+                        "origin": "document_ai",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
+    assert queue["summary"]["total_items"] == 0
+    assert queue["summary"]["document_counts"] == {}
 
 
 def test_build_resolution_queue_v1_skips_structured_lc_without_fact_graph() -> None:

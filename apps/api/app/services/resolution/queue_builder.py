@@ -86,6 +86,15 @@ _INSPECTION_DOCUMENT_TYPES = {
     "intertek_certificate",
 }
 _USER_RESOLVABLE_STATES = {"candidate", "unconfirmed", "operator_rejected"}
+_INVOICE_USER_RESOLVABLE_FIELDS = {
+    "invoice_number",
+    "instrument_number",
+    "receipt_number",
+    "lc_reference",
+    "invoice_date",
+    "amount",
+    "currency",
+}
 _HIGH_PRIORITY_FIELDS = {
     "invoice_number",
     "instrument_number",
@@ -119,6 +128,16 @@ _LC_USER_RESOLVABLE_FIELDS = {
     "port_of_loading",
     "port_of_discharge",
 }
+_BL_USER_RESOLVABLE_FIELDS = {
+    "bl_number",
+    "consignment_reference",
+    "airway_bill_number",
+    "port_of_loading",
+    "port_of_discharge",
+    "airport_of_departure",
+    "airport_of_destination",
+    "on_board_date",
+}
 _BL_HIGH_PRIORITY_FIELDS = {"bl_number", "on_board_date", "port_of_loading", "port_of_discharge"}
 _BL_HIGH_PRIORITY_FIELDS.update(
     {
@@ -138,6 +157,18 @@ _PACKING_LIST_HIGH_PRIORITY_FIELDS = {
     "gross_weight",
     "net_weight",
 }
+_PACKING_LIST_USER_RESOLVABLE_FIELDS = {
+    "packing_list_number",
+    "document_date",
+    "total_packages",
+    "gross_weight",
+    "net_weight",
+}
+_COO_USER_RESOLVABLE_FIELDS = {
+    "certificate_number",
+    "country_of_origin",
+    "issue_date",
+}
 _COO_HIGH_PRIORITY_FIELDS = {
     "certificate_number",
     "country_of_origin",
@@ -149,6 +180,14 @@ _COO_HIGH_PRIORITY_FIELDS = {
     "declaration_reference",
     "permit_number",
 }
+_INSURANCE_USER_RESOLVABLE_FIELDS = {
+    "policy_number",
+    "certificate_number",
+    "insured_amount",
+    "currency",
+    "coverage_type",
+    "issue_date",
+}
 _INSURANCE_HIGH_PRIORITY_FIELDS = {
     "policy_number",
     "certificate_number",
@@ -156,6 +195,13 @@ _INSURANCE_HIGH_PRIORITY_FIELDS = {
     "coverage_type",
     "issuer_name",
     "issue_date",
+}
+_INSPECTION_USER_RESOLVABLE_FIELDS = {
+    "certificate_number",
+    "inspection_date",
+    "inspection_result",
+    "gross_weight",
+    "net_weight",
 }
 _INSPECTION_HIGH_PRIORITY_FIELDS = {
     "certificate_number",
@@ -194,6 +240,65 @@ def _reason_for_state(verification_state: str) -> str:
     if state == "operator_rejected":
         return "operator_rejected_candidate"
     return "system_could_not_confirm"
+
+
+def _is_populated(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    return True
+
+
+def _candidate_value_for_fact(fact: Dict[str, Any]) -> Any:
+    normalized = fact.get("normalized_value")
+    if _is_populated(normalized):
+        return normalized
+    value = fact.get("value")
+    if _is_populated(value):
+        return value
+    return None
+
+
+def _allowed_fields_for_document_type(document_type: str) -> set[str]:
+    if document_type in _LC_DOCUMENT_TYPES:
+        return _LC_USER_RESOLVABLE_FIELDS
+    if document_type in _INVOICE_DOCUMENT_TYPES:
+        return _INVOICE_USER_RESOLVABLE_FIELDS
+    if document_type in _BL_DOCUMENT_TYPES:
+        return _BL_USER_RESOLVABLE_FIELDS
+    if document_type in _PACKING_LIST_DOCUMENT_TYPES:
+        return _PACKING_LIST_USER_RESOLVABLE_FIELDS
+    if document_type in _COO_DOCUMENT_TYPES:
+        return _COO_USER_RESOLVABLE_FIELDS
+    if document_type in _INSURANCE_DOCUMENT_TYPES:
+        return _INSURANCE_USER_RESOLVABLE_FIELDS
+    if document_type in _INSPECTION_DOCUMENT_TYPES:
+        return _INSPECTION_USER_RESOLVABLE_FIELDS
+    return set()
+
+
+def _fact_is_user_resolvable(document_type: str, fact: Dict[str, Any]) -> bool:
+    verification_state = str(fact.get("verification_state") or "").strip().lower()
+    if verification_state not in _USER_RESOLVABLE_STATES:
+        return False
+
+    field_name = str(fact.get("field_name") or "").strip().lower()
+    if not field_name:
+        return False
+
+    allowed_fields = _allowed_fields_for_document_type(document_type)
+    if field_name not in allowed_fields:
+        return False
+
+    # If the system could not produce a bounded candidate value, do not push the
+    # uncertainty into the SME-facing queue. Keep it internal/system-facing.
+    if not _is_populated(_candidate_value_for_fact(fact)):
+        return False
+
+    return True
 
 
 def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -239,17 +344,15 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
         for fact in fact_graph.get("facts") or []:
             if not isinstance(fact, dict):
                 continue
-            verification_state = str(fact.get("verification_state") or "").strip().lower()
-            if verification_state not in _USER_RESOLVABLE_STATES:
+            if not _fact_is_user_resolvable(document_type, fact):
                 continue
+
+            verification_state = str(fact.get("verification_state") or "").strip().lower()
             field_name = str(fact.get("field_name") or "").strip()
             if not field_name:
                 continue
-            if (
-                document_type in _LC_DOCUMENT_TYPES
-                and field_name.strip().lower() not in _LC_USER_RESOLVABLE_FIELDS
-            ):
-                continue
+
+            candidate_value = _candidate_value_for_fact(fact)
 
             items.append(
                 ResolutionQueueItem(
@@ -264,7 +367,7 @@ def build_resolution_queue_v1(documents: List[Dict[str, Any]]) -> Dict[str, Any]
                     field_name=field_name,
                     label=_humanize_field_name(field_name),
                     priority=_priority_for_field(field_name),
-                    candidate_value=fact.get("value"),
+                    candidate_value=candidate_value,
                     normalized_value=fact.get("normalized_value"),
                     evidence_snippet=fact.get("evidence_snippet"),
                     evidence_source=fact.get("evidence_source"),
