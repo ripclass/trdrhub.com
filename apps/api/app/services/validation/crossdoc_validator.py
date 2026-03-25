@@ -86,6 +86,25 @@ def _required_document_types_from_graph(requirements_graph: Optional[Dict[str, A
     return required_types
 
 
+def _condition_texts_from_graph(requirements_graph: Optional[Dict[str, Any]]) -> List[str]:
+    if not isinstance(requirements_graph, dict):
+        return []
+
+    for key in ("documentary_conditions", "ambiguous_conditions"):
+        condition_texts: List[str] = []
+        for item in requirements_graph.get(key) or []:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("condition") or item.get("value")
+            else:
+                text = item
+            text = str(text or "").strip()
+            if text:
+                condition_texts.append(text)
+        if condition_texts:
+            return condition_texts
+    return []
+
+
 @dataclass
 class CrossDocIssue:
     """A cross-document validation issue."""
@@ -237,6 +256,15 @@ class CrossDocValidator:
         
         # Convert baseline to dict for easier access
         lc_data = self._baseline_to_dict(lc_baseline)
+        context_lc = context.get("lc") if isinstance(context, dict) and isinstance(context.get("lc"), dict) else {}
+        requirements_graph = (
+            context.get("requirements_graph_v1") if isinstance(context, dict) else None
+        ) or (
+            context.get("requirementsGraphV1") if isinstance(context, dict) else None
+        ) or context_lc.get("requirements_graph_v1") or context_lc.get("requirementsGraphV1")
+        if isinstance(requirements_graph, dict):
+            lc_data["requirements_graph_v1"] = requirements_graph
+            lc_data["requirementsGraphV1"] = requirements_graph
         
         # =========================================================================
         # LC VALIDITY CHECK (FF001) - Must be checked FIRST
@@ -1658,10 +1686,17 @@ class CrossDocValidator:
             "all_docs_require_tin": False,
             "raw_conditions": [],
         }
-        
-        conditions = lc_data.get("additional_conditions", [])
+
+        requirements_graph = (
+            lc_data.get("requirements_graph_v1")
+            or lc_data.get("requirementsGraphV1")
+        )
+        graph_conditions = _condition_texts_from_graph(requirements_graph)
+        conditions = graph_conditions or lc_data.get("additional_conditions", [])
+        condition_source = "requirements_graph_v1" if graph_conditions else "additional_conditions"
         logger.info(
-            "47A Parser: additional_conditions=%s (type=%s)",
+            "47A Parser: source=%s additional_conditions=%s (type=%s)",
+            condition_source,
             str(conditions)[:200] if conditions else "EMPTY",
             type(conditions).__name__,
         )

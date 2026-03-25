@@ -219,13 +219,13 @@ async def execute_validation_pipeline(
         # =================================================================
         db_rule_issues = []
         db_rules_debug = {"enabled": False, "status": "not_started"}
+        lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
+        requirements_graph_v1 = payload.get("requirements_graph_v1")
         try:
             # =============================================================
             # DYNAMIC JURISDICTION & DOMAIN DETECTION
             # Detects relevant rulesets based on LC and document content
             # =============================================================
-            lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
-            requirements_graph_v1 = payload.get("requirements_graph_v1")
             if not isinstance(requirements_graph_v1, dict):
                 requirements_graph_v1 = _response_shaping.build_requirements_graph_v1(
                     payload.get("documents") or extracted_context.get("documents") or []
@@ -419,6 +419,10 @@ async def execute_validation_pipeline(
             insurance=payload.get("insurance"),
             certificate_of_origin=payload.get("certificate_of_origin"),
             packing_list=payload.get("packing_list"),
+            context={
+                "lc": lc_ctx if isinstance(lc_ctx, dict) else {},
+                "requirements_graph_v1": requirements_graph_v1 if isinstance(requirements_graph_v1, dict) else None,
+            },
         )
         v2_crossdoc_issues = crossdoc_result.issues
         logger.info("V2 CrossDocValidator found %d issues", len(v2_crossdoc_issues))
