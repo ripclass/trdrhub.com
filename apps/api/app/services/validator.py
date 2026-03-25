@@ -574,7 +574,8 @@ def activate_rules_for_lc(
     lc_context = lc_fields or {}
     lc_text = _build_lc_text_blob(lc_context, doc_set)
     doc_requirements = _infer_document_requirements(lc_context, lc_text, doc_set)
-    toggles = _derive_rule_toggles(lc_context, lc_text, doc_requirements)
+    requirements_graph = _resolve_requirements_graph(lc_context, doc_set)
+    toggles = _derive_rule_toggles(lc_context, lc_text, doc_requirements, requirements_graph)
     goods_ready = _has_goods_context(lc_context, doc_set)
     ports_ready = _has_complete_ports(lc_context)
     lc_type = _resolve_workflow_lc_type(lc_context, doc_set)
@@ -953,16 +954,228 @@ def _derive_rule_toggles(
     lc_context: Dict[str, Any],
     lc_text: str,
     doc_requirements: Dict[str, bool],
+    requirements_graph: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, bool]:
+    graph_toggles = _derive_rule_toggles_from_graph(requirements_graph)
     text = lc_text or ""
     toggles = {
         "third_party_allowed": _text_contains_any(text, ["third party documents acceptable", "third-party documents acceptable", "third party docs acceptable"]),
-        "non_negotiable_allowed": _text_contains_any(text, ["non-negotiable documents acceptable", "non negotiable documents acceptable"]),
+        "non_negotiable_allowed": graph_toggles["non_negotiable_allowed"] or _text_contains_any(text, ["non-negotiable documents acceptable", "non negotiable documents acceptable"]),
         "hs_code_required": _text_contains_any(text, ["hs code", "harmonized system", "hs-code"]),
-        "signed_invoice_required": _text_contains_any(text, ["signed commercial invoice", "signed invoice"]),
+        "signed_invoice_required": graph_toggles["signed_invoice_required"] or _text_contains_any(text, ["signed commercial invoice", "signed invoice"]),
         "insurance_required": doc_requirements.get("insurance_certificate", False),
     }
     return toggles
+
+
+def _derive_rule_toggles_from_graph(requirements_graph: Optional[Dict[str, Any]]) -> Dict[str, bool]:
+    toggles = {
+        "non_negotiable_allowed": False,
+        "signed_invoice_required": False,
+    }
+    if not isinstance(requirements_graph, dict):
+        return toggles
+
+    def _graph_document_type(*values: Any) -> Optional[str]:
+        for value in values:
+            if not value:
+                continue
+            raw_token = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+            normalized = _normalize_doc_label(raw_token)
+            if normalized:
+                return normalized
+            if raw_token in REQUIREMENTS_GRAPH_TRANSPORT_TYPES or raw_token in REQUIREMENTS_GRAPH_INVOICE_TYPES:
+                return raw_token
+        return None
+
+    for entry in requirements_graph.get("required_documents") or []:
+        if not isinstance(entry, dict):
+            continue
+        document_type = _graph_document_type(
+            entry.get("code")
+            or entry.get("document_type")
+            or entry.get("type")
+            or entry.get("name")
+            or entry.get("display_name")
+        )
+        text_bits = [
+            entry.get("raw_text"),
+            entry.get("display_name"),
+            entry.get("exact_wording"),
+        ]
+        text_blob = " ".join(str(item or "").strip().lower() for item in text_bits if str(item or "").strip())
+
+        if document_type in REQUIREMENTS_GRAPH_INVOICE_TYPES:
+            if entry.get("signed") is True or "signed" in text_blob:
+                toggles["signed_invoice_required"] = True
+
+        if document_type in REQUIREMENTS_GRAPH_TRANSPORT_TYPES:
+            negotiable = entry.get("negotiable")
+            if negotiable is False or "non-negotiable" in text_blob or "non negotiable" in text_blob:
+                toggles["non_negotiable_allowed"] = True
+
+    for requirement in requirements_graph.get("condition_requirements") or []:
+        if not isinstance(requirement, dict):
+            continue
+        if str(requirement.get("requirement_type") or "").strip().lower() != "document_exact_wording":
+            continue
+
+        document_type = _graph_document_type(requirement.get("document_type"))
+        text_blob = " ".join(
+            str(item or "").strip().lower()
+            for item in (
+                requirement.get("exact_wording"),
+                requirement.get("source_text"),
+            )
+            if str(item or "").strip()
+        )
+        if not text_blob:
+            continue
+
+        if document_type in REQUIREMENTS_GRAPH_INVOICE_TYPES and "signed" in text_blob:
+            toggles["signed_invoice_required"] = True
+        if document_type in REQUIREMENTS_GRAPH_TRANSPORT_TYPES and (
+            "non-negotiable" in text_blob or "non negotiable" in text_blob
+        ):
+            toggles["non_negotiable_allowed"] = True
+
+    return toggles
+
+
+def _derive_structured_requirement_context_from_graph(
+    requirements_graph: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    structured: Dict[str, Any] = {
+        "document_quantities": {},
+        "document_exact_wording": {},
+        "document_field_presence": {},
+        "identifier_presence": {},
+        "toggles": _derive_rule_toggles_from_graph(requirements_graph),
+    }
+    if not isinstance(requirements_graph, dict):
+        return structured
+
+    def _graph_document_type(value: Any) -> Optional[str]:
+        if not value:
+            return None
+        raw_token = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+        normalized = _normalize_doc_label(raw_token)
+        if normalized:
+            return normalized
+        if (
+            raw_token in REQUIREMENTS_GRAPH_TRANSPORT_TYPES
+            or raw_token in REQUIREMENTS_GRAPH_INVOICE_TYPES
+            or raw_token in REQUIREMENTS_GRAPH_INSURANCE_TYPES
+            or raw_token
+            in {
+                "packing_list",
+                "certificate_of_origin",
+                "inspection_certificate",
+                "beneficiary_certificate",
+                "letter_of_credit",
+            }
+        ):
+            return raw_token
+        return raw_token or None
+
+    def _append_unique(container: Dict[str, List[Any]], key: str, value: Any) -> None:
+        if value in (None, "", [], {}):
+            return
+        bucket = container.setdefault(key, [])
+        if value not in bucket:
+            bucket.append(value)
+
+    for entry in requirements_graph.get("required_documents") or []:
+        if not isinstance(entry, dict):
+            continue
+        document_type = _graph_document_type(
+            entry.get("code")
+            or entry.get("document_type")
+            or entry.get("type")
+            or entry.get("name")
+            or entry.get("display_name")
+        )
+        if not document_type:
+            continue
+
+        originals = entry.get("originals")
+        copies = entry.get("copies")
+        if originals is not None or copies is not None:
+            structured["document_quantities"][document_type] = {
+                "originals_required": originals,
+                "copies_required": copies,
+            }
+
+        exact_wording = str(entry.get("exact_wording") or "").strip()
+        if exact_wording:
+            _append_unique(
+                structured["document_exact_wording"],
+                document_type,
+                exact_wording,
+            )
+
+    for requirement in requirements_graph.get("condition_requirements") or []:
+        if not isinstance(requirement, dict):
+            continue
+        requirement_type = str(requirement.get("requirement_type") or "").strip().lower()
+        document_type = _graph_document_type(requirement.get("document_type"))
+
+        if requirement_type == "document_quantity" and document_type:
+            structured["document_quantities"][document_type] = {
+                "originals_required": requirement.get("originals_required"),
+                "copies_required": requirement.get("copies_required"),
+            }
+            continue
+
+        if requirement_type == "document_exact_wording" and document_type:
+            exact_wording = str(requirement.get("exact_wording") or "").strip()
+            if exact_wording:
+                _append_unique(
+                    structured["document_exact_wording"],
+                    document_type,
+                    exact_wording,
+                )
+            continue
+
+        if requirement_type == "document_field_presence" and document_type:
+            field_name = str(requirement.get("field_name") or "").strip()
+            if field_name:
+                _append_unique(
+                    structured["document_field_presence"],
+                    document_type,
+                    field_name,
+                )
+            continue
+
+        if requirement_type == "identifier_presence":
+            identifier_type = str(requirement.get("identifier_type") or "").strip()
+            identifier_value = str(requirement.get("value") or "").strip()
+            if identifier_type and identifier_value:
+                _append_unique(
+                    structured["identifier_presence"],
+                    identifier_type,
+                    identifier_value,
+                )
+
+    return structured
+
+
+def _apply_requirements_graph_to_rule_context(
+    document_data: Dict[str, Any],
+    requirements_graph: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not isinstance(requirements_graph, dict):
+        return document_data
+
+    structured = _derive_structured_requirement_context_from_graph(requirements_graph)
+    payload = copy.deepcopy(document_data)
+    lc_context = payload.get("lc")
+    if not isinstance(lc_context, dict):
+        lc_context = {}
+    lc_context["requirements_structured_v1"] = structured
+    payload["lc"] = lc_context
+    payload["_requirements_structured_v1"] = structured
+    return payload
 
 
 def _rule_matches_doc_requirements(
@@ -1026,6 +1239,9 @@ def _rule_targets_negotiability(rule: Dict[str, Any]) -> bool:
     tags = _normalize_tags(rule)
     if tags.intersection(NEGOTIABILITY_TAGS):
         return True
+    for path in _extract_rule_field_paths(rule):
+        if "requirements_structured_v1.toggles.non_negotiable_allowed" in path:
+            return True
     title = (rule.get("title") or "").lower()
     return "negotiable" in title
 
@@ -1042,6 +1258,9 @@ def _rule_targets_signed_invoice(rule: Dict[str, Any]) -> bool:
     tags = _normalize_tags(rule)
     if tags.intersection(SIGNED_INVOICE_TAGS):
         return True
+    for path in _extract_rule_field_paths(rule):
+        if "requirements_structured_v1.toggles.signed_invoice_required" in path:
+            return True
     title = (rule.get("title") or "").lower()
     return "signed invoice" in title
 
@@ -1088,6 +1307,29 @@ def _infer_doc_from_field(field_path: Optional[str]) -> Optional[str]:
     if not field_path:
         return None
     lowered = field_path.lower()
+    parts = [part for part in lowered.split(".") if part]
+    if "requirements_structured_v1" in parts:
+        idx = parts.index("requirements_structured_v1")
+        if idx + 2 < len(parts):
+            bucket = parts[idx + 1]
+            document_token = parts[idx + 2]
+            if bucket in {"document_quantities", "document_exact_wording", "document_field_presence"}:
+                normalized = _normalize_doc_label(document_token)
+                if normalized:
+                    return normalized
+                if document_token in REQUIREMENTS_GRAPH_TRANSPORT_TYPES:
+                    return "bill_of_lading"
+                if document_token in REQUIREMENTS_GRAPH_INVOICE_TYPES:
+                    return "commercial_invoice"
+                if document_token in REQUIREMENTS_GRAPH_INSURANCE_TYPES:
+                    return "insurance_certificate"
+                if document_token in {
+                    "packing_list",
+                    "certificate_of_origin",
+                    "inspection_certificate",
+                    "beneficiary_certificate",
+                }:
+                    return document_token
     for prefix, doc in FIELD_PREFIX_TO_DOC.items():
         if lowered.startswith(prefix):
             return doc
@@ -1096,13 +1338,14 @@ def _infer_doc_from_field(field_path: Optional[str]) -> Optional[str]:
 
 def _extract_rule_field_paths(rule: Dict[str, Any]) -> List[str]:
     paths: List[str] = []
-    for condition in rule.get("conditions") or []:
-        field_path = condition.get("field") or condition.get("field_path")
-        if isinstance(field_path, str):
-            paths.append(field_path.lower())
-        value_ref = condition.get("value_ref")
-        if isinstance(value_ref, str):
-            paths.append(value_ref.lower())
+    for bucket_name in ("applies_if", "conditions"):
+        for condition in rule.get(bucket_name) or []:
+            field_path = condition.get("field") or condition.get("field_path")
+            if isinstance(field_path, str):
+                paths.append(field_path.lower())
+            value_ref = condition.get("value_ref")
+            if isinstance(value_ref, str):
+                paths.append(value_ref.lower())
     return paths
 
 
@@ -1592,14 +1835,19 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
         if rule.get("document_type") in (None, "", document_type, "lc")
     ]
     doc_scope_count = len(filtered_rules_with_meta)
-    lc_type_context = _resolve_workflow_lc_type(document_data.get("lc") or {}, document_data)
+    lc_context = document_data.get("lc") or {}
+    requirements_graph = _resolve_requirements_graph(lc_context, document_data)
+    if isinstance(requirements_graph, dict):
+        document_data = _apply_requirements_graph_to_rule_context(document_data, requirements_graph)
+        lc_context = document_data.get("lc") or lc_context
+    lc_type_context = _resolve_workflow_lc_type(lc_context, document_data)
     filtered_rules_with_meta = [
         (rule, meta)
         for rule, meta in filtered_rules_with_meta
         if _rule_matches_lc_type(rule, (meta or {}).get("domain"), lc_type_context)
     ]
     activated_rules_with_meta = activate_rules_for_lc(
-        document_data.get("lc") or {},
+        lc_context,
         filtered_rules_with_meta,
         document_data,
     )

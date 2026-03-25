@@ -2518,6 +2518,104 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
                 if val is not None and val != "":
                     return val
         return None
+
+    def _graph_document_display_name(document_type: Any) -> str:
+        token = str(document_type or "").strip()
+        if not token:
+            return "Document"
+        required_documents = requirements_graph.get("required_documents") if isinstance(requirements_graph, dict) else []
+        if isinstance(required_documents, list):
+            for entry in required_documents:
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get("code") or entry.get("document_type") or "").strip().lower() != token.lower():
+                    continue
+                label = (
+                    entry.get("display_name")
+                    or entry.get("name")
+                    or entry.get("code")
+                    or entry.get("document_type")
+                )
+                if label:
+                    return str(label)
+        return token.replace("_", " ").title()
+
+    def _graph_required_document_texts() -> List[str]:
+        if not isinstance(requirements_graph, dict):
+            return []
+        texts: List[str] = []
+        seen: Set[str] = set()
+        for entry in requirements_graph.get("required_documents") or []:
+            if not isinstance(entry, dict):
+                continue
+            document_type = str(entry.get("code") or entry.get("document_type") or "").strip()
+            label = (
+                entry.get("display_name")
+                or entry.get("name")
+                or document_type
+            )
+            exact_wording = str(entry.get("exact_wording") or "").strip()
+            originals = entry.get("originals")
+            copies = entry.get("copies")
+            text_value = None
+            if exact_wording:
+                text_value = exact_wording
+            else:
+                quantity_parts: List[str] = []
+                try:
+                    originals_int = int(originals) if originals is not None else 0
+                except (TypeError, ValueError):
+                    originals_int = 0
+                try:
+                    copies_int = int(copies) if copies is not None else 0
+                except (TypeError, ValueError):
+                    copies_int = 0
+                if originals_int > 0:
+                    quantity_parts.append(f"{originals_int} original{'s' if originals_int != 1 else ''}")
+                if copies_int > 0:
+                    quantity_parts.append(f"{copies_int} cop{'ies' if copies_int != 1 else 'y'}")
+                if quantity_parts:
+                    text_value = f"{label} requires {' and '.join(quantity_parts)}"
+            if not text_value:
+                text_value = str(label or document_type or "").strip()
+            if text_value and text_value not in seen:
+                seen.add(text_value)
+                texts.append(text_value)
+        return texts
+
+    def _graph_condition_requirement_texts() -> List[str]:
+        if not isinstance(requirements_graph, dict):
+            return []
+        texts: List[str] = []
+        seen: Set[str] = set()
+        for requirement in requirements_graph.get("condition_requirements") or []:
+            if not isinstance(requirement, dict):
+                continue
+            requirement_type = str(requirement.get("requirement_type") or "").strip().lower()
+            text_value = None
+            if requirement_type == "document_quantity":
+                document_label = _graph_document_display_name(requirement.get("document_type"))
+                try:
+                    originals_int = int(requirement.get("originals_required")) if requirement.get("originals_required") is not None else 0
+                except (TypeError, ValueError):
+                    originals_int = 0
+                try:
+                    copies_int = int(requirement.get("copies_required")) if requirement.get("copies_required") is not None else 0
+                except (TypeError, ValueError):
+                    copies_int = 0
+                quantity_parts: List[str] = []
+                if originals_int > 0:
+                    quantity_parts.append(f"{originals_int} original{'s' if originals_int != 1 else ''}")
+                if copies_int > 0:
+                    quantity_parts.append(f"{copies_int} cop{'ies' if copies_int != 1 else 'y'}")
+                if quantity_parts:
+                    text_value = f"{document_label} requires {' and '.join(quantity_parts)}"
+            elif requirement_type == "document_exact_wording":
+                text_value = str(requirement.get("exact_wording") or "").strip()
+            if text_value and text_value not in seen:
+                seen.add(text_value)
+                texts.append(text_value)
+        return texts
     
     # =====================================================================
     # LC Number (MT700 Field 20)
@@ -2748,7 +2846,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
     if not documents_required:
         documents_required = blocks.get("46A")  # MT700 field 46A - Documents Required
     if not documents_required and isinstance(requirements_graph, dict):
-        documents_required = requirements_graph.get("required_documents")
+        graph_required_documents = _graph_required_document_texts()
+        documents_required = graph_required_documents or requirements_graph.get("required_documents")
         if not documents_required:
             documents_required = requirements_graph.get("required_document_types")
 
@@ -2790,7 +2889,12 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
             for item in (requirements_graph.get("ambiguous_conditions") or [])
             if str(item or "").strip()
         ]
-        graph_conditions = graph_documentary_conditions or graph_ambiguous_conditions
+        graph_structured_condition_texts = _graph_condition_requirement_texts()
+        graph_conditions = []
+        for item in graph_documentary_conditions + graph_ambiguous_conditions + graph_structured_condition_texts:
+            normalized_item = str(item or "").strip()
+            if normalized_item and normalized_item not in graph_conditions:
+                graph_conditions.append(normalized_item)
         if graph_conditions:
             additional_conditions = graph_conditions
 

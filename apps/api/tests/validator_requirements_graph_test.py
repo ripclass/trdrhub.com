@@ -26,6 +26,9 @@ def _load_validator_requirement_symbols() -> Dict[str, Any]:
     target_assignments = {
         "DOC_KEYWORDS",
         "DOC_SYNONYMS",
+        "FIELD_PREFIX_TO_DOC",
+        "NEGOTIABILITY_TAGS",
+        "SIGNED_INVOICE_TAGS",
         "REQUIREMENTS_GRAPH_TRANSPORT_TYPES",
         "REQUIREMENTS_GRAPH_INVOICE_TYPES",
         "REQUIREMENTS_GRAPH_INSURANCE_TYPES",
@@ -33,11 +36,20 @@ def _load_validator_requirement_symbols() -> Dict[str, Any]:
     target_functions = {
         "_get_lc_classification",
         "_normalize_doc_label",
+        "_infer_doc_from_field",
+        "_extract_rule_field_paths",
+        "_normalize_tags",
         "_text_contains_any",
         "_extract_requested_documents",
         "_fallback_documents_from_payload",
         "_resolve_requirements_graph",
         "_infer_document_requirements",
+        "_derive_rule_toggles_from_graph",
+        "_derive_rule_toggles",
+        "_derive_structured_requirement_context_from_graph",
+        "_rule_targets_negotiability",
+        "_rule_targets_signed_invoice",
+        "_rule_targets_documents",
     }
 
     selected_nodes: List[ast.AST] = []
@@ -121,3 +133,169 @@ def test_infer_document_requirements_reads_graph_from_extracted_context_document
     assert requirements["packing_list"] is True
     assert requirements["certificate_of_origin"] is True
     assert requirements["commercial_invoice"] is False
+
+
+def test_derive_rule_toggles_prefers_structured_required_document_metadata() -> None:
+    ns = _load_validator_requirement_symbols()
+    derive_rule_toggles = ns["_derive_rule_toggles"]
+
+    toggles = derive_rule_toggles(
+        {},
+        "",
+        {"insurance_certificate": False},
+        {
+            "required_documents": [
+                {
+                    "code": "commercial_invoice",
+                    "signed": True,
+                    "exact_wording": "SIGNED COMMERCIAL INVOICE IN 1 ORIGINAL",
+                },
+                {
+                    "code": "bill_of_lading",
+                    "negotiable": False,
+                    "exact_wording": "NON-NEGOTIABLE SEA WAYBILL ACCEPTABLE",
+                },
+            ]
+        },
+    )
+
+    assert toggles["signed_invoice_required"] is True
+    assert toggles["non_negotiable_allowed"] is True
+
+
+def test_derive_rule_toggles_prefers_structured_exact_wording_requirements() -> None:
+    ns = _load_validator_requirement_symbols()
+    derive_rule_toggles = ns["_derive_rule_toggles"]
+
+    toggles = derive_rule_toggles(
+        {},
+        "",
+        {"insurance_certificate": False},
+        {
+            "condition_requirements": [
+                {
+                    "requirement_type": "document_exact_wording",
+                    "document_type": "commercial_invoice",
+                    "exact_wording": "SIGNED COMMERCIAL INVOICE",
+                },
+                {
+                    "requirement_type": "document_exact_wording",
+                    "document_type": "sea_waybill",
+                    "exact_wording": "NON NEGOTIABLE SEA WAYBILL",
+                },
+            ]
+        },
+    )
+
+    assert toggles["signed_invoice_required"] is True
+    assert toggles["non_negotiable_allowed"] is True
+
+
+def test_derive_structured_requirement_context_from_graph_compiles_quantities_wording_and_identifiers() -> None:
+    ns = _load_validator_requirement_symbols()
+    derive_structured = ns["_derive_structured_requirement_context_from_graph"]
+
+    structured = derive_structured(
+        {
+            "required_documents": [
+                {
+                    "code": "bill_of_lading",
+                    "originals": 3,
+                    "copies": 2,
+                    "exact_wording": "FULL SET CLEAN ON BOARD OCEAN BILLS OF LADING",
+                }
+            ],
+            "condition_requirements": [
+                {
+                    "requirement_type": "document_field_presence",
+                    "document_type": "bill_of_lading",
+                    "field_name": "voyage_number",
+                },
+                {
+                    "requirement_type": "document_exact_wording",
+                    "document_type": "sea_waybill",
+                    "exact_wording": "NON NEGOTIABLE SEA WAYBILL",
+                },
+                {
+                    "requirement_type": "identifier_presence",
+                    "identifier_type": "po_number",
+                    "value": "GBE-44592",
+                },
+            ],
+        }
+    )
+
+    assert structured["document_quantities"]["bill_of_lading"] == {
+        "originals_required": 3,
+        "copies_required": 2,
+    }
+    assert structured["document_exact_wording"]["bill_of_lading"] == [
+        "FULL SET CLEAN ON BOARD OCEAN BILLS OF LADING"
+    ]
+    assert structured["document_exact_wording"]["sea_waybill"] == [
+        "NON NEGOTIABLE SEA WAYBILL"
+    ]
+    assert structured["document_field_presence"]["bill_of_lading"] == ["voyage_number"]
+    assert structured["identifier_presence"]["po_number"] == ["GBE-44592"]
+    assert structured["toggles"]["non_negotiable_allowed"] is True
+
+
+def test_validate_document_async_injects_requirements_structured_context_before_rule_evaluation() -> None:
+    source = VALIDATOR_PATH.read_text(encoding="utf-8")
+
+    assert 'document_data = _apply_requirements_graph_to_rule_context(document_data, requirements_graph)' in source
+    assert 'lc_context["requirements_structured_v1"] = structured' in source
+    assert 'payload["_requirements_structured_v1"] = structured' in source
+
+
+def test_rule_target_helpers_detect_structured_toggle_paths() -> None:
+    ns = _load_validator_requirement_symbols()
+    extract_rule_field_paths = ns["_extract_rule_field_paths"]
+    rule_targets_negotiability = ns["_rule_targets_negotiability"]
+    rule_targets_signed_invoice = ns["_rule_targets_signed_invoice"]
+
+    negotiability_rule = {
+        "applies_if": [
+            {
+                "field": "lc.requirements_structured_v1.toggles.non_negotiable_allowed",
+                "operator": "equals",
+                "value": True,
+            }
+        ],
+        "conditions": [
+            {"field": "sea_waybill.signature_party", "operator": "equals", "value": "carrier"}
+        ]
+    }
+    signed_invoice_rule = {
+        "conditions": [
+            {"field": "_requirements_structured_v1.toggles.signed_invoice_required", "operator": "equals", "value": True}
+        ]
+    }
+
+    assert "lc.requirements_structured_v1.toggles.non_negotiable_allowed" in extract_rule_field_paths(
+        negotiability_rule
+    )
+    assert rule_targets_negotiability(negotiability_rule) is True
+    assert rule_targets_signed_invoice(signed_invoice_rule) is True
+
+
+def test_rule_targets_documents_infers_doc_from_structured_requirement_paths() -> None:
+    ns = _load_validator_requirement_symbols()
+    rule_targets_documents = ns["_rule_targets_documents"]
+
+    rule = {
+        "conditions": [
+            {
+                "field": "lc.requirements_structured_v1.document_quantities.bill_of_lading.originals_required",
+                "operator": "greater_than_or_equal",
+                "value": 3,
+            },
+            {
+                "field": "_requirements_structured_v1.document_exact_wording.sea_waybill.0",
+                "operator": "contains",
+                "value": "NON NEGOTIABLE",
+            },
+        ]
+    }
+
+    assert rule_targets_documents(rule) == {"bill_of_lading"}
