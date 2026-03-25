@@ -26,6 +26,12 @@ from app.services.validation.alias_normalization import (
 logger = logging.getLogger(__name__)
 
 
+_GRAPH_CRITICAL_DOC_TYPES = {
+    "inspection_certificate": ("Inspection Certificate", "issuer"),
+    "beneficiary_certificate": ("Beneficiary Certificate", "must_state"),
+}
+
+
 class IssueSeverity(str, Enum):
     CRITICAL = "critical"
     MAJOR = "major"
@@ -141,6 +147,47 @@ def parse_lc_requirements_sync(lc_text: str) -> Dict[str, Any]:
     
     return {
         "required_documents": docs,
+        "bl_must_show": bl_must_show,
+    }
+
+
+def _parse_lc_requirements_from_graph(requirements_graph: Dict[str, Any]) -> Dict[str, Any]:
+    required_docs: List[Dict[str, Any]] = []
+    bl_must_show: List[str] = []
+
+    required_types = {
+        str(item or "").strip().lower()
+        for item in (requirements_graph.get("required_document_types") or [])
+        if str(item or "").strip()
+    }
+    for doc_type, (display_name, _) in _GRAPH_CRITICAL_DOC_TYPES.items():
+        if doc_type in required_types:
+            required_docs.append(
+                {
+                    "document_type": doc_type,
+                    "display_name": display_name,
+                }
+            )
+
+    conditions_text = " ".join(
+        str(item or "").strip()
+        for item in (
+            list(requirements_graph.get("documentary_conditions") or [])
+            + list(requirements_graph.get("ambiguous_conditions") or [])
+        )
+        if str(item or "").strip()
+    ).upper()
+
+    if conditions_text:
+        if "VOYAGE" in conditions_text or " VOY " in f" {conditions_text} ":
+            bl_must_show.append("voyage_number")
+        if "GROSS" in conditions_text and "WEIGHT" in conditions_text:
+            bl_must_show.append("gross_weight")
+        if "NET" in conditions_text and "WEIGHT" in conditions_text:
+            bl_must_show.append("net_weight")
+
+    return {
+        "required_documents": required_docs,
         "bl_must_show": bl_must_show,
     }
 
@@ -425,8 +472,18 @@ async def run_ai_validation(
     # =================================================================
     logger.info("Step 1: Parsing LC requirements...")
     metadata["checks_performed"].append("lc_requirement_parsing")
-    
-    requirements = parse_lc_requirements_sync(lc_text)
+
+    requirements_graph = (
+        lc_data.get("requirements_graph_v1")
+        or lc_data.get("requirementsGraphV1")
+        or (extracted_context.get("lc") or {}).get("requirements_graph_v1")
+        or (extracted_context.get("lc") or {}).get("requirementsGraphV1")
+        or extracted_context.get("requirements_graph_v1")
+    )
+    if isinstance(requirements_graph, dict):
+        requirements = _parse_lc_requirements_from_graph(requirements_graph)
+    else:
+        requirements = parse_lc_requirements_sync(lc_text)
     required_docs = requirements.get("required_documents", [])
     bl_must_show = requirements.get("bl_must_show", [])
     

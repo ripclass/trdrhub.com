@@ -491,6 +491,12 @@ async def execute_validation_pipeline(
             mt700.get("goods") or
             []
         )
+        lc_data_for_ai["requirements_graph_v1"] = (
+            lc_context.get("requirements_graph_v1")
+            or lc_context.get("requirementsGraphV1")
+            or payload.get("requirements_graph_v1")
+            or extracted_context.get("requirements_graph_v1")
+        )
 
         # Get documents from both payload and extracted_context
         documents_for_ai = (
