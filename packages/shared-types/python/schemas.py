@@ -529,6 +529,9 @@ class StructuredResultIssue(BaseModel):
     description: Optional[str] = None
     reference: Optional[str] = None
     ucp_reference: Optional[str] = None
+    requirement_source: Optional[str] = None
+    requirement_kind: Optional[str] = None
+    requirement_text: Optional[str] = None
 
 
 class DocumentRiskEntry(BaseModel):
@@ -831,6 +834,9 @@ class IssueCard(BaseModel):
     extraction_confidence: Optional[float] = None
     amendment_available: Optional[bool] = None
     workflow_lane: Optional[WorkflowLane] = None
+    requirement_source: Optional[str] = None
+    requirement_kind: Optional[str] = None
+    requirement_text: Optional[str] = None
 
 
 class ReferenceIssue(BaseModel):

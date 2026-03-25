@@ -74,6 +74,9 @@ class Issue:
     field_name: Optional[str] = None
     missing_reason: Optional[str] = None
     ruleset_domain: str = "icc.lcopilot"
+    requirement_source: Optional[str] = None
+    requirement_kind: Optional[str] = None
+    requirement_text: Optional[str] = None
     
     # Display options
     display_card: bool = True
@@ -114,6 +117,9 @@ class Issue:
             "field_name": self.field_name,
             "missing_reason": self.missing_reason,
             "ruleset_domain": self.ruleset_domain,
+            "requirement_source": self.requirement_source,
+            "requirement_kind": self.requirement_kind,
+            "requirement_text": self.requirement_text,
             "display_card": self.display_card,
             "blocks_validation": self.blocks_validation,
             "auto_generated": self.auto_generated,
@@ -475,6 +481,9 @@ class IssueEngine:
             source=source,
             missing_reason=rule_issue.get("missing_reason"),
             ruleset_domain=domain,
+            requirement_source=rule_issue.get("requirement_source"),
+            requirement_kind=rule_issue.get("requirement_kind"),
+            requirement_text=rule_issue.get("requirement_text"),
             display_card=rule_issue.get("display_card", True),
             blocks_validation=rule_issue.get("blocks_validation", False),
             ucp_reference=rule_issue.get("ucp_reference"),

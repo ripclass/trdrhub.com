@@ -64,6 +64,8 @@ def _load_crossdoc_exact_wording_symbols() -> Dict[str, Any]:
             INSURANCE="insurance_certificate",
             CERTIFICATE_OF_ORIGIN="certificate_of_origin",
             PACKING_LIST="packing_list",
+            INSPECTION_CERT="inspection_certificate",
+            BENEFICIARY_CERT="beneficiary_certificate",
         ),
     }
     exec(compile(module_ast, str(CROSSDOC_VALIDATOR_PATH), "exec"), namespace)
@@ -115,6 +117,33 @@ def test_exact_wording_requirements_from_graph_collects_required_documents_and_c
     }
 
 
+def test_exact_wording_requirements_from_graph_supports_inspection_and_beneficiary_docs() -> None:
+    ns = _load_crossdoc_exact_wording_symbols()
+    extract_requirements = ns["_exact_wording_requirements_from_graph"]
+
+    requirements = extract_requirements(
+        {
+            "condition_requirements": [
+                {
+                    "requirement_type": "document_exact_wording",
+                    "document_type": "inspection_certificate",
+                    "exact_wording": "QUALITY INSPECTION CERTIFICATE",
+                },
+                {
+                    "requirement_type": "document_exact_wording",
+                    "document_type": "beneficiary_certificate",
+                    "exact_wording": "WE HEREBY CERTIFY GOODS ARE BRAND NEW",
+                },
+            ]
+        }
+    )
+
+    assert requirements == {
+        "inspection_certificate": ["QUALITY INSPECTION CERTIFICATE"],
+        "beneficiary_certificate": ["WE HEREBY CERTIFY GOODS ARE BRAND NEW"],
+    }
+
+
 def test_validate_exact_wording_requirements_flags_missing_invoice_wording() -> None:
     ns = _load_crossdoc_exact_wording_symbols()
     validator = _build_validator_shim(ns)
@@ -130,6 +159,9 @@ def test_validate_exact_wording_requirements_flags_missing_invoice_wording() -> 
     assert issues[0]["rule_id"] == "CROSSDOC-EXACT-WORDING"
     assert issues[0]["title"] == "LC-required wording missing from Commercial Invoice"
     assert "WE HEREBY CERTIFY THAT THIS INVOICE IS TRUE AND CORRECT" in issues[0]["expected"]
+    assert issues[0]["requirement_source"] == "requirements_graph_v1"
+    assert issues[0]["requirement_kind"] == "document_exact_wording"
+    assert issues[0]["requirement_text"] == "WE HEREBY CERTIFY THAT THIS INVOICE IS TRUE AND CORRECT"
 
 
 def test_validate_all_wires_exact_wording_requirements_from_graph() -> None:
@@ -137,3 +169,13 @@ def test_validate_all_wires_exact_wording_requirements_from_graph() -> None:
 
     assert "exact_wording_requirements = _exact_wording_requirements_from_graph(requirements_graph)" in source
     assert "self._validate_exact_wording_requirements(" in source
+    assert "inspection_certificate: Optional[Dict[str, Any]] = None" in source
+    assert "beneficiary_certificate: Optional[Dict[str, Any]] = None" in source
+
+
+def test_issue_engine_preserves_requirement_markers_on_rule_conversion() -> None:
+    source = (ROOT / "app" / "services" / "validation" / "issue_engine.py").read_text(encoding="utf-8")
+
+    assert 'requirement_source=rule_issue.get("requirement_source")' in source
+    assert 'requirement_kind=rule_issue.get("requirement_kind")' in source
+    assert 'requirement_text=rule_issue.get("requirement_text")' in source

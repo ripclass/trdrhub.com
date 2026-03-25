@@ -330,6 +330,37 @@ describe('results mapper - option e payload', () => {
     expect(mapped.documents[0]?.extractionResolution?.fields[0]?.candidateValue).toBe('2026-04-20');
   });
 
+  it('classifies requirements-driven exact-wording issues as LC required statements', () => {
+    const payload = JSON.parse(JSON.stringify(optionEFixture));
+    payload.structured_result.issues = [
+      {
+        id: 'wording-1',
+        title: 'LC-required wording missing from Beneficiary Certificate',
+        severity: 'critical',
+        documents: ['Beneficiary_Certificate.pdf'],
+        expected: "Beneficiary Certificate contains exact wording 'WE HEREBY CERTIFY GOODS ARE BRAND NEW'",
+        found: 'Beneficiary Certificate does not contain the required wording.',
+        suggested_fix: 'Review and correct the discrepancy.',
+        description: 'LC requires exact wording on Beneficiary Certificate.',
+        rule: 'CROSSDOC-EXACT-WORDING',
+        ruleset_domain: 'icc.lcopilot.crossdoc',
+        requirement_source: 'requirements_graph_v1',
+        requirement_kind: 'document_exact_wording',
+        requirement_text: 'WE HEREBY CERTIFY GOODS ARE BRAND NEW',
+      },
+    ];
+
+    const mapped = buildValidationResponse(payload);
+    expect(mapped.issues[0]?.bucket).toBe('LC Required Statements');
+    expect(mapped.issues[0]?.fix_owner).toBe('Beneficiary');
+    expect(mapped.issues[0]?.workflow_lane).toBe('documentary_review');
+    expect(mapped.issues[0]?.lc_basis).toContain('WE HEREBY CERTIFY GOODS ARE BRAND NEW');
+    expect(mapped.issues[0]?.next_action).toBe(
+      'Update the document to include the exact LC-required statement or seek an LC amendment before presentation.',
+    );
+    expect(mapped.issues[0]?.requirement_kind).toBe('document_exact_wording');
+  });
+
   it('prefers fact_resolution_v1 over stale invoice queue and legacy extraction fields', () => {
     const seeded = buildValidationResults();
     const payload = {

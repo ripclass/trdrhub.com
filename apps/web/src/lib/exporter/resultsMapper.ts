@@ -645,6 +645,13 @@ const humanizeText = (value?: string | null): string => {
 };
 
 const classifyBucket = (issue: any, severity: string): string => {
+  if (
+    issue?.requirement_kind === 'document_exact_wording' &&
+    issue?.requirement_source === 'requirements_graph_v1'
+  ) {
+    return 'LC Required Statements';
+  }
+
   const text = [
     issue?.title,
     issue?.description,
@@ -708,6 +715,7 @@ const getFixOwner = (issue: any, bucket: string): string => {
   if (text.includes('amend') || text.includes('waiver')) return 'Waiver / Amendment';
   if (bucket === 'Compliance / Risk Review') return 'Internal Compliance Review';
   if (bucket === 'Cross-Document Conditions') return 'Mixed';
+  if (bucket === 'LC Required Statements') return 'Beneficiary';
   if (text.includes('carrier') || text.includes('supplier') || text.includes('insurer') || text.includes('issuer')) return 'Third Party';
   if (bucket === 'Missing Required Documents' || bucket === 'Document-Level Discrepancies') return 'Beneficiary';
   return 'Unknown';
@@ -724,6 +732,17 @@ const getWorkflowLane = (bucket: string): 'documentary_review' | 'compliance_rev
 };
 
 const buildNextAction = (bucket: string, suggestion: string): string => {
+  if (bucket === 'LC Required Statements') {
+    if (
+      isPlaceholderText(suggestion) ||
+      /(correct|fix|revalidate|resolve discrepancy|review and correct the discrepancy|review required)/i.test(
+        suggestion,
+      )
+    ) {
+      return 'Update the document to include the exact LC-required statement or seek an LC amendment before presentation.';
+    }
+    return suggestion;
+  }
   if (bucket === 'Compliance / Risk Review') {
     if (
       isPlaceholderText(suggestion) ||
@@ -988,7 +1007,11 @@ const mapIssues = (
     const suggestion = formatTextValue(issue?.suggestion ?? issue?.suggested_fix);
     const bucket = classifyBucket(issue, severity);
     const severityDisplay = getSeverityDisplay(severity, bucket);
+    const requirementText = formatTextValue(issue?.requirement_text);
     const lcBasis =
+      requirementText && issue?.requirement_kind === 'document_exact_wording'
+        ? `LC required statement: ${requirementText}`
+        :
       issue?.ucp_reference ||
       issue?.isbp_reference ||
       issue?.rule ||
@@ -1048,6 +1071,9 @@ const mapIssues = (
       suggestion,
       field: issue?.field ?? issue?.metadata?.field,
       ruleset_domain: issue?.ruleset_domain ?? provenanceEntry?.ruleset_domain,
+      requirement_source: issue?.requirement_source,
+      requirement_kind: issue?.requirement_kind,
+      requirement_text: requirementText || undefined,
       ucpReference: issue?.ucp_reference && issue.ucp_reference.trim() ? issue.ucp_reference.trim() : undefined,
       ucpDescription: issue?.ucp_description ?? undefined,
       isbpReference: issue?.isbp_reference && issue.isbp_reference.trim() ? issue.isbp_reference.trim() : undefined,

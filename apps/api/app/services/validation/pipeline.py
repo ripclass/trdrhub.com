@@ -73,6 +73,8 @@ class ValidationInput:
     insurance: Optional[Dict[str, Any]] = None
     certificate_of_origin: Optional[Dict[str, Any]] = None
     packing_list: Optional[Dict[str, Any]] = None
+    inspection_certificate: Optional[Dict[str, Any]] = None
+    beneficiary_certificate: Optional[Dict[str, Any]] = None
     
     # Document list (raw)
     documents: List[Dict[str, Any]] = field(default_factory=list)
@@ -460,6 +462,8 @@ class ValidationPipeline:
             insurance=input_data.insurance,
             certificate_of_origin=input_data.certificate_of_origin,
             packing_list=input_data.packing_list,
+            inspection_certificate=input_data.inspection_certificate,
+            beneficiary_certificate=input_data.beneficiary_certificate,
         )
         
         # Log crossdoc checks

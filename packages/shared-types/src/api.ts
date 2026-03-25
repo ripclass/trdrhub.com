@@ -561,6 +561,9 @@ export const StructuredResultIssueSchema = z.object({
   description: z.string().optional(),
   reference: z.string().optional().nullable(),
   ucp_reference: z.string().optional().nullable(),
+  requirement_source: z.string().optional(),
+  requirement_kind: z.string().optional(),
+  requirement_text: z.string().optional(),
 });
 export type StructuredResultIssue = z.infer<typeof StructuredResultIssueSchema>;
 
@@ -890,6 +893,9 @@ export const IssueCardSchema = z.object({
   confidence: z.number().optional(),
   remediation_owner: z.string().optional(),
   workflow_lane: WorkflowLaneSchema.optional(),
+  requirement_source: z.string().optional(),
+  requirement_kind: z.string().optional(),
+  requirement_text: z.string().optional(),
 });
 export type IssueCard = z.infer<typeof IssueCardSchema>;
 

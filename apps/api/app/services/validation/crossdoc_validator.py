@@ -53,6 +53,7 @@ class DocumentType(str, Enum):
     CERTIFICATE_OF_ORIGIN = "certificate_of_origin"
     PACKING_LIST = "packing_list"
     INSPECTION_CERT = "inspection_certificate"
+    BENEFICIARY_CERT = "beneficiary_certificate"
     DRAFT = "draft"
 
 
@@ -67,6 +68,8 @@ _EXACT_WORDING_DOC_TYPE_MAP = {
     "certificate_of_origin": "certificate_of_origin",
     "insurance_certificate": "insurance",
     "insurance_policy": "insurance",
+    "inspection_certificate": "inspection_certificate",
+    "beneficiary_certificate": "beneficiary_certificate",
 }
 
 
@@ -224,6 +227,9 @@ class CrossDocIssue:
     # Compliance references
     ucp_article: Optional[str] = None
     isbp_paragraph: Optional[str] = None
+    requirement_source: Optional[str] = None
+    requirement_kind: Optional[str] = None
+    requirement_text: Optional[str] = None
     
     # Values for debugging
     source_value: Any = None
@@ -271,6 +277,9 @@ class CrossDocIssue:
             "ruleset_domain": "icc.lcopilot.crossdoc",
             "display_card": True,
             "auto_generated": True,
+            "requirement_source": self.requirement_source,
+            "requirement_kind": self.requirement_kind,
+            "requirement_text": self.requirement_text,
         }
     
     def _doc_display_name(self, doc_type: DocumentType) -> str:
@@ -282,6 +291,7 @@ class CrossDocIssue:
             DocumentType.CERTIFICATE_OF_ORIGIN: "Certificate of Origin",
             DocumentType.PACKING_LIST: "Packing List",
             DocumentType.INSPECTION_CERT: "Inspection Certificate",
+            DocumentType.BENEFICIARY_CERT: "Beneficiary Certificate",
             DocumentType.DRAFT: "Draft/Bill of Exchange",
         }
         return names.get(doc_type, doc_type.value)
@@ -344,6 +354,8 @@ class CrossDocValidator:
         insurance: Optional[Dict[str, Any]] = None,
         certificate_of_origin: Optional[Dict[str, Any]] = None,
         packing_list: Optional[Dict[str, Any]] = None,
+        inspection_certificate: Optional[Dict[str, Any]] = None,
+        beneficiary_certificate: Optional[Dict[str, Any]] = None,
         context: Optional[Dict[str, Any]] = None,
     ) -> CrossDocResult:
         """
@@ -435,6 +447,8 @@ class CrossDocValidator:
             "insurance": insurance,
             "certificate_of_origin": certificate_of_origin,
             "packing_list": packing_list,
+            "inspection_certificate": inspection_certificate,
+            "beneficiary_certificate": beneficiary_certificate,
         }
         available_docs = {k: v for k, v in all_docs.items() if v is not None}
         
@@ -2028,6 +2042,8 @@ class CrossDocValidator:
             "packing_list",
             "certificate_of_origin",
             "insurance",
+            "inspection_certificate",
+            "beneficiary_certificate",
         ]
         parts: List[str] = []
         for key in ordered_keys:
@@ -2063,6 +2079,8 @@ class CrossDocValidator:
             "packing_list": ("Packing List", DocumentType.PACKING_LIST),
             "certificate_of_origin": ("Certificate of Origin", DocumentType.CERTIFICATE_OF_ORIGIN),
             "insurance": ("Insurance Certificate", DocumentType.INSURANCE),
+            "inspection_certificate": ("Inspection Certificate", DocumentType.INSPECTION_CERT),
+            "beneficiary_certificate": ("Beneficiary Certificate", DocumentType.BENEFICIARY_CERT),
         }
         
         missing_on = []
@@ -2133,6 +2151,8 @@ class CrossDocValidator:
             "packing_list": ("Packing List", DocumentType.PACKING_LIST),
             "certificate_of_origin": ("Certificate of Origin", DocumentType.CERTIFICATE_OF_ORIGIN),
             "insurance": ("Insurance Certificate", DocumentType.INSURANCE),
+            "inspection_certificate": ("Inspection Certificate", DocumentType.INSPECTION_CERT),
+            "beneficiary_certificate": ("Beneficiary Certificate", DocumentType.BENEFICIARY_CERT),
         }
         
         missing_on = []
@@ -2215,6 +2235,8 @@ class CrossDocValidator:
             "packing_list": ("Packing List", DocumentType.PACKING_LIST),
             "certificate_of_origin": ("Certificate of Origin", DocumentType.CERTIFICATE_OF_ORIGIN),
             "insurance": ("Insurance Certificate", DocumentType.INSURANCE),
+            "inspection_certificate": ("Inspection Certificate", DocumentType.INSPECTION_CERT),
+            "beneficiary_certificate": ("Beneficiary Certificate", DocumentType.BENEFICIARY_CERT),
         }
         
         missing_on = []
@@ -2289,6 +2311,8 @@ class CrossDocValidator:
             "packing_list": ("Packing List", DocumentType.PACKING_LIST),
             "certificate_of_origin": ("Certificate of Origin", DocumentType.CERTIFICATE_OF_ORIGIN),
             "insurance": ("Insurance Certificate", DocumentType.INSURANCE),
+            "inspection_certificate": ("Inspection Certificate", DocumentType.INSPECTION_CERT),
+            "beneficiary_certificate": ("Beneficiary Certificate", DocumentType.BENEFICIARY_CERT),
         }
 
         for doc_key, wordings in wording_requirements.items():
@@ -2333,6 +2357,9 @@ class CrossDocValidator:
                         target_field="Document text",
                         ucp_article="14(d)",
                         isbp_paragraph="A33",
+                        requirement_source="requirements_graph_v1",
+                        requirement_kind="document_exact_wording",
+                        requirement_text=wording,
                     )
                 )
 
@@ -2508,6 +2535,8 @@ def validate_cross_documents(
         insurance=documents.get("insurance"),
         certificate_of_origin=documents.get("certificate_of_origin"),
         packing_list=documents.get("packing_list"),
+        inspection_certificate=documents.get("inspection_certificate"),
+        beneficiary_certificate=documents.get("beneficiary_certificate"),
     )
     
     return result.to_dict()

@@ -419,6 +419,8 @@ async def execute_validation_pipeline(
             insurance=payload.get("insurance"),
             certificate_of_origin=payload.get("certificate_of_origin"),
             packing_list=payload.get("packing_list"),
+            inspection_certificate=payload.get("inspection_certificate"),
+            beneficiary_certificate=payload.get("beneficiary_certificate"),
             context={
                 "lc": lc_ctx if isinstance(lc_ctx, dict) else {},
                 "requirements_graph_v1": requirements_graph_v1 if isinstance(requirements_graph_v1, dict) else None,
