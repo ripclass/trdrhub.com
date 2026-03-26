@@ -2540,6 +2540,73 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return actionEngine.filter((action) => !reviewFindingTitles.has(action.title));
   }, [actionEngine, checklistReviewFindings]);
   const customsFollowUpItems = useMemo(() => actionEngine.slice(0, 5), [actionEngine]);
+  const contractRequirementReadiness = useMemo(() => {
+    const severityRank = (value: unknown): 'critical' | 'major' | 'minor' => {
+      const normalized = String(value ?? '').trim().toLowerCase();
+      if (['critical', 'error', 'high', 'blocking'].includes(normalized)) return 'critical';
+      if (['major', 'warning', 'medium'].includes(normalized)) return 'major';
+      return 'minor';
+    };
+    const items = canonicalResultTruth.requirementReadinessItems
+      .map((item, index) => {
+        const title =
+          String(item.title ?? item.requirement_text ?? item.requirement_kind ?? '').trim() ||
+          `Compiled LC requirement ${index + 1}`;
+        const action =
+          String(item.action ?? item.detail ?? item.requirement_text ?? '').trim() ||
+          'Resolve the compiled LC requirement before treating the presentation as clean.';
+        const documentName = String(item.document_name ?? '').trim();
+        return {
+          key: `${title.toLowerCase()}::${documentName.toLowerCase()}`,
+          title,
+          action,
+          documentName,
+          severity: severityRank(item.severity),
+        };
+      })
+      .filter((item, index, list) => list.findIndex((candidate) => candidate.key === item.key) === index);
+    const issueSummary = items.reduce(
+      (acc, item) => {
+        if (item.severity === 'critical') acc.critical += 1;
+        else if (item.severity === 'major') acc.major += 1;
+        else acc.minor += 1;
+        acc.total += 1;
+        return acc;
+      },
+      { critical: 0, major: 0, minor: 0, total: 0 },
+    );
+    const actionItems: BankVerdictActionItem[] = items.slice(0, 5).map((item) => ({
+      priority: item.severity === 'critical' ? 'critical' : item.severity === 'major' ? 'high' : 'medium',
+      issue: item.title,
+      action: item.action,
+    }));
+    const blockers = items.map((item) => ({
+      key: item.key,
+      label: item.title,
+      matchedDoc: item.documentName ? { name: item.documentName } : undefined,
+    }));
+    const leadAction =
+      canonicalResultTruth.requirementActionTitles[0] ??
+      items[0]?.title ??
+      null;
+    const summary =
+      leadAction && canonicalResultTruth.requirementReviewNeeded
+        ? `Submission readiness remains blocked by compiled LC requirements, starting with ${leadAction}.`
+        : 'Submission readiness remains blocked by compiled LC requirements.';
+
+    return {
+      hasItems: items.length > 0,
+      items,
+      blockers,
+      actionItems,
+      issueSummary,
+      summary,
+    };
+  }, [
+    canonicalResultTruth.requirementActionTitles,
+    canonicalResultTruth.requirementReadinessItems,
+    canonicalResultTruth.requirementReviewNeeded,
+  ]);
   const displayBankVerdict = useMemo<BankVerdict | null>(() => {
     const baseVerdict = (structuredResult?.bank_verdict as BankVerdict | null) ?? null;
     const normalizedVerdict = String(baseVerdict?.verdict ?? '').trim().toUpperCase();
@@ -2576,6 +2643,21 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
     if (exporterPresentationTruth.presentationStatus === 'ready') {
       return baseVerdict;
+    }
+
+    if (contractRequirementReadiness.hasItems && (!baseVerdict || normalizedVerdict === 'SUBMIT')) {
+      return {
+        verdict: canonicalResultTruth.canSubmitFromValidation ? 'CAUTION' : 'HOLD',
+        verdict_color: canonicalResultTruth.canSubmitFromValidation ? 'yellow' : 'orange',
+        verdict_message: 'Compiled LC requirements still need action',
+        recommendation: contractRequirementReadiness.summary,
+        can_submit: false,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: baseVerdict?.estimated_discrepancy_fee ?? 0,
+        issue_summary: contractRequirementReadiness.issueSummary,
+        action_items: contractRequirementReadiness.actionItems,
+        action_items_count: contractRequirementReadiness.items.length,
+      };
     }
 
     if (baseVerdict && normalizedVerdict && normalizedVerdict !== 'SUBMIT') {
@@ -2627,7 +2709,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       action_items: actionItems,
       action_items_count: actionEngine.length,
     };
-  }, [actionEngine, checklistReviewFindings, exporterPresentationTruth.presentationStatus, isExtractionResolutionStage, structuredResult?.bank_verdict, workflowStage?.summary]);
+  }, [
+    actionEngine,
+    canonicalResultTruth.canSubmitFromValidation,
+    checklistReviewFindings,
+    contractRequirementReadiness,
+    exporterPresentationTruth.presentationStatus,
+    isExtractionResolutionStage,
+    structuredResult?.bank_verdict,
+    workflowStage?.summary,
+  ]);
   const customsPackReadiness = useMemo(() => {
     const derivedBlockers = requirementChecklist.filter(
       (item) => item.requirementStatus === 'missing' || item.reviewState === 'blocked',
@@ -2666,6 +2757,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       };
     }
 
+    if (contractRequirementReadiness.hasItems) {
+      return {
+        status: exporterPresentationTruth.presentationStatus,
+        summary: contractRequirementReadiness.summary,
+        blockers: !canonicalResultTruth.canSubmitFromValidation ? contractRequirementReadiness.blockers : [],
+        reviews: [],
+        ownerBuckets,
+        source: 'contract',
+      };
+    }
+
     return {
       status: exporterPresentationTruth.presentationStatus,
       summary: exporterPresentationTruth.presentationSummary,
@@ -2674,7 +2776,15 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       ownerBuckets,
       source: 'shared',
     };
-  }, [requirementChecklist, issueCards, exporterPresentationTruth, isExtractionResolutionStage, workflowStage?.summary]);
+  }, [
+    canonicalResultTruth.canSubmitFromValidation,
+    contractRequirementReadiness,
+    requirementChecklist,
+    issueCards,
+    exporterPresentationTruth,
+    isExtractionResolutionStage,
+    workflowStage?.summary,
+  ]);
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = Boolean(manifestData?.documents?.length);
   const processingSummaryExtras =
@@ -2728,6 +2838,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     if (!enableBankSubmission) return false;
     if (guardrailsQueryEnabled && guardrailsLoading) return false;
     if (isExtractionResolutionStage) return false;
+    if (contractRequirementReadiness.hasItems && canonicalResultTruth.requirementReviewNeeded) return false;
     if (!canSubmitFromValidation) return false;
     if (exporterPresentationTruth.presentationStatus !== 'ready') return false;
     if (!guardrails) {
@@ -2740,6 +2851,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     guardrailsLoading,
     guardrailsQueryEnabled,
     canSubmitFromValidation,
+    canonicalResultTruth.requirementReviewNeeded,
+    contractRequirementReadiness.hasItems,
     exporterPresentationTruth.presentationStatus,
     isExtractionResolutionStage,
   ]);
@@ -3745,6 +3858,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       <Badge variant="outline">
                         {customsPackReadiness.source === 'shared'
                           ? 'Shared presentation truth'
+                          : customsPackReadiness.source === 'contract'
+                          ? 'Contract readiness evidence'
                           : 'Derived readiness'}
                       </Badge>
                     </div>

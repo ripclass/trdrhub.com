@@ -982,6 +982,83 @@ describe('ExporterResults', () => {
     expect(screen.getAllByText(/Add LC-required statement to Beneficiary Certificate/i).length).toBeGreaterThan(0);
   });
 
+  it('uses contract readiness evidence in the customs tab and keeps submit gated', async () => {
+    const contractDrivenResults = buildValidationResults({
+      issues: [],
+    });
+    contractDrivenResults.summary = {
+      ...contractDrivenResults.summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+    };
+    contractDrivenResults.structured_result = {
+      ...contractDrivenResults.structured_result,
+      issues: [],
+      processing_summary: {
+        ...contractDrivenResults.structured_result?.processing_summary,
+        total_issues: 0,
+        severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+      },
+      submission_eligibility: {
+        can_submit: false,
+        reasons: ['lc_required_statement_missing'],
+      },
+      effective_submission_eligibility: {
+        can_submit: false,
+        reasons: ['lc_required_statement_missing'],
+      },
+      validation_contract_v1: {
+        final_verdict: 'review',
+        rules_evidence: {
+          requirement_readiness_items: [
+            {
+              title: 'LC-required wording missing from Beneficiary Certificate',
+              document_name: 'Beneficiary Certificate',
+              severity: 'critical',
+              requirement_kind: 'document_exact_wording',
+              requirement_text: 'WE HEREBY CERTIFY GOODS ARE BRAND NEW',
+              action:
+                "Update Beneficiary Certificate to include the exact LC-required statement 'WE HEREBY CERTIFY GOODS ARE BRAND NEW' or seek an LC amendment before presentation.",
+            },
+          ],
+          requirement_reason_codes: ['lc_required_statement_missing'],
+          requirements_review_needed: true,
+        },
+        evidence_summary: {
+          requirements_review_needed: true,
+          requirement_reason_codes: ['lc_required_statement_missing'],
+          primary_requirement_actions: ['LC-required wording missing from Beneficiary Certificate'],
+        },
+      },
+      bank_verdict: {
+        verdict: 'SUBMIT',
+        verdict_color: 'green',
+        verdict_message: 'Documents appear compliant',
+        recommendation: 'Documents are ready for bank submission.',
+        can_submit: true,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: 0,
+        issue_summary: { critical: 0, major: 0, minor: 0, total: 0 },
+        action_items: [],
+        action_items_count: 0,
+      },
+    } as typeof contractDrivenResults.structured_result;
+    activeResults = contractDrivenResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/LC-required statements or compiled documentary requirements remain unresolved/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    expect(within(customsPanel).getByText(/Contract readiness evidence/i)).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Submission readiness remains blocked by compiled LC requirements/i)).toBeInTheDocument();
+    expect(within(customsPanel).getAllByText(/LC-required wording missing from Beneficiary Certificate/i).length).toBeGreaterThan(0);
+    expect(within(customsPanel).queryByRole('button', { name: /Submit to Bank/i })).toBeNull();
+  });
+
   it('gates submit eligibility when validation blocks submission', async () => {
     const gatedResults = buildValidationResults();
     gatedResults.structured_result = {
