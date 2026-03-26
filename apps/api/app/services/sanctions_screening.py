@@ -125,6 +125,33 @@ WORD_REPLACEMENTS = {
     'CNTR': 'CENTER',
 }
 
+# Tokens that are too generic to support a meaningful entity-name overlap on
+# their own. We keep them out of medium-confidence fuzzy escalation so names
+# like "Standard Chartered Bank" do not drift into unrelated bank hits solely
+# because of generic institution words.
+GENERIC_ENTITY_TOKENS = {
+    "AND",
+    "BANK",
+    "COMPANY",
+    "CORPORATION",
+    "FINANCE",
+    "FINANCIAL",
+    "GROUP",
+    "HOLDING",
+    "HOLDINGS",
+    "INDUSTRIES",
+    "INDUSTRY",
+    "INTERNATIONAL",
+    "INVESTMENT",
+    "INVESTMENTS",
+    "ISLAMIC",
+    "NATIONAL",
+    "OF",
+    "SERVICES",
+    "SERVICE",
+    "THE",
+}
+
 # Transliteration map for common characters
 TRANSLITERATION = {
     'Ä': 'A', 'Ö': 'O', 'Ü': 'U', 'ä': 'a', 'ö': 'o', 'ü': 'u', 'ß': 'SS',
@@ -302,6 +329,39 @@ def token_set_ratio(s1: str, s2: str) -> float:
     return max(ratio1, ratio2, ratio3)
 
 
+def _distinctive_entity_tokens(name: str) -> set[str]:
+    """Return non-generic tokens used to support medium-confidence matches."""
+    return {
+        token
+        for token in name.split()
+        if token and token not in GENERIC_ENTITY_TOKENS and not token.isdigit()
+    }
+
+
+def _has_meaningful_entity_overlap(query_norm: str, target_norm: str) -> bool:
+    """
+    Require at least one distinctive shared token (or near-shared token stem)
+    before a medium-confidence fuzzy match can escalate into a sanctions hit.
+    """
+    query_tokens = _distinctive_entity_tokens(query_norm)
+    target_tokens = _distinctive_entity_tokens(target_norm)
+
+    if not query_tokens or not target_tokens:
+        return False
+
+    if query_tokens.intersection(target_tokens):
+        return True
+
+    for left in query_tokens:
+        for right in target_tokens:
+            if len(left) >= 5 and len(right) >= 5 and (
+                left.startswith(right) or right.startswith(left)
+            ):
+                return True
+
+    return False
+
+
 def calculate_match_score(query: str, target: str, aliases: List[str] = None) -> Tuple[float, str, str]:
     """
     Calculate comprehensive match score.
@@ -338,9 +398,19 @@ def calculate_match_score(query: str, target: str, aliases: List[str] = None) ->
     
     # Take best score
     if jw_score >= ts_score:
-        return (jw_score, "fuzzy", "jaro_winkler")
+        best_score = jw_score
+        best_method = "jaro_winkler"
     else:
-        return (ts_score, "fuzzy", "token_set")
+        best_score = ts_score
+        best_method = "token_set"
+
+    # Medium-confidence fuzzy matches need some meaningful token support.
+    # Without it, long institution names can collide on generic words and
+    # produce noisy LC auto-screening results.
+    if best_score < 85 and not _has_meaningful_entity_overlap(query_norm, target_norm):
+        best_score = min(best_score, 69.9)
+
+    return (best_score, "fuzzy", best_method)
 
 
 # ============================================================================

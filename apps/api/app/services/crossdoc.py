@@ -623,34 +623,19 @@ async def run_price_verification_checks(
         variance_percent = variance.get("percent", 0)
         risk = result.get("risk", {})
         
-        # Create issues based on verdict
+        # Warning-level market variance is advisory/TBML context, not a
+        # documentary-compliance discrepancy for the SME-facing LC workflow.
+        # Keep only hard price failures in the main findings path.
         if verdict == "warning":
-            doc_names, doc_ids = _resolve_doc_references(
-                document_lookup,
-                ["commercial_invoice"],
-                ["Commercial Invoice"],
-            )
-            
-            direction = "above" if variance_percent > 0 else "below"
-            issues.append({
-                "rule": "PRICE-VERIFY-1",
-                "title": "Price Variance Detected",
-                "passed": False,
-                "severity": "minor",
-                "message": f"Invoice price for {commodity.get('name')} is {abs(variance_percent):.1f}% {direction} market average. Review may be advisable.",
-                "expected": f"Market price: ${result.get('market_price', {}).get('price', 0):,.2f}/{result.get('market_price', {}).get('unit', unit)}",
-                "actual": f"Document price: ${float(price_to_verify):,.2f}/{unit}",
-                "suggestion": "Compare price against current market data and verify with supplier if needed.",
-                "document_names": doc_names,
-                "document_ids": doc_ids,
-                "ruleset_domain": "icc.lcopilot.crossdoc",
-                "_price_verify_details": {
+            logger.info(
+                "Suppressing warning-level price variance from LC findings",
+                extra={
                     "commodity_code": commodity.get("code"),
                     "variance_percent": variance_percent,
                     "risk_level": risk.get("risk_level"),
                 },
-            })
-            
+            )
+
         elif verdict == "fail":
             doc_names, doc_ids = _resolve_doc_references(
                 document_lookup,
