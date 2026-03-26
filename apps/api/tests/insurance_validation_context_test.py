@@ -117,3 +117,56 @@ def test_apply_insurance_fact_graph_to_validation_inputs_mutates_payload_and_con
     assert "coverage_type" not in projected
     assert payload["insurance_certificate"] == projected
     assert extracted_context["insurance_certificate"] == projected
+
+
+def test_apply_insurance_fact_graph_prefers_real_insurance_doc_over_beneficiary_certificate() -> None:
+    payload = {
+        "documents": [
+            {
+                "document_id": "doc-beneficiary",
+                "document_type": "beneficiary_certificate",
+                "fact_graph_v1": {
+                    "version": "fact_graph_v1",
+                    "facts": [
+                        {
+                            "field_name": "issuer_name",
+                            "value": "Beneficiary Co.",
+                            "normalized_value": "BENEFICIARY CO.",
+                            "verification_state": "confirmed",
+                        }
+                    ],
+                },
+            },
+            {
+                "document_id": "doc-insurance",
+                "document_type": "insurance_certificate",
+                "fact_graph_v1": {
+                    "version": "fact_graph_v1",
+                    "facts": [
+                        {
+                            "field_name": "insured_amount",
+                            "value": "USD 150,000.00",
+                            "normalized_value": "150000.00",
+                            "verification_state": "confirmed",
+                        },
+                        {
+                            "field_name": "currency",
+                            "value": "USD",
+                            "normalized_value": "USD",
+                            "verification_state": "confirmed",
+                        },
+                    ],
+                },
+            },
+        ],
+        "insurance_certificate": {},
+    }
+    extracted_context = {
+        "documents": payload["documents"],
+        "insurance_certificate": {},
+    }
+
+    projected = apply_insurance_fact_graph_to_validation_inputs(payload, extracted_context)
+
+    assert projected["insured_amount"] == "150000.00"
+    assert projected["currency"] == "USD"

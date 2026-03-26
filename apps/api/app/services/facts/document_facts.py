@@ -79,6 +79,10 @@ _INSURANCE_DOCUMENT_TYPES = {
     "kosher_certificate",
     "organic_certificate",
 }
+_PRIMARY_INSURANCE_DOCUMENT_TYPES = {
+    "insurance_certificate",
+    "insurance_policy",
+}
 _INSPECTION_DOCUMENT_TYPES = {
     "inspection_certificate",
     "pre_shipment_inspection",
@@ -326,6 +330,17 @@ def _iter_insurance_documents(documents: Iterable[Dict[str, Any]]) -> Iterable[D
             continue
         if _document_type(document) in _INSURANCE_DOCUMENT_TYPES:
             yield document
+
+
+def _select_preferred_insurance_document(documents: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    fallback: Optional[Dict[str, Any]] = None
+    for document in _iter_insurance_documents(documents):
+        document_type = _document_type(document)
+        if document_type in _PRIMARY_INSURANCE_DOCUMENT_TYPES:
+            return document
+        if fallback is None:
+            fallback = document
+    return fallback
 
 
 def _iter_inspection_documents(documents: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
@@ -996,11 +1011,8 @@ def apply_insurance_fact_graph_to_validation_inputs(
 ) -> Dict[str, Any]:
     payload_docs = payload.get("documents") if isinstance(payload, dict) else None
     context_docs = extracted_context.get("documents") if isinstance(extracted_context, dict) else None
-    insurance_document = next(
-        _iter_insurance_documents(
-            payload_docs if isinstance(payload_docs, list) else context_docs if isinstance(context_docs, list) else []
-        ),
-        None,
+    insurance_document = _select_preferred_insurance_document(
+        payload_docs if isinstance(payload_docs, list) else context_docs if isinstance(context_docs, list) else []
     )
 
     payload_insurance = (

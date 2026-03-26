@@ -1644,33 +1644,43 @@ class CrossDocValidator:
         insurance: Dict[str, Any],
         lc_data: Dict[str, Any],
     ) -> Optional[CrossDocIssue]:
-        """Check insurance covers at least 110% of CIF/CIP value."""
-        ins_amount = self._parse_amount(insurance.get("amount") or insurance.get("sum_insured"))
+        """Check insurance covers at least the LC-required percentage of the credit amount."""
+        ins_amount = self._parse_amount(
+            insurance.get("insured_amount")
+            or insurance.get("coverage_amount")
+            or insurance.get("sum_insured")
+            or insurance.get("amount")
+        )
         lc_amount = self._parse_amount(lc_data.get("amount"))
         
         if ins_amount is None or lc_amount is None:
             return None
         
-        # Minimum 110% coverage per UCP600 Article 28(f)(ii)
-        min_coverage = lc_amount * 1.10
+        minimum_ratio = self._resolve_insurance_coverage_ratio(lc_data)
+        min_coverage = lc_amount * minimum_ratio
+        minimum_percent = minimum_ratio * 100.0
         
         # Use small epsilon for floating-point comparison
         epsilon = _NUMERIC_EPSILON
         if ins_amount < (min_coverage - epsilon):
             return CrossDocIssue(
-                rule_id="CROSSDOC-INS-001",
-                title="Insufficient Insurance Coverage",
-                severity=IssueSeverity.CRITICAL,
+                rule_id="CROSSDOC-INSURANCE-1",
+                title="Insurance Coverage Below LC Requirement",
+                severity=IssueSeverity.MAJOR,
                 message=(
                     f"Insurance coverage ({ins_amount:,.2f}) is less than "
-                    f"110% of invoice/LC value ({min_coverage:,.2f})."
+                    f"the LC-required {minimum_percent:.0f}% of invoice/LC value "
+                    f"({min_coverage:,.2f})."
                 ),
-                expected=f">= {min_coverage:,.2f} (110% of LC amount)",
+                expected=f">= {min_coverage:,.2f} ({minimum_percent:.0f}% of LC amount)",
                 found=f"{ins_amount:,.2f}",
-                suggestion="Increase insurance coverage to minimum 110% of CIF value.",
+                suggestion=(
+                    f"Increase insurance coverage to at least {minimum_percent:.0f}% "
+                    "of the LC or invoice amount, or amend the LC requirement."
+                ),
                 source_doc=DocumentType.INSURANCE,
                 target_doc=DocumentType.LC,
-                source_field="amount",
+                source_field="insured_amount",
                 target_field="amount",
                 ucp_article="UCP600 Article 28(f)(ii)",
                 source_value=ins_amount,
@@ -1678,6 +1688,56 @@ class CrossDocValidator:
             )
         
         return None
+
+    def _resolve_insurance_coverage_ratio(self, lc_data: Dict[str, Any]) -> float:
+        requirements_graph = (
+            lc_data.get("requirements_graph_v1")
+            or lc_data.get("requirementsGraphV1")
+        )
+
+        candidate_texts: List[str] = []
+        if isinstance(requirements_graph, dict):
+            for entry in requirements_graph.get("required_documents") or []:
+                if not isinstance(entry, dict):
+                    continue
+                document_code = str(
+                    entry.get("code")
+                    or entry.get("document_type")
+                    or entry.get("type")
+                    or ""
+                ).strip().lower()
+                if document_code not in _INSURANCE_REQUIREMENT_TYPES:
+                    continue
+                for key in ("raw_text", "display_name", "exact_wording", "name"):
+                    text = str(entry.get(key) or "").strip()
+                    if text:
+                        candidate_texts.append(text)
+            for item in requirements_graph.get("documentary_conditions") or []:
+                text = str(item or "").strip()
+                if text:
+                    candidate_texts.append(text)
+
+        for key in ("documents_required", "additional_conditions", "raw_text"):
+            value = lc_data.get(key)
+            if isinstance(value, list):
+                candidate_texts.extend(str(item or "").strip() for item in value if str(item or "").strip())
+            else:
+                text = str(value or "").strip()
+                if text:
+                    candidate_texts.append(text)
+
+        for text in candidate_texts:
+            upper_text = text.upper()
+            if "INSURANCE" not in upper_text and "COVER" not in upper_text:
+                continue
+            percent_match = re.search(r"(\d{2,3}(?:\.\d+)?)\s*(?:%|PCT|PERCENT)", upper_text)
+            if percent_match:
+                try:
+                    return float(percent_match.group(1)) / 100.0
+                except (TypeError, ValueError):
+                    continue
+
+        return 1.10
     
     def _check_insurance_date(
         self,
