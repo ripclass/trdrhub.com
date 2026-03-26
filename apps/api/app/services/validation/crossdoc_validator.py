@@ -562,6 +562,46 @@ class CrossDocValidator:
     # =========================================================================
     # LC VALIDITY CHECKS
     # =========================================================================
+
+    def _resolve_validation_reference_date(
+        self,
+        lc_data: Dict[str, Any],
+    ) -> Optional[date]:
+        """Resolve an explicit as-of date for time-sensitive presentation checks."""
+        if not isinstance(lc_data, dict):
+            return None
+
+        candidates: List[Any] = [
+            lc_data.get("presentation_reference_date"),
+            lc_data.get("reference_date"),
+            lc_data.get("submission_date"),
+            lc_data.get("date_received"),
+            lc_data.get("received_at"),
+            lc_data.get("received_on"),
+        ]
+
+        for metadata_key in ("metadata", "bank_metadata"):
+            metadata = lc_data.get(metadata_key)
+            if not isinstance(metadata, dict):
+                continue
+            candidates.extend(
+                [
+                    metadata.get("presentation_reference_date"),
+                    metadata.get("reference_date"),
+                    metadata.get("submission_date"),
+                    metadata.get("date_received"),
+                    metadata.get("received_at"),
+                    metadata.get("received_on"),
+                    metadata.get("dateReceived"),
+                ]
+            )
+
+        for candidate in candidates:
+            parsed = self._parse_date(candidate)
+            if parsed is not None:
+                return parsed
+
+        return None
     
     def _check_lc_expiry(
         self,
@@ -620,7 +660,10 @@ class CrossDocValidator:
                 isbp_paragraph="ISBP745 A14",
             )
         
-        today = datetime.now().date()
+        reference_date = self._resolve_validation_reference_date(lc_data)
+        if reference_date is None:
+            return None
+        today = reference_date
         
         # Check if LC is expired
         if isinstance(expiry_date, datetime):
@@ -1526,9 +1569,13 @@ class CrossDocValidator:
         else:
             days_allowed = 21
         
+        reference_date = self._resolve_validation_reference_date(lc_data)
+        if reference_date is None:
+            return None
+
         # Calculate presentation deadline
         presentation_deadline = shipment_date + timedelta(days=days_allowed)
-        today = datetime.now()
+        today = datetime.combine(reference_date, datetime.min.time())
         
         # Get LC expiry date
         expiry_date_str = lc_data.get("expiry_date") or lc_data.get("date_of_expiry")

@@ -413,6 +413,22 @@ async def execute_validation_pipeline(
         # Run v2 CrossDocValidator
         from app.services.validation.crossdoc_validator import CrossDocValidator
         crossdoc_validator = CrossDocValidator()
+        crossdoc_lc_context = dict(lc_ctx) if isinstance(lc_ctx, dict) else {}
+        metadata_dict = payload.get("metadata") or {}
+        if isinstance(metadata_dict, str):
+            try:
+                metadata_dict = json.loads(metadata_dict)
+            except Exception:
+                metadata_dict = {}
+        if isinstance(metadata_dict, dict):
+            date_received = metadata_dict.get("dateReceived") or metadata_dict.get("date_received")
+            if date_received and not crossdoc_lc_context.get("date_received"):
+                crossdoc_lc_context["date_received"] = date_received
+                bank_metadata = crossdoc_lc_context.get("bank_metadata")
+                if isinstance(bank_metadata, dict):
+                    bank_metadata.setdefault("date_received", date_received)
+                else:
+                    crossdoc_lc_context["bank_metadata"] = {"date_received": date_received}
         crossdoc_result = crossdoc_validator.validate_all(
             lc_baseline=v2_baseline,
             invoice=payload.get("invoice"),
@@ -423,7 +439,7 @@ async def execute_validation_pipeline(
             inspection_certificate=payload.get("inspection_certificate"),
             beneficiary_certificate=payload.get("beneficiary_certificate"),
             context={
-                "lc": lc_ctx if isinstance(lc_ctx, dict) else {},
+                "lc": crossdoc_lc_context,
                 "requirements_graph_v1": requirements_graph_v1 if isinstance(requirements_graph_v1, dict) else None,
             },
         )
