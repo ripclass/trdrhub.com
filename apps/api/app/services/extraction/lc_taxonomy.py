@@ -998,7 +998,11 @@ def _extract_raw_requirement_section_lines(
                 block = clean_string(match.group(1))
                 if not block:
                     continue
-                lines.extend(coerce_text_sequence(block))
+                lines.extend(
+                    normalized
+                    for line in coerce_text_sequence(block)
+                    if (normalized := str(line or "").strip(" -\t"))  # raw 46A/47A often uses bullet lines
+                )
     return _dedupe_text_sequence(lines)
 
 

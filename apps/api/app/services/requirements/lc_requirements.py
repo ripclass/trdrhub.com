@@ -314,14 +314,77 @@ def _required_fact_fields(required_document_types: Set[str], fact_values: Dict[s
     return sorted(required)
 
 
+def _has_material_requirements(graph: Dict[str, Any]) -> bool:
+    if not isinstance(graph, dict):
+        return False
+    for key in (
+        "required_documents",
+        "required_document_types",
+        "documentary_conditions",
+        "ambiguous_conditions",
+        "condition_requirements",
+    ):
+        value = graph.get(key)
+        if isinstance(value, (list, tuple, set, dict)) and len(value) > 0:
+            return True
+    return False
+
+
+def _hydrate_lc_requirement_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+
+    hydrated = dict(payload)
+    extracted_fields = (
+        payload.get("extracted_fields")
+        if isinstance(payload.get("extracted_fields"), dict)
+        else {}
+    )
+    extraction_artifacts = (
+        payload.get("extraction_artifacts_v1")
+        if isinstance(payload.get("extraction_artifacts_v1"), dict)
+        else {}
+    )
+
+    for key in ("raw_text", "text", "content", "narrative"):
+        if _is_populated(hydrated.get(key)):
+            continue
+        artifact_value = extraction_artifacts.get(key)
+        if isinstance(artifact_value, str) and artifact_value.strip():
+            hydrated[key] = artifact_value
+
+    if not _is_populated(hydrated.get("raw_text")):
+        preview = payload.get("raw_text_preview")
+        if isinstance(preview, str) and preview.strip():
+            hydrated["raw_text"] = preview
+
+    for key in (
+        "documents_required",
+        "required_documents",
+        "requirement_conditions",
+        "unmapped_requirements",
+        "goods_description",
+        "additional_conditions",
+        "lc_number",
+        "applicant",
+        "beneficiary",
+    ):
+        if _is_populated(hydrated.get(key)):
+            continue
+        if _is_populated(extracted_fields.get(key)):
+            hydrated[key] = extracted_fields.get(key)
+
+    return hydrated
+
+
 def build_lc_requirements_graph_v1(document_payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    payload = document_payload or {}
+    payload = _hydrate_lc_requirement_payload(document_payload or {})
     document_type = _document_type(payload)
     if document_type not in _LC_DOCUMENT_TYPES:
         return None
 
     existing = payload.get("requirements_graph_v1") or payload.get("requirementsGraphV1")
-    if isinstance(existing, dict):
+    if isinstance(existing, dict) and _has_material_requirements(existing):
         return existing
 
     lc_classification = payload.get("lc_classification")

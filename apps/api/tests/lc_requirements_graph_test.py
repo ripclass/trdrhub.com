@@ -211,3 +211,63 @@ def test_build_lc_requirements_graph_v1_falls_back_to_raw_46a_and_47a_text() -> 
         "source_text": "BENEFICIARY CERTIFICATE STATING EXACTLY WE HEREBY CERTIFY GOODS ARE BRAND NEW",
         "source_bucket": "required_documents",
     } in graph["condition_requirements"]
+
+
+def test_build_lc_requirements_graph_v1_uses_extraction_artifacts_raw_text_and_rebuilds_empty_graph() -> None:
+    graph = build_lc_requirements_graph_v1(
+        {
+            "document_id": "doc-lc-artifacts",
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "required_documents": [],
+                "required_document_types": [],
+                "documentary_conditions": [],
+                "ambiguous_conditions": [],
+                "condition_requirements": [],
+            },
+            "extraction_artifacts_v1": {
+                "raw_text": (
+                    "IRREVOCABLE DOCUMENTARY CREDIT\n"
+                    "Field 46A: Documents Required:\n"
+                    "- Commercial Invoice in triplicate\n"
+                    "- Full set of clean on board Bills of Lading\n"
+                    "- Packing List\n"
+                    "- Beneficiary Certificate stating exactly WE HEREBY CERTIFY GOODS ARE BRAND NEW\n"
+                    "Field 47A: Additional Conditions:\n"
+                    "- All documents must show LC number EXP2026BD001\n"
+                )
+            },
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "letter_of_credit",
+                "facts": [
+                    {
+                        "field_name": "issue_date",
+                        "value": "2025-11-26",
+                        "normalized_value": "2025-11-26",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert graph is not None
+    assert graph["required_document_types"] == [
+        "commercial_invoice",
+        "ocean_bill_of_lading",
+        "packing_list",
+        "beneficiary_certificate",
+    ]
+    assert graph["documentary_conditions"] == [
+        "All documents must show LC number EXP2026BD001",
+    ]
+    assert {
+        "requirement_type": "identifier_presence",
+        "identifier_type": "lc_number",
+        "value": "EXP2026BD001",
+        "applies_to": "all_documents",
+        "source_text": "All documents must show LC number EXP2026BD001",
+        "source_bucket": "documentary_conditions",
+    } in graph["condition_requirements"]
