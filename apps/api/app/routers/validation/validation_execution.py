@@ -70,6 +70,29 @@ def _should_defer_final_validation(documents: Any) -> Dict[str, Any]:
     }
 
 
+def _filter_price_issues_for_documentary_context(
+    existing_issues: list[dict[str, Any]],
+    price_issues: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Keep documentary findings primary when the goods baseline itself is already
+    inconsistent. In that state, price verification is advisory and should not
+    add duplicate noise to the SME-facing LC findings path.
+    """
+    if not price_issues:
+        return []
+
+    existing_rules = {
+        str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
+        for issue in existing_issues
+        if isinstance(issue, dict)
+    }
+    if existing_rules.intersection({"CROSSDOC-INV-003", "CROSSDOC-GOODS-1"}):
+        return []
+
+    return price_issues
+
+
 async def execute_validation_pipeline(
     *,
     request,
@@ -467,6 +490,11 @@ async def execute_validation_pipeline(
                 ),
                 PRICE_VERIFICATION_TIMEOUT_SECONDS,
                 [],
+            )
+
+            price_issues = _filter_price_issues_for_documentary_context(
+                v2_crossdoc_issues,
+                price_issues,
             )
 
             if price_issues:
