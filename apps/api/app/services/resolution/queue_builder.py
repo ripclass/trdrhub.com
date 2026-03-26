@@ -396,6 +396,18 @@ def _fact_is_user_resolvable(
     if not _is_populated(_candidate_value_for_fact(fact)):
         return False
 
+    if document_type in _LC_DOCUMENT_TYPES:
+        verification_state = str(fact.get("verification_state") or "").strip().lower()
+        if verification_state != "operator_rejected":
+            core_terms = (
+                requirements_graph.get("core_terms")
+                if isinstance(requirements_graph, dict) and isinstance(requirements_graph.get("core_terms"), dict)
+                else {}
+            )
+            resolved_value = core_terms.get(field_name) if isinstance(core_terms, dict) else None
+            if _is_populated(resolved_value):
+                return False
+
     return True
 
 

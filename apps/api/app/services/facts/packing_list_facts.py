@@ -110,6 +110,10 @@ def _verification_state(value: Any, detail: Dict[str, Any]) -> str:
     if verification in {"confirmed", "text_supported"}:
         return "confirmed"
     if verification == "model_suggested":
+        evidence = detail.get("evidence")
+        source = str(detail.get("source") or "").strip().lower()
+        if isinstance(evidence, dict) and source == "raw_text":
+            return "confirmed"
         return "candidate"
     if verification == "not_found":
         if str(detail.get("reason_code") or "").strip().lower() == "source_absent":

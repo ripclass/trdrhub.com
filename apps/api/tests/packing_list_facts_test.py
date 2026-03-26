@@ -71,6 +71,52 @@ def test_build_packing_list_fact_set_maps_candidate_package_count_alias() -> Non
     assert fact["source_field_name"] == "package_count"
 
 
+def test_build_packing_list_fact_set_confirms_raw_text_supported_weights() -> None:
+    payload = build_packing_list_fact_set(
+        {
+            "document_type": "packing_list",
+            "extracted_fields": {
+                "gross_weight": "2,500 KG",
+                "net_weight": "2,200 KG",
+            },
+            "field_details": {
+                "gross_weight": {
+                    "value": 2500,
+                    "confidence": 0.86,
+                    "verification": "model_suggested",
+                    "source": "raw_text",
+                    "evidence": {
+                        "text_span": "Gross Weight: 2,500 KG",
+                        "page": 1,
+                        "source": "raw_text",
+                    },
+                },
+                "net_weight": {
+                    "value": 2200,
+                    "confidence": 0.86,
+                    "verification": "model_suggested",
+                    "source": "raw_text",
+                    "evidence": {
+                        "text_span": "Net Weight: 2,200 KG",
+                        "page": 1,
+                        "source": "raw_text",
+                    },
+                },
+            },
+        }
+    )
+
+    gross_fact = _fact_by_name(payload, "gross_weight")
+    net_fact = _fact_by_name(payload, "net_weight")
+
+    assert gross_fact["verification_state"] == "confirmed"
+    assert gross_fact["evidence_source"] == "raw_text"
+    assert gross_fact["page"] == 1
+    assert net_fact["verification_state"] == "confirmed"
+    assert net_fact["evidence_source"] == "raw_text"
+    assert net_fact["page"] == 1
+
+
 def test_build_packing_list_fact_set_marks_absent_marks_when_source_absent() -> None:
     payload = build_packing_list_fact_set(
         {

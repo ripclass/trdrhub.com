@@ -1,0 +1,23 @@
+HTTP/1.1 307 Temporary Redirect
+Date: Thu, 26 Mar 2026 05:31:52 GMT
+Content-Length: 0
+Connection: keep-alive
+CF-RAY: 9e23c581d807f3f4-DAC
+access-control-allow-credentials: true
+access-control-allow-origin: https://trdrhub.com
+content-security-policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: https://avatar.vercel.sh https://via.placeholder.com; font-src 'self' data:; connect-src 'self' https://api.openai.com https://api.anthropic.com https://openrouter.ai; frame-ancestors 'none'; base-uri 'self'; form-action 'self';
+location: https://api.trdrhub.com/api/validate/
+referrer-policy: strict-origin-when-cross-origin
+rndr-id: f66208e9-e10b-490f
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+vary: Origin
+x-content-type-options: nosniff
+x-correlation-id: a86d57e2-7567-4e4e-a795-b06dd27117df
+x-frame-options: DENY
+x-render-origin-server: uvicorn
+x-request-id: 3c487178-dbb4-4a69-a2a6-064efc07ca32
+x-xss-protection: 1; mode=block
+cf-cache-status: DYNAMIC
+Server: cloudflare
+alt-svc: h3=":443"; ma=86400
+

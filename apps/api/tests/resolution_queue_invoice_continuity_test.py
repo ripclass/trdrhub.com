@@ -608,10 +608,62 @@ def test_build_resolution_queue_v1_collects_rendered_lc_unresolved_facts_only() 
 
     queue = build_resolution_queue_v1(documents)
 
+    assert queue["summary"]["total_items"] == 0
+    assert queue["summary"]["document_counts"] == {}
+    assert queue["items"] == []
+
+
+def test_build_resolution_queue_v1_hides_rendered_lc_fields_already_resolved_in_requirements_graph() -> None:
+    documents = [
+        {
+            "document_id": "doc-lc",
+            "document_type": "letter_of_credit",
+            "filename": "LC.pdf",
+            "extraction_lane": "document_ai",
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "required_document_types": ["commercial_invoice"],
+                "required_fact_fields": ["applicant", "beneficiary", "issue_date"],
+                "core_terms": {
+                    "applicant": "Global Trade Corp",
+                    "beneficiary": "Bangladesh Export Ltd",
+                },
+            },
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "letter_of_credit",
+                "document_subtype": "letter_of_credit",
+                "facts": [
+                    {
+                        "field_name": "applicant",
+                        "value": "Global Trade Corp",
+                        "normalized_value": "Global Trade Corp",
+                        "verification_state": "candidate",
+                        "origin": "multimodal:pdf_pages",
+                    },
+                    {
+                        "field_name": "beneficiary",
+                        "value": "Bangladesh Export Ltd",
+                        "normalized_value": "Bangladesh Export Ltd",
+                        "verification_state": "candidate",
+                        "origin": "multimodal:pdf_pages",
+                    },
+                    {
+                        "field_name": "issue_date",
+                        "value": "2025-11-26",
+                        "normalized_value": "2025-11-26",
+                        "verification_state": "candidate",
+                        "origin": "multimodal:pdf_pages",
+                    },
+                ],
+            },
+        }
+    ]
+
+    queue = build_resolution_queue_v1(documents)
+
     assert queue["summary"]["total_items"] == 1
-    assert queue["summary"]["document_counts"] == {"letter_of_credit": 1}
-    assert [item["field_name"] for item in queue["items"]] == ["lc_number"]
-    assert queue["items"][0]["priority"] == "high"
+    assert [item["field_name"] for item in queue["items"]] == ["issue_date"]
 
 
 def test_build_resolution_queue_v1_hides_unbounded_no_candidate_fields_from_user_queue() -> None:
