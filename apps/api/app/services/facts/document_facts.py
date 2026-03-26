@@ -1038,8 +1038,10 @@ def apply_insurance_fact_graph_to_validation_inputs(
 
     if isinstance(payload, dict):
         payload["insurance_certificate"] = projected
+        payload["insurance"] = projected
     if isinstance(extracted_context, dict):
         extracted_context["insurance_certificate"] = projected
+        extracted_context["insurance"] = projected
     return projected
 
 

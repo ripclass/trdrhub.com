@@ -116,7 +116,9 @@ def test_apply_insurance_fact_graph_to_validation_inputs_mutates_payload_and_con
     assert projected["currency"] == "USD"
     assert "coverage_type" not in projected
     assert payload["insurance_certificate"] == projected
+    assert payload["insurance"] == projected
     assert extracted_context["insurance_certificate"] == projected
+    assert extracted_context["insurance"] == projected
 
 
 def test_apply_insurance_fact_graph_prefers_real_insurance_doc_over_beneficiary_certificate() -> None:
@@ -170,3 +172,5 @@ def test_apply_insurance_fact_graph_prefers_real_insurance_doc_over_beneficiary_
 
     assert projected["insured_amount"] == "150000.00"
     assert projected["currency"] == "USD"
+    assert payload["insurance"] == projected
+    assert extracted_context["insurance"] == projected

@@ -417,7 +417,7 @@ async def execute_validation_pipeline(
             lc_baseline=v2_baseline,
             invoice=payload.get("invoice"),
             bill_of_lading=payload.get("bill_of_lading"),
-            insurance=payload.get("insurance"),
+            insurance=payload.get("insurance") or payload.get("insurance_certificate"),
             certificate_of_origin=payload.get("certificate_of_origin"),
             packing_list=payload.get("packing_list"),
             inspection_certificate=payload.get("inspection_certificate"),
