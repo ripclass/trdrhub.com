@@ -53,8 +53,8 @@ DOCUMENT_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("commercial_invoice", ("commercial invoice", "signed commercial invoice", "signed invoice", "invoice", "inv")),
     ("draft_bill_of_exchange", ("bill of exchange", "draft drawn", "draft at", "draft", "boe")),
     ("charter_party_bill_of_lading", ("charter party bill of lading", "charter party b/l", "charter party bl")),
-    ("ocean_bill_of_lading", ("ocean bill of lading", "marine bill of lading", "clean on board bill of lading")),
-    ("bill_of_lading", ("bill of lading", "b/l", "bl")),
+    ("ocean_bill_of_lading", ("ocean bill of lading", "marine bill of lading", "clean on board bill of lading", "clean on board bills of lading")),
+    ("bill_of_lading", ("bill of lading", "bills of lading", "b/l", "bl")),
     ("air_waybill", ("air waybill", "awb")),
     ("sea_waybill", ("sea waybill",)),
     ("multimodal_transport_document", ("multimodal transport document", "combined transport document")),
@@ -85,6 +85,13 @@ DOCUMENT_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("import_license", ("import license", "import licence")),
 )
 
+SPECIFIC_DOCUMENT_CODE_SUPPRESSIONS: Dict[str, set[str]] = {
+    "proforma_invoice": {"commercial_invoice"},
+    "charter_party_bill_of_lading": {"bill_of_lading"},
+    "ocean_bill_of_lading": {"bill_of_lading"},
+    "insurance_policy": {"insurance_certificate"},
+}
+
 REQUIREMENT_CONDITION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\ball documents?\b", re.IGNORECASE),
     re.compile(r"\bdocuments?\s+must\b", re.IGNORECASE),
@@ -96,6 +103,18 @@ REQUIREMENT_CONDITION_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\bdocuments?\s+are discrepant\b", re.IGNORECASE),
     re.compile(r"\bshipment must\b", re.IGNORECASE),
     re.compile(r"\bpayment charge\b", re.IGNORECASE),
+)
+
+RAW_46A_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?ims)^\s*:46A:\s*(.*?)(?=^\s*:\d{2,3}[A-Z]:|\Z)"),
+    re.compile(r"(?ims)^\s*(?:Field\s*)?46A\s*:\s*(?:Documents\s+Required\s*:?)?\s*(.*?)(?=^\s*(?:Field\s*\d{2,3}[A-Z]?|:\d{2,3}[A-Z]:)|\Z)"),
+    re.compile(r"(?ims)^\s*Documents\s+Required\s*:?\s*(.*?)(?=^\s*(?:Additional\s+Conditions|(?:Field\s*)?47A\s*:|:47A:|Field\s*\d{2,3}[A-Z]?|:\d{2,3}[A-Z]:)|\Z)"),
+)
+
+RAW_47A_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?ims)^\s*:47A:\s*(.*?)(?=^\s*:\d{2,3}[A-Z]:|\Z)"),
+    re.compile(r"(?ims)^\s*(?:Field\s*)?47A\s*:\s*(?:Additional\s+Conditions\s*:?)?\s*(.*?)(?=^\s*(?:Field\s*\d{2,3}[A-Z]?|:\d{2,3}[A-Z]:)|\Z)"),
+    re.compile(r"(?ims)^\s*Additional\s+Conditions\s*:?\s*(.*?)(?=^\s*(?:Field\s*\d{2,3}[A-Z]?|:\d{2,3}[A-Z]:)|\Z)"),
 )
 
 DOCUMENT_LIKE_REQUIREMENT_KEYWORDS = (
@@ -722,6 +741,48 @@ def extract_requirement_contract(source: Dict[str, Any]) -> Dict[str, List[Any]]
     items: List[Dict[str, Any]] = []
     requirement_conditions: List[str] = []
     unmapped_requirements: List[str] = []
+
+    def _append_requirement_line(line: Any, detection_source: str) -> None:
+        normalized_line = str(line or "").strip()
+        if not normalized_line:
+            return
+        matches = match_required_document_codes(normalized_line)
+        if matches:
+            for code, alias in matches:
+                items.append(
+                    required_document_item(
+                        code,
+                        normalized_line,
+                        [alias],
+                        detection_source,
+                        0.84,
+                        exact_wording=_extract_exact_wording_requirement(normalized_line),
+                        originals=_extract_original_count_requirement(normalized_line),
+                        copies=_extract_copy_count_requirement(normalized_line),
+                        signed=_extract_signed_requirement(normalized_line),
+                        negotiable=_extract_negotiable_requirement(normalized_line),
+                    )
+                )
+            return
+        if _is_non_document_requirement_condition(normalized_line):
+            requirement_conditions.append(normalized_line)
+            return
+        if _mentions_explicit_other_specified_document(normalized_line):
+            items.append(
+                required_document_item(
+                    "other_specified_document",
+                    normalized_line,
+                    [normalized_line],
+                    f"{detection_source}_fallback",
+                    0.72,
+                )
+            )
+            return
+        if _looks_like_document_requirement(normalized_line):
+            unmapped_requirements.append(normalized_line)
+            return
+        requirement_conditions.append(normalized_line)
+
     for raw_code in coerce_text_sequence(source.get("required_document_types")):
         code = normalize_document_code(raw_code)
         if code:
@@ -747,32 +808,13 @@ def extract_requirement_contract(source: Dict[str, Any]) -> Dict[str, List[Any]]
                 items.append(normalized_entry)
                 lines_source = []
         for line in coerce_text_sequence(lines_source):
-            normalized_line = line.strip()
-            if not normalized_line:
-                continue
-            matches = match_required_document_codes(normalized_line)
-            if matches:
-                for code, alias in matches:
-                    items.append(required_document_item(code, normalized_line, [alias], "documents_required_text", 0.84))
-                continue
-            if _is_non_document_requirement_condition(normalized_line):
-                requirement_conditions.append(normalized_line)
-                continue
-            if _mentions_explicit_other_specified_document(normalized_line):
-                items.append(
-                    required_document_item(
-                        "other_specified_document",
-                        normalized_line,
-                        [normalized_line],
-                        "documents_required_fallback",
-                        0.72,
-                    )
-                )
-                continue
-            if _looks_like_document_requirement(normalized_line):
-                unmapped_requirements.append(normalized_line)
-                continue
-            requirement_conditions.append(normalized_line)
+            _append_requirement_line(line, "documents_required_text")
+
+    for line in _extract_raw_requirement_section_lines(source, RAW_46A_PATTERNS):
+        _append_requirement_line(line, "documents_required_raw_text")
+
+    for line in _extract_raw_requirement_section_lines(source, RAW_47A_PATTERNS):
+        _append_requirement_line(line, "requirement_conditions_raw_text")
     return {
         "required_documents": dedupe_required_documents(items),
         "requirement_conditions": _dedupe_text_sequence(requirement_conditions),
@@ -792,21 +834,36 @@ def extract_unmapped_requirements(source: Dict[str, Any]) -> List[str]:
     return extract_requirement_contract(source)["unmapped_requirements"]
 
 
-def required_document_item(code: str, raw_text: str, aliases_matched: Sequence[str], detection_source: str, confidence: float) -> Dict[str, Any]:
+def required_document_item(
+    code: str,
+    raw_text: str,
+    aliases_matched: Sequence[str],
+    detection_source: str,
+    confidence: float,
+    *,
+    originals: Optional[int] = None,
+    copies: Optional[int] = None,
+    signed: Optional[bool] = None,
+    negotiable: Optional[bool] = None,
+    issuer: Optional[str] = None,
+    exact_wording: Optional[str] = None,
+    legalized: Optional[bool] = None,
+    transport_mode: Optional[str] = None,
+) -> Dict[str, Any]:
     return {
         "code": code,
         "display_name": humanize(code),
         "category": categorize_document_code(code),
         "raw_text": raw_text,
         "aliases_matched": [alias for alias in aliases_matched if alias],
-        "originals": None,
-        "copies": None,
-        "signed": None,
-        "negotiable": None,
-        "issuer": None,
-        "exact_wording": None,
-        "legalized": None,
-        "transport_mode": None,
+        "originals": originals,
+        "copies": copies,
+        "signed": signed,
+        "negotiable": negotiable,
+        "issuer": issuer,
+        "exact_wording": exact_wording,
+        "legalized": legalized,
+        "transport_mode": transport_mode,
         "detection_source": detection_source,
         "confidence": round(confidence, 2),
         "evidence": [raw_text] if raw_text else [],
@@ -882,6 +939,13 @@ def match_required_document_codes(line: str) -> List[Tuple[str, str]]:
                 matches.append((code, alias))
                 seen_codes.add(code)
                 break
+    suppressed_codes = {
+        suppressed
+        for code, _alias in matches
+        for suppressed in SPECIFIC_DOCUMENT_CODE_SUPPRESSIONS.get(code, set())
+    }
+    if suppressed_codes:
+        matches = [(code, alias) for code, alias in matches if code not in suppressed_codes]
     return matches
 
 
@@ -900,6 +964,102 @@ def _looks_like_document_requirement(line: str) -> bool:
     if _is_non_document_requirement_condition(line):
         return False
     return any(keyword in lowered for keyword in DOCUMENT_LIKE_REQUIREMENT_KEYWORDS)
+
+
+def _iter_requirement_raw_blobs(source: Dict[str, Any]) -> Iterable[str]:
+    seen: set[str] = set()
+    candidates: List[Any] = [
+        source.get("raw_text"),
+        source.get("text"),
+        source.get("content"),
+        source.get("narrative"),
+    ]
+    mt700 = source.get("mt700")
+    if isinstance(mt700, dict):
+        candidates.append(mt700.get("raw_text"))
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        normalized = candidate.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        yield normalized
+
+
+def _extract_raw_requirement_section_lines(
+    source: Dict[str, Any],
+    patterns: Sequence[re.Pattern[str]],
+) -> List[str]:
+    lines: List[str] = []
+    for blob in _iter_requirement_raw_blobs(source):
+        for pattern in patterns:
+            for match in pattern.finditer(blob):
+                block = clean_string(match.group(1))
+                if not block:
+                    continue
+                lines.extend(coerce_text_sequence(block))
+    return _dedupe_text_sequence(lines)
+
+
+def _extract_exact_wording_requirement(line: str) -> Optional[str]:
+    text = clean_string(line)
+    if not text:
+        return None
+    patterns = (
+        re.compile(r"\b(?:stating|state|must state)\s+exactly\s+(.+)$", re.IGNORECASE),
+        re.compile(r"\bexact\s+wording\s*[:\-]?\s+(.+)$", re.IGNORECASE),
+        re.compile(r"\bwith\s+the\s+wording\s*[:\-]?\s+(.+)$", re.IGNORECASE),
+    )
+    for pattern in patterns:
+        match = pattern.search(text)
+        if not match:
+            continue
+        wording = str(match.group(1) or "").strip().strip("\"'“”")
+        wording = wording.rstrip(" .;:")
+        if wording:
+            return wording
+    return None
+
+
+def _extract_original_count_requirement(line: str) -> Optional[int]:
+    text = str(line or "")
+    explicit = re.search(r"(\d+)\s+originals?\b", text, re.IGNORECASE)
+    if explicit:
+        return int(explicit.group(1))
+    spelled = {
+        "duplicate": 2,
+        "triplicate": 3,
+        "quadruplicate": 4,
+        "quintuplicate": 5,
+    }
+    lowered = text.lower()
+    for token, value in spelled.items():
+        if token in lowered:
+            return value
+    return None
+
+
+def _extract_copy_count_requirement(line: str) -> Optional[int]:
+    text = str(line or "")
+    match = re.search(r"(\d+)\s+copies?\b", text, re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def _extract_signed_requirement(line: str) -> Optional[bool]:
+    lowered = str(line or "").lower()
+    if "signed" not in lowered:
+        return None
+    return True
+
+
+def _extract_negotiable_requirement(line: str) -> Optional[bool]:
+    lowered = str(line or "").lower()
+    if "non-negotiable" in lowered or "non negotiable" in lowered:
+        return False
+    if "negotiable" in lowered:
+        return True
+    return None
 
 
 def _dedupe_text_sequence(values: Sequence[str]) -> List[str]:

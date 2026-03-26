@@ -121,3 +121,93 @@ def test_build_lc_requirements_graph_v1_compiles_required_docs_and_core_terms() 
             "source_bucket": "required_documents",
         },
     ]
+
+
+def test_build_lc_requirements_graph_v1_falls_back_to_raw_46a_and_47a_text() -> None:
+    graph = build_lc_requirements_graph_v1(
+        {
+            "document_id": "doc-lc-raw",
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "raw_text": (
+                ":27:1/1\n"
+                ":40A:IRREVOCABLE\n"
+                ":20:EXP2026BD001\n"
+                ":31C:251126\n"
+                ":46A:\n"
+                "COMMERCIAL INVOICE IN TRIPLICATE\n"
+                "FULL SET OF CLEAN ON BOARD BILL OF LADING\n"
+                "PACKING LIST\n"
+                "CERTIFICATE OF ORIGIN\n"
+                "BENEFICIARY CERTIFICATE STATING EXACTLY WE HEREBY CERTIFY GOODS ARE BRAND NEW\n"
+                ":47A:\n"
+                "ALL DOCUMENTS MUST SHOW LC NUMBER EXP2026BD001\n"
+                "DOCUMENTS MUST BE PRESENTED WITHIN 21 DAYS AFTER SHIPMENT\n"
+            ),
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "letter_of_credit",
+                "facts": [
+                    {
+                        "field_name": "lc_number",
+                        "value": "EXP2026BD001",
+                        "normalized_value": "EXP2026BD001",
+                    },
+                    {
+                        "field_name": "issue_date",
+                        "value": "2025-11-26",
+                        "normalized_value": "2025-11-26",
+                    },
+                    {
+                        "field_name": "applicant",
+                        "value": "Global Trade Corp",
+                        "normalized_value": "Global Trade Corp",
+                    },
+                    {
+                        "field_name": "beneficiary",
+                        "value": "Bangladesh Export Ltd",
+                        "normalized_value": "Bangladesh Export Ltd",
+                    },
+                    {
+                        "field_name": "amount",
+                        "value": "125000.00",
+                        "normalized_value": "125000.00",
+                    },
+                    {
+                        "field_name": "currency",
+                        "value": "USD",
+                        "normalized_value": "USD",
+                    },
+                ],
+            },
+        }
+    )
+
+    assert graph is not None
+    assert graph["required_document_types"] == [
+        "commercial_invoice",
+        "ocean_bill_of_lading",
+        "packing_list",
+        "certificate_of_origin",
+        "beneficiary_certificate",
+    ]
+    assert graph["documentary_conditions"] == [
+        "ALL DOCUMENTS MUST SHOW LC NUMBER EXP2026BD001",
+        "DOCUMENTS MUST BE PRESENTED WITHIN 21 DAYS AFTER SHIPMENT",
+    ]
+    assert {
+        "requirement_type": "identifier_presence",
+        "identifier_type": "lc_number",
+        "value": "EXP2026BD001",
+        "applies_to": "all_documents",
+        "source_text": "ALL DOCUMENTS MUST SHOW LC NUMBER EXP2026BD001",
+        "source_bucket": "documentary_conditions",
+    } in graph["condition_requirements"]
+    assert {
+        "requirement_type": "document_exact_wording",
+        "document_type": "beneficiary_certificate",
+        "exact_wording": "WE HEREBY CERTIFY GOODS ARE BRAND NEW",
+        "applies_to": "beneficiary_certificate",
+        "source_text": "BENEFICIARY CERTIFICATE STATING EXACTLY WE HEREBY CERTIFY GOODS ARE BRAND NEW",
+        "source_bucket": "required_documents",
+    } in graph["condition_requirements"]

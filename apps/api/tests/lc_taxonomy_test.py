@@ -119,7 +119,7 @@ def test_mt700_compact_required_document_shorthand_maps_to_canonical_codes() -> 
     codes = {item["code"] for item in classification["required_documents"]}
 
     assert "commercial_invoice" in codes
-    assert "bill_of_lading" in codes
+    assert "ocean_bill_of_lading" in codes or "bill_of_lading" in codes
     assert "packing_list" in codes
     assert "certificate_of_origin" in codes
     assert "insurance_certificate" in codes
@@ -148,6 +148,86 @@ def test_requirement_contract_separates_document_requirements_from_conditions() 
         "ALL DOCUMENTS MUST SHOW LC NO. EXP2026BD001 AND BUYER PURCHASE ORDER NO. GBE-44592.",
     ]
     assert classification["unmapped_requirements"] == []
+
+
+def test_raw_field_46a_and_47a_text_populates_required_docs_conditions_and_exact_wording() -> None:
+    taxonomy = _load_taxonomy_module()
+
+    classification = taxonomy.build_lc_classification(
+        {
+            "raw_text": (
+                "IRREVOCABLE DOCUMENTARY CREDIT\n"
+                "Field 46A: Documents Required:\n"
+                "- Commercial Invoice in triplicate\n"
+                "- Full set of clean on board Bills of Lading\n"
+                "- Packing List\n"
+                "- Certificate of Origin\n"
+                "- Beneficiary Certificate stating exactly WE HEREBY CERTIFY GOODS ARE BRAND NEW\n"
+                "Field 47A: Additional Conditions:\n"
+                "- All documents must show LC number EXP2026BD001\n"
+                "- Documents must be presented within 21 days after shipment\n"
+            )
+        }
+    )
+
+    codes = {item["code"] for item in classification["required_documents"]}
+    assert "commercial_invoice" in codes
+    assert "ocean_bill_of_lading" in codes
+    assert "bill_of_lading" not in codes
+    assert "packing_list" in codes
+    assert "certificate_of_origin" in codes
+    assert "beneficiary_certificate" in codes
+
+    beneficiary_certificate = next(
+        item for item in classification["required_documents"] if item["code"] == "beneficiary_certificate"
+    )
+    assert beneficiary_certificate["exact_wording"] == "WE HEREBY CERTIFY GOODS ARE BRAND NEW"
+    assert beneficiary_certificate["detection_source"] == "documents_required_raw_text"
+
+    assert classification["requirement_conditions"] == [
+        "All documents must show LC number EXP2026BD001",
+        "Documents must be presented within 21 days after shipment",
+    ]
+
+
+def test_raw_mt700_blocks_populate_required_docs_conditions_and_exact_wording() -> None:
+    taxonomy = _load_taxonomy_module()
+
+    classification = taxonomy.build_lc_classification(
+        {
+            "raw_text": (
+                ":27:1/1\n"
+                ":40A:IRREVOCABLE\n"
+                ":20:EXP2026BD001\n"
+                ":46A:\n"
+                "COMMERCIAL INVOICE IN TRIPLICATE\n"
+                "FULL SET OF CLEAN ON BOARD BILL OF LADING\n"
+                "PACKING LIST\n"
+                "CERTIFICATE OF ORIGIN\n"
+                "BENEFICIARY CERTIFICATE STATING EXACTLY WE HEREBY CERTIFY GOODS ARE BRAND NEW\n"
+                ":47A:\n"
+                "ALL DOCUMENTS MUST SHOW LC NUMBER EXP2026BD001\n"
+                "DOCUMENTS MUST BE PRESENTED WITHIN 21 DAYS AFTER SHIPMENT\n"
+            )
+        }
+    )
+
+    codes = {item["code"] for item in classification["required_documents"]}
+    assert "commercial_invoice" in codes
+    assert "ocean_bill_of_lading" in codes
+    assert "bill_of_lading" not in codes
+    assert "packing_list" in codes
+    assert "certificate_of_origin" in codes
+    assert "beneficiary_certificate" in codes
+
+    beneficiary_certificate = next(
+        item for item in classification["required_documents"] if item["code"] == "beneficiary_certificate"
+    )
+    assert beneficiary_certificate["exact_wording"] == "WE HEREBY CERTIFY GOODS ARE BRAND NEW"
+    assert classification["requirement_conditions"] == [
+        "ALL DOCUMENTS MUST SHOW LC NUMBER EXP2026BD001",
+        "DOCUMENTS MUST BE PRESENTED WITHIN 21 DAYS AFTER SHIPMENT",
+    ]
 
 
 def test_existing_unknown_workflow_does_not_block_recomputed_export_orientation() -> None:
