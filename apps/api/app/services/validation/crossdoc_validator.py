@@ -28,10 +28,12 @@ from app.services.validation.alias_normalization import (
     canonicalize_fields,
 )
 from app.reference_data.ports import get_port_registry, PortRegistry
-from app.constants.thresholds import VALIDATION, CONFIDENCE
+from app.constants.thresholds import VALIDATION, CONFIDENCE, SIMILARITY
 
 
 logger = logging.getLogger(__name__)
+
+_NUMERIC_EPSILON = 1e-6
 
 # Global port registry instance
 _port_registry: Optional[PortRegistry] = None
@@ -338,7 +340,7 @@ class CrossDocValidator:
     
     def __init__(
         self,
-        amount_tolerance: float = VALIDATION.AMOUNT_TOLERANCE,
+        amount_tolerance: float = 0.0,
         quantity_tolerance: float = VALIDATION.QUANTITY_TOLERANCE,
         strict_goods_matching: bool = False,
     ):
@@ -515,7 +517,7 @@ class CrossDocValidator:
         executed = 0
         passed = 0
         
-        # CROSSDOC-INV-001: Invoice amount vs LC amount
+        # CROSSDOC-AMOUNT-1: Invoice amount vs LC amount
         executed += 1
         issue = self._check_invoice_amount(invoice, lc_data)
         if issue:
@@ -684,27 +686,29 @@ class CrossDocValidator:
         invoice: Dict[str, Any],
         lc_data: Dict[str, Any],
     ) -> Optional[CrossDocIssue]:
-        """Check invoice amount does not exceed LC amount (with tolerance)."""
+        """Check invoice amount does not exceed LC amount plus any explicit tolerance."""
         inv_amount = self._parse_amount(invoice.get("amount") or invoice.get("total_amount"))
         lc_amount = self._parse_amount(lc_data.get("amount"))
         
         if inv_amount is None or lc_amount is None:
             return None  # Can't check without values
         
+        effective_tolerance = self._resolve_amount_tolerance(lc_data)
+
         # Calculate maximum allowed (LC amount + tolerance)
-        max_allowed = lc_amount * (1 + self.amount_tolerance)
+        max_allowed = lc_amount * (1 + effective_tolerance)
         
         if inv_amount > max_allowed:
             return CrossDocIssue(
-                rule_id="CROSSDOC-INV-001",
+                rule_id="CROSSDOC-AMOUNT-1",
                 title="Invoice Amount Exceeds LC Amount",
                 severity=IssueSeverity.CRITICAL,
                 message=(
                     f"Invoice amount ({inv_amount:,.2f}) exceeds LC amount "
-                    f"({lc_amount:,.2f}) plus {self.amount_tolerance*100:.0f}% tolerance "
+                    f"({lc_amount:,.2f}) plus {effective_tolerance*100:.0f}% tolerance "
                     f"(max: {max_allowed:,.2f})."
                 ),
-                expected=f"<= {max_allowed:,.2f} (LC amount + {self.amount_tolerance*100:.0f}% tolerance)",
+                expected=f"<= {max_allowed:,.2f} (LC amount + {effective_tolerance*100:.0f}% tolerance)",
                 found=f"{inv_amount:,.2f}",
                 suggestion="Reduce invoice amount to within LC tolerance or request LC amendment.",
                 source_doc=DocumentType.INVOICE,
@@ -715,10 +719,61 @@ class CrossDocValidator:
                 isbp_paragraph="ISBP745 C3",
                 source_value=inv_amount,
                 target_value=lc_amount,
-                tolerance_applied=self.amount_tolerance,
+                tolerance_applied=effective_tolerance,
             )
         
         return None
+
+    def _coerce_tolerance_fraction(self, value: Any) -> Optional[float]:
+        if value in (None, "", []):
+            return None
+        candidate = value
+        if isinstance(candidate, str):
+            candidate = candidate.replace("%", "").strip()
+        try:
+            numeric = float(candidate)
+        except (TypeError, ValueError):
+            return None
+        if numeric < 0:
+            return None
+        return numeric / 100.0 if numeric > 1 else numeric
+
+    def _resolve_amount_tolerance(self, lc_data: Dict[str, Any]) -> float:
+        requirements_graph = (
+            lc_data.get("requirements_graph_v1")
+            or lc_data.get("requirementsGraphV1")
+        )
+
+        candidates: List[Any] = []
+        if isinstance(requirements_graph, dict):
+            tolerances = requirements_graph.get("tolerances")
+            if isinstance(tolerances, dict):
+                amount_tolerance = tolerances.get("amount") or tolerances.get("invoice_amount")
+                if isinstance(amount_tolerance, dict):
+                    candidates.extend(
+                        [
+                            amount_tolerance.get("tolerance_percent"),
+                            amount_tolerance.get("percent"),
+                        ]
+                    )
+                else:
+                    candidates.append(amount_tolerance)
+
+        candidates.extend(
+            [
+                lc_data.get("amount_tolerance_percent"),
+                lc_data.get("tolerance_percent"),
+                lc_data.get("tolerance_plus"),
+            ]
+        )
+
+        for candidate in candidates:
+            fraction = self._coerce_tolerance_fraction(candidate)
+            if fraction is not None:
+                return fraction
+
+        default_fraction = self._coerce_tolerance_fraction(self.amount_tolerance)
+        return default_fraction if default_fraction is not None else 0.0
     
     def _check_invoice_beneficiary(
         self,
@@ -783,9 +838,34 @@ class CrossDocValidator:
         
         if inv_hs_codes and lc_hs_codes:
             # HS codes present in both - check for match
-            if inv_hs_codes == lc_hs_codes or inv_hs_codes.issubset(lc_hs_codes):
+            if (
+                inv_hs_codes == lc_hs_codes
+                or inv_hs_codes.issubset(lc_hs_codes)
+                or lc_hs_codes.issubset(inv_hs_codes)
+            ):
                 logger.info(f"✓ Goods match by HS codes: {inv_hs_codes}")
                 return None  # Compliant - same HS codes
+            if inv_hs_codes.isdisjoint(lc_hs_codes):
+                return CrossDocIssue(
+                    rule_id="CROSSDOC-INV-003",
+                    title="Invoice Goods Description Mismatch",
+                    severity=IssueSeverity.MAJOR,
+                    message=(
+                        "Invoice goods description does not correspond with LC terms. "
+                        "The invoice and LC carry conflicting HS codes."
+                    ),
+                    expected=f"Goods matching: {lc_goods[:100]}...",
+                    found=f"Invoice states: {inv_goods[:100]}...",
+                    suggestion="Align invoice goods description and HS code with LC terms or request LC amendment.",
+                    source_doc=DocumentType.INVOICE,
+                    target_doc=DocumentType.LC,
+                    source_field="goods_description",
+                    target_field="goods_description",
+                    ucp_article="UCP600 Article 18(c)",
+                    isbp_paragraph="ISBP745 C6",
+                    source_value=inv_goods,
+                    target_value=lc_goods,
+                )
         
         # SECOND: Check key product terms (cotton, t-shirt, garment, etc.)
         key_terms_match = self._check_key_product_terms(inv_goods, lc_goods)
@@ -798,7 +878,7 @@ class CrossDocValidator:
         
         # Invoice goods must not conflict with LC (but can be more specific)
         # UCP600 Article 18(c) allows general terms - "correspond" not "identical"
-        if similarity < VALIDATION.GOODS_DESCRIPTION_MIN_SIMILARITY:
+        if similarity < SIMILARITY.GOODS:
             return CrossDocIssue(
                 rule_id="CROSSDOC-INV-003",
                 title="Invoice Goods Description Mismatch",
@@ -823,18 +903,22 @@ class CrossDocValidator:
         return None
     
     def _extract_hs_codes(self, text: str) -> Set[str]:
-        """Extract HS codes from text (6-10 digit numbers)."""
+        """Extract HS codes from text, tolerating dotted and spaced formats."""
         if not text:
             return set()
-        # HS codes are typically 6, 8, or 10 digits
-        pattern = r'\b(\d{6,10})\b'
+        # HS codes are typically 6, 8, or 10 digits and often appear as
+        # 6109.10 / 6109-10 / 61 09 10 in trade documents.
+        pattern = r"\b(\d{4}(?:[.\-\s]?\d{2}){1,3}|\d{6,10})\b"
         matches = re.findall(pattern, text)
         # Filter to likely HS codes (starting with valid chapters 01-99)
         hs_codes = set()
         for m in matches:
-            chapter = int(m[:2])
+            normalized = re.sub(r"\D", "", m)
+            if not 6 <= len(normalized) <= 10:
+                continue
+            chapter = int(normalized[:2])
             if 1 <= chapter <= 99:
-                hs_codes.add(m)
+                hs_codes.add(normalized)
         return hs_codes
     
     def _check_key_product_terms(self, text1: str, text2: str) -> bool:
@@ -1497,7 +1581,7 @@ class CrossDocValidator:
             return CrossDocIssue(
                 rule_id="CROSSDOC-TIMING-002",
                 title="Presentation Deadline Approaching",
-                severity=IssueSeverity.WARNING,
+                severity=IssueSeverity.MAJOR,
                 message=f"Only {days_remaining} day(s) remaining to present documents.",
                 expected=f"Present by {effective_deadline.strftime('%Y-%m-%d')}",
                 found=f"Today is {today.strftime('%Y-%m-%d')} ({days_remaining} days remaining)",
@@ -1571,7 +1655,7 @@ class CrossDocValidator:
         min_coverage = lc_amount * 1.10
         
         # Use small epsilon for floating-point comparison
-        epsilon = VALIDATION.NUMERIC_EPSILON
+        epsilon = _NUMERIC_EPSILON
         if ins_amount < (min_coverage - epsilon):
             return CrossDocIssue(
                 rule_id="CROSSDOC-INS-001",
@@ -1704,7 +1788,7 @@ class CrossDocValidator:
         
         similarity = self._text_similarity(inv_goods, bl_goods)
         
-        if similarity < VALIDATION.GOODS_DESCRIPTION_MIN_SIMILARITY:
+        if similarity < SIMILARITY.GOODS:
             return CrossDocIssue(
                 rule_id="CROSSDOC-INV-BL-001",
                 title="Goods Description Inconsistency",
@@ -2424,7 +2508,7 @@ class CrossDocValidator:
         union = tokens1 | tokens2
         
         # Jaccard similarity threshold for set comparisons
-        return len(intersection) / len(union) > VALIDATION.JACCARD_SIMILARITY_THRESHOLD
+        return len(intersection) / len(union) > SIMILARITY.JACCARD
     
     # Port aliases for common spelling variations
     PORT_ALIASES = {

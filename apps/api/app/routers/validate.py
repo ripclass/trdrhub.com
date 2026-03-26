@@ -2083,7 +2083,55 @@ def _determine_company_size(current_user: User, payload: Dict[str, Any]) -> Tupl
     return size, tolerance_percent
 
 
-def _compute_invoice_amount_bounds(payload: Dict[str, Any], tolerance_percent: Decimal) -> Tuple[Optional[float], Optional[float]]:
+def _resolve_invoice_amount_tolerance_percent(
+    payload: Dict[str, Any],
+    fallback: Optional[Decimal] = None,
+) -> Decimal:
+    """Resolve invoice amount tolerance from LC-derived requirements, not company profile."""
+    lc_data = payload.get("lc") or {}
+    requirements_graph = (
+        payload.get("requirements_graph_v1")
+        or lc_data.get("requirements_graph_v1")
+        or lc_data.get("requirementsGraphV1")
+    )
+
+    candidates: List[Any] = []
+    if isinstance(requirements_graph, dict):
+        tolerances = requirements_graph.get("tolerances")
+        if isinstance(tolerances, dict):
+            amount_tolerance = tolerances.get("amount") or tolerances.get("invoice_amount")
+            if isinstance(amount_tolerance, dict):
+                candidates.extend(
+                    [
+                        amount_tolerance.get("tolerance_percent"),
+                        amount_tolerance.get("percent"),
+                    ]
+                )
+            else:
+                candidates.append(amount_tolerance)
+
+    amount_raw = lc_data.get("amount")
+    if isinstance(amount_raw, dict):
+        candidates.append(amount_raw.get("tolerance_percent"))
+
+    candidates.extend(
+        [
+            lc_data.get("amount_tolerance_percent"),
+            lc_data.get("tolerance_percent"),
+            lc_data.get("tolerance_plus"),
+        ]
+    )
+
+    for candidate in candidates:
+        tolerance = _coerce_decimal(candidate)
+        if tolerance is None or tolerance < 0:
+            continue
+        return tolerance
+
+    return fallback if fallback is not None else Decimal("0")
+
+
+def _compute_invoice_amount_bounds(payload: Dict[str, Any], tolerance_percent: Optional[Decimal] = None) -> Tuple[Optional[float], Optional[float]]:
     """Compute absolute tolerance amount and allowed invoice limit."""
     # Handle both formats: {"value": 125000} (legacy) and 125000 (AI-first)
     lc_data = payload.get("lc") or {}
@@ -2099,6 +2147,8 @@ def _compute_invoice_amount_bounds(payload: Dict[str, Any], tolerance_percent: D
     lc_amount_decimal = _coerce_decimal(lc_amount_value)
     if lc_amount_decimal is None:
         return None, None
+    if tolerance_percent is None:
+        tolerance_percent = _resolve_invoice_amount_tolerance_percent(payload)
     tolerance_value = lc_amount_decimal * tolerance_percent / Decimal("100")
     limit = lc_amount_decimal + tolerance_value
     return float(tolerance_value), float(limit)

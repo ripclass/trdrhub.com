@@ -74,6 +74,31 @@ def test_build_invoice_fact_set_maps_candidate_seller_alias() -> None:
     assert fact["source_field_name"] == "seller_name"
 
 
+def test_build_invoice_fact_set_captures_goods_description_alias() -> None:
+    payload = build_invoice_fact_set(
+        {
+            "document_type": "commercial_invoice",
+            "invoice_subtype": "commercial_invoice",
+            "extraction_lane": "document_ai",
+            "extracted_fields": {
+                "product_description": "Polyester Blend T-Shirts, HS Code 6109.90",
+            },
+            "field_details": {
+                "product_description": {
+                    "value": "Polyester Blend T-Shirts, HS Code 6109.90",
+                    "verification": "confirmed",
+                    "source": "multimodal:pdf_pages",
+                }
+            },
+        }
+    )
+
+    fact = _fact_by_name(payload, "goods_description")
+    assert fact["value"] == "Polyester Blend T-Shirts, HS Code 6109.90"
+    assert fact["verification_state"] == "confirmed"
+    assert fact["source_field_name"] == "product_description"
+
+
 def test_build_invoice_fact_set_marks_absent_buyer_when_source_absent() -> None:
     payload = build_invoice_fact_set(
         {

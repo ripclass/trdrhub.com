@@ -132,6 +132,7 @@ _INVOICE_VALIDATION_ALIASES = {
     "currency": ("currency", "currency_code"),
     "seller": ("seller", "seller_name", "exporter", "beneficiary"),
     "buyer": ("buyer", "buyer_name", "importer", "applicant"),
+    "goods_description": ("goods_description", "description", "product_description"),
 }
 _BL_VALIDATION_ALIASES = {
     "bl_number": ("bl_number", "bill_of_lading_number", "transport_document_reference", "transport_reference_number"),

@@ -434,10 +434,10 @@ class TestCrossDocValidator:
             invoice=invoice,
         )
         
-        # Should have critical issue for amount (CROSSDOC-INV-001)
+        # Should have critical issue for amount (CROSSDOC-AMOUNT-1)
         amount_issues = [
             i for i in result.issues 
-            if i.rule_id == "CROSSDOC-INV-001" and i.severity == IssueSeverity.CRITICAL
+            if i.rule_id == "CROSSDOC-AMOUNT-1" and i.severity == IssueSeverity.CRITICAL
         ]
         assert len(amount_issues) >= 1
     
@@ -625,7 +625,7 @@ class TestCertification:
         }
         
         result = validator.validate_all(lc_baseline=baseline, invoice=invoice_at_limit)
-        amount_issues = [i for i in result.issues if "CROSSDOC-INV-001" in i.rule_id]
+        amount_issues = [i for i in result.issues if "CROSSDOC-AMOUNT-1" in i.rule_id]
         
         # Should NOT have issue at 5%
         assert len(amount_issues) == 0, "CERT-003 FAILED: 5% tolerance not applied correctly"
@@ -637,7 +637,7 @@ class TestCertification:
         }
         
         result2 = validator.validate_all(lc_baseline=baseline, invoice=invoice_over_limit)
-        amount_issues2 = [i for i in result2.issues if "CROSSDOC-INV-001" in i.rule_id]
+        amount_issues2 = [i for i in result2.issues if "CROSSDOC-AMOUNT-1" in i.rule_id]
         
         assert len(amount_issues2) >= 1, "CERT-003 FAILED: Over-tolerance not detected"
     
@@ -777,4 +777,3 @@ class TestMissingReasonCodes:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
-

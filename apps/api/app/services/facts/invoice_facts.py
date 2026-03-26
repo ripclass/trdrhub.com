@@ -22,6 +22,7 @@ _INVOICE_FACT_FIELDS: Dict[str, Tuple[str, ...]] = {
     "currency": ("currency", "currency_code"),
     "seller": ("seller", "seller_name", "exporter", "beneficiary"),
     "buyer": ("buyer", "buyer_name", "importer", "applicant"),
+    "goods_description": ("goods_description", "description", "product_description"),
 }
 
 

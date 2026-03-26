@@ -51,6 +51,12 @@ def test_project_invoice_validation_context_uses_only_resolved_invoice_facts() -
                     "normalized_value": "Dhaka Knitwear & Exports Ltd.",
                     "verification_state": "operator_rejected",
                 },
+                {
+                    "field_name": "goods_description",
+                    "value": "Polyester Blend T-Shirts, HS Code 6109.90",
+                    "normalized_value": "Polyester Blend T-Shirts, HS Code 6109.90",
+                    "verification_state": "confirmed",
+                },
             ],
         },
     )
@@ -65,7 +71,9 @@ def test_project_invoice_validation_context_uses_only_resolved_invoice_facts() -
     assert "seller" not in projected
     assert "seller_name" not in projected
     assert projected["lc_reference"] == "EXP2026BD001"
-    assert projected["goods_description"] == "100% cotton knit tops"
+    assert projected["goods_description"] == "Polyester Blend T-Shirts, HS Code 6109.90"
+    assert projected["description"] == "Polyester Blend T-Shirts, HS Code 6109.90"
+    assert projected["product_description"] == "Polyester Blend T-Shirts, HS Code 6109.90"
 
 
 def test_apply_invoice_fact_graph_to_validation_inputs_mutates_payload_and_context() -> None:
