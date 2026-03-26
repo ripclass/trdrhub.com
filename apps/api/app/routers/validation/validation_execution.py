@@ -103,6 +103,7 @@ async def execute_validation_pipeline(
 
     try:
         lc_context = apply_lc_fact_graph_to_validation_inputs(payload, extracted_context)
+        setup_state["lc_context"] = lc_context
         apply_invoice_fact_graph_to_validation_inputs(payload, extracted_context)
         apply_bl_fact_graph_to_validation_inputs(payload, extracted_context)
         apply_packing_list_fact_graph_to_validation_inputs(payload, extracted_context)

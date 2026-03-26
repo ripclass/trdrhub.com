@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Any, Dict
 from uuid import uuid4
 
+from app.services.facts import (
+    apply_lc_fact_graph_to_validation_inputs,
+    materialize_document_fact_graphs_v1,
+)
+
 from .lc_dates import backfill_lc_mt700_sources, repair_lc_mt700_dates
 
 
@@ -76,6 +81,8 @@ async def prepare_validation_session(
             list(extracted_context.keys()),
         )
         document_details = extracted_context.get("documents") or []
+        if isinstance(document_details, list):
+            materialize_document_fact_graphs_v1(document_details)
         if document_details:
             status_counts: Dict[str, int] = {}
             for doc in document_details:
@@ -89,10 +96,20 @@ async def prepare_validation_session(
         payload.update(extracted_context)
     else:
         logger.warning("No structured data extracted from %d uploaded files", len(files_list))
+    if extracted_context:
+        try:
+            projected_lc = apply_lc_fact_graph_to_validation_inputs(payload, extracted_context)
+            if isinstance(projected_lc, dict) and projected_lc:
+                payload["lc"] = projected_lc
+                extracted_context["lc"] = projected_lc
+        except Exception as exc:
+            logger.warning("LC fact projection during session setup skipped: %s", exc, exc_info=True)
     if payload.get("lc"):
         normalized_lc = _normalize_lc_payload_structures(payload["lc"])
         normalized_lc = backfill_lc_mt700_sources(normalized_lc, extracted_context) or normalized_lc
         payload["lc"] = repair_lc_mt700_dates(normalized_lc) or normalized_lc
+        if isinstance(extracted_context, dict):
+            extracted_context["lc"] = payload["lc"]
 
     # =====================================================================
     # NO LC FOUND GATE - Block early if no LC document detected
