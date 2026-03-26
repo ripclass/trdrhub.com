@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from .models import DocumentFact, DocumentFactSet
@@ -37,6 +39,19 @@ _LC_SYSTEM_AUTHORITY_FIELDS = {
     "documents_required",
     "ucp_reference",
 }
+_MT_FIELD_PATTERNS: Tuple[str, ...] = (
+    r"(?ims)^\s*:\s*{tag}\s*:\s*(.*?)(?=^\s*:\s*\d{{2,3}}[A-Z]?\s*:|\Z)",
+    r"(?ims)^\s*Field\s*{tag}\s*:\s*(.*?)(?=^\s*(?:Field\s*\d{{2,3}}[A-Z]?|:\s*\d{{2,3}}[A-Z]?\s*:)|\Z)",
+)
+_DATE_TOKEN_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b\d{4}-\d{2}-\d{2}\b"),
+    re.compile(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b"),
+    re.compile(r"\b\d{8}\b"),
+    re.compile(r"\b\d{6}\b"),
+)
+_INCOTERM_RE = re.compile(r"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b", re.IGNORECASE)
+_CURRENCY_AMOUNT_RE = re.compile(r"\b([A-Z]{3})\s*([0-9][0-9,\.]*)\b")
+_AMOUNT_CURRENCY_RE = re.compile(r"\b([0-9][0-9,\.]*)\s*([A-Z]{3})\b")
 
 
 def _is_populated(value: Any) -> bool:
@@ -68,6 +83,196 @@ def _detail_map(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     if isinstance(details, dict):
         return {str(key): value for key, value in details.items() if isinstance(value, dict)}
     return {}
+
+
+def _raw_text_source(payload: Dict[str, Any]) -> Optional[str]:
+    extraction_artifacts = (
+        payload.get("extraction_artifacts_v1")
+        if isinstance(payload.get("extraction_artifacts_v1"), dict)
+        else {}
+    )
+    mt700 = payload.get("mt700") if isinstance(payload.get("mt700"), dict) else {}
+
+    for value in (
+        payload.get("raw_text"),
+        payload.get("text"),
+        payload.get("content"),
+        payload.get("narrative"),
+        extraction_artifacts.get("raw_text"),
+        mt700.get("raw_text"),
+        payload.get("raw_text_preview"),
+    ):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _extract_mt_field_block(raw_text: str, tag: str) -> Optional[str]:
+    text = str(raw_text or "")
+    if not text.strip():
+        return None
+    for pattern in _MT_FIELD_PATTERNS:
+        match = re.search(pattern.format(tag=re.escape(tag)), text)
+        if not match:
+            continue
+        block = str(match.group(1) or "").strip()
+        if block:
+            return block
+    return None
+
+
+def _strip_leading_labels(text: str, labels: Iterable[str]) -> str:
+    cleaned = str(text or "").strip()
+    for label in labels:
+        cleaned = re.sub(
+            rf"(?im)^\s*(?:{re.escape(label)})\s*[:\-]?\s*",
+            "",
+            cleaned,
+        ).strip()
+    return cleaned
+
+
+def _first_line(text: str) -> Optional[str]:
+    for line in str(text or "").splitlines():
+        cleaned = line.strip(" -\t")
+        if cleaned:
+            return cleaned
+    return None
+
+
+def _normalize_date_token(token: str) -> Optional[str]:
+    normalized = normalize_date(token)
+    if normalized and normalized != token:
+        return normalized
+
+    compact = re.sub(r"[^0-9]", "", str(token or ""))
+    if len(compact) == 6:
+        try:
+            return datetime.strptime(compact, "%y%m%d").date().isoformat()
+        except ValueError:
+            return normalized
+    return normalized
+
+
+def _extract_date_from_block(block: str) -> Optional[str]:
+    text = str(block or "")
+    for pattern in _DATE_TOKEN_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        normalized = _normalize_date_token(match.group(0))
+        if normalized:
+            return normalized
+    return None
+
+
+def _recovery_detail(value: Any, snippet: str, *, confidence: float = 0.93) -> Dict[str, Any]:
+    return {
+        "value": value,
+        "confidence": confidence,
+        "verification": "text_supported",
+        "source": "artifact_raw_text",
+        "evidence": {
+            "snippet": snippet,
+            "source": "artifact_raw_text",
+        },
+    }
+
+
+def _raw_text_recoveries(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
+    raw_text = _raw_text_source(payload)
+    if not raw_text:
+        return {}, {}
+
+    recovered_fields: Dict[str, Any] = {}
+    recovered_details: Dict[str, Dict[str, Any]] = {}
+
+    def _set(field_name: str, value: Any, snippet: Optional[str], *, confidence: float = 0.93) -> None:
+        if not _is_populated(value) or field_name in recovered_fields:
+            return
+        recovered_fields[field_name] = value
+        recovered_details[field_name] = _recovery_detail(value, snippet or str(value), confidence=confidence)
+
+    lc_number_block = _extract_mt_field_block(raw_text, "20")
+    if lc_number_block:
+        lc_number_text = _strip_leading_labels(lc_number_block, ("Documentary Credit Number", "LC Number", "Credit Number"))
+        lc_number_line = _first_line(lc_number_text) or lc_number_text
+        lc_number_match = re.search(r"\b([A-Z0-9][A-Z0-9/\-]{4,})\b", lc_number_line or "", re.IGNORECASE)
+        _set("lc_number", lc_number_match.group(1).strip() if lc_number_match else lc_number_line, lc_number_line, confidence=0.96)
+
+    issue_block = _extract_mt_field_block(raw_text, "31C")
+    if issue_block:
+        _set("issue_date", _extract_date_from_block(issue_block), _first_line(issue_block) or issue_block, confidence=0.95)
+
+    expiry_block = _extract_mt_field_block(raw_text, "31D")
+    if expiry_block:
+        _set("expiry_date", _extract_date_from_block(expiry_block), _first_line(expiry_block) or expiry_block, confidence=0.94)
+
+    shipment_block = _extract_mt_field_block(raw_text, "44C")
+    if shipment_block:
+        _set(
+            "latest_shipment_date",
+            _extract_date_from_block(shipment_block),
+            _first_line(shipment_block) or shipment_block,
+            confidence=0.94,
+        )
+
+    applicant_block = _extract_mt_field_block(raw_text, "50")
+    if applicant_block:
+        applicant_text = _strip_leading_labels(applicant_block, ("Applicant",))
+        _set("applicant", _first_line(applicant_text), _first_line(applicant_block) or applicant_block, confidence=0.92)
+
+    beneficiary_block = _extract_mt_field_block(raw_text, "59")
+    if beneficiary_block:
+        beneficiary_text = _strip_leading_labels(beneficiary_block, ("Beneficiary",))
+        _set("beneficiary", _first_line(beneficiary_text), _first_line(beneficiary_block) or beneficiary_block, confidence=0.92)
+
+    amount_block = _extract_mt_field_block(raw_text, "32B")
+    if amount_block:
+        amount_text = _strip_leading_labels(amount_block, ("Currency Code, Amount", "Amount"))
+        snippet = _first_line(amount_block) or amount_block
+        match = _CURRENCY_AMOUNT_RE.search(amount_text)
+        if not match:
+            match = _AMOUNT_CURRENCY_RE.search(amount_text)
+            if match:
+                _set("amount", match.group(1).strip(), snippet, confidence=0.94)
+                _set("currency", match.group(2).strip(), snippet, confidence=0.94)
+        else:
+            _set("currency", match.group(1).strip(), snippet, confidence=0.94)
+            _set("amount", match.group(2).strip(), snippet, confidence=0.94)
+
+    port_loading_block = _extract_mt_field_block(raw_text, "44E")
+    if port_loading_block:
+        loading_text = _strip_leading_labels(port_loading_block, ("Port of Loading", "Airport of Departure"))
+        _set("port_of_loading", _first_line(loading_text), _first_line(port_loading_block) or port_loading_block, confidence=0.9)
+
+    port_discharge_block = _extract_mt_field_block(raw_text, "44F")
+    if port_discharge_block:
+        discharge_text = _strip_leading_labels(port_discharge_block, ("Port of Discharge", "Airport of Destination"))
+        _set("port_of_discharge", _first_line(discharge_text), _first_line(port_discharge_block) or port_discharge_block, confidence=0.9)
+
+    ucp_block = _extract_mt_field_block(raw_text, "40E")
+    if ucp_block:
+        ucp_text = _strip_leading_labels(ucp_block, ("Applicable Rules",))
+        _set("ucp_reference", _first_line(ucp_text), _first_line(ucp_block) or ucp_block, confidence=0.9)
+
+    goods_block = _extract_mt_field_block(raw_text, "45A")
+    if goods_block:
+        goods_text = _strip_leading_labels(goods_block, ("Description of Goods",))
+        _set("goods_description", goods_text.strip(), _first_line(goods_block) or goods_block, confidence=0.88)
+        incoterm_match = _INCOTERM_RE.search(goods_text)
+        if incoterm_match:
+            _set("incoterm", incoterm_match.group(1).upper(), incoterm_match.group(0), confidence=0.88)
+
+    issuing_bank_block = _extract_mt_field_block(raw_text, "52A") or _extract_mt_field_block(raw_text, "52D")
+    if issuing_bank_block:
+        _set("issuing_bank", _first_line(issuing_bank_block), _first_line(issuing_bank_block) or issuing_bank_block, confidence=0.88)
+
+    advising_bank_block = _extract_mt_field_block(raw_text, "57A") or _extract_mt_field_block(raw_text, "57D")
+    if advising_bank_block:
+        _set("advising_bank", _first_line(advising_bank_block), _first_line(advising_bank_block) or advising_bank_block, confidence=0.88)
+
+    return recovered_fields, recovered_details
 
 
 def _payload_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -252,6 +457,13 @@ def build_lc_fact_set(document_payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = document_payload or {}
     fields = _payload_fields(payload)
     details = _detail_map(payload)
+    recovered_fields, recovered_details = _raw_text_recoveries(payload)
+    for key, value in recovered_fields.items():
+        if not _is_populated(fields.get(key)):
+            fields[key] = value
+    for key, detail in recovered_details.items():
+        if not isinstance(details.get(key), dict):
+            details[key] = detail
     facts = []
 
     for field_name, aliases in _LC_FACT_FIELDS.items():

@@ -125,3 +125,48 @@ def test_build_lc_fact_set_preserves_operator_confirmed_bank() -> None:
     assert issuing_bank["verification_state"] == "operator_confirmed"
     assert issuing_bank["origin"] == "operator_override"
     assert issuing_bank["normalized_value"] == "Eastern Bank PLC"
+
+
+def test_build_lc_fact_set_recovers_core_fields_from_artifact_raw_text() -> None:
+    payload = build_lc_fact_set(
+        {
+            "document_type": "letter_of_credit",
+            "lc_subtype": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "extracted_fields": {
+                "issue_date": "2025-11-26",
+                "issuer": "Some OCR Side Output",
+            },
+            "extraction_artifacts_v1": {
+                "raw_text": (
+                    "IRREVOCABLE DOCUMENTARY CREDIT\n"
+                    "MT700 FORMAT\n\n"
+                    "Field 20: Documentary Credit Number: EXP2026BD001\n"
+                    "Field 31C: Date of Issue: 2025-11-26\n"
+                    "Field 31D: Date and Place of Expiry: 2026-03-31 New York, USA\n"
+                    "Field 50: Applicant: Global Trade Corp\n"
+                    "         123 Commerce Street, New York, NY 10001, USA\n"
+                    "Field 59: Beneficiary: Bangladesh Export Ltd\n"
+                    "          45 Export Zone, Chittagong, Bangladesh\n"
+                    "Field 32B: Currency Code, Amount: USD 458,750.00\n"
+                    "Field 44C: Latest Date of Shipment: 2026-03-15\n"
+                    "Field 44E: Port of Loading: Chittagong, Bangladesh\n"
+                    "Field 44F: Port of Discharge: New York, USA\n"
+                    "Field 40E: Applicable Rules: UCP LATEST VERSION\n"
+                )
+            },
+        }
+    )
+
+    assert _fact_by_name(payload, "lc_number")["normalized_value"] == "EXP2026BD001"
+    assert _fact_by_name(payload, "lc_number")["verification_state"] == "confirmed"
+    assert _fact_by_name(payload, "lc_number")["origin"] == "artifact_raw_text"
+    assert _fact_by_name(payload, "expiry_date")["normalized_value"] == "2026-03-31"
+    assert _fact_by_name(payload, "latest_shipment_date")["normalized_value"] == "2026-03-15"
+    assert _fact_by_name(payload, "applicant")["normalized_value"] == "Global Trade Corp"
+    assert _fact_by_name(payload, "beneficiary")["normalized_value"] == "Bangladesh Export Ltd"
+    assert _fact_by_name(payload, "amount")["normalized_value"] == "458750.00"
+    assert _fact_by_name(payload, "currency")["normalized_value"] == "USD"
+    assert _fact_by_name(payload, "port_of_loading")["normalized_value"] == "Chittagong, Bangladesh"
+    assert _fact_by_name(payload, "port_of_discharge")["normalized_value"] == "New York, USA"
+    assert _fact_by_name(payload, "ucp_reference")["normalized_value"] == "UCP LATEST VERSION"
