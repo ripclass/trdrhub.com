@@ -2429,6 +2429,38 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     },
     [canonicalResultTruth, isExtractionResolutionStage, requirementChecklistSummary, surfaceFindingsCount, workflowStage?.summary],
   );
+  const contractRequirementActions = useMemo(() => {
+    return canonicalResultTruth.requirementReadinessItems
+      .map((item) => {
+        const documentLabel = safeString(
+          item.document_name ||
+            item.document_type ||
+            item.documentName ||
+            item.documentType ||
+            'document',
+        );
+        const requirementKind = safeString(item.requirement_kind).toLowerCase();
+        const requirementText = safeString(item.requirement_text);
+        const title = safeString(item.title);
+        const action = safeString(item.action);
+        return {
+          priority:
+            normalizeDiscrepancySeverity(safeString(item.severity || 'major')) === 'critical'
+              ? ('critical' as const)
+              : ('major' as const),
+          title:
+            requirementKind === 'document_exact_wording'
+              ? `Add LC-required statement to ${documentLabel || 'document'}`
+              : title || 'Resolve LC requirement review item',
+          detail:
+            action ||
+            (requirementText
+              ? `Update ${documentLabel || 'the document'} to include the exact LC-required statement '${requirementText}' or seek an LC amendment before presentation.`
+              : 'Resolve the remaining LC-required documentary requirement before presentation.'),
+        };
+      })
+      .filter((item) => item.title.length > 0);
+  }, [canonicalResultTruth.requirementReadinessItems]);
   const actionEngine = useMemo(() => {
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
 
@@ -2450,11 +2482,38 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       });
     });
 
+    contractRequirementActions.forEach((action) => {
+      actions.push(action);
+    });
+
     issueCards.slice(0, 5).forEach((issue) => {
       const workflowLane = String((issue as any).workflow_lane ?? '');
-      const nextAction = safeString((issue as any).next_action || issue.suggestion || issue.description || 'Review this issue before submission.');
+      const requirementKind = safeString((issue as any).requirement_kind).toLowerCase();
+      const requirementSource = safeString((issue as any).requirement_source).toLowerCase();
+      const requirementText = safeString((issue as any).requirement_text);
+      const isExactWordingRequirement =
+        requirementKind === 'document_exact_wording' && requirementSource === 'requirements_graph_v1';
+      const primaryDocumentLabel = safeString(
+        issue.documentType ||
+          issue.documentName ||
+          (Array.isArray(issue.documents)
+            ? issue.documents.find((name) => safeString(name).toLowerCase() !== 'letter_of_credit')
+            : '') ||
+          'document',
+      );
+      const nextAction = isExactWordingRequirement
+        ? safeString(
+            (issue as any).next_action ||
+              issue.suggestion ||
+              (requirementText
+                ? `Update the document to include the exact LC-required statement '${requirementText}' or seek an LC amendment before presentation.`
+                : 'Update the document to include the exact LC-required statement or seek an LC amendment before presentation.'),
+          )
+        : safeString((issue as any).next_action || issue.suggestion || issue.description || 'Review this issue before submission.');
       const actionTitle =
-        workflowLane === 'compliance_review'
+        isExactWordingRequirement
+          ? `Add LC-required statement to ${primaryDocumentLabel}`
+          : workflowLane === 'compliance_review'
           ? `Route ${safeString(issue.title || 'compliance alert')} to internal compliance review`
           : workflowLane === 'manual_review'
           ? `Complete manual review for ${safeString(issue.title || 'document review item')}`
@@ -2475,7 +2534,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const rank = { critical: 0, major: 1, minor: 2 };
       return rank[a.priority] - rank[b.priority];
     });
-  }, [checklistReviewFindings, isExtractionResolutionStage, issueCards, workflowStage?.summary]);
+  }, [checklistReviewFindings, contractRequirementActions, isExtractionResolutionStage, issueCards, workflowStage?.summary]);
   const additionalActionItems = useMemo(() => {
     const reviewFindingTitles = new Set(checklistReviewFindings.map((finding) => finding.title));
     return actionEngine.filter((action) => !reviewFindingTitles.has(action.title));

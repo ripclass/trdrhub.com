@@ -18,6 +18,10 @@ export interface CanonicalResultTruth {
   readinessLabel: 'Ready' | 'Review needed' | 'Blocked';
   readinessClass: 'text-success' | 'text-warning' | 'text-destructive';
   canSubmitFromValidation: boolean;
+  requirementReviewNeeded: boolean;
+  requirementReasonCodes: string[];
+  requirementActionTitles: string[];
+  requirementReadinessItems: Array<Record<string, unknown>>;
 }
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
@@ -35,6 +39,56 @@ const normalizeFinalVerdict = (
 
 const normalizeValidationStatus = (value: unknown): string => {
   return String(value ?? '').trim().toLowerCase();
+};
+
+const toStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item ?? '').trim())
+    .filter((item) => item.length > 0);
+};
+
+const getRequirementReadinessTruth = (
+  validationContract: ValidationContractV1 | null,
+): Pick<
+  CanonicalResultTruth,
+  'requirementReviewNeeded' | 'requirementReasonCodes' | 'requirementActionTitles' | 'requirementReadinessItems'
+> => {
+  const rulesEvidence = isObjectRecord(validationContract?.rules_evidence)
+    ? (validationContract.rules_evidence as Record<string, unknown>)
+    : null;
+  const evidenceSummary = isObjectRecord(validationContract?.evidence_summary)
+    ? (validationContract.evidence_summary as Record<string, unknown>)
+    : null;
+  const requirementReadinessItems = Array.isArray(rulesEvidence?.requirement_readiness_items)
+    ? (rulesEvidence?.requirement_readiness_items as unknown[]).filter(isObjectRecord)
+    : [];
+  const requirementReasonCodes = Array.from(
+    new Set([
+      ...toStringArray(rulesEvidence?.requirement_reason_codes),
+      ...toStringArray(evidenceSummary?.requirement_reason_codes),
+    ]),
+  );
+  const requirementActionTitles = Array.from(
+    new Set([
+      ...toStringArray(evidenceSummary?.primary_requirement_actions),
+      ...requirementReadinessItems
+        .map((item) => String(item.title ?? '').trim())
+        .filter((item) => item.length > 0),
+    ]),
+  );
+  const requirementReviewNeeded = Boolean(
+    evidenceSummary?.requirements_review_needed ??
+      rulesEvidence?.requirements_review_needed ??
+      requirementReadinessItems.length > 0,
+  );
+
+  return {
+    requirementReviewNeeded,
+    requirementReasonCodes,
+    requirementActionTitles,
+    requirementReadinessItems: requirementReadinessItems.map((item) => ({ ...item })),
+  };
 };
 
 const getCriticalIssueCount = (issues: IssueCard[] = []): number =>
@@ -86,6 +140,7 @@ export const getCanonicalResultTruth = (
       : contractFinalVerdict) ??
     (validationStatus === 'pass' ? 'pass' : null);
   const bankVerdict = getCanonicalBankVerdict(structuredResult);
+  const requirementReadinessTruth = getRequirementReadinessTruth(validationContract);
   const bankVerdictLabel = String(bankVerdict?.verdict ?? '').trim().toUpperCase();
   const canSubmitFromValidation =
     submissionEligibility?.can_submit ??
@@ -113,12 +168,14 @@ export const getCanonicalResultTruth = (
       readinessLabel: 'Blocked',
       readinessClass: 'text-destructive',
       canSubmitFromValidation: false,
+      ...requirementReadinessTruth,
     };
   }
 
   if (
     finalVerdict === 'review' ||
-    canSubmitFromValidation === false
+    canSubmitFromValidation === false ||
+    requirementReadinessTruth.requirementReviewNeeded
   ) {
     return {
       validationContract,
@@ -129,6 +186,7 @@ export const getCanonicalResultTruth = (
       readinessLabel: 'Review needed',
       readinessClass: 'text-warning',
       canSubmitFromValidation: false,
+      ...requirementReadinessTruth,
     };
   }
 
@@ -146,6 +204,7 @@ export const getCanonicalResultTruth = (
       readinessLabel: 'Ready',
       readinessClass: 'text-success',
       canSubmitFromValidation: true,
+      ...requirementReadinessTruth,
     };
   }
 
@@ -158,5 +217,6 @@ export const getCanonicalResultTruth = (
     readinessLabel: 'Ready',
     readinessClass: 'text-success',
     canSubmitFromValidation: true,
+    ...requirementReadinessTruth,
   };
 };

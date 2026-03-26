@@ -567,6 +567,10 @@ class ValidationContractV1(BaseModel):
     final_verdict: Optional[str] = None
     arbitration_mode: Optional[str] = None
     next_action: Optional[str] = None
+    review_required_reason: Optional[List[str]] = None
+    escalation_triggers: Optional[List[str]] = None
+    rules_evidence: Optional[Dict[str, Any]] = None
+    evidence_summary: Optional[Dict[str, Any]] = None
 
 
 class SubmissionEligibility(BaseModel):

@@ -508,6 +508,31 @@ def build_bank_submission_verdict(
         recommendation = "Documents are ready for bank submission."
 
     # Build action items from critical and major issues
+    def _issue_value(issue: Any, *keys: str) -> Any:
+        if isinstance(issue, dict):
+            for key in keys:
+                if key in issue and issue.get(key) is not None:
+                    return issue.get(key)
+            return None
+        for key in keys:
+            value = getattr(issue, key, None)
+            if value is not None:
+                return value
+        return None
+
+    def _first_text(items: Any, *, exclude_lc: bool = False) -> Optional[str]:
+        if isinstance(items, str):
+            candidate = items.strip()
+            if candidate and (not exclude_lc or candidate.lower() != "letter of credit"):
+                return candidate
+            return None
+        if isinstance(items, list):
+            for item in items:
+                candidate = str(item or "").strip()
+                if candidate and (not exclude_lc or candidate.lower() != "letter of credit"):
+                    return candidate
+        return None
+
     action_items = []
     for issue in all_issues:
         if hasattr(issue, 'severity'):
@@ -518,19 +543,34 @@ def build_bank_submission_verdict(
             continue
 
         if severity in ["critical", "major"]:
-            if hasattr(issue, 'title'):
-                title = issue.title
-            elif isinstance(issue, dict):
-                title = issue.get("title", issue.get("message", "Unknown issue"))
-            else:
-                continue
+            title = _issue_value(issue, "title", "message") or "Unknown issue"
+            action = _issue_value(issue, "suggestion", "suggested_fix") or "Review and correct"
+            requirement_source = str(_issue_value(issue, "requirement_source") or "").strip().lower()
+            requirement_kind = str(_issue_value(issue, "requirement_kind") or "").strip().lower()
+            requirement_text = str(_issue_value(issue, "requirement_text") or "").strip()
+            affected_doc = _first_text(
+                _issue_value(issue, "affected_document_names", "affected_documents"),
+                exclude_lc=True,
+            )
+            related_doc = _first_text(
+                _issue_value(issue, "document_names", "documents", "document_name", "document_type"),
+                exclude_lc=True,
+            )
+            doc_label = affected_doc or related_doc or "the document"
 
-            if hasattr(issue, 'suggestion'):
-                action = issue.suggestion
-            elif isinstance(issue, dict):
-                action = issue.get("suggestion", issue.get("suggested_fix", "Review and correct"))
-            else:
-                action = "Review and correct"
+            if requirement_source == "requirements_graph_v1" and requirement_kind == "document_exact_wording":
+                title = f"Add LC-required statement to {doc_label}"
+                if not str(action).strip():
+                    if requirement_text:
+                        action = (
+                            f"Update {doc_label} to include the exact LC-required statement "
+                            f"'{requirement_text}' or seek an LC amendment before presentation."
+                        )
+                    else:
+                        action = (
+                            f"Update {doc_label} to include the LC-required statement "
+                            "or seek an LC amendment before presentation."
+                        )
 
             action_items.append({
                 "priority": "critical" if severity == "critical" else "high",

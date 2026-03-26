@@ -613,6 +613,10 @@ export const ValidationContractV1Schema = z.object({
   final_verdict: z.enum(['pass', 'review', 'reject']).optional(),
   arbitration_mode: z.string().optional(),
   next_action: z.string().optional(),
+  review_required_reason: z.array(z.string()).optional(),
+  escalation_triggers: z.array(z.string()).optional(),
+  rules_evidence: z.record(z.unknown()).optional(),
+  evidence_summary: z.record(z.unknown()).optional(),
 }).passthrough();
 export type ValidationContractV1 = z.infer<typeof ValidationContractV1Schema>;
 

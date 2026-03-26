@@ -50,6 +50,7 @@ interface IssuesTabProps {
 
 const BUCKETS = [
   "Missing Required Documents",
+  "LC Required Statements",
   "Document-Level Discrepancies",
   "Cross-Document Conditions",
   "Extraction / Manual Review",

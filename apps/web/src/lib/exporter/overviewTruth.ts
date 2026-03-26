@@ -88,15 +88,25 @@ export const getExporterPresentationTruth = (
     hasReviewChecklistState ||
     input.totalIssues > 0
   ) {
+    const requirementAction = input.canonicalResultTruth.requirementActionTitles[0];
+    const requirementSummary =
+      requirementAction && input.canonicalResultTruth.requirementReviewNeeded
+        ? `Submission readiness requires review because LC-required statements or compiled documentary requirements remain unresolved, starting with ${requirementAction}.`
+        : null;
+    const requirementPresentationSummary = input.canonicalResultTruth.requirementReviewNeeded
+      ? 'Resolve the remaining LC-required statements or seek amendment before treating the presentation as clean.'
+      : null;
     return {
       readinessLabel: 'Review needed',
       readinessSummary:
-        hasReviewChecklistState || input.totalIssues > 0
+        requirementSummary ??
+        (hasReviewChecklistState || input.totalIssues > 0
           ? 'Submission readiness requires review because checklist items or issue findings are still unresolved.'
-          : 'Submission readiness currently requires review; do not compress this state into a fake numeric readiness score.',
+          : 'Submission readiness currently requires review; do not compress this state into a fake numeric readiness score.'),
       overallStatus: 'warning',
       presentationStatus: 'review_required',
       presentationSummary:
+        requirementPresentationSummary ??
         'Presentation requires review or remediation before it should be treated as clean.',
     };
   }

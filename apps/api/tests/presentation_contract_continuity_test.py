@@ -149,6 +149,7 @@ def test_validation_contract_keeps_submission_gate_review_truth() -> None:
         issue_symbols,
         {
             "_classify_reason_semantics",
+            "_extract_requirement_readiness_items",
             "_extract_rule_evidence_items",
             "_classify_rules_signal_classes",
             "_build_validation_contract",
@@ -177,3 +178,57 @@ def test_validation_contract_keeps_submission_gate_review_truth() -> None:
     assert contract["evidence_summary"]["submission_readiness"] == "not_ready"
     assert contract["rules_evidence"]["reason_semantics"]["extraction_failures"] == ["field_not_found"]
     assert "submission_not_ready" in contract["review_required_reason"]
+
+
+def test_validation_contract_surfaces_requirements_driven_statement_findings_in_readiness_evidence() -> None:
+    issue_symbols = _load_issue_symbols(
+        {
+            "_build_document_field_hint_index",
+            "_build_unresolved_critical_context",
+        }
+    )
+    contract_symbols = _load_contract_symbols(
+        issue_symbols,
+        {
+            "_classify_reason_semantics",
+            "_extract_requirement_readiness_items",
+            "_extract_rule_evidence_items",
+            "_classify_rules_signal_classes",
+            "_build_validation_contract",
+        },
+    )
+    build_validation_contract = contract_symbols["_build_validation_contract"]
+
+    submission_eligibility = {
+        "can_submit": False,
+        "reasons": ["missing_document"],
+        "missing_reason_codes": [],
+        "unresolved_critical_fields": [],
+    }
+    contract = build_validation_contract(
+        {"critical_issues": 1, "major_issues": 0, "minor_issues": 0},
+        {"verdict": "SUBMIT", "reasons": [], "risk_flags": []},
+        {"missing_critical": []},
+        submission_eligibility,
+        issues=[
+            {
+                "rule_id": "CROSSDOC-EXACT-WORDING",
+                "severity": "critical",
+                "title": "LC-required wording missing from Beneficiary Certificate",
+                "message": "LC requires exact wording on Beneficiary Certificate.",
+                "document_names": ["Letter of Credit", "Beneficiary Certificate"],
+                "suggestion": "Add the required wording before presentation.",
+                "requirement_source": "requirements_graph_v1",
+                "requirement_kind": "document_exact_wording",
+                "requirement_text": "WE HEREBY CERTIFY GOODS ARE BRAND NEW",
+            }
+        ],
+    )
+
+    assert "lc_required_statement_missing" in submission_eligibility["reasons"]
+    assert contract["rules_evidence"]["requirement_reason_codes"] == ["lc_required_statement_missing"]
+    assert contract["rules_evidence"]["requirements_review_needed"] is True
+    assert contract["rules_evidence"]["requirement_readiness_items"][0]["requirement_kind"] == "document_exact_wording"
+    assert contract["rules_evidence"]["reason_semantics"]["requirement_findings"] == ["lc_required_statement_missing"]
+    assert contract["evidence_summary"]["requirements_review_needed"] is True
+    assert "LC-required wording missing from Beneficiary Certificate" in contract["evidence_summary"]["primary_requirement_actions"]

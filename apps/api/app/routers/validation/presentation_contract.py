@@ -26,6 +26,7 @@ def _classify_reason_semantics(
     missing_fields: List[str] = []
     parse_failures: List[str] = []
     rule_decision_basis: List[str] = []
+    requirement_findings: List[str] = []
 
     for item in unresolved:
         if isinstance(item, dict):
@@ -52,6 +53,8 @@ def _classify_reason_semantics(
             rule_decision_basis.append("bank_submission_verdict")
         elif reason == "bank_verdict_caution":
             rule_decision_basis.append("rules_review_signal")
+        elif reason == "lc_required_statement_missing" or reason.startswith("requirements_"):
+            requirement_findings.append(reason)
         elif "sanction" in reason:
             rule_decision_basis.append("sanctions")
         elif "tbml" in reason:
@@ -64,7 +67,67 @@ def _classify_reason_semantics(
         "missing_fields": sorted(set(x for x in missing_fields if x)),
         "parse_failures": sorted(set(x for x in parse_failures if x)),
         "rule_decision_basis": sorted(set(x for x in rule_decision_basis if x)),
+        "requirement_findings": sorted(set(x for x in requirement_findings if x)),
     }
+
+def _extract_requirement_readiness_items(issues: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+
+    def _first_document_name(issue: Dict[str, Any]) -> Optional[str]:
+        candidates = (
+            issue.get("affected_document_names")
+            or issue.get("document_names")
+            or issue.get("documents")
+            or issue.get("document_name")
+            or issue.get("document_type")
+        )
+        if isinstance(candidates, str):
+            candidate = candidates.strip()
+            if candidate and candidate.lower() != "letter of credit":
+                return candidate
+            return None
+        if isinstance(candidates, list):
+            for value in candidates:
+                candidate = str(value or "").strip()
+                if candidate and candidate.lower() != "letter of credit":
+                    return candidate
+        return None
+
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            continue
+        requirement_source = str(issue.get("requirement_source") or "").strip().lower()
+        requirement_kind = str(issue.get("requirement_kind") or "").strip().lower()
+        if requirement_source != "requirements_graph_v1" or not requirement_kind:
+            continue
+
+        normalized_kind = requirement_kind.replace("-", "_").replace(" ", "_")
+        reason_code = (
+            "lc_required_statement_missing"
+            if normalized_kind == "document_exact_wording"
+            else f"requirements_{normalized_kind}"
+        )
+        document_name = _first_document_name(issue) or ""
+        requirement_text = str(issue.get("requirement_text") or "").strip()
+        title = str(issue.get("title") or issue.get("message") or "LC requirement review needed").strip()
+        key = (reason_code, document_name, requirement_text, title)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(
+            {
+                "reason_code": reason_code,
+                "requirement_source": "requirements_graph_v1",
+                "requirement_kind": requirement_kind,
+                "severity": str(issue.get("severity") or issue.get("level") or "major").strip().lower() or "major",
+                "title": title,
+                "document_name": document_name or None,
+                "requirement_text": requirement_text or None,
+                "action": issue.get("suggestion") or issue.get("suggested_fix") or issue.get("message"),
+            }
+        )
+    return items[:10]
 
 def _extract_rule_evidence_items(issues: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
@@ -174,6 +237,24 @@ def _build_validation_contract(
         for field in ((gate_result or {}).get("missing_critical") or [])
         if str(field).strip()
     ]
+    requirement_readiness_items = _extract_requirement_readiness_items(issues)
+    requirement_reason_codes = sorted(
+        {
+            str(item.get("reason_code") or "").strip()
+            for item in requirement_readiness_items
+            if str(item.get("reason_code") or "").strip()
+        }
+    )
+    if requirement_reason_codes and not submission_eligibility.get("can_submit", True):
+        submission_reasons_existing = [
+            str(item).strip() for item in (submission_eligibility.get("reasons") or []) if str(item).strip()
+        ]
+        submission_reasons_seen = {item.lower() for item in submission_reasons_existing}
+        for reason_code in requirement_reason_codes:
+            if reason_code.lower() not in submission_reasons_seen:
+                submission_reasons_existing.append(reason_code)
+                submission_reasons_seen.add(reason_code.lower())
+        submission_eligibility["reasons"] = submission_reasons_existing
     rules_veto_classes, rules_trigger_classes = _classify_rules_signal_classes(
         bank_verdict,
         gate_result,
@@ -287,6 +368,9 @@ def _build_validation_contract(
             "bank_action_items": list(bank_verdict.get("action_items") or []),
             "bank_action_items_count": bank_verdict.get("action_items_count"),
             "rule_evidence_items": rule_evidence_items,
+            "requirement_readiness_items": requirement_readiness_items,
+            "requirement_reason_codes": requirement_reason_codes,
+            "requirements_review_needed": bool(requirement_readiness_items),
             "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
             "reason_semantics": reason_semantics,
         },
@@ -298,9 +382,16 @@ def _build_validation_contract(
             "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
             "reason_semantics": reason_semantics,
             "decision_basis": reason_semantics.get("rule_decision_basis", []),
-            "evidence_quality": "rule_direct" if reason_semantics.get("rule_decision_basis") else ("extraction_only" if reason_semantics.get("extraction_failures") else "mixed_or_unknown"),
+            "evidence_quality": "rule_direct" if (reason_semantics.get("rule_decision_basis") or reason_semantics.get("requirement_findings")) else ("extraction_only" if reason_semantics.get("extraction_failures") else "mixed_or_unknown"),
             "bank_recommendation": bank_verdict.get("recommendation"),
             "bank_action_items_count": bank_verdict.get("action_items_count"),
+            "requirement_reason_codes": requirement_reason_codes,
+            "requirements_review_needed": bool(requirement_readiness_items),
+            "primary_requirement_actions": [
+                str(item.get("title") or "").strip()
+                for item in requirement_readiness_items
+                if str(item.get("title") or "").strip()
+            ][:5],
         },
         "ai_issue_counts": {
             "critical": ai_critical,

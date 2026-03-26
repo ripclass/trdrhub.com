@@ -81,6 +81,36 @@ function getFixInstructions(issue: IssueCard, lcNumber?: string): FixInstruction
   const title = issue.title?.toLowerCase() || "";
   const expected = issue.expected || "";
   const workflowLane = getWorkflowLane(issue);
+  const requirementKind = String((issue as any).requirement_kind ?? '').toLowerCase();
+  const requirementSource = String((issue as any).requirement_source ?? '').toLowerCase();
+  const requirementText = String((issue as any).requirement_text ?? '').trim();
+  const requirementDoc =
+    issue.documentType ||
+    issue.documentName ||
+    (Array.isArray(issue.documents)
+      ? issue.documents.find((name) => String(name ?? '').trim().toLowerCase() !== 'letter_of_credit')
+      : '') ||
+    'document';
+
+  if (requirementKind === 'document_exact_wording' && requirementSource === 'requirements_graph_v1') {
+    return {
+      copyText: requirementText || undefined,
+      steps: [
+        `Update the ${requirementDoc} to include the exact LC-required statement.`,
+        requirementText
+          ? 'Use the exact wording shown above without paraphrasing, abbreviation, or layout changes that alter meaning.'
+          : 'Use the LC-required wording exactly as issued without paraphrasing or abbreviation.',
+        'Reissue, sign, stamp, or certify the document as required before presentation.',
+        'If the document cannot be changed, seek an LC amendment before presentation.',
+      ],
+      timeEstimate: '30-60 minutes if you control the document | 1-3 business days if a third party must reissue it',
+      isInternal: !/bill of lading|insurance|inspection|carrier|certificate of origin/i.test(String(requirementDoc)),
+      docGeneratorLink:
+        String(requirementDoc).toLowerCase().includes('beneficiary')
+          ? "/hub/doc-generator?type=beneficiary-certificate"
+          : undefined,
+    };
+  }
 
   if (workflowLane === "compliance_review") {
     return {
