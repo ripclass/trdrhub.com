@@ -2432,6 +2432,11 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         lc_context.get("requirements_graph_v1")
         or lc_context.get("requirementsGraphV1")
     )
+    requirements_core_terms = (
+        requirements_graph.get("core_terms")
+        if isinstance(requirements_graph, dict) and isinstance(requirements_graph.get("core_terms"), dict)
+        else {}
+    )
     evidence_map = (
         lc_context.get("field_evidence")
         or lc_context.get("_field_evidence")
@@ -2464,6 +2469,14 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
             if value not in (None, "", []):
                 return value
         return None
+
+    def _requirements_graph_value(field_name: str) -> Any:
+        if not isinstance(requirements_core_terms, dict):
+            return None
+        value = requirements_core_terms.get(field_name)
+        if value in (None, "", []):
+            return None
+        return value
     
     # Helper to apply evidence map
     def _apply_evidence(field_result: FieldResult, evidence: Any) -> None:
@@ -2648,6 +2661,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         lc_number = blocks.get("20")  # MT700 field 20
     if not lc_number:
         lc_number = _fact_graph_value("lc_number")
+    if not lc_number:
+        lc_number = _requirements_graph_value("lc_number")
     set_field(
         baseline.lc_number,
         lc_number,
@@ -2681,10 +2696,18 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         fact_amount = _fact_graph_value("amount")
         if fact_amount not in (None, ""):
             amount_raw = fact_amount
+    if not amount_raw:
+        graph_amount = _requirements_graph_value("amount")
+        if graph_amount not in (None, ""):
+            amount_raw = graph_amount
     if not currency:
         fact_currency = _fact_graph_value("currency")
         if fact_currency not in (None, ""):
             currency = fact_currency
+    if not currency:
+        graph_currency = _requirements_graph_value("currency")
+        if graph_currency not in (None, ""):
+            currency = graph_currency
     
     # Parse amount value
     amount_value = None
@@ -2726,6 +2749,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         applicant = blocks.get("50")  # MT700 field 50
     if not applicant:
         applicant = _fact_graph_value("applicant")
+    if not applicant:
+        applicant = _requirements_graph_value("applicant")
     
     if applicant:
         if isinstance(applicant, dict):
@@ -2751,6 +2776,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         beneficiary = blocks.get("59")  # MT700 field 59
     if not beneficiary:
         beneficiary = _fact_graph_value("beneficiary")
+    if not beneficiary:
+        beneficiary = _requirements_graph_value("beneficiary")
     
     if beneficiary:
         if isinstance(beneficiary, dict):
@@ -2776,6 +2803,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         issuing_bank = blocks.get("52A") or blocks.get("52D")  # MT700 field 52
     if not issuing_bank:
         issuing_bank = _fact_graph_value("issuing_bank")
+    if not issuing_bank:
+        issuing_bank = _requirements_graph_value("issuing_bank")
     set_field(baseline.issuing_bank, issuing_bank)
 
     advising_bank = get_value("advising_bank", "advising_bank_name")
@@ -2783,6 +2812,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         advising_bank = blocks.get("57A") or blocks.get("57D")  # MT700 field 57
     if not advising_bank:
         advising_bank = _fact_graph_value("advising_bank")
+    if not advising_bank:
+        advising_bank = _requirements_graph_value("advising_bank")
     set_field(baseline.advising_bank, advising_bank)
     
     # =====================================================================
@@ -2798,6 +2829,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         issue_date = dates_nested.get("issue")  # Legacy fallback: dates.issue
     if not issue_date:
         issue_date = _fact_graph_value("issue_date")
+    if not issue_date:
+        issue_date = _requirements_graph_value("issue_date")
     set_field(baseline.issue_date, issue_date)
 
     expiry_date = get_value("expiry_date", "expiry", "validity_date")
@@ -2807,6 +2840,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         expiry_date = dates_nested.get("expiry")  # Legacy fallback: dates.expiry
     if not expiry_date:
         expiry_date = _fact_graph_value("expiry_date")
+    if not expiry_date:
+        expiry_date = _requirements_graph_value("expiry_date")
     set_field(baseline.expiry_date, expiry_date)
 
     latest_shipment = get_value("latest_shipment", "latest_shipment_date", "shipment_date")
@@ -2816,6 +2851,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         latest_shipment = dates_nested.get("latest_shipment")  # Legacy fallback: dates.latest_shipment
     if not latest_shipment:
         latest_shipment = _fact_graph_value("latest_shipment_date")
+    if not latest_shipment:
+        latest_shipment = _requirements_graph_value("latest_shipment_date")
     set_field(baseline.latest_shipment, latest_shipment)
     
     # =====================================================================
@@ -2826,6 +2863,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         port_of_loading = blocks.get("44E")  # MT700 field 44E - Port of Loading
     if not port_of_loading:
         port_of_loading = _fact_graph_value("port_of_loading")
+    if not port_of_loading:
+        port_of_loading = _requirements_graph_value("port_of_loading")
     
     if port_of_loading:
         if isinstance(port_of_loading, dict):
@@ -2843,6 +2882,8 @@ def _build_lc_baseline_from_context(lc_context: Dict[str, Any]) -> LCBaseline:
         port_of_discharge = blocks.get("44F")  # MT700 field 44F - Port of Discharge
     if not port_of_discharge:
         port_of_discharge = _fact_graph_value("port_of_discharge")
+    if not port_of_discharge:
+        port_of_discharge = _requirements_graph_value("port_of_discharge")
     
     if port_of_discharge:
         if isinstance(port_of_discharge, dict):

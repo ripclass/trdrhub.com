@@ -367,7 +367,15 @@ def project_lc_validation_context(
         projected["requirements_graph_v1"] = requirements_graph
         projected["requirementsGraphV1"] = requirements_graph
 
-    if document_lane != "document_ai" or not isinstance(selected_fact_graph, dict):
+    requirements_core_terms = (
+        requirements_graph.get("core_terms")
+        if isinstance(requirements_graph, dict) and isinstance(requirements_graph.get("core_terms"), dict)
+        else {}
+    )
+
+    has_authoritative_lc_terms = isinstance(selected_fact_graph, dict) or bool(requirements_core_terms)
+
+    if document_lane != "document_ai" or not has_authoritative_lc_terms:
         if isinstance(selected_fact_graph, dict):
             projected["fact_graph_v1"] = selected_fact_graph
             projected["factGraphV1"] = selected_fact_graph
@@ -398,70 +406,90 @@ def project_lc_validation_context(
         projected["ports"] = {}
 
     projected["amount"] = None
+    fact_states: Dict[str, str] = {}
 
-    for fact in selected_fact_graph.get("facts") or []:
-        if not isinstance(fact, dict):
-            continue
-        field_name = str(fact.get("field_name") or "").strip().lower()
-        aliases = _LC_VALIDATION_ALIASES.get(field_name)
-        if not aliases:
-            continue
-        verification_state = str(fact.get("verification_state") or "").strip().lower()
-        if verification_state not in _RESOLVED_FACT_STATES:
-            continue
-        fact_value = fact.get("normalized_value")
-        if fact_value in (None, ""):
-            fact_value = fact.get("value")
+    def _apply_projected_lc_term(field_name: str, fact_value: Any) -> None:
         if fact_value in (None, "", []):
-            continue
-
+            return
         if field_name == "lc_number":
             projected["lc_number"] = fact_value
             projected["number"] = fact_value
             projected["reference"] = fact_value
-            continue
+            return
         if field_name == "issue_date":
             projected["issue_date"] = fact_value
             projected.setdefault("dates", {})
             projected["dates"]["issue"] = fact_value
             projected["dates"]["issue_date"] = fact_value
-            continue
+            return
         if field_name == "expiry_date":
             projected["expiry_date"] = fact_value
             projected.setdefault("dates", {})
             projected["dates"]["expiry"] = fact_value
             projected["dates"]["expiry_date"] = fact_value
-            continue
+            return
         if field_name == "latest_shipment_date":
             projected["latest_shipment"] = fact_value
             projected["latest_shipment_date"] = fact_value
             projected.setdefault("dates", {})
             projected["dates"]["latest_shipment"] = fact_value
             projected["dates"]["latest_shipment_date"] = fact_value
-            continue
+            return
         if field_name == "port_of_loading":
             projected["port_of_loading"] = fact_value
             projected.setdefault("ports", {})
             projected["ports"]["loading"] = fact_value
             projected["ports"]["port_of_loading"] = fact_value
-            continue
+            return
         if field_name == "port_of_discharge":
             projected["port_of_discharge"] = fact_value
             projected.setdefault("ports", {})
             projected["ports"]["discharge"] = fact_value
             projected["ports"]["port_of_discharge"] = fact_value
-            continue
+            return
         if field_name == "amount":
             currency = projected.get("currency")
             projected["amount"] = {"value": fact_value, "currency": currency} if currency else {"value": fact_value}
             projected["credit_amount"] = fact_value
-            continue
+            return
         if field_name == "currency":
             projected["currency"] = fact_value
             if isinstance(projected.get("amount"), dict):
                 projected["amount"]["currency"] = fact_value
-            continue
+            return
         projected[field_name] = fact_value
+
+    if isinstance(selected_fact_graph, dict):
+        for fact in selected_fact_graph.get("facts") or []:
+            if not isinstance(fact, dict):
+                continue
+            field_name = str(fact.get("field_name") or "").strip().lower()
+            aliases = _LC_VALIDATION_ALIASES.get(field_name)
+            if not aliases:
+                continue
+            verification_state = str(fact.get("verification_state") or "").strip().lower()
+            if verification_state:
+                fact_states[field_name] = verification_state
+            if verification_state not in _RESOLVED_FACT_STATES:
+                continue
+            fact_value = fact.get("normalized_value")
+            if fact_value in (None, ""):
+                fact_value = fact.get("value")
+            if fact_value in (None, "", []):
+                continue
+            _apply_projected_lc_term(field_name, fact_value)
+
+    for field_name, fact_value in requirements_core_terms.items():
+        normalized_field = str(field_name or "").strip().lower()
+        if normalized_field not in _LC_VALIDATION_ALIASES:
+            continue
+        fact_state = fact_states.get(normalized_field)
+        if fact_state in {"rejected", "operator_rejected"}:
+            continue
+        alias_values = [projected.get(alias) for alias in _LC_VALIDATION_ALIASES[normalized_field]]
+        if any(value not in (None, "", []) for value in alias_values):
+            continue
+        _apply_projected_lc_term(normalized_field, fact_value)
 
     projected["fact_graph_v1"] = selected_fact_graph
     projected["factGraphV1"] = selected_fact_graph

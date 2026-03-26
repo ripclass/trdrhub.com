@@ -16,12 +16,19 @@ def test_lc_baseline_can_recover_critical_fields_from_fact_graph_v1() -> None:
     source = Path("apps/api/app/routers/validate.py").read_text(encoding="utf-8-sig")
 
     assert 'fact_graph = (' in source
+    assert 'requirements_core_terms = (' in source
     assert 'def _fact_graph_value(field_name: str) -> Any:' in source
+    assert 'def _requirements_graph_value(field_name: str) -> Any:' in source
     assert 'lc_number = _fact_graph_value("lc_number")' in source
+    assert 'lc_number = _requirements_graph_value("lc_number")' in source
     assert 'applicant = _fact_graph_value("applicant")' in source
+    assert 'applicant = _requirements_graph_value("applicant")' in source
     assert 'beneficiary = _fact_graph_value("beneficiary")' in source
+    assert 'beneficiary = _requirements_graph_value("beneficiary")' in source
     assert 'fact_amount = _fact_graph_value("amount")' in source
+    assert 'graph_amount = _requirements_graph_value("amount")' in source
     assert 'fact_currency = _fact_graph_value("currency")' in source
+    assert 'graph_currency = _requirements_graph_value("currency")' in source
 
 
 def test_validation_execution_updates_setup_state_with_projected_lc_context() -> None:

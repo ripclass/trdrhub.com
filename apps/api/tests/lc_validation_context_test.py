@@ -160,6 +160,74 @@ def test_project_lc_validation_context_leaves_structured_lc_context_intact() -> 
     assert projected["format"] == "mt700"
 
 
+def test_project_lc_validation_context_uses_requirements_graph_core_terms_when_fact_graph_missing() -> None:
+    projected = project_lc_validation_context(
+        {
+            "number": "STALE-LC",
+            "applicant": "STALE APPLICANT",
+            "beneficiary": "STALE BENEFICIARY",
+            "currency": None,
+            "amount": {"value": None, "currency": None},
+        },
+        document={
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "core_terms": {
+                    "lc_number": "EXP2026BD001",
+                    "applicant": "Global Trade Corp",
+                    "beneficiary": "Bangladesh Export Ltd",
+                    "amount": "125000.00",
+                    "currency": "USD",
+                    "issue_date": "2025-11-26",
+                    "expiry_date": "2026-03-31",
+                },
+            },
+        },
+    )
+
+    assert projected["number"] == "EXP2026BD001"
+    assert projected["lc_number"] == "EXP2026BD001"
+    assert projected["applicant"] == "Global Trade Corp"
+    assert projected["beneficiary"] == "Bangladesh Export Ltd"
+    assert projected["amount"]["value"] == "125000.00"
+    assert projected["amount"]["currency"] == "USD"
+    assert projected["currency"] == "USD"
+    assert projected["issue_date"] == "2025-11-26"
+    assert projected["expiry_date"] == "2026-03-31"
+
+
+def test_project_lc_validation_context_does_not_restore_rejected_fact_from_requirements_graph() -> None:
+    projected = project_lc_validation_context(
+        {"beneficiary": "STALE BENEFICIARY"},
+        document={
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "requirements_graph_v1": {
+                "version": "requirements_graph_v1",
+                "core_terms": {
+                    "beneficiary": "Bangladesh Export Ltd",
+                },
+            },
+        },
+        fact_graph={
+            "version": "fact_graph_v1",
+            "document_type": "letter_of_credit",
+            "facts": [
+                {
+                    "field_name": "beneficiary",
+                    "value": "Bangladesh Export Ltd",
+                    "normalized_value": "Bangladesh Export Ltd",
+                    "verification_state": "rejected",
+                }
+            ],
+        },
+    )
+
+    assert "beneficiary" not in projected
+
+
 def test_apply_lc_fact_graph_to_validation_inputs_mutates_payload_and_context_for_rendered_lc() -> None:
     lc_document = {
         "document_id": "doc-lc",
