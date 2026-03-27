@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict
 
 
@@ -42,6 +43,21 @@ def test_validation_execution_drops_price_findings_when_goods_mismatch_already_e
     assert filtered == []
 
 
+def test_validation_execution_drops_price_findings_when_goods_mismatch_exists_as_object() -> None:
+    fn = _load_symbols()["_filter_price_issues_for_documentary_context"]
+
+    filtered = fn(
+        existing_issues=[
+            SimpleNamespace(rule_id="CROSSDOC-INV-003", title="Invoice Goods Description Mismatch"),
+        ],
+        price_issues=[
+            {"rule": "PRICE-VERIFY-2", "title": "Significant Price Discrepancy"},
+        ],
+    )
+
+    assert filtered == []
+
+
 def test_validation_execution_keeps_price_findings_without_documentary_goods_mismatch() -> None:
     fn = _load_symbols()["_filter_price_issues_for_documentary_context"]
 
@@ -56,4 +72,3 @@ def test_validation_execution_keeps_price_findings_without_documentary_goods_mis
     )
 
     assert filtered == price_issues
-

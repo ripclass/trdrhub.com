@@ -82,11 +82,15 @@ def _filter_price_issues_for_documentary_context(
     if not price_issues:
         return []
 
-    existing_rules = {
-        str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
-        for issue in existing_issues
-        if isinstance(issue, dict)
-    }
+    existing_rules = set()
+    for issue in existing_issues:
+        if isinstance(issue, dict):
+            rule_token = issue.get("rule") or issue.get("rule_id")
+        else:
+            rule_token = getattr(issue, "rule", None) or getattr(issue, "rule_id", None)
+        rule_token = str(rule_token or "").strip().upper()
+        if rule_token:
+            existing_rules.add(rule_token)
     if existing_rules.intersection({"CROSSDOC-INV-003", "CROSSDOC-GOODS-1"}):
         return []
 
