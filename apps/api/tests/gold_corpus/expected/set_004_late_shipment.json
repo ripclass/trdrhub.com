@@ -23,9 +23,9 @@
   ],
   "expected_issues": [
     {
-      "rule_id": "CROSSDOC-DATE-1",
+      "rule_id": "CROSSDOC-BL-003",
       "severity": "critical",
-      "document_type": "bl",
+      "document_type": "bill",
       "title_contains": "shipment",
       "description": "Late shipment"
     }

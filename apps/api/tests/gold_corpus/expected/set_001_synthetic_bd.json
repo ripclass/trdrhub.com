@@ -149,6 +149,22 @@
     {
       "rule_id": "INVOICE-LC-REFERENCE",
       "description": "Invoice should have LC reference extracted"
+    },
+    {
+      "rule_id": "PRICE-VERIFY-1",
+      "description": "Clean documentary sets should not surface warning-level price variance in the main LC findings lane"
+    },
+    {
+      "rule_id": "SANCTIONS-PARTY-1",
+      "description": "Clean documentary sets should not surface sanctions findings when the issuing bank is non-sanctioned"
+    },
+    {
+      "rule_id": "CROSSDOC-LC-002",
+      "description": "Clean exporter flow should not raise LC expiry warnings without a real reference date"
+    },
+    {
+      "rule_id": "CROSSDOC-TIMING-001",
+      "description": "Clean exporter flow should not raise presentation-timing warnings without a real reference date"
     }
   ]
 }

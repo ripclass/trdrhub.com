@@ -23,11 +23,11 @@
   ],
   "expected_issues": [
     {
-      "rule_id": "CROSSDOC-PORT-1",
-      "severity": "major",
-      "document_type": "bl",
-      "title_contains": "port",
-      "description": "Port mismatch"
+      "rule_id": "CROSSDOC-BL-002",
+      "severity": "critical",
+      "document_type": "bill",
+      "title_contains": "discharge",
+      "description": "Port of discharge mismatch"
     }
   ],
   "false_positive_checks": []

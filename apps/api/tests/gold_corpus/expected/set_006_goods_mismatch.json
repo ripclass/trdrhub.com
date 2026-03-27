@@ -23,12 +23,17 @@
   ],
   "expected_issues": [
     {
-      "rule_id": "CROSSDOC-GOODS-1",
-      "severity": "critical",
+      "rule_id": "CROSSDOC-INV-003",
+      "severity": "major",
       "document_type": "invoice",
       "title_contains": "goods",
       "description": "Goods description mismatch"
     }
   ],
-  "false_positive_checks": []
+  "false_positive_checks": [
+    {
+      "rule_id": "PRICE-VERIFY-2",
+      "description": "Goods mismatch should stay primary without layering a separate price anomaly finding into the documentary lane"
+    }
+  ]
 }
