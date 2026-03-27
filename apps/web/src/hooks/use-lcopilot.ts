@@ -96,6 +96,8 @@ type GetResultsOptions = {
 };
 
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'error']);
+const VALIDATE_RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
+const VALIDATE_RETRY_DELAYS_MS = [1500];
 
 const normalizeJobStatus = (status?: string | null): string =>
   (status || '').toString().toLowerCase();
@@ -189,6 +191,34 @@ const toResultsError = (err: any): ValidationError => {
   };
 };
 
+const waitFor = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+export const shouldRetryValidationRequest = (
+  err: unknown,
+  attempt: number,
+  maxAttempts: number,
+): boolean => {
+  if (attempt >= maxAttempts) {
+    return false;
+  }
+
+  const statusCode = Number((err as { response?: { status?: number } })?.response?.status ?? 0);
+  if (VALIDATE_RETRYABLE_STATUS_CODES.has(statusCode)) {
+    return true;
+  }
+
+  const errorCode = String((err as { code?: string })?.code || '').toUpperCase();
+  return errorCode === 'ECONNABORTED' || errorCode === 'ERR_NETWORK';
+};
+
+const getValidationRetryDelayMs = (attempt: number): number => {
+  const index = Math.max(0, Math.min(attempt - 1, VALIDATE_RETRY_DELAYS_MS.length - 1));
+  return VALIDATE_RETRY_DELAYS_MS[index] ?? 0;
+};
+
 export const fetchValidationResults = async (jobId: string): Promise<ValidationResults> => {
   const response = await api.get(`/api/results/${jobId}`);
   const payload = response.data;
@@ -277,11 +307,40 @@ export const useValidate = () => {
         mode: request.mode,
       });
 
-      const response = await api.post('/api/validate', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      const maxAttempts = VALIDATE_RETRY_DELAYS_MS.length + 1;
+      let response = null as Awaited<ReturnType<typeof api.post>> | null;
+      let attempt = 0;
+      let lastError: any = null;
+
+      while (attempt < maxAttempts && !response) {
+        attempt += 1;
+        try {
+          response = await api.post('/api/validate', formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          });
+        } catch (err: any) {
+          lastError = err;
+          if (!shouldRetryValidationRequest(err, attempt, maxAttempts)) {
+            throw err;
+          }
+
+          const retryDelayMs = getValidationRetryDelayMs(attempt);
+          lcopilotLogger.warn('Transient /api/validate failure, retrying request', {
+            attempt,
+            maxAttempts,
+            retryDelayMs,
+            statusCode: err?.response?.status,
+            code: err?.code,
+          });
+          await waitFor(retryDelayMs);
+        }
+      }
+
+      if (!response) {
+        throw lastError || new Error('Validation request failed before a response was received.');
+      }
 
       lcopilotLogger.debug('Validation response received', { jobId: response.data?.jobId });
 
