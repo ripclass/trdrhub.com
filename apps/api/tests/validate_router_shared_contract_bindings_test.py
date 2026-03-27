@@ -22,3 +22,4 @@ def test_validate_router_exposes_contract_helpers_to_split_modules() -> None:
 
     assert "_apply_validation_contract_decision_surfaces" in imported_names
     assert "_apply_workflow_stage_contract_overrides" in imported_names
+    assert "_partition_workflow_stage_issues" in imported_names
