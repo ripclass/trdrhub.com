@@ -96,6 +96,60 @@ export function SanctionsAlert({
     );
   }
 
+  // Confirmed matches without a blocking contract outcome should stay visible
+  // as a compliance overlay, not a hidden readiness veto.
+  if (hasMatches) {
+    return (
+      <Card className="bg-red-500/10 border-red-500/30">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-red-400">
+            <ShieldAlert className="w-5 h-5" />
+            Sanctions Match Detected
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-red-200 text-sm">
+            {sanctionsScreening.matches} sanctioned party match(es) were found. Treat this as a compliance review overlay and escalate to your compliance team. Documentary submit readiness is governed separately by the validation contract.
+          </p>
+
+          {sanctionsScreening.issues.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium text-white">Matched Parties:</h4>
+              {sanctionsScreening.issues
+                .filter(issue => issue.status === "match")
+                .map((issue, idx) => (
+                  <div key={idx} className="p-3 bg-red-950/30 rounded-lg border border-red-500/20">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-medium text-white">{issue.party}</span>
+                        <Badge className="ml-2 bg-slate-700 text-slate-300 text-xs">
+                          {issue.type}
+                        </Badge>
+                      </div>
+                      <Badge className="bg-red-500/30 text-red-300">
+                        {issue.score ? `${normalizeConfidencePercent(issue.score)} Match` : "Confirmed Match"}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-2 border-t border-red-500/20">
+            <span className="text-xs text-red-300">
+              Compliance escalation recommended
+            </span>
+            <Button asChild size="sm" variant="outline" className="border-red-500/40 text-red-300 hover:bg-red-500/10">
+              <Link to="/sanctions/dashboard">
+                View Details <ExternalLink className="w-4 h-4 ml-2" />
+              </Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Potential matches - warning state
   if (hasPotentialMatches && !hasMatches) {
     return (
@@ -187,11 +241,20 @@ export function SanctionsBadge({
     );
   }
 
-  if (sanctionsBlocked || sanctionsScreening.matches > 0) {
+  if (sanctionsBlocked) {
     return (
       <Badge className="bg-red-500/20 text-red-400">
         <XCircle className="w-3 h-3 mr-1" />
-        Sanctions Match
+        Blocked
+      </Badge>
+    );
+  }
+
+  if (sanctionsScreening.matches > 0) {
+    return (
+      <Badge className="bg-red-500/20 text-red-400">
+        <ShieldAlert className="w-3 h-3 mr-1" />
+        Compliance Review
       </Badge>
     );
   }

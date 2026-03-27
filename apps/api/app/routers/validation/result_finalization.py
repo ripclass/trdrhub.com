@@ -58,6 +58,26 @@ def _suppress_advisory_findings_for_documentary_context(
     ]
 
 
+def _retire_legacy_sanctions_block_surface(
+    structured_result: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Keep sanctions findings visible through structured issues and
+    sanctions_screening, but retire the old boolean block surface so it cannot
+    contradict validation_contract_v1.
+    """
+    if not isinstance(structured_result, dict):
+        return {}
+
+    sanctions_summary = structured_result.get("sanctions_screening")
+    if isinstance(sanctions_summary, dict):
+        sanctions_summary["legacy_block_surface_retired"] = True
+
+    structured_result["sanctions_blocked"] = False
+    structured_result["sanctions_block_reason"] = None
+    return structured_result
+
+
 async def _await_with_timeout(stage_label: str, coro, timeout_seconds: float, default: Any):
     try:
         return await asyncio.wait_for(coro, timeout_seconds), False
@@ -410,14 +430,7 @@ async def finalize_validation_result(
                 "SANCTIONS MATCH DETECTED - LC processing should be blocked. "
                 f"Summary: {sanctions_summary}"
             )
-            # Add sanctions blocked flag
-            structured_result["sanctions_blocked"] = True
-            structured_result["sanctions_block_reason"] = (
-                f"{sanctions_summary.get('matches', 0)} sanctioned party match(es) found. "
-                "LC processing halted pending compliance review."
-            )
-        else:
-            structured_result["sanctions_blocked"] = False
+        _retire_legacy_sanctions_block_surface(structured_result)
 
         if sanctions_summary:
             logger.info(

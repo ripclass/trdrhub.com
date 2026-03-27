@@ -15,7 +15,10 @@ def _load_symbols() -> Dict[str, Any]:
     selected_nodes: List[ast.AST] = []
 
     for node in parsed.body:
-        if isinstance(node, ast.FunctionDef) and node.name == "_suppress_advisory_findings_for_documentary_context":
+        if isinstance(node, ast.FunctionDef) and node.name in {
+            "_suppress_advisory_findings_for_documentary_context",
+            "_retire_legacy_sanctions_block_surface",
+        }:
             selected_nodes.append(node)
 
     module_ast = ast.Module(body=selected_nodes, type_ignores=[])
@@ -52,3 +55,21 @@ def test_result_finalization_keeps_price_findings_without_goods_mismatch() -> No
 
     assert fn(issues) == issues
 
+
+def test_result_finalization_retires_legacy_sanctions_block_surface() -> None:
+    fn = _load_symbols()["_retire_legacy_sanctions_block_surface"]
+
+    structured = {
+        "sanctions_screening": {
+            "screened": True,
+            "matches": 1,
+        },
+        "sanctions_blocked": True,
+        "sanctions_block_reason": "legacy blocker",
+    }
+
+    retired = fn(structured)
+
+    assert retired["sanctions_blocked"] is False
+    assert retired["sanctions_block_reason"] is None
+    assert retired["sanctions_screening"]["legacy_block_surface_retired"] is True
