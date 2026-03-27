@@ -85,8 +85,7 @@ export const getExporterPresentationTruth = (
 
   if (
     input.canonicalResultTruth.readinessLabel === 'Review needed' ||
-    hasReviewChecklistState ||
-    input.totalIssues > 0
+    hasReviewChecklistState
   ) {
     const requirementAction = input.canonicalResultTruth.requirementActionTitles[0];
     const requirementSummary =
@@ -96,18 +95,36 @@ export const getExporterPresentationTruth = (
     const requirementPresentationSummary = input.canonicalResultTruth.requirementReviewNeeded
       ? 'Resolve the remaining LC-required statements or seek amendment before treating the presentation as clean.'
       : null;
+    const documentarySummary =
+      input.canonicalResultTruth.primaryDecisionLane === 'documentary' &&
+      input.canonicalResultTruth.documentaryIssueCount > 0
+        ? 'Submission readiness requires review because documentary findings still affect clean presentation.'
+        : null;
     return {
       readinessLabel: 'Review needed',
       readinessSummary:
         requirementSummary ??
-        (hasReviewChecklistState || input.totalIssues > 0
-          ? 'Submission readiness requires review because checklist items or issue findings are still unresolved.'
+        documentarySummary ??
+        (hasReviewChecklistState
+          ? 'Submission readiness requires review because checklist items are still unresolved.'
           : 'Submission readiness currently requires review; do not compress this state into a fake numeric readiness score.'),
       overallStatus: 'warning',
       presentationStatus: 'review_required',
       presentationSummary:
         requirementPresentationSummary ??
         'Presentation requires review or remediation before it should be treated as clean.',
+    };
+  }
+
+  if (input.canonicalResultTruth.advisoryReviewNeeded) {
+    return {
+      readinessLabel: 'Ready',
+      readinessSummary:
+        'Documentary submission readiness is clear. Separate advisory or compliance signals remain visible as non-blocking overlays and do not block clean presentation readiness on their own.',
+      overallStatus: 'success',
+      presentationStatus: 'ready',
+      presentationSummary:
+        'Ready for clean presentation based on documentary checks. Review advisory signals separately as non-blocking overlays.',
     };
   }
 

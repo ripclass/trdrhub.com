@@ -11,6 +11,92 @@ from .issues_pipeline import _build_document_field_hint_index, _build_unresolved
 
 logger = logging.getLogger(__name__)
 
+
+def _build_issue_lane_summary(issues: Optional[List[Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
+    severity_rank = {
+        "critical": 4,
+        "error": 4,
+        "high": 4,
+        "major": 3,
+        "warning": 2,
+        "warn": 2,
+        "medium": 2,
+        "minor": 1,
+        "low": 1,
+        "info": 0,
+    }
+    rank_to_severity = {
+        4: "critical",
+        3: "major",
+        2: "warning",
+        1: "minor",
+        0: "info",
+    }
+    advisory_tokens = ("price-verify", "sanctions", "tbml", "shell")
+    documentary_tokens = ("crossdoc", "docset", "ucp600", "isbp", "lc-missing")
+    lanes: Dict[str, Dict[str, Any]] = {
+        "documentary": {
+            "count": 0,
+            "blocking_count": 0,
+            "rule_ids": [],
+            "titles": [],
+            "highest_severity": None,
+        },
+        "advisory": {
+            "count": 0,
+            "blocking_count": 0,
+            "rule_ids": [],
+            "titles": [],
+            "highest_severity": None,
+        },
+    }
+
+    def _coerce_issue_text(issue: Dict[str, Any], *keys: str) -> str:
+        for key in keys:
+            value = issue.get(key)
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _issue_lane(issue: Dict[str, Any]) -> str:
+        requirement_source = _coerce_issue_text(issue, "requirement_source").lower()
+        if requirement_source == "requirements_graph_v1":
+            return "documentary"
+
+        rule_id = _coerce_issue_text(issue, "rule", "rule_id").lower()
+        ruleset_domain = _coerce_issue_text(issue, "ruleset_domain").lower()
+        combined = f"{rule_id} {ruleset_domain}"
+        if any(token in combined for token in advisory_tokens):
+            return "advisory"
+        if any(token in combined for token in documentary_tokens):
+            return "documentary"
+        return "documentary"
+
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            continue
+        lane_name = _issue_lane(issue)
+        lane = lanes[lane_name]
+        severity = _coerce_issue_text(issue, "severity", "level").lower() or "major"
+        rank = severity_rank.get(severity, 2)
+        rule_id = _coerce_issue_text(issue, "rule", "rule_id")
+        title = _coerce_issue_text(issue, "title", "message")
+
+        lane["count"] += 1
+        if lane_name == "documentary" and rank >= severity_rank["critical"]:
+            lane["blocking_count"] += 1
+        if rule_id and rule_id not in lane["rule_ids"]:
+            lane["rule_ids"].append(rule_id)
+        if title and title not in lane["titles"]:
+            lane["titles"].append(title)
+
+        current_rank = severity_rank.get(str(lane.get("highest_severity") or "").lower(), -1)
+        if rank > current_rank:
+            lane["highest_severity"] = rank_to_severity.get(rank, severity)
+
+    return lanes
+
 def _classify_reason_semantics(
     submission_eligibility: Optional[Dict[str, Any]],
     bank_verdict: Optional[Dict[str, Any]] = None,
@@ -177,7 +263,7 @@ def _classify_rules_signal_classes(
     normalized = " | ".join(signal_texts).lower()
 
     if any(token in normalized for token in ["sanction", "watchlist", "ofac", "sdn"]):
-        veto_classes.append("sanctions")
+        trigger_classes.append("sanctions")
     if any(token in normalized for token in ["tbml", "trade_based_money_laundering", "overinvoic", "underinvoic", "routing_anomal", "quantity_value_mismatch"]):
         trigger_classes.append("tbml")
     if any(token in normalized for token in ["shell_risk", "shell-risk", "ownership_opacity", "weak_business_footprint", "high_risk_counterparty"]):
@@ -192,9 +278,7 @@ def _classify_rules_signal_classes(
         veto_classes.append("missing_critical_controls")
 
     rules_raw = str(bank_verdict.get("verdict") or "").strip().upper()
-    if rules_raw in {"REJECT", "HOLD"}:
-        veto_classes.append("bank_submission_verdict")
-    elif rules_raw == "CAUTION":
+    if rules_raw == "CAUTION":
         trigger_classes.append("rules_review_signal")
 
     return sorted(set(veto_classes)), sorted(set(trigger_classes))
@@ -222,6 +306,7 @@ def _build_validation_contract(
         ai_verdict = "warn"
     else:
         ai_verdict = "pass"
+    ai_source_verdict = ai_verdict
 
     rules_raw = str(bank_verdict.get("verdict") or "").strip().upper()
     rules_map = {
@@ -237,6 +322,12 @@ def _build_validation_contract(
         for field in ((gate_result or {}).get("missing_critical") or [])
         if str(field).strip()
     ]
+    issue_lanes = _build_issue_lane_summary(issues)
+    documentary_lane = dict(issue_lanes.get("documentary") or {})
+    advisory_lane = dict(issue_lanes.get("advisory") or {})
+    documentary_issue_count = int(documentary_lane.get("count") or 0)
+    documentary_blocking_count = int(documentary_lane.get("blocking_count") or 0)
+    advisory_issue_count = int(advisory_lane.get("count") or 0)
     requirement_readiness_items = _extract_requirement_readiness_items(issues)
     requirement_reason_codes = sorted(
         {
@@ -262,10 +353,44 @@ def _build_validation_contract(
     )
     reason_semantics = _classify_reason_semantics(submission_eligibility, bank_verdict)
     rule_evidence_items = _extract_rule_evidence_items(issues)
+    documentary_decision_clear = (
+        not missing_critical
+        and documentary_issue_count == 0
+        and not requirement_readiness_items
+        and documentary_blocking_count == 0
+    )
+    advisory_classes = {
+        trigger
+        for trigger in rules_trigger_classes
+        if trigger in {"sanctions", "tbml", "shell_risk"}
+    }
+    advisory_review_needed = bool(advisory_issue_count or advisory_classes)
+    documentary_review_needed = bool(
+        documentary_issue_count
+        or documentary_blocking_count
+        or missing_critical
+        or requirement_readiness_items
+    )
+    if documentary_decision_clear and advisory_review_needed:
+        ai_verdict = "pass"
+    advisory_only_rules_override = (
+        documentary_decision_clear
+        and advisory_review_needed
+        and rules_raw in {"REJECT", "HOLD", "CAUTION"}
+    )
+    if advisory_only_rules_override:
+        ruleset_verdict = "pass"
+    primary_decision_lane = (
+        "documentary"
+        if documentary_review_needed
+        else "advisory"
+        if advisory_review_needed
+        else "none"
+    )
     domain_risk_summary = {
-        "sanctions": "hard_fail" if "sanctions" in rules_veto_classes else None,
-        "tbml": "review_required" if "tbml" in rules_trigger_classes else None,
-        "shell_risk": "review_required" if "shell_risk" in rules_trigger_classes else None,
+        "sanctions": "advisory" if "sanctions" in rules_trigger_classes else None,
+        "tbml": "advisory" if "tbml" in rules_trigger_classes else None,
+        "shell_risk": "advisory" if "shell_risk" in rules_trigger_classes else None,
         "missing_critical_controls": "hard_fail" if "missing_critical_controls" in rules_veto_classes else None,
     }
 
@@ -355,6 +480,7 @@ def _build_validation_contract(
         "escalation_triggers": escalation_triggers,
         "recommended_escalation_layer": recommended_escalation_layer,
         "next_action": next_action,
+        "ai_source_verdict": ai_source_verdict,
         "rules_evidence": {
             "missing_critical_fields": missing_critical,
             "unresolved_critical_fields": unresolved_critical_fields,
@@ -371,6 +497,10 @@ def _build_validation_contract(
             "requirement_readiness_items": requirement_readiness_items,
             "requirement_reason_codes": requirement_reason_codes,
             "requirements_review_needed": bool(requirement_readiness_items),
+            "documentary_review_needed": documentary_review_needed,
+            "advisory_review_needed": advisory_review_needed,
+            "issue_lanes": issue_lanes,
+            "primary_decision_lane": primary_decision_lane,
             "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
             "reason_semantics": reason_semantics,
         },
@@ -379,6 +509,9 @@ def _build_validation_contract(
             "primary_veto_drivers": rules_veto_classes,
             "primary_escalation_drivers": escalation_triggers,
             "submission_readiness": "ready" if submission_eligibility.get("can_submit", True) else "not_ready",
+            "primary_decision_lane": primary_decision_lane,
+            "advisory_review_needed": advisory_review_needed,
+            "documentary_review_needed": documentary_review_needed,
             "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
             "reason_semantics": reason_semantics,
             "decision_basis": reason_semantics.get("rule_decision_basis", []),
@@ -387,6 +520,7 @@ def _build_validation_contract(
             "bank_action_items_count": bank_verdict.get("action_items_count"),
             "requirement_reason_codes": requirement_reason_codes,
             "requirements_review_needed": bool(requirement_readiness_items),
+            "advisory_action_titles": list(advisory_lane.get("titles") or [])[:5],
             "primary_requirement_actions": [
                 str(item.get("title") or "").strip()
                 for item in requirement_readiness_items

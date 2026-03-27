@@ -149,6 +149,7 @@ def test_validation_contract_keeps_submission_gate_review_truth() -> None:
         issue_symbols,
         {
             "_classify_reason_semantics",
+            "_build_issue_lane_summary",
             "_extract_requirement_readiness_items",
             "_extract_rule_evidence_items",
             "_classify_rules_signal_classes",
@@ -191,6 +192,7 @@ def test_validation_contract_surfaces_requirements_driven_statement_findings_in_
         issue_symbols,
         {
             "_classify_reason_semantics",
+            "_build_issue_lane_summary",
             "_extract_requirement_readiness_items",
             "_extract_rule_evidence_items",
             "_classify_rules_signal_classes",
@@ -244,6 +246,7 @@ def test_validation_contract_decision_surfaces_force_review_to_not_ready() -> No
     contract_symbols = _load_contract_symbols(
         issue_symbols,
         {
+            "_build_issue_lane_summary",
             "_apply_validation_contract_decision_surfaces",
         },
     )
@@ -277,3 +280,60 @@ def test_validation_contract_decision_surfaces_force_review_to_not_ready() -> No
         aligned["validation_contract"]["evidence_summary"]["submission_readiness"]
         == "not_ready"
     )
+
+
+def test_validation_contract_keeps_advisory_findings_non_blocking_and_explicit() -> None:
+    issue_symbols = _load_issue_symbols(
+        {
+            "_build_document_field_hint_index",
+            "_build_unresolved_critical_context",
+        }
+    )
+    contract_symbols = _load_contract_symbols(
+        issue_symbols,
+        {
+            "_classify_reason_semantics",
+            "_build_issue_lane_summary",
+            "_extract_requirement_readiness_items",
+            "_extract_rule_evidence_items",
+            "_classify_rules_signal_classes",
+            "_build_validation_contract",
+        },
+    )
+    build_validation_contract = contract_symbols["_build_validation_contract"]
+
+    contract = build_validation_contract(
+        {"critical_issues": 0, "major_issues": 0, "minor_issues": 0},
+        {
+            "verdict": "REJECT",
+            "reasons": ["sanctions_hit"],
+            "risk_flags": ["sanctions"],
+            "can_submit": False,
+        },
+        {"missing_critical": []},
+        {
+            "can_submit": True,
+            "reasons": [],
+            "missing_reason_codes": [],
+            "unresolved_critical_fields": [],
+        },
+        issues=[
+            {
+                "rule": "SANCTIONS-PARTY-1",
+                "title": "Potential Sanctions Match",
+                "severity": "critical",
+                "ruleset_domain": "icc.lcopilot.sanctions",
+            }
+        ],
+    )
+
+    assert contract["final_verdict"] == "pass"
+    assert contract["ruleset_verdict"] == "pass"
+    assert contract["rules_evidence"]["submission_can_submit"] is True
+    assert contract["rules_evidence"]["issue_lanes"]["documentary"]["count"] == 0
+    assert contract["rules_evidence"]["issue_lanes"]["advisory"]["count"] == 1
+    assert contract["rules_evidence"]["advisory_review_needed"] is True
+    assert contract["evidence_summary"]["primary_decision_lane"] == "advisory"
+    assert contract["evidence_summary"]["advisory_action_titles"] == [
+        "Potential Sanctions Match"
+    ]

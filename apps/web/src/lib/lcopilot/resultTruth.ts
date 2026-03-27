@@ -22,6 +22,10 @@ export interface CanonicalResultTruth {
   requirementReasonCodes: string[];
   requirementActionTitles: string[];
   requirementReadinessItems: Array<Record<string, unknown>>;
+  primaryDecisionLane: 'documentary' | 'advisory' | 'none';
+  documentaryIssueCount: number;
+  advisoryIssueCount: number;
+  advisoryReviewNeeded: boolean;
 }
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
@@ -91,6 +95,52 @@ const getRequirementReadinessTruth = (
   };
 };
 
+const getIssueLaneTruth = (
+  validationContract: ValidationContractV1 | null,
+): Pick<
+  CanonicalResultTruth,
+  'primaryDecisionLane' | 'documentaryIssueCount' | 'advisoryIssueCount' | 'advisoryReviewNeeded'
+> => {
+  const rulesEvidence = isObjectRecord(validationContract?.rules_evidence)
+    ? (validationContract.rules_evidence as Record<string, unknown>)
+    : null;
+  const evidenceSummary = isObjectRecord(validationContract?.evidence_summary)
+    ? (validationContract.evidence_summary as Record<string, unknown>)
+    : null;
+  const issueLanes = isObjectRecord(rulesEvidence?.issue_lanes)
+    ? (rulesEvidence?.issue_lanes as Record<string, unknown>)
+    : null;
+  const documentaryLane = isObjectRecord(issueLanes?.documentary)
+    ? (issueLanes?.documentary as Record<string, unknown>)
+    : null;
+  const advisoryLane = isObjectRecord(issueLanes?.advisory)
+    ? (issueLanes?.advisory as Record<string, unknown>)
+    : null;
+  const rawPrimaryDecisionLane = String(
+    evidenceSummary?.primary_decision_lane ?? rulesEvidence?.primary_decision_lane ?? '',
+  )
+    .trim()
+    .toLowerCase();
+  const primaryDecisionLane: CanonicalResultTruth['primaryDecisionLane'] =
+    rawPrimaryDecisionLane === 'documentary' || rawPrimaryDecisionLane === 'advisory'
+      ? rawPrimaryDecisionLane
+      : 'none';
+  const documentaryIssueCount = Number(documentaryLane?.count ?? 0) || 0;
+  const advisoryIssueCount = Number(advisoryLane?.count ?? 0) || 0;
+  const advisoryReviewNeeded = Boolean(
+    evidenceSummary?.advisory_review_needed ??
+      rulesEvidence?.advisory_review_needed ??
+      advisoryIssueCount > 0,
+  );
+
+  return {
+    primaryDecisionLane,
+    documentaryIssueCount,
+    advisoryIssueCount,
+    advisoryReviewNeeded,
+  };
+};
+
 const getCriticalIssueCount = (issues: IssueCard[] = []): number =>
   issues.filter((issue) => {
     const severity = String(issue?.severity ?? '').toLowerCase();
@@ -137,6 +187,7 @@ export const getCanonicalResultTruth = (
     (validationStatus === 'pass' ? 'pass' : null);
   const bankVerdict = getCanonicalBankVerdict(structuredResult);
   const requirementReadinessTruth = getRequirementReadinessTruth(validationContract);
+  const issueLaneTruth = getIssueLaneTruth(validationContract);
   const bankVerdictLabel = String(bankVerdict?.verdict ?? '').trim().toUpperCase();
   const hasContractTruth = Boolean(validationContract || submissionEligibility);
   const canSubmitFromValidation =
@@ -167,6 +218,7 @@ export const getCanonicalResultTruth = (
       readinessClass: 'text-destructive',
       canSubmitFromValidation: false,
       ...requirementReadinessTruth,
+      ...issueLaneTruth,
     };
   }
 
@@ -185,6 +237,7 @@ export const getCanonicalResultTruth = (
       readinessClass: 'text-warning',
       canSubmitFromValidation: false,
       ...requirementReadinessTruth,
+      ...issueLaneTruth,
     };
   }
 
@@ -203,6 +256,7 @@ export const getCanonicalResultTruth = (
       readinessClass: 'text-success',
       canSubmitFromValidation: true,
       ...requirementReadinessTruth,
+      ...issueLaneTruth,
     };
   }
 
@@ -216,5 +270,6 @@ export const getCanonicalResultTruth = (
     readinessClass: 'text-success',
     canSubmitFromValidation: true,
     ...requirementReadinessTruth,
+    ...issueLaneTruth,
   };
 };

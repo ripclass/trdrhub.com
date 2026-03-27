@@ -109,4 +109,49 @@ describe('resultTruth', () => {
     expect(truth.readinessLabel).toBe('Review needed');
     expect(truth.canSubmitFromValidation).toBe(false);
   });
+
+  it('surfaces advisory lanes without downgrading ready documentary truth', () => {
+    const results = buildValidationResults();
+    results.issues = [
+      {
+        severity: 'critical',
+        title: 'Potential Sanctions Match',
+        rule: 'SANCTIONS-PARTY-1',
+      } as any,
+    ];
+    results.structured_result = {
+      ...results.structured_result,
+      validation_contract_v1: {
+        final_verdict: 'pass',
+        rules_evidence: {
+          issue_lanes: {
+            documentary: { count: 0 },
+            advisory: { count: 1 },
+          },
+          advisory_review_needed: true,
+          primary_decision_lane: 'advisory',
+        },
+        evidence_summary: {
+          primary_decision_lane: 'advisory',
+          advisory_review_needed: true,
+        },
+      },
+      effective_submission_eligibility: {
+        can_submit: true,
+        reasons: [],
+      },
+      bank_verdict: {
+        verdict: 'SUBMIT',
+        can_submit: true,
+      },
+    } as typeof results.structured_result;
+
+    const truth = getCanonicalResultTruth(results);
+    expect(truth.readinessLabel).toBe('Ready');
+    expect(truth.canSubmitFromValidation).toBe(true);
+    expect(truth.primaryDecisionLane).toBe('advisory');
+    expect(truth.advisoryIssueCount).toBe(1);
+    expect(truth.documentaryIssueCount).toBe(0);
+    expect(truth.advisoryReviewNeeded).toBe(true);
+  });
 });
