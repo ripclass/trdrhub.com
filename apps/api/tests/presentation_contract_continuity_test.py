@@ -337,3 +337,74 @@ def test_validation_contract_keeps_advisory_findings_non_blocking_and_explicit()
     assert contract["evidence_summary"]["advisory_action_titles"] == [
         "Potential Sanctions Match"
     ]
+
+
+def test_validation_contract_ignores_legacy_submission_gate_when_only_advisory_findings_exist() -> None:
+    issue_symbols = _load_issue_symbols(
+        {
+            "_build_document_field_hint_index",
+            "_build_unresolved_critical_context",
+        }
+    )
+    contract_symbols = _load_contract_symbols(
+        issue_symbols,
+        {
+            "_classify_reason_semantics",
+            "_build_issue_lane_summary",
+            "_extract_requirement_readiness_items",
+            "_extract_rule_evidence_items",
+            "_classify_rules_signal_classes",
+            "_build_validation_contract",
+            "_apply_validation_contract_decision_surfaces",
+        },
+    )
+    build_validation_contract = contract_symbols["_build_validation_contract"]
+    apply_validation_contract_decision_surfaces = contract_symbols[
+        "_apply_validation_contract_decision_surfaces"
+    ]
+
+    contract = build_validation_contract(
+        {"critical_issues": 0, "major_issues": 0, "minor_issues": 0},
+        {
+            "verdict": "CAUTION",
+            "reasons": ["sanctions_hit"],
+            "risk_flags": ["sanctions"],
+            "can_submit": False,
+        },
+        {"missing_critical": []},
+        {
+            "can_submit": False,
+            "reasons": ["bank_verdict_caution"],
+            "missing_reason_codes": [],
+            "unresolved_critical_fields": [],
+        },
+        issues=[
+            {
+                "rule": "SANCTIONS-PARTY-1",
+                "title": "Sanctioned Issuing Bank Detected",
+                "severity": "critical",
+                "ruleset_domain": "icc.lcopilot.sanctions",
+            }
+        ],
+    )
+
+    assert contract["final_verdict"] == "pass"
+    assert contract["evidence_summary"]["primary_decision_lane"] == "advisory"
+
+    aligned = apply_validation_contract_decision_surfaces(
+        {
+            "verdict": "CAUTION",
+            "can_submit": False,
+            "recommendation": "Review sanctions issue.",
+        },
+        {
+            "can_submit": False,
+            "reasons": ["bank_verdict_caution"],
+        },
+        contract,
+    )
+
+    assert aligned["bank_verdict"]["verdict"] == "SUBMIT"
+    assert aligned["bank_verdict"]["can_submit"] is True
+    assert aligned["submission_eligibility"]["can_submit"] is True
+    assert aligned["validation_contract"]["rules_evidence"]["submission_can_submit"] is True

@@ -371,6 +371,12 @@ def _build_validation_contract(
         or missing_critical
         or requirement_readiness_items
     )
+    advisory_only_submission_gate_override = (
+        documentary_decision_clear
+        and advisory_review_needed
+        and bool(submission_eligibility)
+        and not submission_eligibility.get("can_submit", True)
+    )
     if documentary_decision_clear and advisory_review_needed:
         ai_verdict = "pass"
     advisory_only_rules_override = (
@@ -417,7 +423,11 @@ def _build_validation_contract(
             override_reason = "rules_require_review"
             arbitration_mode = "rules_review"
 
-    if submission_eligibility and not submission_eligibility.get("can_submit", True):
+    if (
+        submission_eligibility
+        and not submission_eligibility.get("can_submit", True)
+        and not advisory_only_submission_gate_override
+    ):
         if final_verdict == "pass":
             final_verdict = "review"
             override_reason = override_reason or "submission_not_ready"
@@ -430,7 +440,12 @@ def _build_validation_contract(
         review_required_reason.append("rules_review_signal")
     if ai_verdict in {"warn", "reject"} and final_verdict == "review":
         review_required_reason.append("ai_escalation")
-    if submission_eligibility and not submission_eligibility.get("can_submit", True) and final_verdict == "review":
+    if (
+        submission_eligibility
+        and not submission_eligibility.get("can_submit", True)
+        and not advisory_only_submission_gate_override
+        and final_verdict == "review"
+    ):
         review_required_reason.append("submission_not_ready")
 
     immediate_rules_veto = bool(rules_veto_classes)
@@ -442,7 +457,12 @@ def _build_validation_contract(
     if ruleset_verdict == "review":
         escalation_triggers.append("rules_review_signal")
     escalation_triggers.extend(rules_trigger_classes)
-    if submission_eligibility and not submission_eligibility.get("can_submit", True) and final_verdict == "review":
+    if (
+        submission_eligibility
+        and not submission_eligibility.get("can_submit", True)
+        and not advisory_only_submission_gate_override
+        and final_verdict == "review"
+    ):
         escalation_triggers.append("submission_not_ready")
 
     recommended_escalation_layer = None
