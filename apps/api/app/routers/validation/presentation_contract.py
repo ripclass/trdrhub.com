@@ -848,6 +848,124 @@ def _apply_workflow_stage_contract_overrides(
         "validation_contract": validation_contract,
     }
 
+
+def _apply_validation_contract_decision_surfaces(
+    bank_verdict: Optional[Dict[str, Any]],
+    submission_eligibility: Optional[Dict[str, Any]],
+    validation_contract: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    bank_verdict = dict(bank_verdict or {})
+    submission_eligibility = dict(submission_eligibility or {})
+    validation_contract = dict(validation_contract or {})
+
+    final_verdict = str(validation_contract.get("final_verdict") or "").strip().lower()
+    if final_verdict not in {"pass", "review", "reject"}:
+        return {
+            "bank_verdict": bank_verdict,
+            "submission_eligibility": submission_eligibility,
+            "validation_contract": validation_contract,
+        }
+
+    final_can_submit = final_verdict == "pass"
+    verdict_map = {
+        "pass": "SUBMIT",
+        "review": "CAUTION",
+        "reject": "REJECT",
+    }
+    verdict_color_map = {
+        "pass": "green",
+        "review": "yellow",
+        "reject": "red",
+    }
+    verdict_message_map = {
+        "pass": "Ready for presentation based on current validation findings",
+        "review": "Review required before bank submission",
+        "reject": "Blocking discrepancies must be resolved before submission",
+    }
+    recommendation_map = {
+        "pass": "Proceed with submission using the current validated document set.",
+        "review": "Resolve review items before submitting to the bank.",
+        "reject": "Do not submit until blocking discrepancies are resolved.",
+    }
+
+    bank_verdict.update(
+        {
+            "verdict": verdict_map[final_verdict],
+            "verdict_color": verdict_color_map[final_verdict],
+            "verdict_message": verdict_message_map[final_verdict],
+            "recommendation": recommendation_map[final_verdict],
+            "can_submit": final_can_submit,
+        }
+    )
+
+    prior_reasons = [
+        str(item).strip()
+        for item in (submission_eligibility.get("reasons") or [])
+        if str(item).strip()
+    ]
+    normalized_prior = {
+        reason.lower()
+        for reason in prior_reasons
+        if not reason.lower().startswith("validation_contract_")
+        and not reason.lower().startswith("bank_verdict_")
+    }
+    submission_reasons = [
+        reason
+        for reason in prior_reasons
+        if reason.lower() in normalized_prior
+    ]
+    if not final_can_submit:
+        submission_reasons.append(f"validation_contract_{final_verdict}")
+
+    deduped_reasons: List[str] = []
+    seen_reasons: set[str] = set()
+    for reason in submission_reasons:
+        normalized_reason = reason.lower()
+        if normalized_reason in seen_reasons:
+            continue
+        seen_reasons.add(normalized_reason)
+        deduped_reasons.append(reason)
+
+    submission_eligibility.update(
+        {
+            "can_submit": final_can_submit,
+            "reasons": deduped_reasons,
+            "review_required": final_verdict == "review",
+        }
+    )
+
+    rules_evidence = dict(validation_contract.get("rules_evidence") or {})
+    rules_evidence.update(
+        {
+            "submission_can_submit": final_can_submit,
+            "submission_reasons": list(deduped_reasons),
+            "bank_recommendation": bank_verdict.get("recommendation"),
+            "bank_action_items_count": bank_verdict.get("action_items_count"),
+        }
+    )
+
+    evidence_summary = dict(validation_contract.get("evidence_summary") or {})
+    evidence_summary.update(
+        {
+            "submission_readiness": "ready" if final_can_submit else "not_ready",
+            "bank_recommendation": bank_verdict.get("recommendation"),
+            "bank_action_items_count": bank_verdict.get("action_items_count"),
+        }
+    )
+
+    validation_contract.update(
+        {
+            "rules_evidence": rules_evidence,
+            "evidence_summary": evidence_summary,
+        }
+    )
+
+    return {
+        "bank_verdict": bank_verdict,
+        "submission_eligibility": submission_eligibility,
+        "validation_contract": validation_contract,
+    }
+
 def _parse_json_if_possible(value: Any) -> Any:
     if isinstance(value, str):
         stripped = value.strip()

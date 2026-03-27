@@ -81,4 +81,32 @@ describe('resultTruth', () => {
     expect(truth.readinessLabel).toBe('Ready');
     expect(truth.canSubmitFromValidation).toBe(true);
   });
+
+  it('keeps contract review authoritative even if legacy eligibility still says can submit', () => {
+    const results = buildValidationResults();
+    results.issues = [];
+    results.structured_result = {
+      ...results.structured_result,
+      issues: [],
+      final_verdict: 'pass',
+      validation_status: 'pass',
+      validation_contract_v1: {
+        final_verdict: 'review',
+      },
+      effective_submission_eligibility: {
+        can_submit: true,
+        reasons: [],
+      },
+      bank_verdict: {
+        verdict: 'SUBMIT',
+        can_submit: true,
+      },
+    } as typeof results.structured_result;
+
+    const truth = getCanonicalResultTruth(results);
+    expect(truth.finalVerdict).toBe('review');
+    expect(truth.overallStatus).toBe('warning');
+    expect(truth.readinessLabel).toBe('Review needed');
+    expect(truth.canSubmitFromValidation).toBe(false);
+  });
 });

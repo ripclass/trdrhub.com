@@ -20,6 +20,7 @@ from app.services.validation.response_contract_validator import (
 
 from .issues_pipeline import _partition_workflow_stage_issues
 from .presentation_contract import (
+    _apply_validation_contract_decision_surfaces,
     _apply_workflow_stage_contract_overrides,
     _build_submission_eligibility_context,
     _build_validation_contract,
@@ -149,15 +150,15 @@ def apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[str
     )
 
     bank_reject = str(bank_verdict.get("verdict") or "").strip().upper() == "REJECT"
-    final_reject = (
-        str(validation_contract.get("final_verdict") or "").strip().lower() == "reject"
-    )
+    final_verdict = str(validation_contract.get("final_verdict") or "").strip().lower()
+    final_reject = final_verdict == "reject"
+    final_review = final_verdict == "review"
     rules_veto = (
         str(validation_contract.get("arbitration_mode") or "").strip().lower()
         == "rules_veto"
         or bool(validation_contract.get("immediate_rules_veto"))
     )
-    locked_not_submittable = bank_reject or final_reject or rules_veto
+    locked_not_submittable = bank_reject or final_reject or final_review or rules_veto
 
     if not kept:
         if not locked_not_submittable:
@@ -187,6 +188,7 @@ def apply_cycle2_runtime_recovery(structured_result: Dict[str, Any]) -> Dict[str
         "locked_not_submittable": locked_not_submittable,
         "bank_reject": bank_reject,
         "final_reject": final_reject,
+        "final_review": final_review,
         "rules_veto": rules_veto,
     }
     return structured_result
@@ -753,6 +755,22 @@ async def refresh_structured_result_after_field_override(
         structured_result["submission_eligibility"]
     )
     structured_result["validation_contract_v1"] = workflow_overrides["validation_contract"]
+    aligned_contract_surfaces = _apply_validation_contract_decision_surfaces(
+        structured_result.get("bank_verdict"),
+        structured_result.get("effective_submission_eligibility")
+        or structured_result.get("submission_eligibility"),
+        structured_result.get("validation_contract_v1"),
+    )
+    structured_result["bank_verdict"] = aligned_contract_surfaces["bank_verdict"]
+    structured_result["submission_eligibility"] = aligned_contract_surfaces["submission_eligibility"]
+    structured_result["raw_submission_eligibility"] = copy.deepcopy(
+        structured_result["submission_eligibility"]
+    )
+    structured_result["effective_submission_eligibility"] = copy.deepcopy(
+        structured_result["submission_eligibility"]
+    )
+    structured_result["validation_contract_v1"] = aligned_contract_surfaces["validation_contract"]
+    structured_result["final_verdict"] = structured_result["validation_contract_v1"].get("final_verdict")
     analytics["validation_contract_v1"] = copy.deepcopy(
         structured_result["validation_contract_v1"]
     )

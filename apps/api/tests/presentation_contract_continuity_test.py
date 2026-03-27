@@ -232,3 +232,48 @@ def test_validation_contract_surfaces_requirements_driven_statement_findings_in_
     assert contract["rules_evidence"]["reason_semantics"]["requirement_findings"] == ["lc_required_statement_missing"]
     assert contract["evidence_summary"]["requirements_review_needed"] is True
     assert "LC-required wording missing from Beneficiary Certificate" in contract["evidence_summary"]["primary_requirement_actions"]
+
+
+def test_validation_contract_decision_surfaces_force_review_to_not_ready() -> None:
+    issue_symbols = _load_issue_symbols(
+        {
+            "_build_document_field_hint_index",
+            "_build_unresolved_critical_context",
+        }
+    )
+    contract_symbols = _load_contract_symbols(
+        issue_symbols,
+        {
+            "_apply_validation_contract_decision_surfaces",
+        },
+    )
+    apply_validation_contract_decision_surfaces = contract_symbols[
+        "_apply_validation_contract_decision_surfaces"
+    ]
+
+    aligned = apply_validation_contract_decision_surfaces(
+        {
+            "verdict": "SUBMIT",
+            "can_submit": True,
+            "recommendation": "Proceed",
+        },
+        {
+            "can_submit": True,
+            "reasons": ["bank_verdict_submit"],
+        },
+        {
+            "final_verdict": "review",
+            "rules_evidence": {"submission_can_submit": True, "submission_reasons": []},
+            "evidence_summary": {"submission_readiness": "ready"},
+        },
+    )
+
+    assert aligned["bank_verdict"]["verdict"] == "CAUTION"
+    assert aligned["bank_verdict"]["can_submit"] is False
+    assert aligned["submission_eligibility"]["can_submit"] is False
+    assert "validation_contract_review" in aligned["submission_eligibility"]["reasons"]
+    assert aligned["validation_contract"]["rules_evidence"]["submission_can_submit"] is False
+    assert (
+        aligned["validation_contract"]["evidence_summary"]["submission_readiness"]
+        == "not_ready"
+    )

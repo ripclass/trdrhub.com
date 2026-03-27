@@ -132,19 +132,18 @@ export const getCanonicalResultTruth = (
   const topLevelFinalVerdict = normalizeFinalVerdict(structuredResult?.final_verdict);
   const contractFinalVerdict = normalizeFinalVerdict(validationContract?.final_verdict);
   const finalVerdict =
+    contractFinalVerdict ??
     topLevelFinalVerdict ??
-    (submissionEligibility?.can_submit === true && contractFinalVerdict === 'review'
-      ? validationStatus === 'pass'
-        ? 'pass'
-        : null
-      : contractFinalVerdict) ??
     (validationStatus === 'pass' ? 'pass' : null);
   const bankVerdict = getCanonicalBankVerdict(structuredResult);
   const requirementReadinessTruth = getRequirementReadinessTruth(validationContract);
   const bankVerdictLabel = String(bankVerdict?.verdict ?? '').trim().toUpperCase();
+  const hasContractTruth = Boolean(validationContract || submissionEligibility);
   const canSubmitFromValidation =
     submissionEligibility?.can_submit ??
     (structuredResult?.validation_blocked
+      ? false
+      : finalVerdict === 'review'
       ? false
       : finalVerdict === 'reject'
       ? false
@@ -155,8 +154,7 @@ export const getCanonicalResultTruth = (
   const isBlocked =
     structuredResult?.validation_blocked === true ||
     finalVerdict === 'reject' ||
-    bankVerdictLabel === 'REJECT' ||
-    criticalIssueCount > 0;
+    (!hasContractTruth && (bankVerdictLabel === 'REJECT' || criticalIssueCount > 0));
 
   if (isBlocked) {
     return {

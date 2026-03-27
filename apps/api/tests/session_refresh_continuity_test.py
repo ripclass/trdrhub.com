@@ -342,6 +342,38 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
             "validation_contract": validation_contract,
         }
 
+    def _fake_apply_validation_contract_decision_surfaces(
+        bank_verdict,
+        submission_eligibility,
+        validation_contract=None,
+    ):
+        bank_verdict = copy.deepcopy(bank_verdict or {})
+        submission_eligibility = copy.deepcopy(submission_eligibility or {})
+        validation_contract = copy.deepcopy(validation_contract or {})
+        final_verdict = str(validation_contract.get("final_verdict") or "").strip().lower()
+        if final_verdict == "review":
+            bank_verdict["verdict"] = "CAUTION"
+            bank_verdict["can_submit"] = False
+            submission_eligibility["can_submit"] = False
+            reasons = [
+                reason
+                for reason in list(submission_eligibility.get("reasons") or [])
+                if str(reason).strip().lower() != "bank_verdict_submit"
+            ]
+            if "validation_contract_review" not in {str(reason).strip().lower() for reason in reasons}:
+                reasons.append("validation_contract_review")
+            submission_eligibility["reasons"] = reasons
+            validation_contract.setdefault("rules_evidence", {})
+            validation_contract.setdefault("evidence_summary", {})
+            validation_contract["rules_evidence"]["submission_can_submit"] = False
+            validation_contract["rules_evidence"]["submission_reasons"] = list(reasons)
+            validation_contract["evidence_summary"]["submission_readiness"] = "not_ready"
+        return {
+            "bank_verdict": bank_verdict,
+            "submission_eligibility": submission_eligibility,
+            "validation_contract": validation_contract,
+        }
+
     def _fake_partition_workflow_stage_issues(issues, documents=None, workflow_stage=None):
         stage = str((workflow_stage or {}).get("stage") or "").strip().lower()
         if stage != "extraction_resolution":
@@ -372,6 +404,7 @@ def _load_symbols(target_names: set[str]) -> Dict[str, Any]:
         "_build_submission_eligibility_context": _fake_build_submission_eligibility_context,
         "_build_validation_contract": _fake_build_validation_contract,
         "_run_validation_arbitration_escalation": _fake_run_validation_arbitration_escalation,
+        "_apply_validation_contract_decision_surfaces": _fake_apply_validation_contract_decision_surfaces,
         "_apply_workflow_stage_contract_overrides": _fake_apply_workflow_stage_contract_overrides,
         "_partition_workflow_stage_issues": _fake_partition_workflow_stage_issues,
         "materialize_document_fact_graphs_v1": _fake_materialize_document_fact_graphs_v1,
@@ -784,3 +817,35 @@ def test_refresh_structured_result_clears_stale_resolution_contract_state_after_
     assert refreshed["validation_contract_v1"]["rules_evidence"]["unresolved_critical_fields"] == []
     assert refreshed["validation_contract_v1"]["rules_evidence"]["reason_semantics"]["missing_fields"] == []
     assert refreshed["validation_contract_v1"]["evidence_summary"]["reason_semantics"]["missing_fields"] == []
+
+
+def test_apply_cycle2_runtime_recovery_does_not_reopen_submit_on_contract_review() -> None:
+    symbols = _load_symbols({"apply_cycle2_runtime_recovery"})
+    apply_cycle2_runtime_recovery = symbols["apply_cycle2_runtime_recovery"]
+
+    structured_result = {
+        "submission_eligibility": {
+            "can_submit": False,
+            "reasons": ["validation_contract_review"],
+            "missing_reason_codes": [],
+            "unresolved_critical_fields": [],
+            "unresolved_critical_statuses": [],
+        },
+        "bank_verdict": {
+            "verdict": "CAUTION",
+            "can_submit": False,
+        },
+        "validation_contract_v1": {
+            "final_verdict": "review",
+            "arbitration_mode": "aligned",
+            "immediate_rules_veto": False,
+        },
+        "validation_status": "review",
+        "status": "review",
+    }
+
+    recovered = apply_cycle2_runtime_recovery(copy.deepcopy(structured_result))
+
+    assert recovered["effective_submission_eligibility"]["can_submit"] is False
+    assert recovered["_cycle2_runtime_recovery"]["locked_not_submittable"] is True
+    assert recovered["_cycle2_runtime_recovery"]["final_review"] is True
