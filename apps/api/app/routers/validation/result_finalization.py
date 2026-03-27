@@ -971,6 +971,7 @@ async def finalize_validation_result(
     # Validates response completeness and adds warnings for missing data
     # =====================================================================
     try:
+        structured_result.pop("_validation_contract_error", None)
         structured_result = validate_and_annotate_response(structured_result)
         structured_result = _apply_cycle2_runtime_recovery(structured_result)
         structured_result = _backfill_hybrid_secondary_surfaces(structured_result)
@@ -1013,6 +1014,7 @@ async def finalize_validation_result(
         else:
             logger.info("Day1 response contract overlay disabled (DAY1_CONTRACT_ENABLED=false)")
     except Exception as contract_err:
+        structured_result["_validation_contract_error"] = str(contract_err)
         logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
 
     if validation_session:
