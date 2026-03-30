@@ -10,6 +10,8 @@ FILES = [
     ROOT / "app" / "routers" / "validate_customs.py",
     ROOT / "app" / "routers" / "validate_results.py",
     ROOT / "app" / "routers" / "validation" / "request_parsing.py",
+    ROOT / "app" / "routers" / "validation" / "result_finalization.py",
+    ROOT / "app" / "routers" / "validation" / "validation_execution.py",
 ]
 
 
