@@ -189,12 +189,15 @@ Field 52A: Issuing Bank: {data.issuing_bank}
 
 def create_invoice_pdf(data: InvoiceData, output_path: Path):
     """Create a Commercial Invoice PDF."""
+    lc_reference_line = (
+        f"L/C Reference: {data.lc_reference}\n" if str(data.lc_reference or "").strip() else ""
+    )
     content = f"""
 COMMERCIAL INVOICE
 
 Invoice Number: {data.invoice_number}
 Invoice Date: {data.invoice_date}
-L/C Reference: {data.lc_reference}
+{lc_reference_line}
 
 SELLER:
 {data.seller_name}
@@ -593,7 +596,7 @@ def generate_set_003_port_mismatch():
             {"document_type": "bl", "field_name": "port_of_discharge", "expected_value": "Long Beach", "match_type": "contains", "criticality": "important"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-PORT-1", "severity": "major", "document_type": "bl", "title_contains": "port", "description": "Port mismatch"}
+            {"rule_id": "CROSSDOC-BL-002", "severity": "critical", "document_type": "bill", "title_contains": "discharge", "description": "Port of discharge mismatch"}
         ],
         "false_positive_checks": []
     }
@@ -668,7 +671,7 @@ def generate_set_004_late_shipment():
             {"document_type": "bl", "field_name": "shipped_on_board_date", "expected_value": "2026-03-05", "match_type": "contains", "criticality": "important"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-DATE-1", "severity": "critical", "document_type": "bl", "title_contains": "shipment", "description": "Late shipment"}
+            {"rule_id": "CROSSDOC-BL-003", "severity": "critical", "document_type": "bill", "title_contains": "shipment", "description": "Late shipment"}
         ],
         "false_positive_checks": []
     }
@@ -826,12 +829,312 @@ def generate_set_006_goods_mismatch():
             {"document_type": "invoice", "field_name": "goods_description", "expected_value": "Polyester", "match_type": "contains", "criticality": "important"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-GOODS-1", "severity": "critical", "document_type": "invoice", "title_contains": "goods", "description": "Goods description mismatch"}
+            {"rule_id": "CROSSDOC-INV-003", "severity": "major", "document_type": "invoice", "title_contains": "goods", "description": "Goods description mismatch"}
         ],
-        "false_positive_checks": []
+        "false_positive_checks": [
+            {
+                "rule_id": "PRICE-VERIFY-2",
+                "description": "Goods mismatch should stay primary without layering a separate price anomaly finding into the documentary lane"
+            }
+        ]
     }
     (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
     
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_007_missing_insurance_document():
+    """Generate Set 007: Insurance required by LC but not uploaded (should fail missing-doc check)."""
+    set_id = "set_007_missing_insurance_document"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD007",
+        amount=112500.00,
+        currency="USD",
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf")
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-007",
+        invoice_date="2026-02-15",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026007890",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="OOCL DHAKA",
+        voyage_number="V.2026Q",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,250 KG",
+        container_number="OOLU7890123",
+        seal_number="SL789012",
+        shipped_on_board_date="2026-03-01",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Insurance certificate missing even though the LC requires insurance coverage",
+        "version": "1.0",
+        "expected_compliance_rate": 80.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "lc_number", "expected_value": "EXP2026BD007", "match_type": "exact", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "invoice_amount", "expected_value": "112500.00", "match_type": "numeric_tolerance", "tolerance": 0.001, "criticality": "critical"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-DOC-1", "severity": "major", "document_type": "insurance", "title_contains": "insurance", "description": "Insurance certificate missing"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-INSURANCE-1",
+                "description": "A missing insurance document should stay a missing-document finding, not degrade into an undervalue finding."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+
+    print(f"[OK] Generated {set_id}: 5 documents + expected.json")
+    return set_id
+
+
+def generate_set_008_invoice_after_expiry():
+    """Generate Set 008: Invoice dated after LC expiry (should fail)."""
+    set_id = "set_008_invoice_after_expiry"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD008",
+        amount=91000.00,
+        latest_shipment_date="2026-03-10",
+        expiry_date="2026-03-20",
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf")
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-008",
+        invoice_date="2026-03-25",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026008901",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="ONE CHITTAGONG",
+        voyage_number="V.2026R",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,050 KG",
+        container_number="ONEU8901234",
+        seal_number="SL890123",
+        shipped_on_board_date="2026-03-05",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Invoice date falls after the LC expiry date",
+        "version": "1.0",
+        "expected_compliance_rate": 72.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "expiry_date", "expected_value": "2026-03-20", "match_type": "contains", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "invoice_date", "expected_value": "2026-03-25", "match_type": "contains", "criticality": "critical"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-INV-004", "severity": "critical", "document_type": "invoice", "title_contains": "expiry", "description": "Invoice dated after LC expiry"}
+        ],
+        "false_positive_checks": [],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_009_invoice_lc_reference_mismatch():
+    """Generate Set 009: Invoice references the wrong LC number (should fail)."""
+    set_id = "set_009_invoice_lc_reference_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD009",
+        amount=99000.00,
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf")
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-009",
+        invoice_date="2026-02-18",
+        lc_reference="EXP2026BD999",
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026009012",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="COSCO DHAKA",
+        voyage_number="V.2026T",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,180 KG",
+        container_number="COSU9012345",
+        seal_number="SL901234",
+        shipped_on_board_date="2026-03-02",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Invoice references a different LC number than the credit being used",
+        "version": "1.0",
+        "expected_compliance_rate": 78.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "lc_number", "expected_value": "EXP2026BD009", "match_type": "exact", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "lc_reference", "expected_value": "EXP2026BD999", "match_type": "exact", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-INV-005", "severity": "major", "document_type": "invoice", "title_contains": "reference", "description": "Invoice LC reference mismatch"}
+        ],
+        "false_positive_checks": [],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_010_invoice_missing_lc_reference():
+    """Generate Set 010: Invoice omits LC reference entirely (should fail)."""
+    set_id = "set_010_invoice_missing_lc_reference"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD010",
+        amount=87000.00,
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf")
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-010",
+        invoice_date="2026-02-19",
+        lc_reference="",
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026010123",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="WAN HAI EXPRESS",
+        voyage_number="V.2026U",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="1,980 KG",
+        container_number="WHLU0123456",
+        seal_number="SL012345",
+        shipped_on_board_date="2026-03-03",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Invoice omits the LC reference entirely",
+        "version": "1.0",
+        "expected_compliance_rate": 82.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "warning",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "lc_number", "expected_value": "EXP2026BD010", "match_type": "exact", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "invoice_number", "expected_value": "INV-2026-010", "match_type": "contains", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-INV-005", "severity": "minor", "document_type": "invoice", "title_contains": "reference", "description": "Invoice missing LC reference"}
+        ],
+        "false_positive_checks": [],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
 
@@ -852,6 +1155,10 @@ def main():
         generate_set_004_late_shipment(),
         generate_set_005_insurance_undervalue(),
         generate_set_006_goods_mismatch(),
+        generate_set_007_missing_insurance_document(),
+        generate_set_008_invoice_after_expiry(),
+        generate_set_009_invoice_lc_reference_mismatch(),
+        generate_set_010_invoice_missing_lc_reference(),
     ]
     
     print("\n" + "=" * 60)

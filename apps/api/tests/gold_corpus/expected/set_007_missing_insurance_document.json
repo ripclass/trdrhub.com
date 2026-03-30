@@ -1,0 +1,40 @@
+{
+  "set_id": "set_007_missing_insurance_document",
+  "description": "Insurance certificate missing even though the LC requires insurance coverage",
+  "version": "1.0",
+  "expected_compliance_rate": 80.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BD007",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "invoice_amount",
+      "expected_value": "112500.00",
+      "match_type": "numeric_tolerance",
+      "tolerance": 0.001,
+      "criticality": "critical"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-DOC-1",
+      "severity": "major",
+      "document_type": "insurance",
+      "title_contains": "insurance",
+      "description": "Insurance certificate missing"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-INSURANCE-1",
+      "description": "A missing insurance document should stay a missing-document finding, not degrade into an undervalue finding."
+    }
+  ]
+}

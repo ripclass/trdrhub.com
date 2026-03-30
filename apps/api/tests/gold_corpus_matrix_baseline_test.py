@@ -32,6 +32,10 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_004_late_shipment.json": ["CROSSDOC-BL-003"],
         "set_005_insurance_undervalue.json": ["CROSSDOC-INSURANCE-1"],
         "set_006_goods_mismatch.json": ["CROSSDOC-INV-003"],
+        "set_007_missing_insurance_document.json": ["CROSSDOC-DOC-1"],
+        "set_008_invoice_after_expiry.json": ["CROSSDOC-INV-004"],
+        "set_009_invoice_lc_reference_mismatch.json": ["CROSSDOC-INV-005"],
+        "set_010_invoice_missing_lc_reference.json": ["CROSSDOC-INV-005"],
     }
 
     for filename, expected_rules in expected_rule_matrix.items():
@@ -52,3 +56,7 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     goods_set = _load_expected("set_006_goods_mismatch.json")
     goods_false_positives = _false_positive_rule_ids(goods_set)
     assert "PRICE-VERIFY-2" in goods_false_positives
+
+    missing_insurance_set = _load_expected("set_007_missing_insurance_document.json")
+    missing_insurance_false_positives = _false_positive_rule_ids(missing_insurance_set)
+    assert "CROSSDOC-INSURANCE-1" in missing_insurance_false_positives

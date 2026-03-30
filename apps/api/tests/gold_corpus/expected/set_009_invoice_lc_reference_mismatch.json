@@ -1,0 +1,34 @@
+{
+  "set_id": "set_009_invoice_lc_reference_mismatch",
+  "description": "Invoice references a different LC number than the credit being used",
+  "version": "1.0",
+  "expected_compliance_rate": 78.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BD009",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "lc_reference",
+      "expected_value": "EXP2026BD999",
+      "match_type": "exact",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-INV-005",
+      "severity": "major",
+      "document_type": "invoice",
+      "title_contains": "reference",
+      "description": "Invoice LC reference mismatch"
+    }
+  ],
+  "false_positive_checks": []
+}
