@@ -68,6 +68,44 @@ def _annotate_pipeline_failure(exc: Exception, stage: str, timings: Any, runtime
     return exc
 
 
+def _attach_pipeline_telemetry(
+    result: Any,
+    *,
+    runtime_context: Any,
+    timings: Any,
+    request_id: str | None,
+) -> Any:
+    if not isinstance(result, dict):
+        return result
+
+    telemetry = result.get("telemetry")
+    if not isinstance(telemetry, dict):
+        telemetry = {}
+        result["telemetry"] = telemetry
+
+    stage_trace = []
+    if isinstance(runtime_context, dict):
+        raw_stage_trace = runtime_context.get("pipeline_stage_trace")
+        if isinstance(raw_stage_trace, list):
+            stage_trace = [str(stage) for stage in raw_stage_trace]
+
+    telemetry.setdefault("pipeline_stage_trace", stage_trace)
+    telemetry.setdefault("checkpoint_trace", _checkpoint_trace(timings))
+    telemetry.setdefault(
+        "pipeline_stage",
+        runtime_context.get("pipeline_stage") if isinstance(runtime_context, dict) else None,
+    )
+    telemetry.setdefault(
+        "job_id_resolvable",
+        bool(runtime_context.get("job_id_resolvable")) if isinstance(runtime_context, dict) else False,
+    )
+    if isinstance(runtime_context, dict) and runtime_context.get("job_id_source") is not None:
+        telemetry.setdefault("job_id_source", runtime_context.get("job_id_source"))
+    if request_id:
+        telemetry.setdefault("request_id", request_id)
+    return result
+
+
 async def run_validate_pipeline(
     *,
     request,
@@ -101,7 +139,12 @@ async def run_validate_pipeline(
         raise _annotate_pipeline_failure(exc, "session_setup", timings, runtime_context)
     if isinstance(setup_state, dict) and ("status" in setup_state or "structured_result" in setup_state):
         _set_pipeline_stage(runtime_context, "completed", timings)
-        return setup_state
+        return _attach_pipeline_telemetry(
+            setup_state,
+            runtime_context=runtime_context,
+            timings=timings,
+            request_id=audit_context.get("correlation_id") if isinstance(audit_context, dict) else None,
+        )
 
     _set_pipeline_stage(runtime_context, "validation_execution", timings)
     try:
@@ -120,7 +163,12 @@ async def run_validate_pipeline(
         raise _annotate_pipeline_failure(exc, "validation_execution", timings, runtime_context)
     if isinstance(execution_state, dict) and "structured_result" in execution_state and "telemetry" in execution_state:
         _set_pipeline_stage(runtime_context, "completed", timings)
-        return execution_state
+        return _attach_pipeline_telemetry(
+            execution_state,
+            runtime_context=runtime_context,
+            timings=timings,
+            request_id=audit_context.get("correlation_id") if isinstance(audit_context, dict) else None,
+        )
 
     _set_pipeline_stage(runtime_context, "result_finalization", timings)
     try:
@@ -142,7 +190,12 @@ async def run_validate_pipeline(
         raise _annotate_pipeline_failure(exc, "result_finalization", timings, runtime_context)
 
     _set_pipeline_stage(runtime_context, "completed", timings)
-    return final_result
+    return _attach_pipeline_telemetry(
+        final_result,
+        runtime_context=runtime_context,
+        timings=timings,
+        request_id=audit_context.get("correlation_id") if isinstance(audit_context, dict) else None,
+    )
 
 
 def bind_stage_modules(shared: Any) -> None:
