@@ -12,14 +12,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 RESULT_FINALIZATION_PATH = ROOT / "app" / "routers" / "validation" / "result_finalization.py"
+SESSION_SETUP_PATH = ROOT / "app" / "routers" / "validation" / "session_setup.py"
 VALIDATION_EXECUTION_PATH = ROOT / "app" / "routers" / "validation" / "validation_execution.py"
 
 
-def _load_module(path: Path, name: str):
+def _load_module(path: Path, name: str, package: str | None = None):
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load module from {path}")
     module = importlib.util.module_from_spec(spec)
+    if package:
+        module.__package__ = package
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -44,6 +48,24 @@ def test_result_finalization_bind_shared_fails_fast_when_binding_is_missing() ->
     message = str(exc_info.value)
     assert "validation.result_finalization" in message
     assert "logger" in message
+
+
+def test_session_setup_bind_shared_fails_fast_when_binding_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEBUG", "false")
+    module = _load_module(
+        SESSION_SETUP_PATH,
+        "app.routers.validation.session_setup_fail_fast_bindings_test",
+        package="app.routers.validation",
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        module.bind_shared(_shared_map(module, "ValidationSessionService"))
+
+    message = str(exc_info.value)
+    assert "validation.session_setup" in message
+    assert "ValidationSessionService" in message
 
 
 def test_validation_execution_bind_shared_fails_fast_when_binding_is_missing() -> None:
