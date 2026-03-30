@@ -102,7 +102,7 @@ import { cn } from "@/lib/utils";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
 import { DocumentDetailsDrawer, type DocumentForDrawer } from "@/components/lcopilot/DocumentDetailsDrawer";
 import { deriveValidationState } from "@/lib/validation/validationState";
-import { getCanonicalResultTruth } from "@/lib/lcopilot/resultTruth";
+import { getCanonicalResultTruth, getContractDrivenBankVerdict } from "@/lib/lcopilot/resultTruth";
 import {
   SPECIAL_CONDITIONS_PLACEHOLDER_TEXT,
   summarizeSpecialConditions,
@@ -2607,8 +2607,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     canonicalResultTruth.requirementReadinessItems,
     canonicalResultTruth.requirementReviewNeeded,
   ]);
+  const contractDisplayBankVerdict = useMemo(
+    () => getContractDrivenBankVerdict(resultData),
+    [resultData],
+  );
   const displayBankVerdict = useMemo<BankVerdict | null>(() => {
-    const baseVerdict = (structuredResult?.bank_verdict as BankVerdict | null) ?? null;
+    const baseVerdict = (contractDisplayBankVerdict as BankVerdict | null) ?? null;
     const normalizedVerdict = String(baseVerdict?.verdict ?? '').trim().toUpperCase();
 
     if (isExtractionResolutionStage) {
@@ -2714,9 +2718,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     canonicalResultTruth.canSubmitFromValidation,
     checklistReviewFindings,
     contractRequirementReadiness,
+    contractDisplayBankVerdict,
     exporterPresentationTruth.presentationStatus,
     isExtractionResolutionStage,
-    structuredResult?.bank_verdict,
     workflowStage?.summary,
   ]);
   const customsPackReadiness = useMemo(() => {

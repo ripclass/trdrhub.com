@@ -28,6 +28,30 @@ export interface CanonicalResultTruth {
   advisoryReviewNeeded: boolean;
 }
 
+const contractVerdictMap = {
+  pass: 'SUBMIT',
+  review: 'CAUTION',
+  reject: 'REJECT',
+} as const;
+
+const contractVerdictColorMap = {
+  pass: 'green',
+  review: 'yellow',
+  reject: 'red',
+} as const;
+
+const contractVerdictMessageMap = {
+  pass: 'Ready for presentation based on current validation findings',
+  review: 'Review required before bank submission',
+  reject: 'Blocking discrepancies must be resolved before submission',
+} as const;
+
+const contractRecommendationMap = {
+  pass: 'Proceed with submission using the current validated document set.',
+  review: 'Resolve review items before submitting to the bank.',
+  reject: 'Do not submit until blocking discrepancies are resolved.',
+} as const;
+
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
@@ -169,6 +193,37 @@ export const getCanonicalBankVerdict = (
 ): StructuredResultBankVerdict | null => {
   const verdict = structuredResult?.bank_verdict ?? null;
   return isObjectRecord(verdict) ? (verdict as StructuredResultBankVerdict) : null;
+};
+
+export const getContractDrivenBankVerdict = (
+  resultData?: Pick<ValidationResults, 'issues' | 'structured_result'> | null,
+): StructuredResultBankVerdict | null => {
+  const structuredResult = resultData?.structured_result ?? null;
+  const truth = getCanonicalResultTruth(resultData);
+  const baseVerdict = getCanonicalBankVerdict(structuredResult) ?? null;
+
+  if (!truth.validationContract) {
+    return baseVerdict;
+  }
+
+  if (!truth.finalVerdict) {
+    return baseVerdict;
+  }
+
+  const finalVerdict = truth.finalVerdict;
+
+  return {
+    ...(baseVerdict ?? {}),
+    verdict: contractVerdictMap[finalVerdict],
+    verdict_color: contractVerdictColorMap[finalVerdict],
+    verdict_message:
+      String(baseVerdict?.verdict_message ?? '').trim() ||
+      contractVerdictMessageMap[finalVerdict],
+    recommendation:
+      String(baseVerdict?.recommendation ?? '').trim() ||
+      contractRecommendationMap[finalVerdict],
+    can_submit: truth.canSubmitFromValidation,
+  } as StructuredResultBankVerdict;
 };
 
 export const getCanonicalResultTruth = (

@@ -1,4 +1,4 @@
-import { getCanonicalResultTruth } from '@/lib/lcopilot/resultTruth';
+import { getCanonicalResultTruth, getContractDrivenBankVerdict } from '@/lib/lcopilot/resultTruth';
 import { buildValidationResults } from './fixtures/lcopilot';
 
 describe('resultTruth', () => {
@@ -153,5 +153,50 @@ describe('resultTruth', () => {
     expect(truth.advisoryIssueCount).toBe(1);
     expect(truth.documentaryIssueCount).toBe(0);
     expect(truth.advisoryReviewNeeded).toBe(true);
+  });
+
+  it('builds display bank verdict from validation contract when legacy verdict drifts', () => {
+    const results = buildValidationResults();
+    results.issues = [];
+    results.structured_result = {
+      ...results.structured_result,
+      validation_contract_v1: {
+        final_verdict: 'reject',
+      },
+      effective_submission_eligibility: {
+        can_submit: false,
+        reasons: ['validation_contract_reject'],
+      },
+      bank_verdict: {
+        verdict: 'SUBMIT',
+        verdict_color: 'green',
+        verdict_message: 'Legacy drift',
+        recommendation: 'Legacy drift',
+        can_submit: true,
+        action_items: [{ priority: 'critical', issue: 'Amount mismatch', action: 'Fix invoice amount' }],
+      },
+    } as typeof results.structured_result;
+
+    const verdict = getContractDrivenBankVerdict(results);
+    expect(verdict?.verdict).toBe('REJECT');
+    expect(verdict?.verdict_color).toBe('red');
+    expect(verdict?.can_submit).toBe(false);
+    expect(verdict?.action_items).toHaveLength(1);
+  });
+
+  it('returns legacy bank verdict when validation contract is missing', () => {
+    const results = buildValidationResults();
+    results.structured_result = {
+      ...results.structured_result,
+      validation_contract_v1: undefined,
+      bank_verdict: {
+        verdict: 'CAUTION',
+        can_submit: true,
+      },
+    } as typeof results.structured_result;
+
+    const verdict = getContractDrivenBankVerdict(results);
+    expect(verdict?.verdict).toBe('CAUTION');
+    expect(verdict?.can_submit).toBe(true);
   });
 });

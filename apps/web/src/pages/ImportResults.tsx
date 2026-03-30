@@ -21,7 +21,7 @@ import SummaryStrip from "@/components/lcopilot/SummaryStrip";
 import { LcHeader } from "@/components/lcopilot/LcHeader";
 import { BlockedValidationCard } from "@/components/validation/ValidationStatusBanner";
 import { deriveValidationState } from "@/lib/validation/validationState";
-import { getCanonicalResultTruth } from "@/lib/lcopilot/resultTruth";
+import { getCanonicalResultTruth, getContractDrivenBankVerdict } from "@/lib/lcopilot/resultTruth";
 import {
   AmendmentCard,
   BankProfileBadge,
@@ -395,6 +395,7 @@ function CanonicalImportValidationView({
     [structuredResult],
   );
   const canonicalTruth = useMemo(() => getCanonicalResultTruth(results), [results]);
+  const displayBankVerdict = useMemo(() => getContractDrivenBankVerdict(results), [results]);
   const issueCards = results.issues ?? [];
   const filteredIssueCards = useMemo(() => {
     if (issueFilter === 'all') return issueCards;
@@ -527,8 +528,8 @@ function CanonicalImportValidationView({
           <BankProfileBadge profile={structuredResult.bank_profile as BankProfile} />
         )}
 
-        {structuredResult?.bank_verdict && (
-          <BankVerdictCard verdict={structuredResult.bank_verdict as BankVerdict} />
+        {displayBankVerdict && (
+          <BankVerdictCard verdict={displayBankVerdict as BankVerdict} />
         )}
 
         {structuredResult?.amendments_available && (structuredResult.amendments_available as AmendmentsAvailable).count > 0 && (
