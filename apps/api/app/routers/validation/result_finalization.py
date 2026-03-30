@@ -78,6 +78,26 @@ def _retire_legacy_sanctions_block_surface(
     return structured_result
 
 
+def _resolve_result_user_type(request_user_type: Any, current_user: Any) -> str:
+    explicit_user_type = str(request_user_type or "").strip().lower()
+    if explicit_user_type:
+        return explicit_user_type
+
+    if current_user is None:
+        return "unknown"
+
+    role = getattr(current_user, "role", None)
+    if role is None:
+        return "unknown"
+
+    enum_like_value = getattr(role, "value", None)
+    if isinstance(enum_like_value, str) and enum_like_value.strip():
+        return enum_like_value.strip().lower()
+
+    role_text = str(role).strip().lower()
+    return role_text or "unknown"
+
+
 async def _await_with_timeout(stage_label: str, coro, timeout_seconds: float, default: Any):
     try:
         return await asyncio.wait_for(coro, timeout_seconds), False
@@ -942,7 +962,7 @@ async def finalize_validation_result(
         "Validation completed",
         extra={
             "job_id": str(job_id),
-            "user_type": request_user_type or (current_user.role.value if hasattr(current_user, "role") else "unknown"),
+            "user_type": _resolve_result_user_type(request_user_type, current_user),
             "rules_evaluated": len(results),
             "failed_rules": len(failed_results),
             "issue_cards": len(issue_cards),

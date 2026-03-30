@@ -18,6 +18,7 @@ def _load_symbols() -> Dict[str, Any]:
         if isinstance(node, ast.FunctionDef) and node.name in {
             "_suppress_advisory_findings_for_documentary_context",
             "_retire_legacy_sanctions_block_surface",
+            "_resolve_result_user_type",
         }:
             selected_nodes.append(node)
 
@@ -73,3 +74,30 @@ def test_result_finalization_retires_legacy_sanctions_block_surface() -> None:
     assert retired["sanctions_blocked"] is False
     assert retired["sanctions_block_reason"] is None
     assert retired["sanctions_screening"]["legacy_block_surface_retired"] is True
+
+
+def test_result_finalization_resolves_user_type_from_explicit_request_value() -> None:
+    fn = _load_symbols()["_resolve_result_user_type"]
+
+    assert fn("exporter", object()) == "exporter"
+
+
+def test_result_finalization_resolves_user_type_from_string_role_without_value_attr() -> None:
+    fn = _load_symbols()["_resolve_result_user_type"]
+
+    class _User:
+        role = "exporter"
+
+    assert fn("", _User()) == "exporter"
+
+
+def test_result_finalization_resolves_user_type_from_enum_like_role() -> None:
+    fn = _load_symbols()["_resolve_result_user_type"]
+
+    class _Role:
+        value = "importer"
+
+    class _User:
+        role = _Role()
+
+    assert fn(None, _User()) == "importer"
