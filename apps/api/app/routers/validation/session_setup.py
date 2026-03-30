@@ -51,10 +51,11 @@ async def prepare_validation_session(
     user_type = payload.get("userType") or payload.get("user_type")
     validation_session = None
     job_id = None
-    if user_type in ["bank", "exporter", "importer"] or metadata:
+    create_persisted_session = bool(getattr(current_user, "id", None))
+    if create_persisted_session or user_type in ["bank", "exporter", "importer"] or metadata:
         session_service = ValidationSessionService(db)
         validation_session = session_service.create_session(current_user)
-        if current_user.company_id:
+        if getattr(current_user, "company_id", None):
             validation_session.company_id = current_user.company_id
         validation_session.status = SessionStatus.PROCESSING.value
         validation_session.processing_started_at = func.now()
@@ -65,6 +66,8 @@ async def prepare_validation_session(
         job_id = str(uuid4())
     runtime_context["validation_session"] = validation_session
     runtime_context["job_id"] = job_id
+    runtime_context["job_id_resolvable"] = validation_session is not None
+    runtime_context["job_id_source"] = "session" if validation_session is not None else "ephemeral"
 
     # Extract structured data from uploaded files (respecting any document tags)
     document_tags = payload.get("document_tags")

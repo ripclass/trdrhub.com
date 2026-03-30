@@ -43,6 +43,7 @@ def _enrich_http_exception_detail(
     checkpoint_trace: list[str],
     request_id: str | None,
     job_id: Any,
+    job_id_resolvable: bool = False,
 ) -> Dict[str, Any]:
     if isinstance(detail, dict):
         enriched = dict(detail)
@@ -55,7 +56,7 @@ def _enrich_http_exception_detail(
         enriched["checkpoint_trace"] = list(checkpoint_trace)
     if request_id and not enriched.get("request_id"):
         enriched["request_id"] = request_id
-    if job_id is not None and not enriched.get("job_id"):
+    if job_id_resolvable and job_id is not None and not enriched.get("job_id"):
         enriched["job_id"] = job_id
 
     return enriched
@@ -129,6 +130,7 @@ def build_router(shared: Any) -> APIRouter:
                         checkpoint_trace=checkpoint_trace,
                         request_id=audit_context.get("correlation_id"),
                         job_id=runtime_context.get("job_id"),
+                        job_id_resolvable=bool(runtime_context.get("job_id_resolvable")),
                     ),
                     headers=exc.headers,
                 ) from exc
@@ -194,7 +196,11 @@ def build_router(shared: Any) -> APIRouter:
                     "failure_stage": failure_stage or "unknown",
                     "checkpoint_trace": checkpoint_trace,
                     "request_id": audit_context.get("correlation_id"),
-                    "job_id": runtime_context.get("job_id"),
+                    **(
+                        {"job_id": runtime_context.get("job_id")}
+                        if runtime_context.get("job_id_resolvable") and runtime_context.get("job_id") is not None
+                        else {}
+                    ),
                 },
             ) from e
 

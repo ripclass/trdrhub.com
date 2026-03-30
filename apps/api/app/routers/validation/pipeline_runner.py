@@ -58,7 +58,11 @@ def _annotate_pipeline_failure(exc: Exception, stage: str, timings: Any, runtime
     try:
         setattr(exc, "_validation_pipeline_stage", stage)
         setattr(exc, "_validation_pipeline_checkpoints", checkpoint_trace)
-        if isinstance(runtime_context, dict) and runtime_context.get("job_id") is not None:
+        if (
+            isinstance(runtime_context, dict)
+            and runtime_context.get("job_id") is not None
+            and runtime_context.get("job_id_resolvable")
+        ):
             setattr(exc, "_validation_job_id", runtime_context.get("job_id"))
     except Exception:
         pass

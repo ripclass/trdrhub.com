@@ -92,6 +92,7 @@ async def test_validate_run_wraps_generic_pipeline_failures_with_breadcrumbs(
         kwargs["runtime_context"]["pipeline_stage"] = "validation_execution"
         kwargs["runtime_context"]["pipeline_failure_stage"] = "validation_execution"
         kwargs["runtime_context"]["job_id"] = "job-123"
+        kwargs["runtime_context"]["job_id_resolvable"] = True
         raise RuntimeError("pipeline boom")
 
     validate_run.parse_validate_request = fake_parse_validate_request
@@ -137,6 +138,7 @@ async def test_validate_run_enriches_http_exceptions_with_stage_details(
     async def fake_run_validate_pipeline(**kwargs):
         kwargs["runtime_context"]["pipeline_stage"] = "result_finalization"
         kwargs["runtime_context"]["job_id"] = "job-http-1"
+        kwargs["runtime_context"]["job_id_resolvable"] = True
         exc = HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"message": "Upstream unavailable"},
@@ -160,4 +162,53 @@ async def test_validate_run_enriches_http_exceptions_with_stage_details(
         "checkpoint_trace": ["request_received", "form_parsed"],
         "request_id": "req-123",
         "job_id": "job-http-1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_validate_run_omits_non_resolvable_job_ids_from_error_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEBUG", "false")
+    validate_run = _load_module(
+        VALIDATE_RUN_PATH,
+        "validate_run_http_failure_without_resolvable_job_test",
+    )
+    validate_run.bind_request_parsing_shared = lambda shared: None
+    validate_run.bind_pipeline_runner_shared = lambda shared: None
+
+    async def fake_parse_validate_request(request):
+        return SimpleNamespace(
+            payload={},
+            files_list=[],
+            doc_type=None,
+            intake_only=False,
+        )
+
+    async def fake_run_validate_pipeline(**kwargs):
+        kwargs["runtime_context"]["pipeline_stage"] = "result_finalization"
+        kwargs["runtime_context"]["job_id"] = "ephemeral-job-1"
+        kwargs["runtime_context"]["job_id_resolvable"] = False
+        exc = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"message": "Upstream unavailable"},
+        )
+        setattr(exc, "_validation_pipeline_stage", "result_finalization")
+        raise exc
+
+    validate_run.parse_validate_request = fake_parse_validate_request
+    validate_run.run_validate_pipeline = fake_run_validate_pipeline
+
+    router = validate_run.build_router(_shared_bindings())
+    validate_doc = next(route.endpoint for route in router.routes if route.path == "/")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await validate_doc(request=SimpleNamespace(headers={}), current_user=None, db=object())
+
+    assert exc_info.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert exc_info.value.detail == {
+        "message": "Upstream unavailable",
+        "failure_stage": "result_finalization",
+        "checkpoint_trace": ["request_received", "form_parsed"],
+        "request_id": "req-123",
     }
