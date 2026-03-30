@@ -63,17 +63,17 @@ interface BankVerdictCardProps {
 type NormalizedVerdictKey = keyof typeof verdictColors;
 
 const fallbackVerdictMessage: Record<NormalizedVerdictKey, string> = {
-  SUBMIT: "Bank submission appears ready.",
-  CAUTION: "Bank review is advised before submission.",
-  HOLD: "Submission should be held pending review.",
-  REJECT: "Bank would reject this presentation in its current state.",
+  SUBMIT: "No blocking documentary issues are open on the current document set.",
+  CAUTION: "Some items still need review before you treat this presentation as clean.",
+  HOLD: "Clean presentation should stay on hold until the open review items are cleared.",
+  REJECT: "Blocking documentary discrepancies would likely lead to rejection in the current state.",
 };
 
 const fallbackRecommendation: Record<NormalizedVerdictKey, string> = {
-  SUBMIT: "Proceed with bank submission once supporting controls are complete.",
-  CAUTION: "Resolve review items before bank submission.",
-  HOLD: "Address the blocking items before attempting submission.",
-  REJECT: "Do not submit until the blocking discrepancies are corrected.",
+  SUBMIT: "You can move toward bank submission, but keep any advisory checks separate from documentary readiness.",
+  CAUTION: "Review the flagged items, correct the documents if needed, then rerun validation.",
+  HOLD: "Clear the open review items before attempting submission.",
+  REJECT: "Correct the blocking discrepancies or seek an LC amendment before submission.",
 };
 
 const normalizeVerdictKey = (verdict: BankVerdict | string): NormalizedVerdictKey => {

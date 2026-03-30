@@ -56,6 +56,6 @@ describe('overviewTruth', () => {
 
     expect(truth.readinessLabel).toBe('Ready');
     expect(truth.presentationStatus).toBe('ready');
-    expect(truth.readinessSummary).toMatch(/non-blocking overlays/i);
+    expect(truth.readinessSummary).toMatch(/do not block submission on their own/i);
   });
 });

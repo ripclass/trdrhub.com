@@ -41,15 +41,15 @@ const contractVerdictColorMap = {
 } as const;
 
 const contractVerdictMessageMap = {
-  pass: 'Ready for presentation based on current validation findings',
-  review: 'Review required before bank submission',
-  reject: 'Blocking discrepancies must be resolved before submission',
+  pass: 'No blocking documentary issues are open on the current document set',
+  review: 'Some items still need review before you treat this presentation as clean',
+  reject: 'Blocking documentary discrepancies were found in the current document set',
 } as const;
 
 const contractRecommendationMap = {
-  pass: 'Proceed with submission using the current validated document set.',
-  review: 'Resolve review items before submitting to the bank.',
-  reject: 'Do not submit until blocking discrepancies are resolved.',
+  pass: 'You can move toward bank submission, but keep any advisory checks separate from documentary readiness.',
+  review: 'Review the flagged items, correct the documents if needed, then rerun validation.',
+  reject: 'Correct the blocking discrepancies or seek an LC amendment before submission.',
 } as const;
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>

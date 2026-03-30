@@ -977,7 +977,9 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/LC-required statements or compiled documentary requirements remain unresolved/i)).toBeInTheDocument(),
+      expect(
+        screen.getByText(/Clean presentation still needs review because one or more LC-required statements or documentary requirements are unresolved/i),
+      ).toBeInTheDocument(),
     );
     expect(screen.getAllByText(/Add LC-required statement to Beneficiary Certificate/i).length).toBeGreaterThan(0);
   });
@@ -1048,13 +1050,15 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/LC-required statements or compiled documentary requirements remain unresolved/i)).toBeInTheDocument(),
+      expect(
+        screen.getByText(/Clean presentation still needs review because one or more LC-required statements or documentary requirements are unresolved/i),
+      ).toBeInTheDocument(),
     );
 
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getByText(/Contract readiness evidence/i)).toBeInTheDocument();
-    expect(within(customsPanel).getByText(/Submission readiness remains blocked by compiled LC requirements/i)).toBeInTheDocument();
+    expect(within(customsPanel).getByText(/Clean presentation remains blocked by compiled LC requirements/i)).toBeInTheDocument();
     expect(within(customsPanel).getAllByText(/LC-required wording missing from Beneficiary Certificate/i).length).toBeGreaterThan(0);
     expect(within(customsPanel).queryByRole('button', { name: /Submit to Bank/i })).toBeNull();
   });

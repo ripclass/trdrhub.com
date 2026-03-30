@@ -56,8 +56,8 @@ describe('BankVerdictCard', () => {
     render(<BankVerdictCard verdict={'REJECT'} />);
 
     expect(screen.getByText('REJECT')).toBeInTheDocument();
-    expect(screen.getByText(/Bank would reject this presentation/i)).toBeInTheDocument();
-    expect(screen.getByText(/Do not submit until the blocking discrepancies are corrected/i)).toBeInTheDocument();
+    expect(screen.getByText(/Blocking documentary discrepancies would likely lead to rejection/i)).toBeInTheDocument();
+    expect(screen.getByText(/Correct the blocking discrepancies or seek an LC amendment before submission/i)).toBeInTheDocument();
   });
 
   it('displays estimated discrepancy fee when > 0', () => {

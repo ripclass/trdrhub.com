@@ -2506,10 +2506,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             (issue as any).next_action ||
               issue.suggestion ||
               (requirementText
-                ? `Update the document to include the exact LC-required statement '${requirementText}' or seek an LC amendment before presentation.`
-                : 'Update the document to include the exact LC-required statement or seek an LC amendment before presentation.'),
+                ? `Update the document to include the exact LC-required statement '${requirementText}', then rerun validation. If the wording cannot be changed, seek an LC amendment before presentation.`
+                : 'Update the document to include the exact LC-required statement, then rerun validation. If the wording cannot be changed, seek an LC amendment before presentation.'),
           )
-        : safeString((issue as any).next_action || issue.suggestion || issue.description || 'Review this issue before submission.');
+        : safeString((issue as any).next_action || issue.suggestion || issue.description || 'Review the issue, correct the document if needed, then rerun validation before submission.');
       const actionTitle =
         isExactWordingRequirement
           ? `Add LC-required statement to ${primaryDocumentLabel}`
@@ -2591,8 +2591,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       null;
     const summary =
       leadAction && canonicalResultTruth.requirementReviewNeeded
-        ? `Submission readiness remains blocked by compiled LC requirements, starting with ${leadAction}.`
-        : 'Submission readiness remains blocked by compiled LC requirements.';
+        ? `Clean presentation remains blocked by compiled LC requirements, starting with ${leadAction}.`
+        : 'Clean presentation remains blocked by compiled LC requirements.';
 
     return {
       hasItems: items.length > 0,
@@ -2630,7 +2630,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         verdict_message: 'Extraction resolution required before bank review',
         recommendation:
           workflowStage?.summary ||
-          'Confirm unresolved extracted fields before treating this case as submission-ready.',
+          'Confirm the unresolved extracted fields, then rerun validation before treating this case as ready for submission.',
         can_submit: false,
         will_be_rejected: false,
         estimated_discrepancy_fee: baseVerdict?.estimated_discrepancy_fee ?? 0,
@@ -2653,7 +2653,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       return {
         verdict: canonicalResultTruth.canSubmitFromValidation ? 'CAUTION' : 'HOLD',
         verdict_color: canonicalResultTruth.canSubmitFromValidation ? 'yellow' : 'orange',
-        verdict_message: 'Compiled LC requirements still need action',
+        verdict_message: 'Compiled LC requirements still need attention',
         recommendation: contractRequirementReadiness.summary,
         can_submit: false,
         will_be_rejected: false,
@@ -2680,8 +2680,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       return {
         verdict: 'HOLD',
         verdict_color: 'orange',
-        verdict_message: 'Review is blocking clean presentation',
-        recommendation: 'Resolve missing or blocked checklist items before treating this case as submission-ready.',
+        verdict_message: 'Checklist blockers are preventing clean presentation',
+        recommendation: 'Resolve the missing or blocked checklist items, then rerun validation before submission.',
         can_submit: false,
         will_be_rejected: false,
         estimated_discrepancy_fee: baseVerdict?.estimated_discrepancy_fee ?? 0,
@@ -2699,8 +2699,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return {
       verdict: 'CAUTION',
       verdict_color: 'yellow',
-      verdict_message: 'Review required before bank submission',
-      recommendation: 'Complete the unresolved checklist reviews before treating this case as submission-ready.',
+      verdict_message: 'Checklist review is still open',
+      recommendation: 'Complete the unresolved checklist reviews, then rerun validation before submission.',
       can_submit: false,
       will_be_rejected: false,
       estimated_discrepancy_fee: baseVerdict?.estimated_discrepancy_fee ?? 0,

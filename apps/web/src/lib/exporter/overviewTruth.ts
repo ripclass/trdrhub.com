@@ -74,12 +74,12 @@ export const getExporterPresentationTruth = (
       readinessLabel: 'Blocked',
       readinessSummary:
         hasBlockingChecklistState
-          ? 'Submission readiness is blocked because required documents or blocked review states are still unresolved on the exporter checklist.'
-          : 'Submission readiness is currently blocked by canonical validation truth; treat this as a state, not a percentage score.',
+          ? 'Clean presentation is blocked because required documents or blocked checklist items are still unresolved.'
+          : 'Clean presentation is blocked by canonical validation truth and should stay blocked until the blocking items are cleared.',
       overallStatus: 'error',
       presentationStatus: 'not_ready',
       presentationSummary:
-        'Not ready for clean presentation until missing required documents and blocked review items are cleared.',
+        'Not ready for clean presentation. Clear the missing required documents and blocked review items first.',
     };
   }
 
@@ -90,15 +90,15 @@ export const getExporterPresentationTruth = (
     const requirementAction = input.canonicalResultTruth.requirementActionTitles[0];
     const requirementSummary =
       requirementAction && input.canonicalResultTruth.requirementReviewNeeded
-        ? `Submission readiness requires review because LC-required statements or compiled documentary requirements remain unresolved, starting with ${requirementAction}.`
+        ? `Clean presentation still needs review because one or more LC-required statements or documentary requirements are unresolved, starting with ${requirementAction}.`
         : null;
     const requirementPresentationSummary = input.canonicalResultTruth.requirementReviewNeeded
-      ? 'Resolve the remaining LC-required statements or seek amendment before treating the presentation as clean.'
+      ? 'Resolve the remaining LC-required statements or seek an LC amendment before treating this presentation as clean.'
       : null;
     const documentarySummary =
       input.canonicalResultTruth.primaryDecisionLane === 'documentary' &&
       input.canonicalResultTruth.documentaryIssueCount > 0
-        ? 'Submission readiness requires review because documentary findings still affect clean presentation.'
+        ? 'Clean presentation still needs review because documentary findings remain unresolved.'
         : null;
     return {
       readinessLabel: 'Review needed',
@@ -106,13 +106,13 @@ export const getExporterPresentationTruth = (
         requirementSummary ??
         documentarySummary ??
         (hasReviewChecklistState
-          ? 'Submission readiness requires review because checklist items are still unresolved.'
-          : 'Submission readiness currently requires review; do not compress this state into a fake numeric readiness score.'),
+          ? 'Clean presentation still needs review because checklist items are unresolved.'
+          : 'Clean presentation still needs review; keep this as a workflow state, not a fake numeric score.'),
       overallStatus: 'warning',
       presentationStatus: 'review_required',
       presentationSummary:
         requirementPresentationSummary ??
-        'Presentation requires review or remediation before it should be treated as clean.',
+        'Review or remediate the open items before treating this presentation as clean.',
     };
   }
 
@@ -120,20 +120,20 @@ export const getExporterPresentationTruth = (
     return {
       readinessLabel: 'Ready',
       readinessSummary:
-        'Documentary submission readiness is clear. Separate advisory or compliance signals remain visible as non-blocking overlays and do not block clean presentation readiness on their own.',
+        'Documentary checks are clear for presentation. Advisory or compliance alerts remain visible separately and do not block submission on their own.',
       overallStatus: 'success',
       presentationStatus: 'ready',
       presentationSummary:
-        'Ready for clean presentation based on documentary checks. Review advisory signals separately as non-blocking overlays.',
+        'Ready for clean presentation on documentary checks. Review advisory signals separately as non-blocking overlays.',
     };
   }
 
   return {
     readinessLabel: 'Ready',
-    readinessSummary: 'Submission readiness is currently clear based on exporter checklist and canonical validation eligibility.',
+    readinessSummary: 'Current documentary checks are clear for presentation based on the checklist and canonical validation truth.',
     overallStatus: 'success',
     presentationStatus: 'ready',
-    presentationSummary: 'Document set appears ready for clean presentation on current review.',
+    presentationSummary: 'Document set appears ready for clean presentation on the current review.',
   };
 };
 
