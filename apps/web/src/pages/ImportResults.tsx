@@ -397,6 +397,16 @@ function CanonicalImportValidationView({
   const canonicalTruth = useMemo(() => getCanonicalResultTruth(results), [results]);
   const displayBankVerdict = useMemo(() => getContractDrivenBankVerdict(results), [results]);
   const issueCards = results.issues ?? [];
+  const hasContractIssueLanes =
+    canonicalTruth.primaryDecisionLane !== 'none' ||
+    canonicalTruth.documentaryIssueCount > 0 ||
+    canonicalTruth.advisoryIssueCount > 0;
+  const reportableIssueCount = hasContractIssueLanes
+    ? canonicalTruth.documentaryIssueCount
+    : issueCards.length;
+  const advisoryIssueCount = hasContractIssueLanes
+    ? canonicalTruth.advisoryIssueCount
+    : 0;
   const filteredIssueCards = useMemo(() => {
     if (issueFilter === 'all') return issueCards;
     return issueCards.filter((issue) => normalizeIssueFilterSeverity(issue.severity) === issueFilter);
@@ -436,7 +446,9 @@ function CanonicalImportValidationView({
     (summary.processing_time_seconds != null ? `${summary.processing_time_seconds}s` : 'N/A');
   const performanceInsights = [
     `${successCount}/${totalDocuments || 0} documents extracted successfully`,
-    `${issueCards.length} issue${issueCards.length === 1 ? '' : 's'} detected`,
+    hasContractIssueLanes
+      ? `${reportableIssueCount} documentary issue${reportableIssueCount === 1 ? '' : 's'}${advisoryIssueCount > 0 ? ` and ${advisoryIssueCount} advisory alert${advisoryIssueCount === 1 ? '' : 's'} tracked separately` : ' detected'}`
+      : `${issueCards.length} issue${issueCards.length === 1 ? '' : 's'} detected`,
     `Compliance score ${complianceScore}%`,
   ];
   const documentProcessingList = documents.map((doc) => ({
@@ -519,7 +531,8 @@ function CanonicalImportValidationView({
         <SummaryStrip
           data={results}
           overallStatus={canonicalTruth.overallStatus}
-          actualIssuesCount={issueCards.length}
+          actualIssuesCount={reportableIssueCount}
+          advisoryIssuesCount={advisoryIssueCount}
           complianceScore={complianceScore}
           retryPath="/lcopilot/importer-dashboard?section=upload"
         />

@@ -139,4 +139,58 @@ describe('ImportResults', () => {
     expect(await screen.findByText(/Importer Review Summary/i)).toBeInTheDocument();
     expect(screen.getByText(/Industrial and Commercial Bank of China/i)).toBeInTheDocument();
   });
+
+  it('keeps importer summary counts documentary-first when the contract marks findings as advisory only', async () => {
+    canonicalHookState.results = buildValidationResults({
+      issues: [
+        {
+          id: 'issue-advisory',
+          title: 'Potential sanctions match',
+          description: 'Compliance review needed',
+          severity: 'critical',
+          workflow_lane: 'compliance_review',
+        } as any,
+      ],
+      structured_result: {
+        ...buildValidationResults().structured_result,
+        validation_contract_v1: {
+          final_verdict: 'pass',
+          rules_evidence: {
+            issue_lanes: {
+              documentary: { count: 0 },
+              advisory: { count: 1 },
+            },
+            advisory_review_needed: true,
+            primary_decision_lane: 'advisory',
+          },
+          evidence_summary: {
+            primary_decision_lane: 'advisory',
+            advisory_review_needed: true,
+          },
+        },
+        effective_submission_eligibility: {
+          can_submit: true,
+          reasons: [],
+        },
+      } as any,
+      summary: {
+        ...buildValidationResults().summary,
+        total_issues: 1,
+      },
+    });
+
+    render(
+      renderWithProviders(
+        <ImportResults embedded jobId="job-123" mode="supplier" />,
+        '/lcopilot/import-results/job-123?mode=supplier',
+      ),
+    );
+
+    expect(await screen.findByText(/Importer Review Summary/i)).toBeInTheDocument();
+    expect(screen.getByText('Documentary Issues')).toBeInTheDocument();
+    expect(
+      screen.getByText(/No blocking documentary issues\. 1 advisory alert remains visible separately\./i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Issues \(1\)/i)).toBeInTheDocument();
+  });
 });

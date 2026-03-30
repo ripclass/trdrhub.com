@@ -862,6 +862,61 @@ describe('ExporterResults', () => {
     expect(screen.getAllByText(/keep submission on hold until cleared/i).length).toBeGreaterThan(0);
   });
 
+  it('keeps the summary strip documentary-first when only advisory findings are present', async () => {
+    const advisoryResults = buildValidationResults({
+      issues: [
+        {
+          ...mockValidationResults.issues[0],
+          id: 'issue-advisory-only',
+          title: 'Potential sanctions match',
+          severity: 'critical',
+          bucket: 'Compliance / Risk Review',
+          workflow_lane: 'compliance_review',
+          fix_owner: 'Internal Compliance Review',
+          remediation_owner: 'Internal Compliance Review',
+        },
+      ],
+    });
+    advisoryResults.summary = {
+      ...advisoryResults.summary,
+      total_issues: 1,
+    };
+    advisoryResults.structured_result = {
+      ...advisoryResults.structured_result,
+      validation_contract_v1: {
+        final_verdict: 'pass',
+        rules_evidence: {
+          issue_lanes: {
+            documentary: { count: 0 },
+            advisory: { count: 1 },
+          },
+          advisory_review_needed: true,
+          primary_decision_lane: 'advisory',
+        },
+        evidence_summary: {
+          primary_decision_lane: 'advisory',
+          advisory_review_needed: true,
+        },
+      },
+      effective_submission_eligibility: {
+        can_submit: true,
+        reasons: [],
+      },
+    } as typeof advisoryResults.structured_result;
+    activeResults = advisoryResults;
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+    );
+
+    expect(screen.getByText('Documentary Issues')).toBeInTheDocument();
+    expect(
+      screen.getByText(/No blocking documentary issues\. 1 advisory alert remains visible separately\./i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Issues \(1\)/i)).toBeInTheDocument();
+  });
+
   it('uses LC-required statement wording in the overview action engine and bank verdict card', async () => {
     const wordingResults = buildValidationResults({
       issues: [

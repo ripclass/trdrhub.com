@@ -11,6 +11,7 @@ type Props = {
   packGenerated?: boolean;
   overallStatus?: 'success' | 'warning' | 'error';
   actualIssuesCount?: number;
+  advisoryIssuesCount?: number;
   complianceScore?: number;
   readinessLabel?: string;
   readinessSummary?: string;
@@ -24,6 +25,7 @@ export function SummaryStrip({
   packGenerated,
   overallStatus,
   actualIssuesCount,
+  advisoryIssuesCount,
   complianceScore,
   readinessLabel,
   readinessSummary,
@@ -50,7 +52,25 @@ export function SummaryStrip({
   const processingTime =
     summary.processing_time_display ?? (analytics as any)?.processing_time_display ?? 'N/A';
 
-  const totalIssues = actualIssuesCount ?? summary.total_issues ?? summary.discrepancies ?? 0;
+  const reportableIssueCount =
+    actualIssuesCount ??
+    Number((summary as any)?.reportable_issue_count ?? summary.total_issues ?? summary.discrepancies ?? 0);
+  const advisoryCount =
+    advisoryIssuesCount ??
+    Number((summary as any)?.advisory_issue_count ?? 0);
+  const hasExplicitIssueLanes =
+    advisoryIssuesCount !== undefined ||
+    actualIssuesCount !== undefined ||
+    typeof (summary as any)?.primary_decision_lane === 'string' ||
+    typeof (summary as any)?.reportable_issue_count === 'number' ||
+    typeof (summary as any)?.advisory_issue_count === 'number';
+  const issueLabel = hasExplicitIssueLanes ? 'Documentary Issues' : 'Issues';
+  const issueSummary =
+    advisoryCount > 0 && reportableIssueCount > 0
+      ? `Detected documentary discrepancies or review items, plus ${advisoryCount} advisory alert${advisoryCount === 1 ? '' : 's'} tracked separately.`
+      : advisoryCount > 0
+      ? `No blocking documentary issues. ${advisoryCount} advisory alert${advisoryCount === 1 ? '' : 's'} ${advisoryCount === 1 ? 'remains' : 'remain'} visible separately.`
+      : 'Detected discrepancies or review items';
   const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
 
   const warnings = typeof (summary.warnings ?? statusDistribution.warning) === 'number'
@@ -60,7 +80,7 @@ export function SummaryStrip({
     ? Number(summary.errors ?? statusDistribution.error)
     : 0;
 
-  const hasIssues = complianceRate < 100 || totalIssues > 0 || warnings > 0 || errors > 0;
+  const hasIssues = complianceRate < 100 || reportableIssueCount > 0 || warnings > 0 || errors > 0;
 
   // Status icon based on overall status prop or calculated
   const effectiveStatus = overallStatus ?? (errors > 0 ? 'error' : hasIssues ? 'warning' : 'success');
@@ -117,9 +137,9 @@ export function SummaryStrip({
               <p className="text-xs text-muted-foreground mt-1">Processed in this validation set</p>
             </div>
             <div className="rounded-lg border border-border/60 p-4">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Issues</p>
-              <p className="text-2xl font-semibold">{totalIssues}</p>
-              <p className="text-xs text-muted-foreground mt-1">Detected discrepancies or review items</p>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{issueLabel}</p>
+              <p className="text-2xl font-semibold">{reportableIssueCount}</p>
+              <p className="text-xs text-muted-foreground mt-1">{issueSummary}</p>
             </div>
             <div className="rounded-lg border border-border/60 p-4">
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Validation Score</p>

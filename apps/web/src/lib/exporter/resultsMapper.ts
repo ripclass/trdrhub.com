@@ -1084,7 +1084,45 @@ const mapIssues = (
   });
 };
 
-const ensureSummary = (payload: any, contractWarnings: ContractWarning[]) => {
+const deriveContractIssueLaneSummary = (validationContract: unknown) => {
+  const rulesEvidence =
+    validationContract && typeof validationContract === 'object'
+      ? (validationContract as any).rules_evidence
+      : null;
+  const evidenceSummary =
+    validationContract && typeof validationContract === 'object'
+      ? (validationContract as any).evidence_summary
+      : null;
+  const issueLanes =
+    rulesEvidence && typeof rulesEvidence === 'object'
+      ? (rulesEvidence as any).issue_lanes
+      : null;
+  const documentaryIssueCount = Number((issueLanes as any)?.documentary?.count ?? 0) || 0;
+  const advisoryIssueCount = Number((issueLanes as any)?.advisory?.count ?? 0) || 0;
+  const primaryDecisionLane = String(
+    evidenceSummary?.primary_decision_lane ?? rulesEvidence?.primary_decision_lane ?? '',
+  )
+    .trim()
+    .toLowerCase();
+  const hasIssueLaneSummary =
+    documentaryIssueCount > 0 ||
+    advisoryIssueCount > 0 ||
+    primaryDecisionLane === 'documentary' ||
+    primaryDecisionLane === 'advisory';
+
+  return {
+    documentaryIssueCount,
+    advisoryIssueCount,
+    primaryDecisionLane,
+    hasIssueLaneSummary,
+  };
+};
+
+const ensureSummary = (
+  payload: any,
+  contractWarnings: ContractWarning[],
+  validationContract?: unknown,
+) => {
   if (!payload) {
     contractWarnings.push(
       createContractWarning(
@@ -1104,6 +1142,10 @@ const ensureSummary = (payload: any, contractWarnings: ContractWarning[]) => {
     error: Number(rawStatus?.error ?? 0),
   };
   const statusTotal = documentStatus.success + documentStatus.warning + documentStatus.error;
+  const issueLaneSummary = deriveContractIssueLaneSummary(validationContract);
+  const reportableIssueCount = issueLaneSummary.hasIssueLaneSummary
+    ? issueLaneSummary.documentaryIssueCount
+    : Number(payload?.total_issues ?? payload?.discrepancies ?? 0);
 
   return {
     ...payload,
@@ -1111,7 +1153,11 @@ const ensureSummary = (payload: any, contractWarnings: ContractWarning[]) => {
     // Canonical extraction counters come from document_status/status_counts for parity across sections
     successful_extractions: Number(documentStatus.success ?? 0),
     failed_extractions: Number(documentStatus.error ?? 0),
-    total_issues: Number(payload?.total_issues ?? payload?.discrepancies ?? 0),
+    total_issues: reportableIssueCount,
+    reportable_issue_count: reportableIssueCount,
+    documentary_issue_count: issueLaneSummary.documentaryIssueCount,
+    advisory_issue_count: issueLaneSummary.advisoryIssueCount,
+    primary_decision_lane: issueLaneSummary.primaryDecisionLane || null,
     severity_breakdown: severity,
     // Pass through document status for SummaryStrip
     document_status: documentStatus,
@@ -1253,7 +1299,11 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
   );
   
   const processingSummaryPayload = (structured as any)?.processing_summary_v2 ?? structured.processing_summary;
-  const summary = ensureSummary(processingSummaryPayload, contractWarnings);
+  const summary = ensureSummary(
+    processingSummaryPayload,
+    contractWarnings,
+    (structured as any)?.validation_contract_v1 ?? null,
+  );
   const analytics = ensureAnalytics(structured.analytics, summary, contractWarnings);
   
   // Safely extract timeline

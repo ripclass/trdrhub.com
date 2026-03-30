@@ -2391,14 +2391,43 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     });
   }, [requirementChecklist]);
   const surfaceFindingsCount = issueCards.length > 0 ? backendIssueCount : checklistReviewFindings.length;
+  const hasContractIssueLanes =
+    canonicalResultTruth.primaryDecisionLane !== 'none' ||
+    canonicalResultTruth.documentaryIssueCount > 0 ||
+    canonicalResultTruth.advisoryIssueCount > 0;
+  const reportableFindingsCount = hasContractIssueLanes
+    ? canonicalResultTruth.documentaryIssueCount
+    : surfaceFindingsCount;
+  const advisoryFindingsCount = hasContractIssueLanes
+    ? canonicalResultTruth.advisoryIssueCount
+    : 0;
   const totalDiscrepancies = surfaceFindingsCount;
   const performanceInsights = useMemo(
     () => [
       extractionSuccessful + "/" + (totalDocuments || 0) + " documents extracted successfully",
-      totalDiscrepancies + " issue" + (totalDiscrepancies === 1 ? "" : "s") + " detected",
+      hasContractIssueLanes
+        ? reportableFindingsCount +
+          " documentary issue" +
+          (reportableFindingsCount === 1 ? "" : "s") +
+          (advisoryFindingsCount > 0
+            ? " and " +
+              advisoryFindingsCount +
+              " advisory alert" +
+              (advisoryFindingsCount === 1 ? "" : "s") +
+              " tracked separately"
+            : " detected")
+        : totalDiscrepancies + " issue" + (totalDiscrepancies === 1 ? "" : "s") + " detected",
       "Compliance score " + complianceScore + "%",
     ],
-    [extractionSuccessful, totalDocuments, totalDiscrepancies, complianceScore],
+    [
+      extractionSuccessful,
+      totalDocuments,
+      hasContractIssueLanes,
+      reportableFindingsCount,
+      advisoryFindingsCount,
+      totalDiscrepancies,
+      complianceScore,
+    ],
   );
   const exporterPresentationTruth = useMemo(
     () => {
@@ -2424,10 +2453,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           reviewRequired: requirementChecklistSummary.needsReview,
           awaitingDocuments: requirementChecklistSummary.awaitingDocument,
         },
-        totalIssues: surfaceFindingsCount,
+        totalIssues: reportableFindingsCount,
       });
     },
-    [canonicalResultTruth, isExtractionResolutionStage, requirementChecklistSummary, surfaceFindingsCount, workflowStage?.summary],
+    [
+      canonicalResultTruth,
+      isExtractionResolutionStage,
+      reportableFindingsCount,
+      requirementChecklistSummary,
+      workflowStage?.summary,
+    ],
   );
   const contractRequirementActions = useMemo(() => {
     return canonicalResultTruth.requirementReadinessItems
@@ -2803,7 +2838,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     () =>
       getExporterOverviewTruth({
         totalDocuments,
-        totalIssues: surfaceFindingsCount,
+        totalIssues: reportableFindingsCount,
         complianceScore,
         extractionAccuracy,
         processingTime,
@@ -2822,7 +2857,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       }),
     [
       totalDocuments,
-      surfaceFindingsCount,
+      reportableFindingsCount,
       complianceScore,
       extractionAccuracy,
       processingTime,
@@ -3338,7 +3373,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             lcTypeConfidence={lcTypeConfidenceValue}
             packGenerated={overviewTruth.packGenerated}
             overallStatus={overviewTruth.overallStatus}
-            actualIssuesCount={surfaceFindingsCount}
+            actualIssuesCount={reportableFindingsCount}
+            advisoryIssuesCount={advisoryFindingsCount}
             complianceScore={complianceScore}
             readinessLabel={overviewTruth.readinessLabel}
             readinessSummary={overviewTruth.readinessSummary}

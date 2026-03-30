@@ -208,6 +208,37 @@ describe('results mapper - option e payload', () => {
     ).toBe(true);
   });
 
+  it('derives reportable documentary counts from validation contract issue lanes', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        validation_contract_v1: {
+          final_verdict: 'pass',
+          rules_evidence: {
+            issue_lanes: {
+              documentary: { count: 0 },
+              advisory: { count: 1 },
+            },
+            advisory_review_needed: true,
+            primary_decision_lane: 'advisory',
+          },
+          evidence_summary: {
+            primary_decision_lane: 'advisory',
+            advisory_review_needed: true,
+          },
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+    expect((mapped.summary as any).reportable_issue_count).toBe(0);
+    expect((mapped.summary as any).documentary_issue_count).toBe(0);
+    expect((mapped.summary as any).advisory_issue_count).toBe(1);
+    expect(mapped.summary.total_issues).toBe(0);
+  });
+
   it('prefers current document field state over stale backend extraction-resolution summaries', () => {
     const seeded = buildValidationResults();
     const payload = {
