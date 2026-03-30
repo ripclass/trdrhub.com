@@ -36,6 +36,31 @@ def _bind_shared(shared: Any) -> None:
             continue
 
 
+def _enrich_http_exception_detail(
+    *,
+    detail: Any,
+    failure_stage: str | None,
+    checkpoint_trace: list[str],
+    request_id: str | None,
+    job_id: Any,
+) -> Dict[str, Any]:
+    if isinstance(detail, dict):
+        enriched = dict(detail)
+    else:
+        enriched = {"message": str(detail) if detail else "Validation failed."}
+
+    if failure_stage and not enriched.get("failure_stage"):
+        enriched["failure_stage"] = failure_stage
+    if checkpoint_trace and not enriched.get("checkpoint_trace"):
+        enriched["checkpoint_trace"] = list(checkpoint_trace)
+    if request_id and not enriched.get("request_id"):
+        enriched["request_id"] = request_id
+    if job_id is not None and not enriched.get("job_id"):
+        enriched["job_id"] = job_id
+
+    return enriched
+
+
 def build_router(shared: Any) -> APIRouter:
     _bind_shared(shared)
     bind_request_parsing_shared(shared)
@@ -81,7 +106,32 @@ def build_router(shared: Any) -> APIRouter:
                 audit_context=audit_context,
                 runtime_context=runtime_context,
             )
-        except HTTPException:
+        except HTTPException as exc:
+            failure_stage = (
+                getattr(exc, "_validation_pipeline_stage", None)
+                or runtime_context.get("pipeline_failure_stage")
+                or runtime_context.get("pipeline_stage")
+            )
+            checkpoint_trace = list(timings.keys())
+            if failure_stage or runtime_context.get("job_id") is not None:
+                logger.error(
+                    "Validation endpoint HTTPException at stage=%s status=%s request_id=%s job_id=%s",
+                    failure_stage,
+                    exc.status_code,
+                    audit_context.get("correlation_id"),
+                    runtime_context.get("job_id"),
+                )
+                raise HTTPException(
+                    status_code=exc.status_code,
+                    detail=_enrich_http_exception_detail(
+                        detail=exc.detail,
+                        failure_stage=failure_stage,
+                        checkpoint_trace=checkpoint_trace,
+                        request_id=audit_context.get("correlation_id"),
+                        job_id=runtime_context.get("job_id"),
+                    ),
+                    headers=exc.headers,
+                ) from exc
             raise
         except UnicodeDecodeError as e:
             logger.error(f"Encoding error during file upload: {e}")
@@ -92,6 +142,12 @@ def build_router(shared: Any) -> APIRouter:
         except Exception as e:
             import traceback
             error_traceback = traceback.format_exc()
+            failure_stage = (
+                getattr(e, "_validation_pipeline_stage", None)
+                or runtime_context.get("pipeline_failure_stage")
+                or runtime_context.get("pipeline_stage")
+            )
+            checkpoint_trace = list(timings.keys())
             logger.error(
                 f"Validation endpoint exception: {type(e).__name__}: {str(e)}",
                 extra={
@@ -99,6 +155,10 @@ def build_router(shared: Any) -> APIRouter:
                     "error_message": str(e),
                     "user_id": current_user.id if current_user else None,
                     "endpoint": "/api/validate",
+                    "failure_stage": failure_stage,
+                    "checkpoint_trace": checkpoint_trace,
+                    "request_id": audit_context.get("correlation_id"),
+                    "job_id": runtime_context.get("job_id"),
                     "traceback": error_traceback,
                 },
                 exc_info=True
@@ -122,7 +182,21 @@ def build_router(shared: Any) -> APIRouter:
                     duration_ms=duration_ms,
                     error_message=str(e),
                 )
-            raise
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error_code": "validation_pipeline_failed",
+                    "message": (
+                        f"Validation failed during {failure_stage}."
+                        if failure_stage
+                        else "Validation failed during processing."
+                    ),
+                    "failure_stage": failure_stage or "unknown",
+                    "checkpoint_trace": checkpoint_trace,
+                    "request_id": audit_context.get("correlation_id"),
+                    "job_id": runtime_context.get("job_id"),
+                },
+            ) from e
 
     async def validate_doc_v2(
         request: Request,
