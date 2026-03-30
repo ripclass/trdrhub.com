@@ -25,13 +25,19 @@ def _shared_get(shared: Any, name: str) -> Any:
 
 def bind_shared(shared: Any) -> None:
     namespace = globals()
+    missing_bindings: list[str] = []
     for name in _SHARED_NAMES:
         if name in namespace:
             continue
         try:
             namespace[name] = _shared_get(shared, name)
         except (KeyError, AttributeError):
-            continue
+            missing_bindings.append(name)
+    if missing_bindings:
+        raise RuntimeError(
+            "Missing shared bindings for validation.request_parsing: "
+            + ", ".join(sorted(missing_bindings))
+        )
 
 
 class ParsedValidationRequest(NamedTuple):

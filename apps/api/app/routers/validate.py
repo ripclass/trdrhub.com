@@ -1,5 +1,5 @@
 from decimal import Decimal, InvalidOperation
-from uuid import uuid4
+from uuid import UUID, uuid4
 from datetime import datetime, timedelta
 import asyncio
 import json
@@ -234,6 +234,7 @@ from app.services.validation.pipeline import (
     ValidationInput,
     ValidationOutput,
 )
+from app.services.validation.sme_response_builder import adapt_from_structured_result
 from app.services.validation.validation_gate import ValidationGate, GateStatus
 from app.services.validation.compliance_scorer import ComplianceScorer
 from app.services.extraction.lc_baseline import LCBaseline, FieldResult, FieldPriority, ExtractionStatus
