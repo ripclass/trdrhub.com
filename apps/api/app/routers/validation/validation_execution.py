@@ -99,6 +99,43 @@ async def _await_with_timeout(stage_label: str, coro, timeout_seconds: float, de
         return default, True
 
 
+def _build_timeout_event(
+    *,
+    stage: str,
+    label: str,
+    timeout_seconds: float,
+    fallback: str,
+    source: str = "validation_execution",
+) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "label": label,
+        "timeout_seconds": float(timeout_seconds),
+        "fallback": fallback,
+        "source": source,
+    }
+
+
+def _append_timeout_event(
+    timeout_events: list[dict[str, Any]],
+    *,
+    stage: str,
+    label: str,
+    timeout_seconds: float,
+    fallback: str,
+    source: str = "validation_execution",
+) -> None:
+    timeout_events.append(
+        _build_timeout_event(
+            stage=stage,
+            label=label,
+            timeout_seconds=timeout_seconds,
+            fallback=fallback,
+            source=source,
+        )
+    )
+
+
 def _should_defer_final_validation(documents: Any) -> Dict[str, Any]:
     workflow_stage = _response_shaping.build_workflow_stage(
         documents if isinstance(documents, list) else [],
@@ -168,6 +205,7 @@ async def execute_validation_pipeline(
     ai_validation_summary = None
     defer_final_validation = False
     workflow_stage_hint = None
+    timeout_events: list[dict[str, Any]] = []
 
     try:
         lc_context = apply_lc_fact_graph_to_validation_inputs(payload, extracted_context)
@@ -470,6 +508,14 @@ async def execute_validation_pipeline(
                 "issues_found": len(db_rule_issues),
                 "timed_out": db_rules_timed_out,
             }
+            if db_rules_timed_out:
+                _append_timeout_event(
+                    timeout_events,
+                    stage="db_rules_execution",
+                    label="DB rules execution",
+                    timeout_seconds=DB_RULE_TIMEOUT_SECONDS,
+                    fallback="issues_skipped",
+                )
 
         except Exception as db_rule_err:
             logger.warning("DB rule execution failed (continuing with other validators): %s", str(db_rule_err))
@@ -547,6 +593,13 @@ async def execute_validation_pipeline(
                 v2_crossdoc_issues.extend(price_issues)
             if price_checks_timed_out:
                 logger.warning("Price verification timed out and was skipped for this run")
+                _append_timeout_event(
+                    timeout_events,
+                    stage="price_verification",
+                    label="Price verification",
+                    timeout_seconds=PRICE_VERIFICATION_TIMEOUT_SECONDS,
+                    fallback="price_checks_skipped",
+                )
         except Exception as e:
             logger.warning(f"Price verification skipped: {e}")
 
@@ -635,6 +688,14 @@ async def execute_validation_pipeline(
             "metadata": ai_metadata or {},
             "timed_out": ai_validation_timed_out,
         }
+        if ai_validation_timed_out:
+            _append_timeout_event(
+                timeout_events,
+                stage="ai_validation",
+                label="AI validation",
+                timeout_seconds=AI_VALIDATION_TIMEOUT_SECONDS,
+                fallback="ai_issues_skipped",
+            )
 
         # Convert AI issues to same format as crossdoc issues
         for ai_issue in ai_issues:
@@ -947,6 +1008,13 @@ async def execute_validation_pipeline(
                 ]
             if bank_policy_timed_out:
                 logger.warning("Bank policy application timed out; using pre-policy issue set")
+                _append_timeout_event(
+                    timeout_events,
+                    stage="bank_policy_application",
+                    label="Bank policy application",
+                    timeout_seconds=BANK_POLICY_TIMEOUT_SECONDS,
+                    fallback="pre_policy_issue_set",
+                )
         except Exception as e:
             logger.warning("Bank policy application skipped: %s", e)
 
@@ -1044,6 +1112,7 @@ async def execute_validation_pipeline(
         "requirement_graph": requirement_graph if 'requirement_graph' in locals() else None,
         "extraction_confidence_summary": extraction_confidence_summary if 'extraction_confidence_summary' in locals() else None,
         "ai_validation_summary": ai_validation_summary,
+        "timeout_events": timeout_events,
         "validation_deferred": defer_final_validation,
         "workflow_stage_hint": workflow_stage_hint,
         "request_user_type": request_user_type,

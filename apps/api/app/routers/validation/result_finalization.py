@@ -149,6 +149,53 @@ def _resolve_result_user_type(request_user_type: Any, current_user: Any) -> str:
     return role_text or "unknown"
 
 
+def _build_timeout_event(
+    *,
+    stage: str,
+    label: str,
+    timeout_seconds: float,
+    fallback: str,
+    source: str = "result_finalization",
+) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "label": label,
+        "timeout_seconds": float(timeout_seconds),
+        "fallback": fallback,
+        "source": source,
+    }
+
+
+def _build_degraded_execution_summary(
+    timeout_events: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    normalized_events: list[dict[str, Any]] = []
+    for event in timeout_events or []:
+        if not isinstance(event, dict):
+            continue
+        normalized_events.append(
+            {
+                "stage": str(event.get("stage") or "").strip(),
+                "label": str(event.get("label") or "").strip(),
+                "timeout_seconds": float(event.get("timeout_seconds") or 0.0),
+                "fallback": str(event.get("fallback") or "").strip(),
+                "source": str(event.get("source") or "").strip() or "unknown",
+            }
+        )
+
+    stage_keys = {
+        event["stage"]
+        for event in normalized_events
+        if event.get("stage")
+    }
+    return {
+        "degraded": bool(normalized_events),
+        "timeout_event_count": len(normalized_events),
+        "stage_count": len(stage_keys),
+        "timeout_events": normalized_events,
+    }
+
+
 async def _await_with_timeout(stage_label: str, coro, timeout_seconds: float, default: Any):
     try:
         return await asyncio.wait_for(coro, timeout_seconds), False
@@ -197,6 +244,7 @@ async def finalize_validation_result(
     document_summaries = execution_state["document_summaries"]
     processing_duration = execution_state["processing_duration"]
     processing_summary = execution_state["processing_summary"]
+    timeout_events = list(execution_state.get("timeout_events") or [])
 
     # Ensure document_summaries is a list (fallback to empty if malformed)
     final_documents = document_summaries if isinstance(document_summaries, list) else []
@@ -495,6 +543,14 @@ async def finalize_validation_result(
         structured_result["sanctions_screening"] = sanctions_summary
         if sanctions_timed_out and isinstance(structured_result["sanctions_screening"], dict):
             structured_result["sanctions_screening"]["timed_out"] = True
+            timeout_events.append(
+                _build_timeout_event(
+                    stage="sanctions_screening",
+                    label="Sanctions screening",
+                    timeout_seconds=SANCTIONS_TIMEOUT_SECONDS,
+                    fallback="sanctions_overlay_skipped",
+                )
+            )
 
         if sanctions_should_block:
             logger.warning(
@@ -927,6 +983,14 @@ async def finalize_validation_result(
         structured_result["validation_contract_v1"] = contract_payload
         if arbitration_timed_out and isinstance(structured_result["validation_contract_v1"], dict):
             structured_result["validation_contract_v1"]["timed_out"] = True
+            timeout_events.append(
+                _build_timeout_event(
+                    stage="validation_arbitration",
+                    label="Validation arbitration escalation",
+                    timeout_seconds=ARBITRATION_TIMEOUT_SECONDS,
+                    fallback="pre_arbitration_contract",
+                )
+            )
         workflow_overrides = _apply_workflow_stage_contract_overrides(
             structured_result.get("workflow_stage") or structured_result.get("workflowStage"),
             structured_result.get("bank_verdict"),
@@ -971,6 +1035,8 @@ async def finalize_validation_result(
     except Exception as contract_err:
         logger.warning("Failed to build Phase A contracts: %s", contract_err, exc_info=True)
 
+    degraded_execution = _build_degraded_execution_summary(timeout_events)
+    structured_result["_degraded_execution_v1"] = copy.deepcopy(degraded_execution)
     telemetry_payload = {
         "UnifiedStructuredResultBuilt": True,
         "documents": len(structured_result.get("documents_structured", [])),
@@ -978,6 +1044,7 @@ async def finalize_validation_result(
         # Timing breakdown for performance analysis
         "timings": timings,
         "total_time_seconds": round(time.time() - start_time, 3),
+        "degraded_execution": degraded_execution,
     }
 
     if request_user_type == "bank" and validation_session:
@@ -1047,8 +1114,20 @@ async def finalize_validation_result(
             )
             if usage_record_timed_out:
                 logger.warning("Usage tracking timed out for validation job %s", job_id)
+                timeout_events.append(
+                    _build_timeout_event(
+                        stage="usage_recording",
+                        label="Usage recording",
+                        timeout_seconds=USAGE_RECORD_TIMEOUT_SECONDS,
+                        fallback="usage_record_skipped",
+                    )
+                )
         except Exception as usage_err:
             logger.warning(f"Failed to track usage: {usage_err}")
+
+    degraded_execution = _build_degraded_execution_summary(timeout_events)
+    structured_result["_degraded_execution_v1"] = copy.deepcopy(degraded_execution)
+    telemetry_payload["degraded_execution"] = degraded_execution
 
     # =====================================================================
     # CONTRACT VALIDATION (Output-First Layer)
