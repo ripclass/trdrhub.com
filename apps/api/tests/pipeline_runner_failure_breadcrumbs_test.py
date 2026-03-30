@@ -23,6 +23,28 @@ def _load_module(path: Path, name: str):
     return module
 
 
+def test_pipeline_runner_bind_shared_relies_on_stage_modules_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEBUG", "false")
+    pipeline_runner = _load_module(
+        PIPELINE_RUNNER_PATH,
+        "pipeline_runner_bind_shared_test",
+    )
+
+    seen: dict[str, object] = {}
+    sentinel = object()
+    shared = {"sentinel": sentinel}
+
+    def fake_bind_stage_modules(shared):
+        seen["shared"] = shared
+
+    pipeline_runner.bind_stage_modules = fake_bind_stage_modules
+    pipeline_runner.bind_shared(shared)
+
+    assert seen["shared"] is shared
+
+
 @pytest.mark.asyncio
 async def test_pipeline_runner_tags_stage_and_checkpoints_on_execution_failure(
     monkeypatch: pytest.MonkeyPatch,
