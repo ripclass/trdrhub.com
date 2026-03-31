@@ -817,7 +817,7 @@ def generate_set_006_goods_mismatch():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
     
     expected = {
         "set_id": set_id,
@@ -973,7 +973,7 @@ def generate_set_008_invoice_after_expiry():
 
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
 
     expected = {
         "set_id": set_id,
@@ -989,7 +989,12 @@ def generate_set_008_invoice_after_expiry():
         "expected_issues": [
             {"rule_id": "CROSSDOC-INV-004", "severity": "critical", "document_type": "invoice", "title_contains": "expiry", "description": "Invoice dated after LC expiry"}
         ],
-        "false_positive_checks": [],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-INS-002",
+                "description": "Pinned insurance dates should keep this fixture focused on invoice-after-expiry only."
+            }
+        ],
     }
     (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
 

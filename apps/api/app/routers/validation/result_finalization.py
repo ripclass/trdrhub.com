@@ -431,9 +431,17 @@ async def finalize_validation_result(
 
         logger.info(f"Document composition analysis: {detected_types_debug}")
 
-        # Extract LC terms for requirement detection
+        # Extract LC terms for requirement detection. Build the requirements graph
+        # before document-set completeness so missing required docs are visible
+        # in the same pass instead of appearing only after later response shaping.
         lc_terms = dict(structured_result.get("lc_data", {}) or {})
         requirements_graph_v1 = structured_result.get("requirements_graph_v1")
+        if not isinstance(requirements_graph_v1, dict):
+            requirements_graph_v1 = _response_shaping.build_requirements_graph_v1(
+                doc_list_for_composition
+            )
+            if isinstance(requirements_graph_v1, dict):
+                structured_result["requirements_graph_v1"] = requirements_graph_v1
         if isinstance(requirements_graph_v1, dict):
             lc_terms["requirements_graph_v1"] = requirements_graph_v1
             lc_terms["requirementsGraphV1"] = requirements_graph_v1

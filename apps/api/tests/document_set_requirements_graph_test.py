@@ -20,4 +20,6 @@ def test_result_finalization_threads_requirements_graph_into_document_set_comple
     )
 
     assert 'requirements_graph_v1 = structured_result.get("requirements_graph_v1")' in source
+    assert 'requirements_graph_v1 = _response_shaping.build_requirements_graph_v1(' in source
+    assert 'structured_result["requirements_graph_v1"] = requirements_graph_v1' in source
     assert 'lc_terms["requirements_graph_v1"] = requirements_graph_v1' in source

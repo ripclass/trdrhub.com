@@ -24,7 +24,7 @@
   ],
   "expected_issues": [
     {
-      "rule_id": "CROSSDOC-DOC-1",
+      "rule_id": "DOCSET-MISSING-INSURANCE-CERTIFICATE",
       "severity": "major",
       "document_type": "insurance",
       "title_contains": "insurance",

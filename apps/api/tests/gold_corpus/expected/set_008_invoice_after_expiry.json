@@ -30,5 +30,10 @@
       "description": "Invoice dated after LC expiry"
     }
   ],
-  "false_positive_checks": []
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-INS-002",
+      "description": "Pinned insurance dates should keep this fixture focused on invoice-after-expiry only."
+    }
+  ]
 }
