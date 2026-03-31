@@ -61,6 +61,14 @@ class MissingFieldError(Exception):
         super().__init__(message)
 
 
+class NonEvaluableConditionError(Exception):
+    """Raised when a condition is narrative-only and cannot be evaluated deterministically."""
+
+    def __init__(self, condition_type: Optional[str]):
+        self.condition_type = condition_type
+        super().__init__(f"Condition type '{condition_type}' is not deterministically evaluable")
+
+
 class RuleEvaluator:
     """
     Evaluates rules against document context.
@@ -75,6 +83,106 @@ class RuleEvaluator:
     
     def __init__(self):
         self.banking_days_cache = {}  # Cache for banking day calculations
+
+    def _coerce_datetime(self, value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+        if not isinstance(value, str):
+            return None
+
+        candidate = value.strip()
+        if not candidate:
+            return None
+
+        try:
+            return datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+
+    def _resolve_computed_field(self, context: Dict[str, Any], expression: str) -> Any:
+        if not expression:
+            return None
+
+        expr = str(expression).strip()
+        if not expr:
+            return None
+
+        direct_value = self.resolve_field_path(context, expr)
+        if direct_value is not None:
+            return direct_value
+
+        match = re.match(
+            r"^(?P<field>[A-Za-z0-9_.]+)\s*(?P<sign>[+-])\s*(?P<days>\d+)\s*(?P<kind>banking_days|calendar_days|days)$",
+            expr,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        base_value = self.resolve_field_path(context, match.group("field"))
+        base_date = self._coerce_datetime(base_value)
+        if base_date is None:
+            return None
+
+        days = int(match.group("days"))
+        if match.group("sign") == "-":
+            days = -days
+
+        kind = match.group("kind").lower()
+        if kind == "banking_days":
+            if days >= 0:
+                return self.add_banking_days(base_date, days)
+
+            current = base_date
+            remaining = abs(days)
+            while remaining > 0:
+                current -= timedelta(days=1)
+                if self.is_banking_day(current):
+                    remaining -= 1
+            return current
+
+        return self.add_calendar_days(base_date, days)
+
+    def _compare_ordered_values(self, field_value: Any, compare_value: Any, operator: str) -> bool:
+        field_date = self._coerce_datetime(field_value)
+        compare_date = self._coerce_datetime(compare_value)
+        if field_date is not None and compare_date is not None:
+            if operator == "greater_than":
+                return field_date > compare_date
+            if operator == "greater_than_or_equal":
+                return field_date >= compare_date
+            if operator == "less_than":
+                return field_date < compare_date
+            if operator == "less_than_or_equal":
+                return field_date <= compare_date
+
+        try:
+            left = float(field_value)
+            right = float(compare_value)
+        except (ValueError, TypeError):
+            return False
+
+        if operator == "greater_than":
+            return left > right
+        if operator == "greater_than_or_equal":
+            return left >= right
+        if operator == "less_than":
+            return left < right
+        if operator == "less_than_or_equal":
+            return left <= right
+        return False
+
+    def _is_discrepancy_trigger_rule(self, rule: Dict[str, Any]) -> bool:
+        consequence = str(rule.get("consequence_class") or "").strip().lower()
+        if any(token in consequence for token in ("discrepancy", "violation", "mismatch", "missing")):
+            return True
+
+        if str(rule.get("domain") or "").strip().lower() == "lc_ops":
+            invalid = (rule.get("expected_outcome") or {}).get("invalid") or []
+            if any(str(item).strip().lower().startswith("remediation:") for item in invalid):
+                return True
+
+        return False
     
     def resolve_field_path(self, context: Dict[str, Any], field_path: str) -> Any:
         """
@@ -247,16 +355,10 @@ class RuleEvaluator:
             return True
         
         elif operator == "greater_than_or_equal":
-            try:
-                return float(field_value) >= float(compare_value)
-            except (ValueError, TypeError):
-                return False
+            return self._compare_ordered_values(field_value, compare_value, "greater_than_or_equal")
         
         elif operator == "less_than_or_equal":
-            try:
-                return float(field_value) <= float(compare_value)
-            except (ValueError, TypeError):
-                return False
+            return self._compare_ordered_values(field_value, compare_value, "less_than_or_equal")
         
         elif operator == "between":
             if not isinstance(condition_value, dict):
@@ -335,16 +437,10 @@ class RuleEvaluator:
             return True
         
         elif operator == "greater_than":
-            try:
-                return float(field_value) > float(compare_value)
-            except (ValueError, TypeError):
-                return False
+            return self._compare_ordered_values(field_value, compare_value, "greater_than")
         
         elif operator == "less_than":
-            try:
-                return float(field_value) < float(compare_value)
-            except (ValueError, TypeError):
-                return False
+            return self._compare_ordered_values(field_value, compare_value, "less_than")
         
         elif operator == "within_days":
             if not isinstance(field_value, (str, datetime)):
@@ -476,23 +572,33 @@ class RuleEvaluator:
                 condition_type,
                 condition,
             )
-            return False
+            raise NonEvaluableConditionError(condition.get("type"))
+
+        if normalized.get("skip"):
+            raise NonEvaluableConditionError(condition.get("type"))
         
         field_path = normalized["field"]
         operator = normalized["operator"]
         value = normalized.get("value")
         value_ref = normalized.get("value_ref")
         day_type = normalized.get("day_type")
+        computed_field = normalized.get("computed_field")
         
         # Resolve field value
         field_value = self.resolve_field_path(context, field_path)
         
         # Evaluate operator
+        compare_value = value
+        compare_value_ref = value_ref
+        if computed_field:
+            compare_value = self._resolve_computed_field(context, computed_field)
+            compare_value_ref = None
+
         return self.evaluate_operator(
             operator=operator,
             field_value=field_value,
-            condition_value=value,
-            value_ref=value_ref,
+            condition_value=compare_value,
+            value_ref=compare_value_ref,
             context=context,
             day_type=day_type,
             field_path=field_path,
@@ -507,10 +613,24 @@ class RuleEvaluator:
         field_path = cond.get("field") or cond.get("path") or cond.get("left_path")
         operator = cond.get("operator")
         value = cond.get("value")
-        value_ref = cond.get("value_ref")
+        value_ref = cond.get("value_ref") or cond.get("reference_field")
         cond_type = cond.get("type")
         day_type = cond.get("day_type")
+        computed_field = cond.get("computed_field")
         case_insensitive = bool(cond.get("case_insensitive"))
+
+        operator_aliases = {
+            "present": "exists",
+            "not_empty": "is_not_empty",
+            "not_equal": "not_equals",
+            "greater_than_or_equals": "greater_than_or_equal",
+            "less_than_or_equals": "less_than_or_equal",
+            "gt": "greater_than",
+            "gte": "greater_than_or_equal",
+            "lte": "less_than_or_equal",
+            "on_or_before": "less_than_or_equal",
+            "on_or_after": "greater_than_or_equal",
+        }
         
         def is_field_path(candidate: Any) -> bool:
             return isinstance(candidate, str) and "." in candidate and " " not in candidate
@@ -555,6 +675,53 @@ class RuleEvaluator:
                     value_ref = right_path
                 else:
                     value = right_path
+
+        elif cond_type == "field_match":
+            field_path = field_path or cond.get("path") or cond.get("field") or cond.get("left_path")
+            operator = operator or "equals"
+            right_path = cond.get("right_path")
+            if value is None and value_ref is None:
+                if right_path is not None:
+                    if is_field_path(right_path):
+                        value_ref = right_path
+                    else:
+                        value = right_path
+                elif cond.get("reference_field") is not None:
+                    value_ref = cond.get("reference_field")
+
+        elif cond_type == "amount_comparison":
+            field_path = field_path or cond.get("path") or cond.get("field") or cond.get("left_path")
+            operator = operator or cond.get("operator")
+            if operator is None:
+                if cond.get("min") is not None and cond.get("max") is not None:
+                    operator = "between"
+                    value = {
+                        "min": cond.get("min"),
+                        "max": cond.get("max"),
+                    }
+                elif cond.get("min") is not None:
+                    operator = "greater_than_or_equal"
+                    value = cond.get("min")
+                elif cond.get("max") is not None:
+                    operator = "less_than_or_equal"
+                    value = cond.get("max")
+            if value is None and value_ref is None and cond.get("reference_field") is not None:
+                value_ref = cond.get("reference_field")
+
+        elif cond_type == "date_comparison":
+            field_path = field_path or cond.get("field") or cond.get("left_path")
+            operator = operator or cond.get("operator") or "before"
+            right_path = cond.get("right_path")
+            if value is None and value_ref is None and right_path is not None:
+                if is_field_path(right_path):
+                    value_ref = right_path
+                else:
+                    value = right_path
+            if computed_field is None:
+                computed_field = cond.get("computed_field")
+
+        elif cond_type in {"document_content", "date_validity", "definition", "conditional_logic", "rule_priority"}:
+            return {"skip": True}
         
         elif cond_type == "date_order":
             field_path = field_path or cond.get("left_path")
@@ -596,13 +763,17 @@ class RuleEvaluator:
                 value = cond.get("value")
             if value is None and cond.get("days") is not None:
                 value = cond.get("days")
-        
+
+        if operator:
+            operator = operator_aliases.get(str(operator).strip().lower(), operator)
+
         if field_path and operator:
             return {
                 "field": field_path,
                 "operator": operator,
                 "value": value,
                 "value_ref": value_ref,
+                "computed_field": computed_field,
                 "day_type": day_type,
                 "case_insensitive": case_insensitive,
             }
@@ -686,8 +857,11 @@ class RuleEvaluator:
         
         violations = []
         all_passed = True
-        
+        trigger_mode = self._is_discrepancy_trigger_rule(rule)
+        all_trigger_conditions_met = True
+
         missing_fields: List[str] = []
+        non_evaluable_conditions: List[str] = []
         evaluated_conditions = 0
 
         for index, condition in enumerate(conditions):
@@ -706,29 +880,70 @@ class RuleEvaluator:
                 else:
                     missing_fields.append(condition.get("field") or "unknown")
                 continue
+            except NonEvaluableConditionError as condition_error:
+                non_evaluable_conditions.append(condition_error.condition_type or "unknown")
+                continue
 
-            if not passed:
-                all_passed = False
-                violations.append({
-                    "condition": condition,
-                    "field": condition.get("field"),
-                    "operator": condition.get("operator"),
-                    "message": condition.get("message", f"Condition failed: {condition.get('field')} {condition.get('operator')}")
-                })
+            if trigger_mode:
+                if not passed:
+                    all_trigger_conditions_met = False
+            else:
+                if not passed:
+                    all_passed = False
+                    violations.append({
+                        "condition": condition,
+                        "field": condition.get("field"),
+                        "operator": condition.get("operator"),
+                        "message": condition.get("message", f"Condition failed: {condition.get('field')} {condition.get('operator')}")
+                    })
 
-        if missing_fields and not violations:
+        if evaluated_conditions == 0 and (missing_fields or non_evaluable_conditions):
             missing_field_list = ", ".join(sorted(set(missing_fields)))
             return {
                 "rule_id": rule_id,
                 "passed": True,
                 "violations": [],
-                "message": f"Rule skipped (missing data: {missing_field_list})",
+                "message": (
+                    f"Rule skipped (missing data: {missing_field_list})"
+                    if missing_field_list
+                    else "Rule skipped (non-evaluable conditions)"
+                ),
                 "severity": rule.get("severity", "info"),
                 "title": rule.get("title", rule_id),
                 "not_applicable": True,
                 "missing_fields": sorted(set(missing_fields)),
+                "non_evaluable_conditions": sorted(set(non_evaluable_conditions)),
             }
-        
+
+        if trigger_mode:
+            if missing_fields:
+                missing_field_list = ", ".join(sorted(set(missing_fields)))
+                return {
+                    "rule_id": rule_id,
+                    "passed": True,
+                    "violations": [],
+                    "message": f"Rule skipped (missing data: {missing_field_list})",
+                    "severity": rule.get("severity", "info"),
+                    "title": rule.get("title", rule_id),
+                    "not_applicable": True,
+                    "missing_fields": sorted(set(missing_fields)),
+                }
+
+            all_passed = not all_trigger_conditions_met
+            if all_trigger_conditions_met:
+                violations = [
+                    {
+                        "condition": condition,
+                        "field": condition.get("field"),
+                        "operator": condition.get("operator"),
+                        "message": condition.get(
+                            "message",
+                            f"Condition triggered discrepancy: {condition.get('field')} {condition.get('operator')}",
+                        ),
+                    }
+                    for condition in conditions
+                ]
+
         # Determine outcome message
         expected_outcome = rule.get("expected_outcome", {})
         if all_passed:

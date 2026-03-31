@@ -718,6 +718,7 @@ REQUIREMENTS_GRAPH_INSURANCE_TYPES = {"insurance_certificate", "insurance_policy
 
 FIELD_PREFIX_TO_DOC = {
     "lc.": "lc",
+    "credit.": "lc",
     "letter_of_credit.": "lc",
     "invoice.": "commercial_invoice",
     "commercial_invoice.": "commercial_invoice",
@@ -727,6 +728,7 @@ FIELD_PREFIX_TO_DOC = {
     "certificate_of_origin.": "certificate_of_origin",
     "coo.": "certificate_of_origin",
     "insurance_certificate.": "insurance_certificate",
+    "insurance_doc.": "insurance_certificate",
     "insurance.": "insurance_certificate",
     "inspection_certificate.": "inspection_certificate",
 }
@@ -1359,12 +1361,18 @@ def _extract_rule_field_paths(rule: Dict[str, Any]) -> List[str]:
     paths: List[str] = []
     for bucket_name in ("applies_if", "conditions"):
         for condition in rule.get(bucket_name) or []:
-            field_path = condition.get("field") or condition.get("field_path")
-            if isinstance(field_path, str):
-                paths.append(field_path.lower())
-            value_ref = condition.get("value_ref")
-            if isinstance(value_ref, str):
-                paths.append(value_ref.lower())
+            for candidate in (
+                condition.get("field"),
+                condition.get("field_path"),
+                condition.get("path"),
+                condition.get("left_path"),
+                condition.get("value_ref"),
+                condition.get("reference_field"),
+                condition.get("right_path"),
+                condition.get("computed_field"),
+            ):
+                if isinstance(candidate, str):
+                    paths.append(candidate.lower())
     return paths
 
 
