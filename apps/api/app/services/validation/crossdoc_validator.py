@@ -60,6 +60,13 @@ class DocumentType(str, Enum):
 
 
 _INSURANCE_REQUIREMENT_TYPES = {"insurance_certificate", "insurance_policy"}
+_DOCUMENT_SET_REQUIREMENT_FAMILIES = {
+    "bill_of_lading": {"bill_of_lading", "ocean_bill_of_lading", "charter_party_bill_of_lading"},
+    "ocean_bill_of_lading": {"bill_of_lading", "ocean_bill_of_lading", "charter_party_bill_of_lading"},
+    "charter_party_bill_of_lading": {"bill_of_lading", "ocean_bill_of_lading", "charter_party_bill_of_lading"},
+    "insurance_certificate": {"insurance_certificate", "insurance_policy"},
+    "insurance_policy": {"insurance_certificate", "insurance_policy"},
+}
 _EXACT_WORDING_DOC_TYPE_MAP = {
     "commercial_invoice": "invoice",
     "proforma_invoice": "invoice",
@@ -100,6 +107,18 @@ def _required_document_types_from_graph(requirements_graph: Optional[Dict[str, A
                 required_types.add(token)
                 break
     return required_types
+
+
+def _document_requirement_is_satisfied(required_type: str, present_types: Set[str]) -> bool:
+    normalized_required = str(required_type or "").strip().lower()
+    if not normalized_required:
+        return False
+    if normalized_required in present_types:
+        return True
+    acceptable_present_types = _DOCUMENT_SET_REQUIREMENT_FAMILIES.get(normalized_required)
+    if not acceptable_present_types:
+        return False
+    return bool(acceptable_present_types.intersection(present_types))
 
 
 def _condition_texts_from_graph(requirements_graph: Optional[Dict[str, Any]]) -> List[str]:
@@ -2931,7 +2950,7 @@ class DocumentSetValidator:
         # Check for missing required documents (per LC terms)
         missing_required = []
         for doc_type in self.required_docs:
-            if doc_type not in present_types:
+            if not _document_requirement_is_satisfied(doc_type, present_types):
                 missing_required.append(doc_type)
                 
                 # Create issue for missing required document
