@@ -1,0 +1,45 @@
+{
+  "set_id": "set_014_insurance_currency_mismatch",
+  "description": "Insurance certificate is issued in a different currency than the LC",
+  "version": "1.0",
+  "expected_compliance_rate": 79.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_final_verdict": "review",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "currency",
+      "expected_value": "USD",
+      "match_type": "exact",
+      "criticality": "important"
+    },
+    {
+      "document_type": "insurance",
+      "field_name": "currency",
+      "expected_value": "EUR",
+      "match_type": "exact",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-INS-003",
+      "severity": "major",
+      "document_type": "insurance",
+      "title_contains": "currency",
+      "description": "Insurance currency mismatch"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-INS-002",
+      "description": "Pinned insurance dates should keep this fixture focused on currency mismatch."
+    },
+    {
+      "rule_id": "CROSSDOC-INSURANCE-1",
+      "description": "Currency mismatch should not also degrade into insurance undervalue."
+    }
+  ]
+}

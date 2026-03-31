@@ -353,10 +353,17 @@ Authorized Signature
     output_path.write_text(content)
 
 
-def create_insurance_certificate(lc: LCData, output_path: Path, *, issue_date: Optional[str] = None):
+def create_insurance_certificate(
+    lc: LCData,
+    output_path: Path,
+    *,
+    issue_date: Optional[str] = None,
+    currency_override: Optional[str] = None,
+):
     """Create an Insurance Certificate."""
     insured_amount = lc.amount * 1.1  # 110% coverage
     certificate_date = issue_date or datetime.now().strftime('%Y-%m-%d')
+    insurance_currency = currency_override or lc.currency
     content = f"""
 INSURANCE CERTIFICATE
 
@@ -376,7 +383,7 @@ Vessel: [To be declared]
 From: {lc.port_of_loading}
 To: {lc.port_of_discharge}
 
-Sum Insured: {lc.currency} {insured_amount:,.2f}
+Sum Insured: {insurance_currency} {insured_amount:,.2f}
 (Being 110% of invoice value)
 
 Coverage Type: ICC-A
@@ -517,6 +524,8 @@ def generate_set_002_amount_mismatch():
         "expected_compliance_rate": 70.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
+        "expected_final_verdict": "reject",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "lc_number", "expected_value": "EXP2026BD002", "match_type": "exact", "criticality": "critical"},
             {"document_type": "lc", "field_name": "lc_amount", "expected_value": "100000.00", "match_type": "numeric_tolerance", "tolerance": 0.001, "criticality": "critical"},
@@ -527,7 +536,7 @@ def generate_set_002_amount_mismatch():
         ],
         "false_positive_checks": []
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
@@ -593,6 +602,8 @@ def generate_set_003_port_mismatch():
         "expected_compliance_rate": 75.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
+        "expected_final_verdict": "reject",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "port_of_discharge", "expected_value": "Los Angeles", "match_type": "contains", "criticality": "important"},
             {"document_type": "bl", "field_name": "port_of_discharge", "expected_value": "Long Beach", "match_type": "contains", "criticality": "important"},
@@ -602,7 +613,7 @@ def generate_set_003_port_mismatch():
         ],
         "false_positive_checks": []
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
@@ -668,6 +679,8 @@ def generate_set_004_late_shipment():
         "expected_compliance_rate": 70.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
+        "expected_final_verdict": "reject",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "latest_shipment_date", "expected_value": "2026-02-28", "match_type": "contains", "criticality": "important"},
             {"document_type": "bl", "field_name": "shipped_on_board_date", "expected_value": "2026-03-05", "match_type": "contains", "criticality": "important"},
@@ -677,7 +690,7 @@ def generate_set_004_late_shipment():
         ],
         "false_positive_checks": []
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
@@ -753,6 +766,8 @@ This is less than the required 110% coverage per UCP600.
         "expected_compliance_rate": 80.0,
         "compliance_tolerance": 10.0,
         "expected_status": "warning",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "lc_amount", "expected_value": "150000.00", "match_type": "numeric_tolerance", "tolerance": 0.001, "criticality": "critical"},
         ],
@@ -761,7 +776,7 @@ This is less than the required 110% coverage per UCP600.
         ],
         "false_positive_checks": []
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
@@ -826,6 +841,8 @@ def generate_set_006_goods_mismatch():
         "expected_compliance_rate": 75.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "goods_description", "expected_value": "Cotton", "match_type": "contains", "criticality": "important"},
             {"document_type": "invoice", "field_name": "goods_description", "expected_value": "Polyester", "match_type": "contains", "criticality": "important"},
@@ -840,7 +857,7 @@ def generate_set_006_goods_mismatch():
             }
         ]
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
@@ -903,12 +920,14 @@ def generate_set_007_missing_insurance_document():
         "expected_compliance_rate": 80.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "lc_number", "expected_value": "EXP2026BD007", "match_type": "exact", "criticality": "critical"},
             {"document_type": "invoice", "field_name": "invoice_amount", "expected_value": "112500.00", "match_type": "numeric_tolerance", "tolerance": 0.001, "criticality": "critical"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-DOC-1", "severity": "major", "document_type": "insurance", "title_contains": "insurance", "description": "Insurance certificate missing"}
+            {"rule_id": "DOCSET-MISSING-INSURANCE-CERTIFICATE", "severity": "major", "document_type": "insurance", "title_contains": "insurance", "description": "Insurance certificate missing"}
         ],
         "false_positive_checks": [
             {
@@ -917,7 +936,7 @@ def generate_set_007_missing_insurance_document():
             }
         ],
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
 
     print(f"[OK] Generated {set_id}: 5 documents + expected.json")
     return set_id
@@ -982,6 +1001,8 @@ def generate_set_008_invoice_after_expiry():
         "expected_compliance_rate": 72.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
+        "expected_final_verdict": "reject",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "expiry_date", "expected_value": "2026-03-20", "match_type": "contains", "criticality": "critical"},
             {"document_type": "invoice", "field_name": "invoice_date", "expected_value": "2026-03-25", "match_type": "contains", "criticality": "critical"},
@@ -996,7 +1017,7 @@ def generate_set_008_invoice_after_expiry():
             }
         ],
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
 
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
@@ -1059,6 +1080,8 @@ def generate_set_009_invoice_lc_reference_mismatch():
         "expected_compliance_rate": 78.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "lc_number", "expected_value": "EXP2026BD009", "match_type": "exact", "criticality": "critical"},
             {"document_type": "invoice", "field_name": "lc_reference", "expected_value": "EXP2026BD999", "match_type": "exact", "criticality": "important"},
@@ -1068,7 +1091,7 @@ def generate_set_009_invoice_lc_reference_mismatch():
         ],
         "false_positive_checks": [],
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
 
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
@@ -1131,6 +1154,8 @@ def generate_set_010_invoice_missing_lc_reference():
         "expected_compliance_rate": 82.0,
         "compliance_tolerance": 10.0,
         "expected_status": "warning",
+        "expected_final_verdict": "pass",
+        "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "lc_number", "expected_value": "EXP2026BD010", "match_type": "exact", "criticality": "critical"},
             {"document_type": "invoice", "field_name": "invoice_number", "expected_value": "INV-2026-010", "match_type": "contains", "criticality": "important"},
@@ -1140,7 +1165,328 @@ def generate_set_010_invoice_missing_lc_reference():
         ],
         "false_positive_checks": [],
     }
-    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2))
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_011_invoice_issuer_mismatch():
+    """Generate Set 011: Invoice issuer does not match LC beneficiary (should fail)."""
+    set_id = "set_011_invoice_issuer_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD011",
+        amount=118000.00,
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-011",
+        invoice_date="2026-02-18",
+        lc_reference=lc.lc_number,
+        seller_name="Eastern Apparel Sourcing Ltd",
+        seller_address="77 Industrial Avenue, Dhaka, Bangladesh",
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026011011",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="MSC DHAKA",
+        voyage_number="V.2026V",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,210 KG",
+        container_number="MSCU1101122",
+        seal_number="SL110112",
+        shipped_on_board_date="2026-03-01",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Invoice issuer differs from the beneficiary named in the LC",
+        "version": "1.0",
+        "expected_compliance_rate": 74.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_final_verdict": "reject",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "beneficiary", "expected_value": lc.beneficiary_name, "match_type": "contains", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "seller_name", "expected_value": invoice.seller_name, "match_type": "contains", "criticality": "critical"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-INV-002", "severity": "critical", "document_type": "invoice", "title_contains": "issuer", "description": "Invoice issuer mismatch"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-INV-003",
+                "description": "Pure issuer mismatch should not also turn into a goods mismatch."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_012_bl_shipper_mismatch():
+    """Generate Set 012: B/L shipper does not match LC beneficiary (should fail)."""
+    set_id = "set_012_bl_shipper_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD012",
+        amount=121500.00,
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-012",
+        invoice_date="2026-02-20",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026012012",
+        shipper="Eastern Apparel Logistics Ltd",
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="EVER SUMMIT",
+        voyage_number="V.2026W",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,260 KG",
+        container_number="EGLV1201234",
+        seal_number="SL120123",
+        shipped_on_board_date="2026-03-02",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Bill of lading shipper differs from the LC beneficiary",
+        "version": "1.0",
+        "expected_compliance_rate": 78.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "beneficiary", "expected_value": lc.beneficiary_name, "match_type": "contains", "criticality": "important"},
+            {"document_type": "bill_of_lading", "field_name": "shipper", "expected_value": bl.shipper, "match_type": "contains", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-BL-004", "severity": "major", "document_type": "bill_of_lading", "title_contains": "shipper", "description": "B/L shipper mismatch"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-BL-005",
+                "description": "A shipper-only mismatch should not also trigger consignee mismatch."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_013_bl_consignee_mismatch():
+    """Generate Set 013: B/L consignee does not match LC applicant (should warn)."""
+    set_id = "set_013_bl_consignee_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD013",
+        amount=109500.00,
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-013",
+        invoice_date="2026-02-22",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026013013",
+        shipper=lc.beneficiary_name,
+        consignee="Atlantic Retail Distribution LLC",
+        notify_party=lc.applicant_name,
+        vessel_name="MAERSK DHAKA",
+        voyage_number="V.2026X",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,140 KG",
+        container_number="MSKU1301345",
+        seal_number="SL130134",
+        shipped_on_board_date="2026-03-03",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Bill of lading consignee differs from the applicant named in the LC",
+        "version": "1.0",
+        "expected_compliance_rate": 84.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "warning",
+        "expected_final_verdict": "pass",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "applicant", "expected_value": lc.applicant_name, "match_type": "contains", "criticality": "important"},
+            {"document_type": "bill_of_lading", "field_name": "consignee", "expected_value": bl.consignee, "match_type": "contains", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-BL-005", "severity": "minor", "document_type": "bill_of_lading", "title_contains": "consignee", "description": "B/L consignee mismatch"}
+        ],
+        "false_positive_checks": [],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_014_insurance_currency_mismatch():
+    """Generate Set 014: Insurance currency does not match LC currency (should fail)."""
+    set_id = "set_014_insurance_currency_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD014",
+        amount=93000.00,
+        currency="USD",
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-014",
+        invoice_date="2026-02-24",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026014014",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="HMM BANGLA",
+        voyage_number="V.2026Y",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,090 KG",
+        container_number="HMMU1401456",
+        seal_number="SL140145",
+        shipped_on_board_date="2026-03-02",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(
+        lc,
+        set_dir / "Insurance_Certificate.pdf",
+        issue_date="2026-03-01",
+        currency_override="EUR",
+    )
+
+    expected = {
+        "set_id": set_id,
+        "description": "Insurance certificate is issued in a different currency than the LC",
+        "version": "1.0",
+        "expected_compliance_rate": 79.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "currency", "expected_value": "USD", "match_type": "exact", "criticality": "important"},
+            {"document_type": "insurance", "field_name": "currency", "expected_value": "EUR", "match_type": "exact", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-INS-003", "severity": "major", "document_type": "insurance", "title_contains": "currency", "description": "Insurance currency mismatch"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-INS-002",
+                "description": "Pinned insurance dates should keep this fixture focused on currency mismatch."
+            },
+            {
+                "rule_id": "CROSSDOC-INSURANCE-1",
+                "description": "Currency mismatch should not also degrade into insurance undervalue."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
 
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")
     return set_id
@@ -1166,6 +1512,10 @@ def main():
         generate_set_008_invoice_after_expiry(),
         generate_set_009_invoice_lc_reference_mismatch(),
         generate_set_010_invoice_missing_lc_reference(),
+        generate_set_011_invoice_issuer_mismatch(),
+        generate_set_012_bl_shipper_mismatch(),
+        generate_set_013_bl_consignee_mismatch(),
+        generate_set_014_insurance_currency_mismatch(),
     ]
     
     print("\n" + "=" * 60)

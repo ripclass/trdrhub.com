@@ -1,0 +1,36 @@
+{
+  "set_id": "set_013_bl_consignee_mismatch",
+  "description": "Bill of lading consignee differs from the applicant named in the LC",
+  "version": "1.0",
+  "expected_compliance_rate": 84.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "warning",
+  "expected_final_verdict": "pass",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "applicant",
+      "expected_value": "Global Trade Corp",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "bill_of_lading",
+      "field_name": "consignee",
+      "expected_value": "Atlantic Retail Distribution LLC",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-BL-005",
+      "severity": "minor",
+      "document_type": "bill_of_lading",
+      "title_contains": "consignee",
+      "description": "B/L consignee mismatch"
+    }
+  ],
+  "false_positive_checks": []
+}

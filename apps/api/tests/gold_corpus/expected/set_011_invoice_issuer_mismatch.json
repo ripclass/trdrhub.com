@@ -1,0 +1,41 @@
+{
+  "set_id": "set_011_invoice_issuer_mismatch",
+  "description": "Invoice issuer differs from the beneficiary named in the LC",
+  "version": "1.0",
+  "expected_compliance_rate": 74.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_final_verdict": "reject",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "beneficiary",
+      "expected_value": "Bangladesh Export Ltd",
+      "match_type": "contains",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "seller_name",
+      "expected_value": "Eastern Apparel Sourcing Ltd",
+      "match_type": "contains",
+      "criticality": "critical"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-INV-002",
+      "severity": "critical",
+      "document_type": "invoice",
+      "title_contains": "issuer",
+      "description": "Invoice issuer mismatch"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-INV-003",
+      "description": "Pure issuer mismatch should not also turn into a goods mismatch."
+    }
+  ]
+}

@@ -36,6 +36,10 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_008_invoice_after_expiry.json": ["CROSSDOC-INV-004"],
         "set_009_invoice_lc_reference_mismatch.json": ["CROSSDOC-INV-005"],
         "set_010_invoice_missing_lc_reference.json": ["CROSSDOC-INV-005"],
+        "set_011_invoice_issuer_mismatch.json": ["CROSSDOC-INV-002"],
+        "set_012_bl_shipper_mismatch.json": ["CROSSDOC-BL-004"],
+        "set_013_bl_consignee_mismatch.json": ["CROSSDOC-BL-005"],
+        "set_014_insurance_currency_mismatch.json": ["CROSSDOC-INS-003"],
     }
 
     for filename, expected_rules in expected_rule_matrix.items():
@@ -55,6 +59,10 @@ def test_gold_corpus_expected_contract_outcomes_match_live_locked_baseline() -> 
         "set_008_invoice_after_expiry.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
         "set_009_invoice_lc_reference_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
         "set_010_invoice_missing_lc_reference.json": {"final_verdict": "pass", "workflow_stage": "validation_results"},
+        "set_011_invoice_issuer_mismatch.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_012_bl_shipper_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_013_bl_consignee_mismatch.json": {"final_verdict": "pass", "workflow_stage": "validation_results"},
+        "set_014_insurance_currency_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
     }
 
     for filename, expected in expected_contract_matrix.items():
@@ -84,3 +92,11 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     invoice_after_expiry_set = _load_expected("set_008_invoice_after_expiry.json")
     invoice_after_expiry_false_positives = _false_positive_rule_ids(invoice_after_expiry_set)
     assert "CROSSDOC-INS-002" in invoice_after_expiry_false_positives
+
+    shipper_mismatch_set = _load_expected("set_012_bl_shipper_mismatch.json")
+    shipper_mismatch_false_positives = _false_positive_rule_ids(shipper_mismatch_set)
+    assert "CROSSDOC-BL-005" in shipper_mismatch_false_positives
+
+    insurance_currency_set = _load_expected("set_014_insurance_currency_mismatch.json")
+    insurance_currency_false_positives = _false_positive_rule_ids(insurance_currency_set)
+    assert {"CROSSDOC-INS-002", "CROSSDOC-INSURANCE-1"}.issubset(insurance_currency_false_positives)

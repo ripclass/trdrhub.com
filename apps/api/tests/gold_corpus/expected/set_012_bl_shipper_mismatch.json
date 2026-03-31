@@ -1,0 +1,41 @@
+{
+  "set_id": "set_012_bl_shipper_mismatch",
+  "description": "Bill of lading shipper differs from the LC beneficiary",
+  "version": "1.0",
+  "expected_compliance_rate": 78.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_final_verdict": "review",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "beneficiary",
+      "expected_value": "Bangladesh Export Ltd",
+      "match_type": "contains",
+      "criticality": "important"
+    },
+    {
+      "document_type": "bill_of_lading",
+      "field_name": "shipper",
+      "expected_value": "Eastern Apparel Logistics Ltd",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-BL-004",
+      "severity": "major",
+      "document_type": "bill_of_lading",
+      "title_contains": "shipper",
+      "description": "B/L shipper mismatch"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-BL-005",
+      "description": "A shipper-only mismatch should not also trigger consignee mismatch."
+    }
+  ]
+}
