@@ -1761,6 +1761,93 @@ def generate_set_017_exporter_tin_missing():
     return set_id
 
 
+def generate_set_018_invoice_exact_wording_missing():
+    """Generate Set 018: LC requires exact invoice wording that the invoice omits."""
+    set_id = "set_018_invoice_exact_wording_missing"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    required_wording = "WE HEREBY CERTIFY GOODS ARE BRAND NEW"
+    lc = LCData(
+        lc_number="EXP2026BD018",
+        amount=119800.00,
+        documents_required=[
+            f"Commercial Invoice stating exactly {required_wording}",
+            "Full set of clean on board Bills of Lading",
+            "Packing List",
+            "Certificate of Origin",
+            "Insurance Certificate for 110% of invoice value",
+        ],
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-018",
+        invoice_date="2026-02-28",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026018018",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="COSCO BANGLA",
+        voyage_number="V.2026AC",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,125 KG",
+        container_number="COSU1801890",
+        seal_number="SL180189",
+        shipped_on_board_date="2026-03-02",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "LC requires exact wording on the commercial invoice, but the invoice omits it",
+        "version": "1.0",
+        "expected_compliance_rate": 78.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_final_verdict": "reject",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "lc_number", "expected_value": lc.lc_number, "match_type": "exact", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "invoice_number", "expected_value": invoice.invoice_number, "match_type": "contains", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-EXACT-WORDING", "severity": "critical", "document_type": "invoice", "title_contains": "wording", "description": "LC-required wording missing from invoice"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-INV-003",
+                "description": "A missing wording statement should not also turn into a goods mismatch."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
 def main():
     """Generate all synthetic test sets."""
     print("=" * 60)
@@ -1788,6 +1875,7 @@ def main():
         generate_set_015_po_number_missing(),
         generate_set_016_exporter_bin_missing(),
         generate_set_017_exporter_tin_missing(),
+        generate_set_018_invoice_exact_wording_missing(),
     ]
     
     print("\n" + "=" * 60)

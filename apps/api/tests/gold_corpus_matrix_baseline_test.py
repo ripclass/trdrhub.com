@@ -43,6 +43,7 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_015_po_number_missing.json": ["CROSSDOC-PO-NUMBER"],
         "set_016_exporter_bin_missing.json": ["CROSSDOC-BIN"],
         "set_017_exporter_tin_missing.json": ["CROSSDOC-TIN"],
+        "set_018_invoice_exact_wording_missing.json": ["CROSSDOC-EXACT-WORDING"],
     }
 
     for filename, expected_rules in expected_rule_matrix.items():
@@ -69,6 +70,7 @@ def test_gold_corpus_expected_contract_outcomes_match_live_locked_baseline() -> 
         "set_015_po_number_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
         "set_016_exporter_bin_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
         "set_017_exporter_tin_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_018_invoice_exact_wording_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
     }
 
     for filename, expected in expected_contract_matrix.items():
@@ -118,3 +120,7 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     tin_set = _load_expected("set_017_exporter_tin_missing.json")
     tin_false_positives = _false_positive_rule_ids(tin_set)
     assert {"CROSSDOC-PO-NUMBER", "CROSSDOC-BIN"}.issubset(tin_false_positives)
+
+    wording_set = _load_expected("set_018_invoice_exact_wording_missing.json")
+    wording_false_positives = _false_positive_rule_ids(wording_set)
+    assert "CROSSDOC-INV-003" in wording_false_positives
