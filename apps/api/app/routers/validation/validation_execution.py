@@ -14,6 +14,8 @@ from app.services.facts import (
     apply_invoice_fact_graph_to_validation_inputs,
     apply_lc_fact_graph_to_validation_inputs,
     apply_packing_list_fact_graph_to_validation_inputs,
+    materialize_document_fact_graph_v1,
+    project_insurance_validation_context,
 )
 
 
@@ -58,6 +60,68 @@ DB_RULE_TIMEOUT_SECONDS = 60.0
 PRICE_VERIFICATION_TIMEOUT_SECONDS = 25.0
 AI_VALIDATION_TIMEOUT_SECONDS = 45.0
 BANK_POLICY_TIMEOUT_SECONDS = 20.0
+
+_INSURANCE_RULE_DOCUMENT_TYPES = {
+    "insurance_certificate",
+    "insurance_policy",
+    "beneficiary_certificate",
+    "beneficiary_statement",
+}
+
+
+def _insurance_document_type(document: Dict[str, Any]) -> str:
+    return str(
+        document.get("document_type")
+        or document.get("documentType")
+        or document.get("type")
+        or ""
+    ).strip().lower()
+
+
+def _resolve_insurance_rule_context(
+    payload: Dict[str, Any],
+    extracted_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    existing = (
+        payload.get("insurance")
+        or payload.get("insurance_certificate")
+        or extracted_context.get("insurance")
+        or extracted_context.get("insurance_certificate")
+    )
+    if isinstance(existing, dict) and existing:
+        return existing
+
+    for document_group in (
+        payload.get("documents"),
+        extracted_context.get("documents"),
+    ):
+        if not isinstance(document_group, list):
+            continue
+        for document in document_group:
+            if not isinstance(document, dict):
+                continue
+            if _insurance_document_type(document) not in _INSURANCE_RULE_DOCUMENT_TYPES:
+                continue
+
+            fact_graph = document.get("fact_graph_v1") or document.get("factGraphV1")
+            if not isinstance(fact_graph, dict):
+                fact_graph = materialize_document_fact_graph_v1(document)
+
+            projected = project_insurance_validation_context(
+                existing if isinstance(existing, dict) else None,
+                document=document,
+                fact_graph=fact_graph if isinstance(fact_graph, dict) else None,
+            )
+            if not isinstance(projected, dict) or not projected:
+                continue
+
+            payload["insurance"] = projected
+            payload["insurance_certificate"] = projected
+            extracted_context["insurance"] = projected
+            extracted_context["insurance_certificate"] = projected
+            return projected
+
+    return existing if isinstance(existing, dict) else {}
 
 
 def _shared_get(shared: Any, name: str) -> Any:
@@ -346,10 +410,9 @@ async def execute_validation_pipeline(
             coo = payload.get("certificate_of_origin") or {}
             invoice = payload.get("invoice") or {}
             bl = payload.get("bill_of_lading") or {}
-            insurance_rule_context = (
-                payload.get("insurance")
-                or payload.get("insurance_certificate")
-                or {}
+            insurance_rule_context = _resolve_insurance_rule_context(
+                payload,
+                extracted_context,
             )
 
             # Country code mapping (common variations)
