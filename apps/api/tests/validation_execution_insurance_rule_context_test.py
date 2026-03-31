@@ -26,6 +26,7 @@ def _load_insurance_rule_context_symbols() -> Dict[str, Any]:
                     break
         elif isinstance(node, ast.FunctionDef) and node.name in {
             "_insurance_document_type",
+            "_insurance_rule_context_has_originals",
             "_resolve_insurance_rule_context",
         }:
             selected_nodes.append(node)
@@ -71,10 +72,28 @@ def test_resolve_insurance_rule_context_rebuilds_alias_from_document_list() -> N
     payload = {"documents": [insurance_document]}
     extracted_context = {"documents": [dict(insurance_document)]}
 
-    resolved = resolve_insurance_rule_context(payload, extracted_context)
+    resolved, source = resolve_insurance_rule_context(payload, extracted_context)
 
+    assert source == "rebuilt_from_documents"
     assert resolved["originals_presented"] == 1
     assert payload["insurance"]["originals_presented"] == 1
     assert payload["insurance_certificate"]["originals_presented"] == 1
     assert extracted_context["insurance"]["originals_presented"] == 1
     assert extracted_context["insurance_certificate"]["originals_presented"] == 1
+
+
+def test_resolve_insurance_rule_context_reuses_existing_alias_when_originals_are_present() -> None:
+    namespace = _load_insurance_rule_context_symbols()
+    resolve_insurance_rule_context = namespace["_resolve_insurance_rule_context"]
+
+    existing_alias = {
+        "originals_presented": 2,
+        "fact_graph_v1": {"facts": [{"field_name": "originals_presented", "normalized_value": 2}]},
+    }
+    payload = {"insurance_certificate": existing_alias, "documents": []}
+    extracted_context = {}
+
+    resolved, source = resolve_insurance_rule_context(payload, extracted_context)
+
+    assert source == "existing_alias"
+    assert resolved["originals_presented"] == 2

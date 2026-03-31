@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
 from app.services.facts import (
@@ -78,18 +78,43 @@ def _insurance_document_type(document: Dict[str, Any]) -> str:
     ).strip().lower()
 
 
+def _insurance_rule_context_has_originals(context: Dict[str, Any]) -> bool:
+    if not isinstance(context, dict):
+        return False
+
+    for key in ("originals_presented", "number_of_originals", "original_count"):
+        value = context.get(key)
+        if value not in (None, "", []):
+            return True
+
+    fact_graph = context.get("fact_graph_v1") or context.get("factGraphV1")
+    if isinstance(fact_graph, dict):
+        for fact in fact_graph.get("facts") or []:
+            if not isinstance(fact, dict):
+                continue
+            if str(fact.get("field_name") or "").strip().lower() != "originals_presented":
+                continue
+            value = fact.get("normalized_value")
+            if value in (None, "", []):
+                value = fact.get("value")
+            if value not in (None, "", []):
+                return True
+
+    return False
+
+
 def _resolve_insurance_rule_context(
     payload: Dict[str, Any],
     extracted_context: Dict[str, Any],
-) -> Dict[str, Any]:
+) -> Tuple[Dict[str, Any], str]:
     existing = (
         payload.get("insurance")
         or payload.get("insurance_certificate")
         or extracted_context.get("insurance")
         or extracted_context.get("insurance_certificate")
     )
-    if isinstance(existing, dict) and existing:
-        return existing
+    if isinstance(existing, dict) and existing and _insurance_rule_context_has_originals(existing):
+        return existing, "existing_alias"
 
     for document_group in (
         payload.get("documents"),
@@ -119,9 +144,9 @@ def _resolve_insurance_rule_context(
             payload["insurance_certificate"] = projected
             extracted_context["insurance"] = projected
             extracted_context["insurance_certificate"] = projected
-            return projected
+            return projected, "rebuilt_from_documents"
 
-    return existing if isinstance(existing, dict) else {}
+    return (existing if isinstance(existing, dict) else {}), "missing"
 
 
 def _shared_get(shared: Any, name: str) -> Any:
@@ -410,7 +435,7 @@ async def execute_validation_pipeline(
             coo = payload.get("certificate_of_origin") or {}
             invoice = payload.get("invoice") or {}
             bl = payload.get("bill_of_lading") or {}
-            insurance_rule_context = _resolve_insurance_rule_context(
+            insurance_rule_context, insurance_rule_context_source = _resolve_insurance_rule_context(
                 payload,
                 extracted_context,
             )
@@ -574,6 +599,12 @@ async def execute_validation_pipeline(
                 "supplements": supplement_domains,
                 "primary_jurisdiction": primary_jurisdiction,
                 "detected_jurisdictions": list(detected_jurisdictions),
+                "insurance_rule_context_source": insurance_rule_context_source,
+                "insurance_rule_context_originals_presented": (
+                    insurance_rule_context.get("originals_presented")
+                    if isinstance(insurance_rule_context, dict)
+                    else None
+                ),
                 "issues_found": len(db_rule_issues),
                 "timed_out": db_rules_timed_out,
             }
