@@ -102,9 +102,9 @@ class BLData:
     freight_terms: str = "Freight Prepaid"
 
 
-def create_lc_pdf(data: LCData, output_path: Path):
+def create_lc_pdf(data: LCData, output_path: Path, *, force_text: bool = False):
     """Create a Letter of Credit PDF."""
-    if not HAS_REPORTLAB:
+    if force_text or not HAS_REPORTLAB:
         # Create a text placeholder
         content = f"""
 IRREVOCABLE DOCUMENTARY CREDIT
@@ -353,9 +353,10 @@ Authorized Signature
     output_path.write_text(content)
 
 
-def create_insurance_certificate(lc: LCData, output_path: Path):
+def create_insurance_certificate(lc: LCData, output_path: Path, *, issue_date: Optional[str] = None):
     """Create an Insurance Certificate."""
     insured_amount = lc.amount * 1.1  # 110% coverage
+    certificate_date = issue_date or datetime.now().strftime('%Y-%m-%d')
     content = f"""
 INSURANCE CERTIFICATE
 
@@ -387,7 +388,7 @@ Claims Payable in: {lc.port_of_discharge}
 This certificate is subject to the terms and conditions of the policy.
 
 Issued by: Bangladesh Insurance Corp.
-Date: {datetime.now().strftime('%Y-%m-%d')}
+Date: {certificate_date}
 
 ____________________
 Authorized Signature
@@ -411,7 +412,7 @@ def generate_set_001_synthetic_bd():
     )
     
     # Create documents
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
     
     invoice = InvoiceData(
         invoice_number="INV-2026-001",
@@ -449,7 +450,7 @@ def generate_set_001_synthetic_bd():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
     
     print(f"[OK] Generated {set_id}: 6 documents")
     return set_id
@@ -466,7 +467,7 @@ def generate_set_002_amount_mismatch():
         amount=100000.00,
         currency="USD",
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
     
     # Invoice exceeds LC amount (UCP600 violation)
     invoice = InvoiceData(
@@ -505,7 +506,7 @@ def generate_set_002_amount_mismatch():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
     
     # Create expected results
     expected = {
@@ -543,7 +544,7 @@ def generate_set_003_port_mismatch():
         port_of_loading="Chittagong, Bangladesh",
         port_of_discharge="Los Angeles, USA",
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
     
     invoice = InvoiceData(
         invoice_number="INV-2026-003",
@@ -582,7 +583,7 @@ def generate_set_003_port_mismatch():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
     
     expected = {
         "set_id": set_id,
@@ -618,7 +619,7 @@ def generate_set_004_late_shipment():
         latest_shipment_date="2026-02-28",
         expiry_date="2026-03-15",
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
     
     invoice = InvoiceData(
         invoice_number="INV-2026-004",
@@ -657,7 +658,7 @@ def generate_set_004_late_shipment():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
     
     expected = {
         "set_id": set_id,
@@ -691,7 +692,7 @@ def generate_set_005_insurance_undervalue():
         lc_number="EXP2026BD005",
         amount=150000.00,
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
     
     invoice = InvoiceData(
         invoice_number="INV-2026-005",
@@ -776,7 +777,7 @@ def generate_set_006_goods_mismatch():
         amount=88000.00,
         goods_description="100% Cotton T-Shirts, HS Code 6109.10",
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
     
     # Invoice has DIFFERENT goods
     invoice = InvoiceData(
@@ -815,7 +816,7 @@ def generate_set_006_goods_mismatch():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
     
     expected = {
         "set_id": set_id,
@@ -855,7 +856,7 @@ def generate_set_007_missing_insurance_document():
         amount=112500.00,
         currency="USD",
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
 
     invoice = InvoiceData(
         invoice_number="INV-2026-007",
@@ -933,7 +934,7 @@ def generate_set_008_invoice_after_expiry():
         latest_shipment_date="2026-03-10",
         expiry_date="2026-03-20",
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
 
     invoice = InvoiceData(
         invoice_number="INV-2026-008",
@@ -971,7 +972,7 @@ def generate_set_008_invoice_after_expiry():
 
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
 
     expected = {
         "set_id": set_id,
@@ -1005,7 +1006,7 @@ def generate_set_009_invoice_lc_reference_mismatch():
         lc_number="EXP2026BD009",
         amount=99000.00,
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
 
     invoice = InvoiceData(
         invoice_number="INV-2026-009",
@@ -1043,7 +1044,7 @@ def generate_set_009_invoice_lc_reference_mismatch():
 
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
 
     expected = {
         "set_id": set_id,
@@ -1077,7 +1078,7 @@ def generate_set_010_invoice_missing_lc_reference():
         lc_number="EXP2026BD010",
         amount=87000.00,
     )
-    create_lc_pdf(lc, set_dir / "LC.pdf")
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
 
     invoice = InvoiceData(
         invoice_number="INV-2026-010",
@@ -1115,7 +1116,7 @@ def generate_set_010_invoice_missing_lc_reference():
 
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
 
     expected = {
         "set_id": set_id,
