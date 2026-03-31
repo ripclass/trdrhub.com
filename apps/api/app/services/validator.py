@@ -549,6 +549,14 @@ def _resolve_workflow_lc_type(lc_context: Dict[str, Any], doc_set: Dict[str, Any
     return LCType.UNKNOWN.value
 
 
+def _ruleset_lookup_jurisdictions(domain_key: Optional[str], jurisdiction: Optional[str]) -> List[str]:
+    resolved = str(jurisdiction or "global").strip().lower() or "global"
+    candidates = [resolved]
+    if resolved != "global" and isinstance(domain_key, str) and domain_key.startswith("icc."):
+        candidates.append("global")
+    return candidates
+
+
 def filter_rules_by_lc_context(
     rules_with_meta: List[Tuple[Dict[str, Any], Dict[str, Any]]],
     document_data: Dict[str, Any],
@@ -1748,22 +1756,41 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
     base_metadata: Optional[Dict[str, Any]] = None
 
     for idx, domain_key in enumerate(domain_sequence):
+        resolved_jurisdiction = jurisdiction or "global"
+        candidate_jurisdictions = _ruleset_lookup_jurisdictions(domain_key, jurisdiction)
+        ruleset_data = None
         try:
-            logger.info(
-                "Fetching ruleset from DB",
-                extra={
-                    "domain": domain_key,
-                    "jurisdiction": jurisdiction,
-                    "document_type": document_type,
-                    "rules_query_document_type": None,
-                    "index": idx,
-                },
-            )
-            ruleset_data = await rules_service.get_active_ruleset(
-                domain_key,
-                jurisdiction,
-                document_type=None,
-            )
+            for lookup_idx, lookup_jurisdiction in enumerate(candidate_jurisdictions):
+                logger.info(
+                    "Fetching ruleset from DB",
+                    extra={
+                        "domain": domain_key,
+                        "jurisdiction": lookup_jurisdiction,
+                        "requested_jurisdiction": jurisdiction,
+                        "document_type": document_type,
+                        "rules_query_document_type": None,
+                        "index": idx,
+                        "lookup_index": lookup_idx,
+                    },
+                )
+                ruleset_data = await rules_service.get_active_ruleset(
+                    domain_key,
+                    lookup_jurisdiction,
+                    document_type=None,
+                )
+                if ruleset_data is not None:
+                    resolved_jurisdiction = lookup_jurisdiction
+                    if lookup_jurisdiction != (jurisdiction or "global"):
+                        logger.info(
+                            "Fell back to global ruleset jurisdiction",
+                            extra={
+                                "domain": domain_key,
+                                "requested_jurisdiction": jurisdiction,
+                                "resolved_jurisdiction": resolved_jurisdiction,
+                                "document_type": document_type,
+                            },
+                        )
+                    break
             
             # Handle None return (no active ruleset found)
             if ruleset_data is None:
@@ -1789,7 +1816,8 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                 "Loaded ruleset from DB",
                 extra={
                     "domain": domain_key,
-                    "jurisdiction": jurisdiction,
+                    "jurisdiction": resolved_jurisdiction,
+                    "requested_jurisdiction": jurisdiction,
                     "document_type": document_type,
                     "rule_count": len(ruleset_data.get("rules", [])),
                 },
@@ -1826,6 +1854,8 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
 
         meta = {
             "domain": domain_key,
+            "requested_jurisdiction": jurisdiction,
+            "ruleset_jurisdiction": resolved_jurisdiction,
             "ruleset_version": ruleset_data.get("ruleset_version"),
             "rulebook_version": ruleset_data.get("rulebook_version"),
         }

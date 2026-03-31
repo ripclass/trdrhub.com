@@ -55,6 +55,39 @@ class _FakeRulesService:
         }
 
 
+class _FallbackRulesService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str | None]] = []
+
+    async def get_active_ruleset(
+        self,
+        domain: str,
+        jurisdiction: str = "global",
+        document_type: str | None = None,
+    ) -> dict[str, object] | None:
+        self.calls.append(
+            {
+                "domain": domain,
+                "jurisdiction": jurisdiction,
+                "document_type": document_type,
+            }
+        )
+        if domain == "icc.ucp600" and jurisdiction == "global":
+            return {
+                "rules": [
+                    {
+                        "rule_id": "UCP600-28A",
+                        "document_type": "lc",
+                        "title": "Insurance Originals Match LC Requirement",
+                        "description": "Insurance originals must satisfy the LC quantity requirement.",
+                    }
+                ],
+                "ruleset_version": "1.0",
+                "rulebook_version": "UCP600:2007",
+            }
+        return None
+
+
 @pytest.mark.asyncio
 async def test_validate_document_async_fetches_unfiltered_rulesets_for_lc_scoped_rules(
     monkeypatch: pytest.MonkeyPatch,
@@ -119,4 +152,66 @@ async def test_validate_document_async_fetches_unfiltered_rulesets_for_lc_scoped
 
     assert icc_ucp600_calls
     assert all(call.get("document_type") is None for call in icc_ucp600_calls)
+    assert [result.get("rule") for result in results] == ["UCP600-28A"]
+
+
+@pytest.mark.asyncio
+async def test_validate_document_async_falls_back_to_global_for_icc_rulesets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_service = _FallbackRulesService()
+
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: fake_service)
+
+    async def _fake_inject_semantic_conditions(rules, document_data, evaluator):
+        return rules, {}
+
+    monkeypatch.setattr(
+        validator_module,
+        "_inject_semantic_conditions",
+        _fake_inject_semantic_conditions,
+    )
+    monkeypatch.setattr(
+        validator_module,
+        "activate_rules_for_lc",
+        lambda lc_context, filtered_rules_with_meta, document_data: filtered_rules_with_meta,
+    )
+
+    class _FakeRuleEvaluator:
+        async def evaluate_rules(self, rules, input_context):
+            return {
+                "outcomes": [
+                    {
+                        "rule_id": "UCP600-28A",
+                        "passed": False,
+                        "severity": "major",
+                        "message": "Insurance originals presented are below the LC requirement.",
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(validator_module, "RuleEvaluator", _FakeRuleEvaluator)
+
+    results = await validator_module.validate_document_async(
+        {
+            "domain": "icc.ucp600",
+            "jurisdiction": "bd",
+            "lc": {
+                "requirements_graph_v1": {
+                    "required_document_types": ["insurance_certificate"],
+                }
+            },
+            "insurance": {"originals_presented": 1},
+        },
+        document_type="commercial_invoice",
+    )
+
+    assert [
+        (call.get("domain"), call.get("jurisdiction"))
+        for call in fake_service.calls
+        if call.get("domain") == "icc.ucp600"
+    ] == [
+        ("icc.ucp600", "bd"),
+        ("icc.ucp600", "global"),
+    ]
     assert [result.get("rule") for result in results] == ["UCP600-28A"]
