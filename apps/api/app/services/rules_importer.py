@@ -202,7 +202,7 @@ class RulesImporter:
             conditions=data.get("conditions", []),
             expected_outcome=data.get("expected_outcome", {}),
             tags=data.get("tags", []),
-            rule_metadata=data.get("metadata", {}), # Mapped to rule_metadata column
+            rule_metadata=self._build_rule_metadata(data), # Mapped to rule_metadata column
             checksum=checksum,
             ruleset_id=ruleset_id,
             ruleset_version=ruleset.ruleset_version,
@@ -229,7 +229,7 @@ class RulesImporter:
         model.conditions = data.get("conditions", model.conditions)
         model.expected_outcome = data.get("expected_outcome", model.expected_outcome)
         model.tags = data.get("tags", model.tags)
-        model.rule_metadata = data.get("metadata", model.rule_metadata) # Mapped to rule_metadata
+        model.rule_metadata = self._build_rule_metadata(data)
         model.checksum = self._compute_checksum(data)
         model.ruleset_id = ruleset_id
 
@@ -237,3 +237,33 @@ class RulesImporter:
         return hashlib.md5(
             json.dumps(rule_data, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
         ).hexdigest()
+
+    def _build_rule_metadata(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        metadata = dict(data.get("metadata") or {})
+        for key in (
+            "documents",
+            "supplements",
+            "notes",
+            "source",
+            "consequence_class",
+            "execution_priority",
+            "parent_rule",
+            "suppression_policy",
+            "child_rules",
+            "applies_if",
+            "source_authority_tier",
+            "source_authority",
+            "source_document",
+            "source_citation",
+            "effective_from",
+            "jurisdiction_scope",
+            "human_review_status",
+            "parser_confidence",
+            "curation_mode",
+            "operational_note",
+            "runtime_readiness_status",
+        ):
+            value = data.get(key)
+            if value is not None and key not in metadata:
+                metadata[key] = value
+        return metadata
