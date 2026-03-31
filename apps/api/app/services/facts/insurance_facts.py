@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from .models import DocumentFact, DocumentFactSet
@@ -15,6 +16,14 @@ _INSURANCE_FACT_FIELDS: Dict[str, Tuple[str, ...]] = {
     "issuer_name": ("issuer_name", "insurer", "issuing_authority", "issuer", "beneficiary"),
     "issue_date": ("issue_date", "date", "document_date", "doc_date", "date_of_issue"),
     "lc_reference": ("lc_reference", "lc_number", "credit_number"),
+    "originals_presented": ("originals_presented", "number_of_originals", "original_count"),
+}
+_RAW_TEXT_INTEGER_PATTERNS: Dict[str, Tuple[str, ...]] = {
+    "originals_presented": (
+        "Presented Originals",
+        "Originals Presented",
+        "Number of Originals",
+    ),
 }
 
 
@@ -54,6 +63,22 @@ def _source_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(fields, dict):
         return fields
     return {}
+
+
+def _raw_text_source(payload: Dict[str, Any]) -> Optional[str]:
+    extraction_artifacts = payload.get("extraction_artifacts_v1")
+    if not isinstance(extraction_artifacts, dict):
+        extraction_artifacts = {}
+    for value in (
+        payload.get("raw_text"),
+        payload.get("text"),
+        payload.get("content"),
+        extraction_artifacts.get("raw_text"),
+        payload.get("raw_text_preview"),
+    ):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _first_detail(details: Dict[str, Dict[str, Any]], aliases: Iterable[str]) -> Tuple[Optional[str], Dict[str, Any]]:
@@ -105,7 +130,77 @@ def _normalize_fact_value(field_name: str, value: Any) -> Optional[Any]:
         return normalize_date(value)
     if field_name == "issuer_name":
         return normalize_party_name(value)
+    if field_name == "originals_presented":
+        if value in (None, ""):
+            return None
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return normalize_reference(value)
     return normalize_reference(value)
+
+
+def _recovery_detail(value: Any, snippet: str, *, confidence: float = 0.9) -> Dict[str, Any]:
+    return {
+        "value": value,
+        "confidence": confidence,
+        "verification": "text_supported",
+        "source": "artifact_raw_text",
+        "evidence": {
+            "snippet": snippet,
+            "source": "artifact_raw_text",
+        },
+    }
+
+
+def _extract_labeled_integer(raw_text: str, labels: Iterable[str]) -> Tuple[Optional[int], Optional[str]]:
+    text = str(raw_text or "")
+    if not text.strip():
+        return None, None
+    for label in labels:
+        pattern = re.compile(rf"(?im)^\s*{re.escape(label)}\s*[:\-]\s*(\d+)\s*$")
+        match = pattern.search(text)
+        if not match:
+            continue
+        value = int(match.group(1))
+        return value, f"{label}: {value}"
+    return None, None
+
+
+def _can_use_raw_text_recovery(detail: Dict[str, Any]) -> bool:
+    verification = str(detail.get("verification") or "").strip().lower()
+    if verification in {"operator_confirmed", "operator_rejected"}:
+        return False
+    if verification in {"confirmed", "text_supported"} and detail.get("evidence"):
+        return False
+    evidence = detail.get("evidence")
+    if isinstance(evidence, dict) and evidence:
+        return False
+    return True
+
+
+def _raw_text_recoveries(
+    payload: Dict[str, Any],
+    details: Dict[str, Dict[str, Any]],
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
+    raw_text = _raw_text_source(payload)
+    if not raw_text:
+        return {}, {}
+
+    recovered_fields: Dict[str, Any] = {}
+    recovered_details: Dict[str, Dict[str, Any]] = {}
+
+    for field_name, labels in _RAW_TEXT_INTEGER_PATTERNS.items():
+        detail = details.get(field_name) if isinstance(details.get(field_name), dict) else {}
+        if not _can_use_raw_text_recovery(detail):
+            continue
+        recovered_value, snippet = _extract_labeled_integer(raw_text, labels)
+        if recovered_value is None:
+            continue
+        recovered_fields[field_name] = recovered_value
+        recovered_details[field_name] = _recovery_detail(recovered_value, snippet or str(recovered_value))
+
+    return recovered_fields, recovered_details
 
 
 def _verification_state(value: Any, detail: Dict[str, Any]) -> str:
@@ -173,8 +268,11 @@ def _evidence(detail: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Opt
 
 def build_insurance_fact_set(document_payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = document_payload or {}
-    fields = _source_fields(payload)
+    fields = dict(_source_fields(payload))
     details = _detail_map(payload)
+    recovered_fields, recovered_details = _raw_text_recoveries(payload, details)
+    fields.update(recovered_fields)
+    details.update(recovered_details)
     facts = []
 
     for field_name, aliases in _INSURANCE_FACT_FIELDS.items():

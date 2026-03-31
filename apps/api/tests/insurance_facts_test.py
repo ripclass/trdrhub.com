@@ -115,3 +115,30 @@ def test_build_insurance_fact_set_preserves_operator_confirmed_lc_reference() ->
     assert fact["verification_state"] == "operator_confirmed"
     assert fact["origin"] == "operator_override"
     assert fact["normalized_value"] == "EXP2026BD001"
+
+
+def test_build_insurance_fact_set_recovers_originals_presented_from_raw_text() -> None:
+    payload = build_insurance_fact_set(
+        {
+            "document_type": "insurance_certificate",
+            "extraction_artifacts_v1": {
+                "raw_text": (
+                    "INSURANCE CERTIFICATE\n"
+                    "Certificate No: INS-2026-001\n"
+                    "Number of Originals: 1\n"
+                )
+            },
+            "field_details": {
+                "originals_presented": {
+                    "verification": "not_found",
+                    "reason_code": "source_absent",
+                }
+            },
+        }
+    )
+
+    fact = _fact_by_name(payload, "originals_presented")
+    assert fact["value"] == 1
+    assert fact["normalized_value"] == 1
+    assert fact["verification_state"] == "confirmed"
+    assert fact["origin"] == "artifact_raw_text"

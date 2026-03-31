@@ -190,6 +190,7 @@ _INSURANCE_VALIDATION_ALIASES = {
     "issuer_name": ("issuer_name", "insurer", "issuing_authority", "issuer", "beneficiary"),
     "issue_date": ("issue_date", "date", "document_date", "doc_date", "date_of_issue"),
     "lc_reference": ("lc_reference", "lc_number", "credit_number"),
+    "originals_presented": ("originals_presented", "number_of_originals", "original_count"),
 }
 _INSPECTION_VALIDATION_ALIASES = {
     "certificate_number": ("certificate_number", "certificate_no", "report_number", "reference_number"),

@@ -174,3 +174,23 @@ def test_apply_insurance_fact_graph_prefers_real_insurance_doc_over_beneficiary_
     assert projected["currency"] == "USD"
     assert payload["insurance"] == projected
     assert extracted_context["insurance"] == projected
+
+
+def test_project_insurance_validation_context_projects_originals_presented() -> None:
+    projected = project_insurance_validation_context(
+        {},
+        fact_graph={
+            "version": "fact_graph_v1",
+            "facts": [
+                {
+                    "field_name": "originals_presented",
+                    "value": 1,
+                    "normalized_value": 1,
+                    "verification_state": "confirmed",
+                }
+            ],
+        },
+    )
+
+    assert projected["originals_presented"] == 1
+    assert projected["number_of_originals"] == 1
