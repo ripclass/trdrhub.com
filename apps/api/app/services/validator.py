@@ -1755,13 +1755,14 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
                     "domain": domain_key,
                     "jurisdiction": jurisdiction,
                     "document_type": document_type,
+                    "rules_query_document_type": None,
                     "index": idx,
                 },
             )
             ruleset_data = await rules_service.get_active_ruleset(
                 domain_key,
                 jurisdiction,
-                document_type=document_type,
+                document_type=None,
             )
             
             # Handle None return (no active ruleset found)
