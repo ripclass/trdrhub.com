@@ -56,6 +56,15 @@ def test_project_insurance_validation_context_only_keeps_resolved_facts() -> Non
 
 def test_apply_insurance_fact_graph_to_validation_inputs_mutates_payload_and_context() -> None:
     payload = {
+        "requirements_graph_v1": {
+            "condition_requirements": [
+                {
+                    "requirement_type": "document_quantity",
+                    "document_type": "insurance_certificate",
+                    "originals_required": 2,
+                }
+            ]
+        },
         "documents": [
             {
                 "document_id": "doc-insurance",
@@ -114,6 +123,7 @@ def test_apply_insurance_fact_graph_to_validation_inputs_mutates_payload_and_con
     assert projected["policy_number"] == "POL-2026-001"
     assert projected["insured_amount"] == "125000.50"
     assert projected["currency"] == "USD"
+    assert projected["originals_issued"] == 2
     assert "coverage_type" not in projected
     assert payload["insurance_certificate"] == projected
     assert payload["insurance"] == projected
@@ -194,3 +204,46 @@ def test_project_insurance_validation_context_projects_originals_presented() -> 
 
     assert projected["originals_presented"] == 1
     assert projected["number_of_originals"] == 1
+
+
+def test_apply_insurance_fact_graph_projects_originals_issued_from_structured_requirements() -> None:
+    payload = {
+        "lc": {
+            "requirements_graph_v1": {
+                "requirements_structured_v1": {
+                    "document_quantities": {
+                        "insurance_certificate": {
+                            "originals_required": 3,
+                        }
+                    }
+                }
+            }
+        },
+        "documents": [
+            {
+                "document_id": "doc-insurance",
+                "document_type": "insurance_certificate",
+                "fact_graph_v1": {
+                    "version": "fact_graph_v1",
+                    "facts": [
+                        {
+                            "field_name": "originals_presented",
+                            "value": 1,
+                            "normalized_value": 1,
+                            "verification_state": "confirmed",
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+    extracted_context = {
+        "documents": payload["documents"],
+    }
+
+    projected = apply_insurance_fact_graph_to_validation_inputs(payload, extracted_context)
+
+    assert projected["originals_presented"] == 1
+    assert projected["originals_issued"] == 3
+    assert payload["insurance"]["originals_issued"] == 3
+    assert extracted_context["insurance"]["originals_issued"] == 3

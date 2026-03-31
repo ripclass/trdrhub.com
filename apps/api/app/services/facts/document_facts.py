@@ -216,6 +216,54 @@ def _document_type(document: Dict[str, Any]) -> str:
     ).strip().lower()
 
 
+def _insurance_originals_required_from_requirements(source: Any) -> Optional[int]:
+    if not isinstance(source, dict):
+        return None
+
+    requirements_graph = (
+        source.get("requirements_graph_v1")
+        or source.get("requirementsGraphV1")
+    )
+    if not isinstance(requirements_graph, dict):
+        lc = source.get("lc")
+        if isinstance(lc, dict):
+            requirements_graph = (
+                lc.get("requirements_graph_v1")
+                or lc.get("requirementsGraphV1")
+            )
+    if not isinstance(requirements_graph, dict):
+        return None
+
+    structured = requirements_graph.get("requirements_structured_v1")
+    if isinstance(structured, dict):
+        quantity = (
+            (((structured.get("document_quantities") or {}).get("insurance_certificate")) or {}).get("originals_required")
+        )
+        if quantity not in (None, ""):
+            try:
+                return int(quantity)
+            except (TypeError, ValueError):
+                return None
+
+    for requirement in requirements_graph.get("condition_requirements") or []:
+        if not isinstance(requirement, dict):
+            continue
+        if str(requirement.get("requirement_type") or "").strip().lower() != "document_quantity":
+            continue
+        document_type = str(requirement.get("document_type") or "").strip().lower()
+        if document_type != "insurance_certificate":
+            continue
+        quantity = requirement.get("originals_required")
+        if quantity in (None, ""):
+            continue
+        try:
+            return int(quantity)
+        except (TypeError, ValueError):
+            return None
+
+    return None
+
+
 def materialize_document_fact_graph_v1(document: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not isinstance(document, dict):
         return None
@@ -1036,6 +1084,13 @@ def apply_insurance_fact_graph_to_validation_inputs(
         document=insurance_document,
         fact_graph=fact_graph,
     )
+
+    originals_required = (
+        _insurance_originals_required_from_requirements(payload)
+        or _insurance_originals_required_from_requirements(extracted_context)
+    )
+    if originals_required not in (None, ""):
+        projected["originals_issued"] = originals_required
 
     if isinstance(payload, dict):
         payload["insurance_certificate"] = projected
