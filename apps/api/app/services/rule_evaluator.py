@@ -656,7 +656,7 @@ class RuleEvaluator:
         # Check applies_if preconditions
         applies_if = rule.get("applies_if", [])
         if applies_if:
-            for precondition in applies_if:
+            for index, precondition in enumerate(applies_if):
                 if not self.evaluate_condition(
                     precondition,
                     context,
