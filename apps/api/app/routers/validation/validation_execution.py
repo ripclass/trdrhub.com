@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
@@ -60,6 +61,19 @@ DB_RULE_TIMEOUT_SECONDS = 60.0
 PRICE_VERIFICATION_TIMEOUT_SECONDS = 25.0
 AI_VALIDATION_TIMEOUT_SECONDS = 45.0
 BANK_POLICY_TIMEOUT_SECONDS = 20.0
+
+_ICC_RULEBOOK_PREFIXES = {
+    "UCP600",
+    "ISBP745",
+    "ISP98",
+    "URR725",
+    "URDG758",
+    "URC522",
+    "EUCP",
+}
+_ICC_RULE_ID_PATTERN = re.compile(
+    r"^(?P<prefix>[A-Z0-9]+)-(?P<article>[A-Z]*\d+)(?P<suffix>[A-Z][A-Z0-9]*)?$"
+)
 
 _INSURANCE_RULE_DOCUMENT_TYPES = {
     "insurance_certificate",
@@ -262,6 +276,66 @@ def _filter_price_issues_for_documentary_context(
         return []
 
     return price_issues
+
+
+def _parse_icc_rule_identity(issue: Any) -> Optional[tuple[str, str, bool]]:
+    if isinstance(issue, dict):
+        rule_token = issue.get("rule") or issue.get("rule_id")
+        ruleset_domain = issue.get("ruleset_domain")
+    else:
+        rule_token = getattr(issue, "rule", None) or getattr(issue, "rule_id", None)
+        ruleset_domain = getattr(issue, "ruleset_domain", None)
+
+    rule_text = str(rule_token or "").strip().upper()
+    if not rule_text:
+        return None
+
+    domain_text = str(ruleset_domain or "").strip().lower()
+    prefix = rule_text.split("-", 1)[0]
+    if not (
+        domain_text.startswith("icc.")
+        or prefix in _ICC_RULEBOOK_PREFIXES
+    ):
+        return None
+
+    match = _ICC_RULE_ID_PATTERN.match(rule_text)
+    if not match:
+        return None
+
+    return (
+        match.group("prefix"),
+        match.group("article"),
+        bool(match.group("suffix")),
+    )
+
+
+def _suppress_broad_icc_umbrella_rules(
+    issues: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Prefer the most specific ICC finding when both the umbrella article rule and
+    a letter-rule for the same article fail in the same result set.
+    """
+    if not issues:
+        return []
+
+    specific_families: set[tuple[str, str]] = set()
+    for issue in issues:
+        identity = _parse_icc_rule_identity(issue)
+        if identity and identity[2]:
+            specific_families.add((identity[0], identity[1]))
+
+    if not specific_families:
+        return issues
+
+    filtered: list[dict[str, Any]] = []
+    for issue in issues:
+        identity = _parse_icc_rule_identity(issue)
+        if identity and not identity[2] and (identity[0], identity[1]) in specific_families:
+            continue
+        filtered.append(issue)
+
+    return filtered
 
 
 async def execute_validation_pipeline(
@@ -1068,6 +1142,8 @@ async def execute_validation_pipeline(
     # =====================================================================
     # DEDUPLICATION - Remove duplicate issues by rule ID
     # =====================================================================
+    failed_results = _suppress_broad_icc_umbrella_rules(failed_results)
+
     seen_rules = set()
     deduplicated_results = []
     for issue in failed_results:
