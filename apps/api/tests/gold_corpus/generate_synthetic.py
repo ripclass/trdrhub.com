@@ -56,6 +56,7 @@ class LCData:
     presentation_period: int = 21
     partial_shipments: str = "Allowed"
     transhipment: str = "Allowed"
+    additional_conditions: List[str] = field(default_factory=list)
     documents_required: List[str] = field(default_factory=lambda: [
         "Commercial Invoice in triplicate",
         "Full set of clean on board Bills of Lading",
@@ -63,6 +64,13 @@ class LCData:
         "Certificate of Origin",
         "Insurance Certificate for 110% of invoice value"
     ])
+
+
+def _default_lc_additional_conditions(data: LCData) -> List[str]:
+    return [
+        f"Documents must be presented within {data.presentation_period} days after shipment",
+        f"All documents must show LC number {data.lc_number}",
+    ]
 
 
 @dataclass 
@@ -104,6 +112,10 @@ class BLData:
 
 def create_lc_pdf(data: LCData, output_path: Path, *, force_text: bool = False):
     """Create a Letter of Credit PDF."""
+    additional_conditions = _default_lc_additional_conditions(data)
+    if data.additional_conditions:
+        additional_conditions.extend(data.additional_conditions)
+
     if force_text or not HAS_REPORTLAB:
         # Create a text placeholder
         content = f"""
@@ -137,8 +149,7 @@ Field 45A: Description of Goods:
 Field 46A: Documents Required:
 {''.join(f"    - {doc}" + chr(10) for doc in data.documents_required)}
 Field 47A: Additional Conditions:
-    - Documents must be presented within {data.presentation_period} days after shipment
-    - All documents must show LC number {data.lc_number}
+{''.join(f"    - {line}" + chr(10) for line in additional_conditions)}
 Field 71B: Charges: All banking charges outside issuing bank are for beneficiary
 Field 48: Period for Presentation: {data.presentation_period} days
 Field 49: Confirmation Instructions: WITHOUT
@@ -1492,6 +1503,264 @@ def generate_set_014_insurance_currency_mismatch():
     return set_id
 
 
+def generate_set_015_po_number_missing():
+    """Generate Set 015: LC requires PO number on all docs but uploaded docs omit it."""
+    set_id = "set_015_po_number_missing"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD015",
+        amount=112500.00,
+        additional_conditions=[
+            "BUYER PURCHASE ORDER NO. GBE-44592 MUST APPEAR ON ALL DOCUMENTS",
+        ],
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-015",
+        invoice_date="2026-02-25",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026015015",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="OOCL DHAKA",
+        voyage_number="V.2026Z",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,180 KG",
+        container_number="OOCL1501567",
+        seal_number="SL150156",
+        shipped_on_board_date="2026-03-02",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "LC 47A requires buyer PO number on all documents, but the uploaded documents omit it",
+        "version": "1.0",
+        "expected_compliance_rate": 76.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "lc_number", "expected_value": lc.lc_number, "match_type": "exact", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "invoice_number", "expected_value": invoice.invoice_number, "match_type": "contains", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-PO-NUMBER", "severity": "critical", "document_type": "invoice", "title_contains": "purchase order", "description": "PO number missing from documents"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-BIN",
+                "description": "A PO requirement should not also trigger BIN handling."
+            },
+            {
+                "rule_id": "CROSSDOC-TIN",
+                "description": "A PO requirement should not also trigger TIN handling."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_016_exporter_bin_missing():
+    """Generate Set 016: LC requires exporter BIN on all docs but uploaded docs omit it."""
+    set_id = "set_016_exporter_bin_missing"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD016",
+        amount=108400.00,
+        additional_conditions=[
+            "EXPORTER BIN: 000334455-0103 MUST APPEAR ON ALL DOCUMENTS",
+        ],
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-016",
+        invoice_date="2026-02-26",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026016016",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="CMA CGM DHAKA",
+        voyage_number="V.2026AA",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,040 KG",
+        container_number="CMAU1601678",
+        seal_number="SL160167",
+        shipped_on_board_date="2026-03-02",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "LC 47A requires exporter BIN on all documents, but the uploaded documents omit it",
+        "version": "1.0",
+        "expected_compliance_rate": 76.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "lc_number", "expected_value": lc.lc_number, "match_type": "exact", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "invoice_number", "expected_value": invoice.invoice_number, "match_type": "contains", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-BIN", "severity": "critical", "document_type": "invoice", "title_contains": "bin", "description": "Exporter BIN missing from documents"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-PO-NUMBER",
+                "description": "A BIN requirement should not also trigger PO-number handling."
+            },
+            {
+                "rule_id": "CROSSDOC-TIN",
+                "description": "A BIN requirement should not also trigger TIN handling."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
+def generate_set_017_exporter_tin_missing():
+    """Generate Set 017: LC requires exporter TIN on all docs but uploaded docs omit it."""
+    set_id = "set_017_exporter_tin_missing"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BD017",
+        amount=116300.00,
+        additional_conditions=[
+            "EXPORTER TIN: 545342112233 MUST APPEAR ON ALL DOCUMENTS",
+        ],
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-017",
+        invoice_date="2026-02-27",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026017017",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="WAN HAI DHAKA",
+        voyage_number="V.2026AB",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,150 KG",
+        container_number="WHLU1701789",
+        seal_number="SL170178",
+        shipped_on_board_date="2026-03-02",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "LC 47A requires exporter TIN on all documents, but the uploaded documents omit it",
+        "version": "1.0",
+        "expected_compliance_rate": 76.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "error",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "lc_number", "expected_value": lc.lc_number, "match_type": "exact", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "invoice_number", "expected_value": invoice.invoice_number, "match_type": "contains", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "CROSSDOC-TIN", "severity": "critical", "document_type": "invoice", "title_contains": "tin", "description": "Exporter TIN missing from documents"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-PO-NUMBER",
+                "description": "A TIN requirement should not also trigger PO-number handling."
+            },
+            {
+                "rule_id": "CROSSDOC-BIN",
+                "description": "A TIN requirement should not also trigger BIN handling."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
 def main():
     """Generate all synthetic test sets."""
     print("=" * 60)
@@ -1516,6 +1785,9 @@ def main():
         generate_set_012_bl_shipper_mismatch(),
         generate_set_013_bl_consignee_mismatch(),
         generate_set_014_insurance_currency_mismatch(),
+        generate_set_015_po_number_missing(),
+        generate_set_016_exporter_bin_missing(),
+        generate_set_017_exporter_tin_missing(),
     ]
     
     print("\n" + "=" * 60)

@@ -1,0 +1,45 @@
+{
+  "set_id": "set_016_exporter_bin_missing",
+  "description": "LC 47A requires exporter BIN on all documents, but the uploaded documents omit it",
+  "version": "1.0",
+  "expected_compliance_rate": 76.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_final_verdict": "review",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BD016",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "invoice_number",
+      "expected_value": "INV-2026-016",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-BIN",
+      "severity": "critical",
+      "document_type": "invoice",
+      "title_contains": "bin",
+      "description": "Exporter BIN missing from documents"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-PO-NUMBER",
+      "description": "A BIN requirement should not also trigger PO-number handling."
+    },
+    {
+      "rule_id": "CROSSDOC-TIN",
+      "description": "A BIN requirement should not also trigger TIN handling."
+    }
+  ]
+}

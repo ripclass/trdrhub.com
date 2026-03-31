@@ -40,6 +40,9 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_012_bl_shipper_mismatch.json": ["CROSSDOC-BL-004"],
         "set_013_bl_consignee_mismatch.json": ["CROSSDOC-BL-005"],
         "set_014_insurance_currency_mismatch.json": ["CROSSDOC-INS-003"],
+        "set_015_po_number_missing.json": ["CROSSDOC-PO-NUMBER"],
+        "set_016_exporter_bin_missing.json": ["CROSSDOC-BIN"],
+        "set_017_exporter_tin_missing.json": ["CROSSDOC-TIN"],
     }
 
     for filename, expected_rules in expected_rule_matrix.items():
@@ -63,6 +66,9 @@ def test_gold_corpus_expected_contract_outcomes_match_live_locked_baseline() -> 
         "set_012_bl_shipper_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
         "set_013_bl_consignee_mismatch.json": {"final_verdict": "pass", "workflow_stage": "validation_results"},
         "set_014_insurance_currency_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_015_po_number_missing.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_016_exporter_bin_missing.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_017_exporter_tin_missing.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
     }
 
     for filename, expected in expected_contract_matrix.items():
@@ -100,3 +106,15 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     insurance_currency_set = _load_expected("set_014_insurance_currency_mismatch.json")
     insurance_currency_false_positives = _false_positive_rule_ids(insurance_currency_set)
     assert {"CROSSDOC-INS-002", "CROSSDOC-INSURANCE-1"}.issubset(insurance_currency_false_positives)
+
+    po_set = _load_expected("set_015_po_number_missing.json")
+    po_false_positives = _false_positive_rule_ids(po_set)
+    assert {"CROSSDOC-BIN", "CROSSDOC-TIN"}.issubset(po_false_positives)
+
+    bin_set = _load_expected("set_016_exporter_bin_missing.json")
+    bin_false_positives = _false_positive_rule_ids(bin_set)
+    assert {"CROSSDOC-PO-NUMBER", "CROSSDOC-TIN"}.issubset(bin_false_positives)
+
+    tin_set = _load_expected("set_017_exporter_tin_missing.json")
+    tin_false_positives = _false_positive_rule_ids(tin_set)
+    assert {"CROSSDOC-PO-NUMBER", "CROSSDOC-BIN"}.issubset(tin_false_positives)
