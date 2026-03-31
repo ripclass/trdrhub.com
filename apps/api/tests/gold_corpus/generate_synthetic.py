@@ -777,7 +777,7 @@ This is less than the required 110% coverage per UCP600.
         "expected_compliance_rate": 80.0,
         "compliance_tolerance": 10.0,
         "expected_status": "warning",
-        "expected_final_verdict": "review",
+        "expected_final_verdict": "reject",
         "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "lc_amount", "expected_value": "150000.00", "match_type": "numeric_tolerance", "tolerance": 0.001, "criticality": "critical"},
@@ -852,7 +852,7 @@ def generate_set_006_goods_mismatch():
         "expected_compliance_rate": 75.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
-        "expected_final_verdict": "review",
+        "expected_final_verdict": "reject",
         "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "goods_description", "expected_value": "Cotton", "match_type": "contains", "criticality": "important"},
@@ -931,7 +931,7 @@ def generate_set_007_missing_insurance_document():
         "expected_compliance_rate": 80.0,
         "compliance_tolerance": 10.0,
         "expected_status": "error",
-        "expected_final_verdict": "review",
+        "expected_final_verdict": "reject",
         "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "lc_number", "expected_value": "EXP2026BD007", "match_type": "exact", "criticality": "critical"},

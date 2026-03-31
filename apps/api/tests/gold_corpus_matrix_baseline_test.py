@@ -66,9 +66,9 @@ def test_gold_corpus_expected_contract_outcomes_match_live_locked_baseline() -> 
         "set_012_bl_shipper_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
         "set_013_bl_consignee_mismatch.json": {"final_verdict": "pass", "workflow_stage": "validation_results"},
         "set_014_insurance_currency_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
-        "set_015_po_number_missing.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
-        "set_016_exporter_bin_missing.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
-        "set_017_exporter_tin_missing.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_015_po_number_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_016_exporter_bin_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_017_exporter_tin_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
     }
 
     for filename, expected in expected_contract_matrix.items():
