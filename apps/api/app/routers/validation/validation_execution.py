@@ -346,6 +346,11 @@ async def execute_validation_pipeline(
             coo = payload.get("certificate_of_origin") or {}
             invoice = payload.get("invoice") or {}
             bl = payload.get("bill_of_lading") or {}
+            insurance_rule_context = (
+                payload.get("insurance")
+                or payload.get("insurance_certificate")
+                or {}
+            )
 
             # Country code mapping (common variations)
             COUNTRY_CODE_MAP = {
@@ -462,7 +467,8 @@ async def execute_validation_pipeline(
                 # Documents
                 "invoice": payload.get("invoice"),
                 "bill_of_lading": payload.get("bill_of_lading"),
-                "insurance": payload.get("insurance"),
+                "insurance": insurance_rule_context,
+                "insurance_doc": insurance_rule_context,
                 "certificate_of_origin": payload.get("certificate_of_origin"),
                 "packing_list": payload.get("packing_list"),
                 # Extracted context

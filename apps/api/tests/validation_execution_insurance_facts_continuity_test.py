@@ -8,3 +8,6 @@ def test_validation_execution_applies_insurance_fact_graph_before_rules() -> Non
 
     assert "apply_insurance_fact_graph_to_validation_inputs" in source
     assert "apply_insurance_fact_graph_to_validation_inputs(payload, extracted_context)" in source
+    assert 'insurance_rule_context = (' in source
+    assert '"insurance": insurance_rule_context' in source
+    assert '"insurance_doc": insurance_rule_context' in source
