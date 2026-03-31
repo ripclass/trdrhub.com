@@ -5,6 +5,8 @@
   "expected_compliance_rate": 75.0,
   "compliance_tolerance": 10.0,
   "expected_status": "error",
+  "expected_final_verdict": "reject",
+  "expected_workflow_stage": "validation_results",
   "expected_fields": [
     {
       "document_type": "lc",

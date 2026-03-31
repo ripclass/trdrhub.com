@@ -43,6 +43,26 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         assert _rule_ids(payload) == expected_rules
 
 
+def test_gold_corpus_expected_contract_outcomes_match_live_locked_baseline() -> None:
+    expected_contract_matrix = {
+        "set_001_synthetic_bd.json": {"final_verdict": "pass", "workflow_stage": "validation_results"},
+        "set_002_amount_mismatch.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_003_port_mismatch.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_004_late_shipment.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_005_insurance_undervalue.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_006_goods_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_007_missing_insurance_document.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_008_invoice_after_expiry.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_009_invoice_lc_reference_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_010_invoice_missing_lc_reference.json": {"final_verdict": "pass", "workflow_stage": "validation_results"},
+    }
+
+    for filename, expected in expected_contract_matrix.items():
+        payload = _load_expected(filename)
+        assert payload.get("expected_final_verdict") == expected["final_verdict"]
+        assert payload.get("expected_workflow_stage") == expected["workflow_stage"]
+
+
 def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     clean_set = _load_expected("set_001_synthetic_bd.json")
     clean_false_positives = _false_positive_rule_ids(clean_set)
