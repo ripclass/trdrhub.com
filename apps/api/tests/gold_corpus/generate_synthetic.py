@@ -379,6 +379,7 @@ To: {lc.port_of_discharge}
 Sum Insured: {lc.currency} {insured_amount:,.2f}
 (Being 110% of invoice value)
 
+Coverage Type: ICC-A
 Coverage: Institute Cargo Clauses (A)
          Institute War Clauses (Cargo)
          Institute Strikes Clauses (Cargo)
@@ -506,7 +507,7 @@ def generate_set_002_amount_mismatch():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
     
     # Create expected results
     expected = {
@@ -583,7 +584,7 @@ def generate_set_003_port_mismatch():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
     
     expected = {
         "set_id": set_id,
@@ -658,7 +659,7 @@ def generate_set_004_late_shipment():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date=invoice.invoice_date)
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
     
     expected = {
         "set_id": set_id,

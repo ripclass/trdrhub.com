@@ -147,6 +147,9 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 derived.append(normalized)
         return derived
 
+    def _has_uploaded_document(*doc_types: str) -> bool:
+        return any(document_lookup.get(doc_type) for doc_type in doc_types)
+
     # 1. Goods description mismatch (LC vs Commercial Invoice)
     lc_goods = _clean_text(lc_context.get("goods_description") or lc_context.get("description"))
     invoice_goods = _clean_text(
@@ -220,7 +223,12 @@ def run_cross_document_checks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     lc_text = (payload.get("lc_text") or "").lower()
     insurance_required = bool(required_document_types & {"insurance_certificate", "insurance_policy"}) or "insurance" in lc_text
     insurance_presence = documents_presence.get("insurance_certificate", {})
-    insurance_present = insurance_presence.get("present", False)
+    insurance_policy_presence = documents_presence.get("insurance_policy", {})
+    insurance_present = (
+        bool(insurance_presence.get("present"))
+        or bool(insurance_policy_presence.get("present"))
+        or _has_uploaded_document("insurance_certificate", "insurance_policy")
+    )
     if insurance_required and not insurance_present:
         doc_names, doc_ids = _resolve_doc_references(
             document_lookup,

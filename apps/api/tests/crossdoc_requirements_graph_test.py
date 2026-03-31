@@ -33,6 +33,28 @@ def test_run_cross_document_checks_prefers_requirements_graph_for_missing_insura
     assert "CROSSDOC-DOC-1" in rule_ids
 
 
+def test_run_cross_document_checks_detects_missing_insurance_without_presence_entry() -> None:
+    issues = run_cross_document_checks(
+        {
+            "lc": {
+                "requirements_graph_v1": {
+                    "version": "requirements_graph_v1",
+                    "required_document_types": ["insurance_certificate"],
+                }
+            },
+            "documents_presence": {},
+            "documents": [
+                {"type": "commercial_invoice", "name": "Invoice.pdf"},
+                {"type": "bill_of_lading", "name": "Bill_of_Lading.pdf"},
+            ],
+            "lc_text": "",
+        }
+    )
+
+    rule_ids = {issue["rule"] for issue in issues}
+    assert "CROSSDOC-DOC-1" in rule_ids
+
+
 def test_run_cross_document_checks_does_not_raise_missing_insurance_without_graph_or_lc_text() -> None:
     issues = run_cross_document_checks(
         {
