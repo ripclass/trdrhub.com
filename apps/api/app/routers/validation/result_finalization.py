@@ -437,8 +437,14 @@ async def finalize_validation_result(
         lc_terms = dict(structured_result.get("lc_data", {}) or {})
         requirements_graph_v1 = structured_result.get("requirements_graph_v1")
         if not isinstance(requirements_graph_v1, dict):
+            requirements_graph_documents = (
+                payload.get("documents")
+                or structured_result.get("documents_structured")
+                or structured_result.get("documents")
+                or doc_list_for_composition
+            )
             requirements_graph_v1 = _response_shaping.build_requirements_graph_v1(
-                doc_list_for_composition
+                requirements_graph_documents
             )
             if isinstance(requirements_graph_v1, dict):
                 structured_result["requirements_graph_v1"] = requirements_graph_v1
