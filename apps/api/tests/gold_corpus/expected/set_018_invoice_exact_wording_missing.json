@@ -1,0 +1,41 @@
+{
+  "set_id": "set_018_invoice_exact_wording_missing",
+  "description": "LC requires exact wording on the commercial invoice, but the invoice omits it",
+  "version": "1.0",
+  "expected_compliance_rate": 78.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "error",
+  "expected_final_verdict": "reject",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BD018",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "invoice_number",
+      "expected_value": "INV-2026-018",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "CROSSDOC-EXACT-WORDING",
+      "severity": "critical",
+      "document_type": "invoice",
+      "title_contains": "wording",
+      "description": "LC-required wording missing from invoice"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-INV-003",
+      "description": "A missing wording statement should not also turn into a goods mismatch."
+    }
+  ]
+}
