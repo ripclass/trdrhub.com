@@ -692,6 +692,10 @@ DOC_SYNONYMS = {
     "policy": "insurance_certificate",
     "inspection_certificate": "inspection_certificate",
     "beneficiary_certificate": "beneficiary_certificate",
+    "weight_list": "weight_list",
+    "courier_receipt": "courier_receipt",
+    "post_receipt": "post_receipt",
+    "certificate_of_posting": "certificate_of_posting",
 }
 
 REQUIREMENTS_GRAPH_TRANSPORT_TYPES = {
@@ -1209,10 +1213,15 @@ def _rule_matches_doc_requirements(
         if target == "lc":
             continue
         canonical = "bill_of_lading" if target == "transport_document" else target
-        allowed = requirements.get(canonical, True)
+        allowed = requirements.get(canonical)
+        ready = doc_ready_map.get(canonical)
+        if allowed is None and ready is None:
+            return False
+        if allowed is None:
+            allowed = bool(ready)
         if not allowed:
             return False
-        if not doc_ready_map.get(canonical, False):
+        if ready is False:
             return False
     return True
 
@@ -1305,10 +1314,44 @@ def _rule_targets_documents(rule: Dict[str, Any]) -> Set[str]:
         normalized = _normalize_doc_label(entry)
         if normalized:
             targets.add(normalized)
+    for condition in rule.get("conditions") or []:
+        for declared in _condition_declares_document_types(condition):
+            targets.add(declared)
     for path in _extract_rule_field_paths(rule):
         inferred = _infer_doc_from_field(path)
         if inferred:
             targets.add(inferred)
+    return targets
+
+
+def _condition_declares_document_types(condition: Dict[str, Any]) -> Set[str]:
+    targets: Set[str] = set()
+    selector = (
+        condition.get("field")
+        or condition.get("path")
+        or condition.get("left_path")
+        or condition.get("field_path")
+    )
+    if not isinstance(selector, str):
+        return targets
+
+    selector = selector.strip().lower()
+    if selector not in {"document.type", "transport_document.type"}:
+        return targets
+
+    raw_values: List[Any] = []
+    if condition.get("value") is not None:
+        raw_values.append(condition.get("value"))
+    allowed_values = condition.get("allowed_values")
+    if isinstance(allowed_values, list):
+        raw_values.extend(allowed_values)
+    elif allowed_values is not None:
+        raw_values.append(allowed_values)
+
+    for raw in raw_values:
+        normalized = _normalize_doc_label(raw)
+        if normalized:
+            targets.add(normalized)
     return targets
 
 

@@ -304,7 +304,27 @@ class DBRulesAdapter(RulesService):
         }
 
         # Extract common metadata fields to top level for backwards compatibility
-        for key in ("documents", "supplements", "notes", "source"):
+        for key in (
+            "documents",
+            "supplements",
+            "notes",
+            "source",
+            "consequence_class",
+            "execution_priority",
+            "parent_rule",
+            "suppression_policy",
+            "child_rules",
+            "applies_if",
+            "source_authority_tier",
+            "source_authority",
+            "source_document",
+            "source_citation",
+            "effective_from",
+            "jurisdiction_scope",
+            "human_review_status",
+            "parser_confidence",
+            "curation_mode",
+        ):
             value = metadata.get(key)
             if value is not None:
                 payload[key] = value
@@ -610,7 +630,27 @@ class RulesServiceDBAdapter:
             })
             
             # Extract common metadata fields to top level for backwards compatibility
-            for key in ("documents", "supplements", "notes", "source"):
+            for key in (
+                "documents",
+                "supplements",
+                "notes",
+                "source",
+                "consequence_class",
+                "execution_priority",
+                "parent_rule",
+                "suppression_policy",
+                "child_rules",
+                "applies_if",
+                "source_authority_tier",
+                "source_authority",
+                "source_document",
+                "source_citation",
+                "effective_from",
+                "jurisdiction_scope",
+                "human_review_status",
+                "parser_confidence",
+                "curation_mode",
+            ):
                 value = metadata.get(key)
                 if value is not None:
                     output[-1][key] = value

@@ -679,7 +679,17 @@ async def execute_validation_pipeline(
                     if isinstance(insurance_rule_context, dict)
                     else None
                 ),
+                "insurance_rule_context_originals_issued": (
+                    insurance_rule_context.get("originals_issued")
+                    if isinstance(insurance_rule_context, dict)
+                    else None
+                ),
                 "issues_found": len(db_rule_issues),
+                "sample_rule_ids": [
+                    str(issue.get("rule") or issue.get("rule_id") or "")
+                    for issue in (db_rule_issues or [])[:10]
+                    if isinstance(issue, dict)
+                ],
                 "timed_out": db_rules_timed_out,
             }
             if db_rules_timed_out:
