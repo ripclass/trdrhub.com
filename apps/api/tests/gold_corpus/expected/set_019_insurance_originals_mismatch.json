@@ -1,0 +1,48 @@
+{
+  "set_id": "set_019_insurance_originals_mismatch",
+  "description": "LC requires two insurance originals, but the presentation includes only one original",
+  "version": "1.0",
+  "expected_compliance_rate": 82.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "warning",
+  "expected_final_verdict": "review",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BDQ28A",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "invoice_number",
+      "expected_value": "INV-2026-Q28A",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "UCP600-28A",
+      "severity": "minor",
+      "title_contains": "originals",
+      "description": "Insurance originals fewer than LC requirement"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "UCP600-18",
+      "description": "Invoice umbrella article should stay suppressed when the specific insurance originals rule is the only surfaced discrepancy."
+    },
+    {
+      "rule_id": "UCP600-20",
+      "description": "Transport umbrella article should not leak into the insurance originals-only case."
+    },
+    {
+      "rule_id": "UCP600-28",
+      "description": "Insurance umbrella article should stay suppressed when UCP600-28A is the actionable child rule."
+    }
+  ]
+}

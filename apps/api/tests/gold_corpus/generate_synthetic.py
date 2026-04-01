@@ -370,11 +370,18 @@ def create_insurance_certificate(
     *,
     issue_date: Optional[str] = None,
     currency_override: Optional[str] = None,
+    originals_presented: Optional[int] = None,
 ):
     """Create an Insurance Certificate."""
     insured_amount = lc.amount * 1.1  # 110% coverage
     certificate_date = issue_date or datetime.now().strftime('%Y-%m-%d')
     insurance_currency = currency_override or lc.currency
+    originals_lines = ""
+    if originals_presented is not None:
+        originals_lines = (
+            f"\nNumber of Originals: {originals_presented}\n"
+            f"Presented Originals: {originals_presented}\n"
+        )
     content = f"""
 INSURANCE CERTIFICATE
 
@@ -411,6 +418,7 @@ Date: {certificate_date}
 
 ____________________
 Authorized Signature
+{originals_lines}
 """
     output_path.write_text(content)
 
@@ -1848,6 +1856,108 @@ def generate_set_018_invoice_exact_wording_missing():
     return set_id
 
 
+def generate_set_019_insurance_originals_mismatch():
+    """Generate Set 019: LC requires 2 insurance originals, but only 1 is presented."""
+    set_id = "set_019_insurance_originals_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BDQ28A",
+        amount=101000.00,
+        currency="USD",
+        port_of_loading="Chittagong, Bangladesh",
+        port_of_discharge="New York, USA",
+        documents_required=[
+            "Commercial Invoice in triplicate",
+            "Full set of clean on board Bills of Lading",
+            "Packing List",
+            "Certificate of Origin",
+            "Insurance Certificate in 2 originals",
+        ],
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-Q28A",
+        invoice_date="2026-02-15",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026Q28A",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="MAERSK SINGAPORE",
+        voyage_number="V.2026E",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,500 KG",
+        container_number="MSKU1234567",
+        seal_number="SL123456",
+        shipped_on_board_date="2026-03-01",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(
+        lc,
+        set_dir / "Insurance_Certificate.pdf",
+        issue_date="2026-03-01",
+        originals_presented=1,
+    )
+
+    expected = {
+        "set_id": set_id,
+        "description": "LC requires two insurance originals, but the presentation includes only one original",
+        "version": "1.0",
+        "expected_compliance_rate": 82.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "warning",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {"document_type": "lc", "field_name": "lc_number", "expected_value": lc.lc_number, "match_type": "exact", "criticality": "critical"},
+            {"document_type": "invoice", "field_name": "invoice_number", "expected_value": invoice.invoice_number, "match_type": "contains", "criticality": "important"},
+        ],
+        "expected_issues": [
+            {"rule_id": "UCP600-28A", "severity": "minor", "title_contains": "originals", "description": "Insurance originals fewer than LC requirement"}
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "UCP600-18",
+                "description": "Invoice umbrella article should stay suppressed when the specific insurance originals rule is the only surfaced discrepancy."
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "Transport umbrella article should not leak into the insurance originals-only case."
+            },
+            {
+                "rule_id": "UCP600-28",
+                "description": "Insurance umbrella article should stay suppressed when UCP600-28A is the actionable child rule."
+            }
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
 def main():
     """Generate all synthetic test sets."""
     print("=" * 60)
@@ -1876,6 +1986,7 @@ def main():
         generate_set_016_exporter_bin_missing(),
         generate_set_017_exporter_tin_missing(),
         generate_set_018_invoice_exact_wording_missing(),
+        generate_set_019_insurance_originals_mismatch(),
     ]
     
     print("\n" + "=" * 60)
