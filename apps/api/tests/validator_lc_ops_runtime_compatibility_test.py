@@ -378,6 +378,25 @@ async def test_validate_document_async_uses_projected_lc_aliases_and_normalized_
             return {
                 "rules": [
                     {
+                        "rule_id": "UCP600-18",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "invoice",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "umbrella",
+                        "consequence_class": "invoice_discrepancy",
+                        "conditions": [
+                            {
+                                "field": "invoice.issuer",
+                                "operator": "not_equals",
+                                "reference_field": "lc.beneficiary",
+                                "type": "field_match",
+                            }
+                        ],
+                    },
+                    {
                         "rule_id": "UCP600-18B",
                         "domain": "lc_ops",
                         "jurisdiction": "global",
@@ -497,6 +516,7 @@ async def test_validate_document_async_uses_projected_lc_aliases_and_normalized_
                 "document_type": "letter_of_credit",
                 "facts": [
                     {"field_name": "applicant", "normalized_value": "Global Trade Corp", "verification_state": "confirmed"},
+                    {"field_name": "beneficiary", "normalized_value": "Bangladesh Export Ltd", "verification_state": "confirmed"},
                     {"field_name": "currency", "normalized_value": "USD", "verification_state": "confirmed"},
                     {"field_name": "port_of_loading", "normalized_value": "Chittagong, Bangladesh", "verification_state": "confirmed"},
                 ],
@@ -516,6 +536,7 @@ async def test_validate_document_async_uses_projected_lc_aliases_and_normalized_
                 "version": "fact_graph_v1",
                 "document_type": "commercial_invoice",
                 "facts": [
+                    {"field_name": "seller", "normalized_value": "Bangladesh Export Ltd", "verification_state": "confirmed"},
                     {"field_name": "buyer", "normalized_value": "Global Trade Corp", "verification_state": "confirmed"},
                     {"field_name": "currency", "normalized_value": "USD", "verification_state": "confirmed"},
                 ],

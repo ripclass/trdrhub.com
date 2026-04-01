@@ -134,8 +134,10 @@ _INVOICE_VALIDATION_ALIASES = {
     "invoice_date": ("invoice_date", "date", "issue_date"),
     "amount": ("amount", "invoice_amount", "total_amount", "total"),
     "currency": ("currency", "currency_code"),
-    "seller": ("seller", "seller_name", "exporter", "beneficiary"),
-    "buyer": ("buyer", "buyer_name", "importer", "applicant"),
+    "seller": ("seller", "seller_name", "exporter", "beneficiary", "issuer", "issuer_name"),
+    "issuer": ("issuer", "issuer_name", "seller", "seller_name", "exporter", "beneficiary"),
+    "buyer": ("buyer", "buyer_name", "importer", "applicant", "applicant_name"),
+    "applicant_name": ("applicant_name", "buyer", "buyer_name", "importer", "applicant"),
     "goods_description": ("goods_description", "description", "product_description"),
 }
 _BL_VALIDATION_ALIASES = {

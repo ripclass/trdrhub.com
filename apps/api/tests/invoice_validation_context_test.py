@@ -160,3 +160,36 @@ def test_apply_invoice_fact_graph_to_validation_inputs_supports_payment_receipt_
     assert projected["amount"] == "12500.00"
     assert payload["invoice"]["receipt_number"] == "RCPT-26-009"
     assert extracted_context["invoice"]["receipt_number"] == "RCPT-26-009"
+
+
+def test_project_invoice_validation_context_projects_runtime_issuer_and_applicant_aliases() -> None:
+    projected = project_invoice_validation_context(
+        {},
+        fact_graph={
+            "version": "fact_graph_v1",
+            "document_type": "commercial_invoice",
+            "facts": [
+                {
+                    "field_name": "seller",
+                    "value": "Bangladesh Export Ltd",
+                    "normalized_value": "Bangladesh Export Ltd",
+                    "verification_state": "confirmed",
+                },
+                {
+                    "field_name": "buyer",
+                    "value": "Global Trade Corp",
+                    "normalized_value": "Global Trade Corp",
+                    "verification_state": "confirmed",
+                },
+            ],
+        },
+    )
+
+    assert projected["seller"] == "Bangladesh Export Ltd"
+    assert projected["seller_name"] == "Bangladesh Export Ltd"
+    assert projected["issuer"] == "Bangladesh Export Ltd"
+    assert projected["issuer_name"] == "Bangladesh Export Ltd"
+    assert projected["buyer"] == "Global Trade Corp"
+    assert projected["buyer_name"] == "Global Trade Corp"
+    assert projected["applicant"] == "Global Trade Corp"
+    assert projected["applicant_name"] == "Global Trade Corp"
