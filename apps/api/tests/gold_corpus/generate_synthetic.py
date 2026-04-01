@@ -1626,6 +1626,18 @@ def generate_set_015_po_number_missing():
             {
                 "rule_id": "CROSSDOC-TIN",
                 "description": "A PO requirement should not also trigger TIN handling."
+            },
+            {
+                "rule_id": "UCP600-18",
+                "description": "A requirement-backed PO finding should suppress fallback invoice umbrellas."
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "A requirement-backed PO finding should suppress fallback transport umbrellas."
+            },
+            {
+                "rule_id": "UCP600-28",
+                "description": "A requirement-backed PO finding should suppress fallback insurance umbrellas."
             }
         ],
     }
@@ -1712,6 +1724,18 @@ def generate_set_016_exporter_bin_missing():
             {
                 "rule_id": "CROSSDOC-TIN",
                 "description": "A BIN requirement should not also trigger TIN handling."
+            },
+            {
+                "rule_id": "UCP600-18",
+                "description": "A requirement-backed BIN finding should suppress fallback invoice umbrellas."
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "A requirement-backed BIN finding should suppress fallback transport umbrellas."
+            },
+            {
+                "rule_id": "UCP600-28",
+                "description": "A requirement-backed BIN finding should suppress fallback insurance umbrellas."
             }
         ],
     }
@@ -1798,6 +1822,18 @@ def generate_set_017_exporter_tin_missing():
             {
                 "rule_id": "CROSSDOC-BIN",
                 "description": "A TIN requirement should not also trigger BIN handling."
+            },
+            {
+                "rule_id": "UCP600-18",
+                "description": "A requirement-backed TIN finding should suppress fallback invoice umbrellas."
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "A requirement-backed TIN finding should suppress fallback transport umbrellas."
+            },
+            {
+                "rule_id": "UCP600-28",
+                "description": "A requirement-backed TIN finding should suppress fallback insurance umbrellas."
             }
         ],
     }

@@ -236,6 +236,61 @@ def test_validation_contract_surfaces_requirements_driven_statement_findings_in_
     assert "LC-required wording missing from Beneficiary Certificate" in contract["evidence_summary"]["primary_requirement_actions"]
 
 
+def test_validation_contract_tracks_identifier_presence_requirement_findings() -> None:
+    issue_symbols = _load_issue_symbols(
+        {
+            "_build_document_field_hint_index",
+            "_build_unresolved_critical_context",
+        }
+    )
+    contract_symbols = _load_contract_symbols(
+        issue_symbols,
+        {
+            "_classify_reason_semantics",
+            "_build_issue_lane_summary",
+            "_extract_requirement_readiness_items",
+            "_extract_rule_evidence_items",
+            "_classify_rules_signal_classes",
+            "_build_validation_contract",
+        },
+    )
+    build_validation_contract = contract_symbols["_build_validation_contract"]
+
+    submission_eligibility = {
+        "can_submit": False,
+        "reasons": ["missing_document"],
+        "missing_reason_codes": [],
+        "unresolved_critical_fields": [],
+    }
+    contract = build_validation_contract(
+        {"critical_issues": 1, "major_issues": 0, "minor_issues": 0},
+        {"verdict": "SUBMIT", "reasons": [], "risk_flags": []},
+        {"missing_critical": []},
+        submission_eligibility,
+        issues=[
+            {
+                "rule_id": "CROSSDOC-PO-NUMBER",
+                "severity": "critical",
+                "title": "Purchase Order Number Missing from Documents",
+                "message": "LC 47A requires buyer PO number on all documents.",
+                "document_names": ["Letter of Credit", "Commercial Invoice"],
+                "suggestion": "Add the buyer PO number before presentation.",
+                "requirement_source": "requirements_graph_v1",
+                "requirement_kind": "identifier_presence",
+                "requirement_text": "GBE-44592",
+            }
+        ],
+    )
+
+    assert "requirements_identifier_presence" in submission_eligibility["reasons"]
+    assert contract["rules_evidence"]["requirement_reason_codes"] == ["requirements_identifier_presence"]
+    assert contract["rules_evidence"]["requirement_readiness_items"][0]["requirement_kind"] == "identifier_presence"
+    assert contract["rules_evidence"]["requirement_readiness_items"][0]["requirement_text"] == "GBE-44592"
+    assert contract["rules_evidence"]["reason_semantics"]["requirement_findings"] == ["requirements_identifier_presence"]
+    assert contract["evidence_summary"]["requirements_review_needed"] is True
+    assert "Purchase Order Number Missing from Documents" in contract["evidence_summary"]["primary_requirement_actions"]
+
+
 def test_validation_contract_decision_surfaces_force_review_to_not_ready() -> None:
     issue_symbols = _load_issue_symbols(
         {

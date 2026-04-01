@@ -40,6 +40,18 @@
     {
       "rule_id": "CROSSDOC-BIN",
       "description": "A TIN requirement should not also trigger BIN handling."
+    },
+    {
+      "rule_id": "UCP600-18",
+      "description": "A requirement-backed TIN finding should suppress fallback invoice umbrellas."
+    },
+    {
+      "rule_id": "UCP600-20",
+      "description": "A requirement-backed TIN finding should suppress fallback transport umbrellas."
+    },
+    {
+      "rule_id": "UCP600-28",
+      "description": "A requirement-backed TIN finding should suppress fallback insurance umbrellas."
     }
   ]
 }

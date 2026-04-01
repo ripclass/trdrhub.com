@@ -2338,6 +2338,9 @@ class CrossDocValidator:
                 target_field="PO Reference",
                 ucp_article="14(d)",
                 isbp_paragraph="A33",
+                requirement_source="requirements_graph_v1",
+                requirement_kind="identifier_presence",
+                requirement_text=po_number,
             ))
         
         return issues, executed, passed
@@ -2422,6 +2425,9 @@ class CrossDocValidator:
                 target_field="BIN",
                 ucp_article="14(d)",
                 isbp_paragraph="A33",
+                requirement_source="requirements_graph_v1",
+                requirement_kind="identifier_presence",
+                requirement_text=bin_number,
             ))
         
         return issues, executed, passed
@@ -2506,6 +2512,9 @@ class CrossDocValidator:
                 target_field="TIN",
                 ucp_article="14(d)",
                 isbp_paragraph="A33",
+                requirement_source="requirements_graph_v1",
+                requirement_kind="identifier_presence",
+                requirement_text=tin_number,
             ))
         
         return issues, executed, passed

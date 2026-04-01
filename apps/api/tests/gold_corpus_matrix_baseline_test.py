@@ -130,15 +130,15 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
 
     po_set = _load_expected("set_015_po_number_missing.json")
     po_false_positives = _false_positive_rule_ids(po_set)
-    assert {"CROSSDOC-BIN", "CROSSDOC-TIN"}.issubset(po_false_positives)
+    assert {"CROSSDOC-BIN", "CROSSDOC-TIN", "UCP600-18", "UCP600-20", "UCP600-28"}.issubset(po_false_positives)
 
     bin_set = _load_expected("set_016_exporter_bin_missing.json")
     bin_false_positives = _false_positive_rule_ids(bin_set)
-    assert {"CROSSDOC-PO-NUMBER", "CROSSDOC-TIN"}.issubset(bin_false_positives)
+    assert {"CROSSDOC-PO-NUMBER", "CROSSDOC-TIN", "UCP600-18", "UCP600-20", "UCP600-28"}.issubset(bin_false_positives)
 
     tin_set = _load_expected("set_017_exporter_tin_missing.json")
     tin_false_positives = _false_positive_rule_ids(tin_set)
-    assert {"CROSSDOC-PO-NUMBER", "CROSSDOC-BIN"}.issubset(tin_false_positives)
+    assert {"CROSSDOC-PO-NUMBER", "CROSSDOC-BIN", "UCP600-18", "UCP600-20", "UCP600-28"}.issubset(tin_false_positives)
 
     wording_set = _load_expected("set_018_invoice_exact_wording_missing.json")
     wording_false_positives = _false_positive_rule_ids(wording_set)

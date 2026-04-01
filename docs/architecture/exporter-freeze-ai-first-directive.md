@@ -43,9 +43,11 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - [x] `UCP600-18A`
 - [x] `UCP600-18B`
 - [x] `UCP600-18C`
+- [x] `UCP600-18D`
 - [x] `UCP600-20D`
 - [x] `UCP600-28A`
 - [x] `UCP600-28D`
+- [x] `CROSSDOC-EXACT-WORDING`
 
 ### Remaining Exporter Risks
 
