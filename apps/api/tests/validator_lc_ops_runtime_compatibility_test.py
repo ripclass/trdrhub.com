@@ -663,3 +663,118 @@ async def test_validate_document_async_staged_ucp18_shape_passes_when_credit_ali
     )
 
     assert [result.get("rule") for result in results] == []
+
+
+@pytest.mark.asyncio
+async def test_validate_document_async_staged_ucp18a_shape_uses_projected_transferability_and_issuer_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Ucp18ARulesService:
+        async def get_active_ruleset(
+            self,
+            domain: str,
+            jurisdiction: str = "global",
+            document_type: str | None = None,
+        ) -> dict[str, object] | None:
+            if domain != "icc.ucp600":
+                return {"rules": [], "ruleset_version": "1.0.2", "rulebook_version": domain}
+            return {
+                "rules": [
+                    {
+                        "rule_id": "UCP600-18A",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "invoice",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "letter",
+                        "consequence_class": "invoice_discrepancy",
+                        "parent_rule": "UCP600-18",
+                        "conditions": [
+                            {
+                                "field": "invoice.issuer_name",
+                                "operator": "not_equals",
+                                "reference_field": "lc.beneficiary_name",
+                                "type": "field_match",
+                            },
+                            {
+                                "field": "lc.is_transferred",
+                                "operator": "equals",
+                                "value": False,
+                                "type": "field_match",
+                            },
+                        ],
+                        "expected_outcome": {
+                            "valid": ["Presentation complies"],
+                            "invalid": ["Commercial invoice not issued by the LC beneficiary."],
+                        },
+                    }
+                ],
+                "ruleset_version": "1.0.2",
+                "rulebook_version": "UCP600:2007",
+            }
+
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _Ucp18ARulesService())
+
+    async def _fake_inject_semantic_conditions(rules, document_data, evaluator):
+        return rules, {}
+
+    monkeypatch.setattr(
+        validator_module,
+        "_inject_semantic_conditions",
+        _fake_inject_semantic_conditions,
+    )
+
+    documents = [
+        {
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "raw_text": "IRREVOCABLE DOCUMENTARY CREDIT\nField 59: Beneficiary: Bangladesh Export Ltd",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "letter_of_credit",
+                "facts": [
+                    {"field_name": "beneficiary", "normalized_value": "Bangladesh Export Ltd", "verification_state": "confirmed"},
+                    {"field_name": "applicant", "normalized_value": "Global Trade Corp", "verification_state": "confirmed"},
+                    {"field_name": "currency", "normalized_value": "USD", "verification_state": "confirmed"},
+                ],
+            },
+            "requirements_graph_v1": {
+                "required_document_types": ["commercial_invoice"],
+            },
+        },
+        {
+            "document_type": "commercial_invoice",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "commercial_invoice",
+                "facts": [
+                    {"field_name": "seller", "normalized_value": "Eastern Apparel Sourcing Ltd", "verification_state": "confirmed"},
+                    {"field_name": "buyer", "normalized_value": "Global Trade Corp", "verification_state": "confirmed"},
+                    {"field_name": "currency", "normalized_value": "USD", "verification_state": "confirmed"},
+                ],
+            },
+        },
+    ]
+    payload = {
+        "domain": "icc.ucp600",
+        "jurisdiction": "global",
+        "documents": documents,
+        "lc": {"lc_type": "IRREVOCABLE"},
+    }
+    extracted_context = {
+        "documents": documents,
+        "lc": {"lc_type": "IRREVOCABLE"},
+    }
+
+    apply_lc_fact_graph_to_validation_inputs(payload, extracted_context)
+    apply_invoice_fact_graph_to_validation_inputs(payload, extracted_context)
+
+    results = await validator_module.validate_document_async(
+        payload,
+        document_type="commercial_invoice",
+    )
+
+    rule_ids = [result.get("rule") for result in results]
+    assert rule_ids == ["UCP600-18A"]

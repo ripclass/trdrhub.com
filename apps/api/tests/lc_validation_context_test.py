@@ -203,6 +203,7 @@ def test_project_lc_validation_context_uses_requirements_graph_core_terms_when_f
     assert projected["currency_code"] == "USD"
     assert projected["issue_date"] == "2025-11-26"
     assert projected["expiry_date"] == "2026-03-31"
+    assert projected["is_transferred"] is False
 
 
 def test_project_lc_validation_context_does_not_restore_rejected_fact_from_requirements_graph() -> None:
@@ -286,3 +287,55 @@ def test_apply_lc_fact_graph_to_validation_inputs_mutates_payload_and_context_fo
     assert "beneficiary" not in payload["lc"]
     assert extracted_context["lc"]["number"] == "EXP2026BD001"
     assert "beneficiary" not in extracted_context["lc"]
+
+
+def test_project_lc_validation_context_defaults_is_transferred_false_for_non_transferable_lc() -> None:
+    projected = project_lc_validation_context(
+        {"lc_type": "IRREVOCABLE"},
+        document={
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "raw_text": "IRREVOCABLE DOCUMENTARY CREDIT\nField 59: Beneficiary: Bangladesh Export Ltd",
+        },
+        fact_graph={
+            "version": "fact_graph_v1",
+            "document_type": "letter_of_credit",
+            "facts": [
+                {
+                    "field_name": "beneficiary",
+                    "value": "Bangladesh Export Ltd",
+                    "normalized_value": "Bangladesh Export Ltd",
+                    "verification_state": "confirmed",
+                }
+            ],
+        },
+    )
+
+    assert projected["beneficiary"] == "Bangladesh Export Ltd"
+    assert projected["beneficiary_name"] == "Bangladesh Export Ltd"
+    assert projected["is_transferred"] is False
+
+
+def test_project_lc_validation_context_marks_transferable_credit_true_when_expressly_stated() -> None:
+    projected = project_lc_validation_context(
+        {"lc_type": "IRREVOCABLE TRANSFERABLE"},
+        document={
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "raw_text": "IRREVOCABLE TRANSFERABLE DOCUMENTARY CREDIT\nTHIS CREDIT IS TRANSFERABLE",
+        },
+        fact_graph={
+            "version": "fact_graph_v1",
+            "document_type": "letter_of_credit",
+            "facts": [
+                {
+                    "field_name": "beneficiary",
+                    "value": "Bangladesh Export Ltd",
+                    "normalized_value": "Bangladesh Export Ltd",
+                    "verification_state": "confirmed",
+                }
+            ],
+        },
+    )
+
+    assert projected["is_transferred"] is True

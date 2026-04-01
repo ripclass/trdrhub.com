@@ -170,3 +170,66 @@ async def test_build_db_rule_watch_debug_marks_missing_rules(monkeypatch: pytest
     )
 
     assert debug["watched_rules"]["UCP600-28A"] == {"present": False}
+
+
+@pytest.mark.asyncio
+async def test_build_db_rule_watch_debug_evaluates_staged_ucp18a_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _InvoiceWatchRulesService:
+        async def get_active_ruleset(
+            self,
+            domain: str,
+            jurisdiction: str = "global",
+            document_type: str | None = None,
+        ) -> dict[str, object] | None:
+            return {
+                "rules": [
+                    {
+                        "rule_id": "UCP600-18A",
+                        "domain": "lc_ops",
+                        "document_type": "invoice",
+                        "rule_type": "letter",
+                        "consequence_class": "invoice_discrepancy",
+                        "execution_priority": "primary",
+                        "parent_rule": "UCP600-18",
+                        "conditions": [
+                            {
+                                "field": "invoice.issuer_name",
+                                "operator": "not_equals",
+                                "reference_field": "lc.beneficiary_name",
+                                "type": "field_match",
+                            },
+                            {
+                                "field": "lc.is_transferred",
+                                "operator": "equals",
+                                "value": False,
+                                "type": "field_match",
+                            },
+                        ],
+                        "expected_outcome": {
+                            "valid": ["Presentation complies"],
+                            "invalid": ["Commercial invoice not issued by the LC beneficiary."],
+                        },
+                    }
+                ],
+                "ruleset_version": "1.0.2",
+                "rulebook_version": "UCP600",
+            }
+
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _InvoiceWatchRulesService())
+
+    debug = await validation_execution_module._build_db_rule_watch_debug(
+        domain="icc.ucp600",
+        jurisdiction="global",
+        document_data={
+            "invoice": {"issuer_name": "Eastern Apparel Sourcing Ltd"},
+            "lc": {"beneficiary_name": "Bangladesh Export Ltd", "is_transferred": False},
+        },
+        watch_rule_ids=("UCP600-18A",),
+    )
+
+    watch = debug["watched_rules"]["UCP600-18A"]
+    assert watch["present"] is True
+    assert watch["resolved_fields"]["invoice.issuer_name"] == "Eastern Apparel Sourcing Ltd"
+    assert watch["resolved_fields"]["lc.beneficiary_name"] == "Bangladesh Export Ltd"
+    assert watch["resolved_fields"]["lc.is_transferred"] is False
+    assert watch["outcome"]["passed"] is False

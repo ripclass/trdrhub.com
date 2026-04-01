@@ -126,6 +126,7 @@ _LC_VALIDATION_ALIASES = {
     "goods_description": ("goods_description",),
     "documents_required": ("documents_required",),
     "ucp_reference": ("ucp_reference",),
+    "is_transferred": ("is_transferred", "transferable"),
 }
 _INVOICE_VALIDATION_ALIASES = {
     "invoice_number": ("invoice_number", "invoice_no", "inv_no"),
@@ -264,6 +265,81 @@ def _insurance_originals_required_from_requirements(source: Any) -> Optional[int
             return None
 
     return None
+
+
+def _coerce_runtime_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if text in {"true", "yes", "y", "1", "transferable"}:
+        return True
+    if text in {"false", "no", "n", "0", "non_transferable", "non-transferable", "not_transferable"}:
+        return False
+    return None
+
+
+def _infer_lc_is_transferred(*sources: Any) -> bool:
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key in ("is_transferred", "transferable"):
+            value = _coerce_runtime_bool(source.get(key))
+            if value is not None:
+                return value
+
+        lc_type = str(
+            source.get("lc_type")
+            or source.get("transferability")
+            or source.get("form_of_doc_credit")
+            or source.get("form_of_credit")
+            or ""
+        ).strip().lower()
+        if lc_type:
+            if "not transferable" in lc_type or "non-transferable" in lc_type:
+                return False
+            if "transferable" in lc_type:
+                return True
+
+        text_sources = [
+            source.get("raw_text"),
+            source.get("text"),
+            source.get("content"),
+            source.get("narrative"),
+        ]
+        mt700 = source.get("mt700") if isinstance(source.get("mt700"), dict) else {}
+        extraction_artifacts = (
+            source.get("extraction_artifacts_v1")
+            if isinstance(source.get("extraction_artifacts_v1"), dict)
+            else {}
+        )
+        text_sources.extend(
+            [
+                mt700.get("raw_text"),
+                extraction_artifacts.get("raw_text"),
+            ]
+        )
+        for candidate in text_sources:
+            text = str(candidate or "").strip().lower()
+            if not text:
+                continue
+            if "not transferable" in text or "non-transferable" in text:
+                return False
+            if " this credit is transferable" in text or " documentary credit: irrevocable transferable" in text:
+                return True
+            if "transferable" in text and "not transferable" not in text and "non-transferable" not in text:
+                return True
+            if "second beneficiary" in text or "transferred credit" in text:
+                return True
+
+    # UCP600 Art. 38 requires transferability to be expressly stated.
+    return False
 
 
 def materialize_document_fact_graph_v1(document: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -565,6 +641,12 @@ def project_lc_validation_context(
         if any(value not in (None, "", []) for value in alias_values):
             continue
         _apply_projected_lc_term(normalized_field, fact_value)
+
+    projected["is_transferred"] = _infer_lc_is_transferred(
+        projected,
+        document if isinstance(document, dict) else None,
+        requirements_core_terms if isinstance(requirements_core_terms, dict) else None,
+    )
 
     projected["fact_graph_v1"] = selected_fact_graph
     projected["factGraphV1"] = selected_fact_graph
