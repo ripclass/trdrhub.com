@@ -174,7 +174,7 @@ def test_validation_contract_keeps_submission_gate_review_truth() -> None:
     )
 
     assert contract["final_verdict"] == "review"
-    assert contract["override_reason"] == "ai_warn_requires_review"
+    assert contract["override_reason"] == "combined_review_signal"
     assert contract["next_action"] == "escalate_to_l2"
     assert contract["evidence_summary"]["submission_readiness"] == "not_ready"
     assert contract["rules_evidence"]["reason_semantics"]["extraction_failures"] == ["field_not_found"]
@@ -408,3 +408,66 @@ def test_validation_contract_ignores_legacy_submission_gate_when_only_advisory_f
     assert aligned["bank_verdict"]["can_submit"] is True
     assert aligned["submission_eligibility"]["can_submit"] is True
     assert aligned["validation_contract"]["rules_evidence"]["submission_can_submit"] is True
+
+
+def test_validation_contract_promotes_documentary_db_rule_finding_into_review_truth() -> None:
+    issue_symbols = _load_issue_symbols(
+        {
+            "_build_document_field_hint_index",
+            "_build_unresolved_critical_context",
+        }
+    )
+    contract_symbols = _load_contract_symbols(
+        issue_symbols,
+        {
+            "_classify_reason_semantics",
+            "_build_issue_lane_summary",
+            "_extract_requirement_readiness_items",
+            "_extract_rule_evidence_items",
+            "_classify_rules_signal_classes",
+            "_build_validation_contract",
+            "_apply_validation_contract_decision_surfaces",
+        },
+    )
+    build_validation_contract = contract_symbols["_build_validation_contract"]
+    apply_validation_contract_decision_surfaces = contract_symbols[
+        "_apply_validation_contract_decision_surfaces"
+    ]
+
+    contract = build_validation_contract(
+        {"critical_issues": 0, "major_issues": 0, "minor_issues": 0},
+        {"verdict": "SUBMIT", "reasons": [], "risk_flags": [], "can_submit": True},
+        {"missing_critical": []},
+        {
+            "can_submit": True,
+            "reasons": ["bank_verdict_submit"],
+            "missing_reason_codes": [],
+            "unresolved_critical_fields": [],
+        },
+        issues=[
+            {
+                "rule": "UCP600-28A",
+                "title": "Insurance Originals Match LC Requirement",
+                "severity": "minor",
+                "ruleset_domain": "icc.ucp600",
+            }
+        ],
+    )
+
+    assert contract["ruleset_verdict"] == "review"
+    assert contract["final_verdict"] == "review"
+    assert contract["rules_evidence"]["documentary_review_needed"] is True
+    assert contract["rules_evidence"]["issue_lanes"]["documentary"]["count"] == 1
+    assert contract["evidence_summary"]["primary_decision_lane"] == "documentary"
+    assert "rules_review_signal" in contract["review_required_reason"]
+
+    aligned = apply_validation_contract_decision_surfaces(
+        {"verdict": "SUBMIT", "can_submit": True, "recommendation": "Submit."},
+        {"can_submit": True, "reasons": ["bank_verdict_submit"]},
+        contract,
+    )
+
+    assert aligned["bank_verdict"]["verdict"] == "CAUTION"
+    assert aligned["bank_verdict"]["can_submit"] is False
+    assert aligned["submission_eligibility"]["can_submit"] is False
+    assert "validation_contract_review" in aligned["submission_eligibility"]["reasons"]

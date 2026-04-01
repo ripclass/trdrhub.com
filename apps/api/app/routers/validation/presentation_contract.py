@@ -386,6 +386,11 @@ def _build_validation_contract(
     )
     if advisory_only_rules_override:
         ruleset_verdict = "pass"
+    elif ruleset_verdict == "pass":
+        if documentary_blocking_count > 0:
+            ruleset_verdict = "reject"
+        elif documentary_review_needed:
+            ruleset_verdict = "review"
     primary_decision_lane = (
         "documentary"
         if documentary_review_needed
