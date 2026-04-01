@@ -46,6 +46,7 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_018_invoice_exact_wording_missing.json": ["CROSSDOC-EXACT-WORDING"],
         "set_019_insurance_originals_mismatch.json": ["UCP600-28A"],
         "set_020_bl_port_of_loading_mismatch.json": ["UCP600-20D"],
+        "set_021_invoice_currency_mismatch.json": ["UCP600-18C"],
     }
 
     for filename, expected_rules in expected_rule_matrix.items():
@@ -75,6 +76,7 @@ def test_gold_corpus_expected_contract_outcomes_match_live_locked_baseline() -> 
         "set_018_invoice_exact_wording_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
         "set_019_insurance_originals_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
         "set_020_bl_port_of_loading_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_021_invoice_currency_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
     }
 
     for filename, expected in expected_contract_matrix.items():
@@ -142,3 +144,13 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
         "UCP600-28A",
         "LC-TYPE-UNKNOWN",
     }.issubset(loading_port_false_positives)
+
+    invoice_currency_set = _load_expected("set_021_invoice_currency_mismatch.json")
+    invoice_currency_false_positives = _false_positive_rule_ids(invoice_currency_set)
+    assert {
+        "UCP600-18",
+        "UCP600-20",
+        "UCP600-28",
+        "UCP600-28D",
+        "LC-TYPE-UNKNOWN",
+    }.issubset(invoice_currency_false_positives)

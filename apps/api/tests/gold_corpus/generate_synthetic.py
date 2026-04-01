@@ -2081,6 +2081,120 @@ def generate_set_020_bl_port_of_loading_mismatch():
     return set_id
 
 
+def generate_set_021_invoice_currency_mismatch():
+    """Generate Set 021: Invoice currency differs from LC currency."""
+    set_id = "set_021_invoice_currency_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BDQ18C",
+        amount=104500.00,
+        currency="USD",
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-Q18C",
+        invoice_date="2026-03-01",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency="EUR",
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=10.45,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026Q18C",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="MSC DHAKA",
+        voyage_number="V.Q18C",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,050 KG",
+        container_number="MSCUQ18C01",
+        seal_number="SLQ18C1",
+        shipped_on_board_date="2026-03-03",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Commercial invoice is issued in a different currency than the LC",
+        "version": "1.0",
+        "expected_compliance_rate": 82.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "warning",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {
+                "document_type": "lc",
+                "field_name": "lc_number",
+                "expected_value": lc.lc_number,
+                "match_type": "exact",
+                "criticality": "critical",
+            },
+            {
+                "document_type": "invoice",
+                "field_name": "invoice_number",
+                "expected_value": invoice.invoice_number,
+                "match_type": "contains",
+                "criticality": "important",
+            },
+        ],
+        "expected_issues": [
+            {
+                "rule_id": "UCP600-18C",
+                "severity": "minor",
+                "document_type": "invoice",
+                "title_contains": "currency",
+                "description": "Commercial invoice currency differs from the LC",
+            }
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "UCP600-18",
+                "description": "Invoice umbrella article should stay suppressed when UCP600-18C is the actionable child rule.",
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "Transport umbrella article should not leak into the invoice currency-only case.",
+            },
+            {
+                "rule_id": "UCP600-28",
+                "description": "Insurance umbrella article should not leak into the invoice currency-only case.",
+            },
+            {
+                "rule_id": "UCP600-28D",
+                "description": "Insurance currency rule should not appear when only the invoice currency is wrong.",
+            },
+            {
+                "rule_id": "LC-TYPE-UNKNOWN",
+                "description": "LC type uncertainty should not surface once a real documentary discrepancy is already present.",
+            },
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
 def main():
     """Generate all synthetic test sets."""
     print("=" * 60)
@@ -2111,6 +2225,7 @@ def main():
         generate_set_018_invoice_exact_wording_missing(),
         generate_set_019_insurance_originals_mismatch(),
         generate_set_020_bl_port_of_loading_mismatch(),
+        generate_set_021_invoice_currency_mismatch(),
     ]
     
     print("\n" + "=" * 60)

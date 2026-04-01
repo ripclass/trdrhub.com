@@ -1,0 +1,57 @@
+{
+  "set_id": "set_021_invoice_currency_mismatch",
+  "description": "Commercial invoice is issued in a different currency than the LC",
+  "version": "1.0",
+  "expected_compliance_rate": 82.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "warning",
+  "expected_final_verdict": "review",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BDQ18C",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "invoice_number",
+      "expected_value": "INV-2026-Q18C",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "UCP600-18C",
+      "severity": "minor",
+      "document_type": "invoice",
+      "title_contains": "currency",
+      "description": "Commercial invoice currency differs from the LC"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "UCP600-18",
+      "description": "Invoice umbrella article should stay suppressed when UCP600-18C is the actionable child rule."
+    },
+    {
+      "rule_id": "UCP600-20",
+      "description": "Transport umbrella article should not leak into the invoice currency-only case."
+    },
+    {
+      "rule_id": "UCP600-28",
+      "description": "Insurance umbrella article should not leak into the invoice currency-only case."
+    },
+    {
+      "rule_id": "UCP600-28D",
+      "description": "Insurance currency rule should not appear when only the invoice currency is wrong."
+    },
+    {
+      "rule_id": "LC-TYPE-UNKNOWN",
+      "description": "LC type uncertainty should not surface once a real documentary discrepancy is already present."
+    }
+  ]
+}
