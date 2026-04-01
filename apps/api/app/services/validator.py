@@ -1922,11 +1922,19 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
         )
         return []
 
-    filtered_rules_with_meta = [
-        (rule, meta)
-        for rule, meta in aggregated_rules
-        if rule.get("document_type") in (None, "", document_type, "lc")
-    ]
+    filtered_rules_with_meta = []
+    for rule, meta in aggregated_rules:
+        rule_document_type = rule.get("document_type")
+        if rule_document_type in (None, "", document_type, "lc"):
+            filtered_rules_with_meta.append((rule, meta))
+            continue
+
+        # Staged/live lc_ops packs carry document-specific runtime rows
+        # (for example insurance letter rules) that still need LC-package
+        # activation, even when the primary request doc type is invoice.
+        rule_domain = str(rule.get("domain") or "").strip().lower()
+        if rule_domain == "lc_ops":
+            filtered_rules_with_meta.append((rule, meta))
     doc_scope_count = len(filtered_rules_with_meta)
     lc_context = document_data.get("lc") or {}
     requirements_graph = _resolve_requirements_graph(lc_context, document_data)

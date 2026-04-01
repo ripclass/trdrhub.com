@@ -40,7 +40,8 @@ class _FakeRulesService:
                 "rules": [
                     {
                         "rule_id": "UCP600-28A",
-                        "document_type": "lc",
+                        "domain": "lc_ops",
+                        "document_type": "insurance",
                         "title": "Insurance Originals Match LC Requirement",
                         "description": "Insurance originals must satisfy the LC quantity requirement.",
                     }
@@ -77,7 +78,8 @@ class _FallbackRulesService:
                 "rules": [
                     {
                         "rule_id": "UCP600-28A",
-                        "document_type": "lc",
+                        "domain": "lc_ops",
+                        "document_type": "insurance",
                         "title": "Insurance Originals Match LC Requirement",
                         "description": "Insurance originals must satisfy the LC quantity requirement.",
                     }
