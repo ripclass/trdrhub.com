@@ -100,6 +100,8 @@ _OVERLAP_FIELD_ALIASES = {
     "currency": "currency",
     "currency_code": "currency",
     "description": "goods_description",
+    "document_text": "exact_wording",
+    "exact_wording": "exact_wording",
     "goods_description": "goods_description",
     "issuer": "issuer",
     "issuer_name": "issuer",
@@ -115,6 +117,7 @@ _OVERLAP_FIELD_ALIASES = {
     "port_of_discharge": "port_of_discharge",
     "port_of_loading": "port_of_loading",
     "product_description": "goods_description",
+    "required_wording": "exact_wording",
     "seller": "issuer",
     "seller_name": "issuer",
 }
@@ -510,16 +513,38 @@ def _suppress_broad_icc_umbrella_rules(
         return []
 
     specific_families: set[tuple[str, str]] = set()
+    requirement_backed_documentary_issue_present = False
     for issue in issues:
         identity = _parse_icc_rule_identity(issue)
         if identity and identity[2]:
             specific_families.add((identity[0], identity[1]))
+        domain = str(issue.get("ruleset_domain") or "").strip().lower()
+        requirement_source = str(issue.get("requirement_source") or "").strip().lower()
+        requirement_kind = (
+            str(issue.get("requirement_kind") or "")
+            .strip()
+            .lower()
+            .replace("-", "_")
+            .replace(" ", "_")
+        )
+        if (
+            domain.startswith("icc.lcopilot.crossdoc")
+            and requirement_source == "requirements_graph_v1"
+            and requirement_kind in {
+                "document_exact_wording",
+                "document_field_presence",
+                "document_quantity",
+                "identifier_presence",
+            }
+        ):
+            requirement_backed_documentary_issue_present = True
 
-    if not specific_families:
+    if not specific_families and not requirement_backed_documentary_issue_present:
         return issues
 
     filtered: list[dict[str, Any]] = []
     for issue in issues:
+        domain = str(issue.get("ruleset_domain") or "").strip().lower()
         rule_type = str(issue.get("rule_type") or "").strip().lower()
         execution_priority = str(issue.get("execution_priority") or "").strip().lower()
         consequence_class = str(issue.get("consequence_class") or "").strip().lower()
@@ -531,6 +556,18 @@ def _suppress_broad_icc_umbrella_rules(
         ):
             continue
         identity = _parse_icc_rule_identity(issue)
+        if (
+            requirement_backed_documentary_issue_present
+            and identity
+            and not identity[2]
+            and domain.startswith("icc.")
+            and not domain.startswith("icc.lcopilot.crossdoc")
+            and (
+                rule_type == "umbrella"
+                or (execution_priority == "fallback" and consequence_class == "domain_logic")
+            )
+        ):
+            continue
         if identity and not identity[2] and (identity[0], identity[1]) in specific_families:
             continue
         filtered.append(issue)
@@ -1418,6 +1455,13 @@ async def execute_validation_pipeline(
                 "display_card": True,
                 "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
                 "auto_generated": issue_dict.get("auto_generated", False),
+                "source_doc": issue_dict.get("source_doc"),
+                "target_doc": issue_dict.get("target_doc"),
+                "source_field": issue_dict.get("source_field"),
+                "target_field": issue_dict.get("target_field"),
+                "requirement_source": issue_dict.get("requirement_source"),
+                "requirement_kind": issue_dict.get("requirement_kind"),
+                "requirement_text": issue_dict.get("requirement_text"),
                 "overlap_keys": _extract_issue_overlap_keys(issue_dict),
             })
 

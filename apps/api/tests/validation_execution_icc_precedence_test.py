@@ -225,3 +225,62 @@ def test_validation_execution_suppresses_legacy_insurance_currency_duplicate_whe
     )
 
     assert [issue["rule"] for issue in filtered] == ["UCP600-28D"]
+
+
+def test_validation_execution_extracts_exact_wording_overlap_key_from_crossdoc_issue() -> None:
+    fn = _load_symbols()["_extract_issue_overlap_keys"]
+
+    overlap_keys = fn(
+        {
+            "rule": "CROSSDOC-EXACT-WORDING",
+            "ruleset_domain": "icc.lcopilot.crossdoc",
+            "source_doc": "letter_of_credit",
+            "source_field": "Required wording",
+            "target_doc": "commercial_invoice",
+            "target_field": "Document text",
+        }
+    )
+
+    assert overlap_keys == ["invoice.exact_wording|lc.exact_wording"]
+
+
+def test_validation_execution_suppresses_fallback_icc_umbrellas_when_requirement_backed_documentary_issue_exists() -> None:
+    fn = _load_symbols()["_suppress_broad_icc_umbrella_rules"]
+
+    filtered = fn(
+        [
+            {
+                "rule": "CROSSDOC-EXACT-WORDING",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "requirement_source": "requirements_graph_v1",
+                "requirement_kind": "document_exact_wording",
+                "source_doc": "letter_of_credit",
+                "source_field": "Required wording",
+                "target_doc": "commercial_invoice",
+                "target_field": "Document text",
+            },
+            {
+                "rule": "UCP600-18",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+            },
+            {
+                "rule": "UCP600-20",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+            },
+            {
+                "rule": "UCP600-28",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+            },
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["CROSSDOC-EXACT-WORDING"]

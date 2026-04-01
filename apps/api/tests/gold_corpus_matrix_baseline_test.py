@@ -142,7 +142,9 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
 
     wording_set = _load_expected("set_018_invoice_exact_wording_missing.json")
     wording_false_positives = _false_positive_rule_ids(wording_set)
-    assert "CROSSDOC-INV-003" in wording_false_positives
+    assert {"CROSSDOC-INV-003", "UCP600-18", "UCP600-20", "UCP600-28"}.issubset(
+        wording_false_positives
+    )
 
     insurance_originals_set = _load_expected("set_019_insurance_originals_mismatch.json")
     insurance_originals_false_positives = _false_positive_rule_ids(insurance_originals_set)

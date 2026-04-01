@@ -1885,6 +1885,18 @@ def generate_set_018_invoice_exact_wording_missing():
             {
                 "rule_id": "CROSSDOC-INV-003",
                 "description": "A missing wording statement should not also turn into a goods mismatch."
+            },
+            {
+                "rule_id": "UCP600-18",
+                "description": "A requirements-graph exact wording violation should suppress the broad invoice umbrella."
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "A requirements-graph exact wording violation should suppress unrelated bill of lading umbrella noise."
+            },
+            {
+                "rule_id": "UCP600-28",
+                "description": "A requirements-graph exact wording violation should suppress unrelated insurance umbrella noise."
             }
         ],
     }
