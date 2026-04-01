@@ -157,10 +157,9 @@ class RulesImporter:
             )
 
         try:
-            self.db.commit()
+            self.db.flush()
         except Exception as e:
-            self.db.rollback()
-            logger.error(f"Failed to commit rules import: {e}")
+            logger.error(f"Failed to flush rules import: {e}")
             raise
 
         record_rule_audit(

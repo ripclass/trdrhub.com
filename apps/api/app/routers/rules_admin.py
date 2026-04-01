@@ -105,6 +105,53 @@ def _set_rules_activation(db: Session, ruleset_id: Optional[UUID], *, is_active:
     )
 
 
+def _count_active_rules_for_ruleset(db: Session, ruleset_id: Optional[UUID]) -> int:
+    if not ruleset_id:
+        return 0
+    return int(
+        db.query(func.count(RuleRecord.rule_id))
+        .filter(
+            RuleRecord.ruleset_id == ruleset_id,
+            RuleRecord.is_active.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def _expected_importable_rule_count(rules_payload: List[Dict[str, Any]]) -> int:
+    return len(
+        {
+            str(rule.get("rule_id")).strip()
+            for rule in rules_payload
+            if isinstance(rule, dict) and str(rule.get("rule_id") or "").strip()
+        }
+    )
+
+
+def _assert_ruleset_import_integrity(
+    *,
+    ruleset: Ruleset,
+    rules_payload: List[Dict[str, Any]],
+    import_summary: RulesImportSummaryModel,
+    active_rule_count: int,
+) -> None:
+    expected_rule_count = _expected_importable_rule_count(rules_payload)
+    if import_summary.errors:
+        sample = "; ".join(import_summary.errors[:5])
+        suffix = f" (+{len(import_summary.errors) - 5} more)" if len(import_summary.errors) > 5 else ""
+        raise ValueError(
+            f"import produced errors for active ruleset {ruleset.id}: {sample}{suffix}"
+        )
+    if expected_rule_count <= 0:
+        raise ValueError(f"ruleset {ruleset.id} has no importable rules")
+    if active_rule_count != expected_rule_count:
+        raise ValueError(
+            f"active rules count mismatch for ruleset {ruleset.id}: "
+            f"expected {expected_rule_count}, got {active_rule_count}"
+        )
+
+
 rules_router = APIRouter(prefix="/admin/rules", tags=["admin-rules"])
 
 
@@ -599,6 +646,12 @@ async def publish_ruleset(
             ruleset.id,
             import_summary.as_dict(),
         )
+        _assert_ruleset_import_integrity(
+            ruleset=ruleset,
+            rules_payload=rules_payload,
+            import_summary=RulesImportSummaryModel.model_validate(import_summary.as_dict()),
+            active_rule_count=_count_active_rules_for_ruleset(db, ruleset.id),
+        )
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         raise HTTPException(
@@ -694,11 +747,17 @@ async def rollback_ruleset(
 
     try:
         importer = RulesImporter(db)
-        importer.import_ruleset(
+        import_summary = importer.import_ruleset(
             ruleset=target_ruleset,
             rules_payload=rules_payload,
             activate=True,
             actor_id=current_user.id,
+        )
+        _assert_ruleset_import_integrity(
+            ruleset=target_ruleset,
+            rules_payload=rules_payload,
+            import_summary=RulesImportSummaryModel.model_validate(import_summary.as_dict()),
+            active_rule_count=_count_active_rules_for_ruleset(db, target_ruleset.id),
         )
     except Exception as exc:  # noqa: BLE001
         db.rollback()
@@ -1298,6 +1357,13 @@ async def bulk_sync_rules(
                 activate=target.status == RulesetStatus.ACTIVE.value,
                 actor_id=current_user.id,
             )
+            if target.status == RulesetStatus.ACTIVE.value:
+                _assert_ruleset_import_integrity(
+                    ruleset=target,
+                    rules_payload=payload,
+                    import_summary=RulesImportSummaryModel.model_validate(summary.as_dict()),
+                    active_rule_count=_count_active_rules_for_ruleset(db, target.id),
+                )
         except Exception as exc:  # noqa: BLE001
             db.rollback()
             raise HTTPException(
