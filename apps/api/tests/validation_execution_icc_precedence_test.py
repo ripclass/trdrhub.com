@@ -154,6 +154,30 @@ def test_validation_execution_suppresses_legacy_invoice_issuer_duplicate_when_sp
     assert [issue["rule"] for issue in filtered] == ["UCP600-18A"]
 
 
+def test_validation_execution_suppresses_legacy_invoice_goods_duplicate_when_specific_ucp_rule_exists() -> None:
+    fn = _load_symbols()["_suppress_legacy_issue_noise"]
+
+    filtered = fn(
+        [
+            {
+                "rule": "CROSSDOC-INV-003",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "source_doc": "commercial_invoice",
+                "source_field": "goods_description",
+                "target_doc": "letter_of_credit",
+                "target_field": "goods_description",
+            },
+            {
+                "rule": "UCP600-18D",
+                "ruleset_domain": "icc.ucp600",
+                "overlap_keys": ["invoice.goods_description|lc.goods_description"],
+            },
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-18D"]
+
+
 def test_validation_execution_hides_lc_type_unknown_when_actionable_findings_exist() -> None:
     fn = _load_symbols()["_suppress_legacy_issue_noise"]
 

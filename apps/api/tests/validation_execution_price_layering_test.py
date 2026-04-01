@@ -72,3 +72,21 @@ def test_validation_execution_keeps_price_findings_without_documentary_goods_mis
     )
 
     assert filtered == price_issues
+
+
+def test_validation_execution_drops_price_findings_when_documentary_goods_overlap_key_exists() -> None:
+    fn = _load_symbols()["_filter_price_issues_for_documentary_context"]
+
+    filtered = fn(
+        existing_issues=[
+            {
+                "rule": "UCP600-18D",
+                "overlap_keys": ["invoice.goods_description|lc.goods_description"],
+            },
+        ],
+        price_issues=[
+            {"rule": "PRICE-VERIFY-2", "title": "Significant Price Discrepancy"},
+        ],
+    )
+
+    assert filtered == []

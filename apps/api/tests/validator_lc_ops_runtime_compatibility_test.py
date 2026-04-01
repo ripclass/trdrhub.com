@@ -616,7 +616,7 @@ async def test_validate_document_async_staged_ucp18_shape_passes_when_credit_ali
                         "rule_type": "umbrella",
                         "consequence_class": "domain_logic",
                         "conditions": [
-                            {"type": "field_match", "left_path": "invoice.issuer", "right_path": "beneficiary"},
+                            {"type": "field_match", "left_path": "invoice.issuer", "right_path": "credit.beneficiary"},
                             {"type": "field_match", "left_path": "invoice.applicant_name", "right_path": "credit.applicant_name"},
                             {"type": "field_match", "left_path": "invoice.currency", "right_path": "credit.currency"},
                             {"type": "field_match", "left_path": "invoice.goods_description", "right_path": "credit.goods_description"},
@@ -652,8 +652,8 @@ async def test_validate_document_async_staged_ucp18_shape_passes_when_credit_ali
                 "currency": "USD",
                 "goods_description": "100% Cotton T-Shirts, HS Code 6109.10",
             },
-            "beneficiary": "Bangladesh Export Ltd",
             "credit": {
+                "beneficiary": "Bangladesh Export Ltd",
                 "applicant_name": "Global Trade Corp",
                 "currency": "USD",
                 "goods_description": "100% Cotton T-Shirts, HS Code 6109.10",
@@ -918,3 +918,94 @@ async def test_validate_document_async_staged_ucp18b_shape_uses_projected_buyer_
 
     assert [result.get("rule") for result in results] == ["UCP600-18B"]
     assert results[0].get("overlap_keys") == ["invoice.applicant|lc.applicant"]
+
+
+@pytest.mark.asyncio
+async def test_validate_document_async_staged_ucp18d_shape_uses_boolean_overlap_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Ucp18DRulesService:
+        async def get_active_ruleset(
+            self,
+            domain: str,
+            jurisdiction: str = "global",
+            document_type: str | None = None,
+        ) -> dict[str, object] | None:
+            if domain != "icc.ucp600":
+                return {"rules": [], "ruleset_version": "1.0.2", "rulebook_version": domain}
+            return {
+                "rules": [
+                    {
+                        "rule_id": "UCP600-18",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "invoice",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "umbrella",
+                        "consequence_class": "domain_logic",
+                        "conditions": [
+                            {
+                                "field": "invoice.goods_description_matches_lc",
+                                "operator": "equals",
+                                "value": False,
+                                "type": "field_match",
+                            }
+                        ],
+                    },
+                    {
+                        "rule_id": "UCP600-18D",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "invoice",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "letter",
+                        "consequence_class": "invoice_discrepancy",
+                        "parent_rule": "UCP600-18",
+                        "conditions": [
+                            {
+                                "field": "invoice.goods_description_matches_lc",
+                                "operator": "equals",
+                                "value": False,
+                                "type": "field_match",
+                            }
+                        ],
+                        "expected_outcome": {
+                            "valid": ["Presentation complies"],
+                            "invalid": ["Commercial invoice goods description does not correspond with LC goods description."],
+                        },
+                    },
+                ],
+                "ruleset_version": "1.0.2",
+                "rulebook_version": "UCP600:2007",
+            }
+
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _Ucp18DRulesService())
+
+    async def _fake_inject_semantic_conditions(rules, document_data, evaluator):
+        return rules, {}
+
+    monkeypatch.setattr(
+        validator_module,
+        "_inject_semantic_conditions",
+        _fake_inject_semantic_conditions,
+    )
+
+    results = await validator_module.validate_document_async(
+        {
+            "domain": "icc.ucp600",
+            "jurisdiction": "global",
+            "invoice": {
+                "goods_description": "100% Polyester T-Shirts, HS Code 6109.90",
+                "goods_description_matches_lc": False,
+            },
+            "credit": {"goods_description": "100% Cotton T-Shirts, HS Code 6109.10"},
+        },
+        document_type="commercial_invoice",
+    )
+
+    assert [result.get("rule") for result in results] == ["UCP600-18D"]
+    assert results[0].get("overlap_keys") == ["invoice.goods_description|lc.goods_description"]

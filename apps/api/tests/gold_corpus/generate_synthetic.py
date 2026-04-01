@@ -859,20 +859,40 @@ def generate_set_006_goods_mismatch():
         "version": "1.0",
         "expected_compliance_rate": 75.0,
         "compliance_tolerance": 10.0,
-        "expected_status": "error",
-        "expected_final_verdict": "reject",
+        "expected_status": "warning",
+        "expected_final_verdict": "review",
         "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "goods_description", "expected_value": "Cotton", "match_type": "contains", "criticality": "important"},
             {"document_type": "invoice", "field_name": "goods_description", "expected_value": "Polyester", "match_type": "contains", "criticality": "important"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-INV-003", "severity": "major", "document_type": "invoice", "title_contains": "goods", "description": "Goods description mismatch"}
+            {"rule_id": "UCP600-18D", "severity": "minor", "document_type": "invoice", "title_contains": "goods", "description": "Commercial invoice goods description must correspond with the LC"}
         ],
         "false_positive_checks": [
             {
                 "rule_id": "PRICE-VERIFY-2",
                 "description": "Goods mismatch should stay primary without layering a separate price anomaly finding into the documentary lane"
+            },
+            {
+                "rule_id": "CROSSDOC-INV-003",
+                "description": "Specific UCP600-18D should suppress the legacy cross-document goods mismatch duplicate."
+            },
+            {
+                "rule_id": "UCP600-18",
+                "description": "Specific UCP600-18D should suppress the broad invoice umbrella article."
+            },
+            {
+                "rule_id": "UCP600-18A",
+                "description": "Issuer mismatch should not leak into a pure goods-description discrepancy."
+            },
+            {
+                "rule_id": "UCP600-18B",
+                "description": "Applicant mismatch should not leak into a pure goods-description discrepancy."
+            },
+            {
+                "rule_id": "UCP600-18C",
+                "description": "Currency mismatch should not leak into a pure goods-description discrepancy."
             }
         ]
     }

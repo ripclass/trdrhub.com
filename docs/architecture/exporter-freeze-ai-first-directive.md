@@ -41,6 +41,7 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 ### Live-Proven Rule Paths
 
 - [x] `UCP600-18A`
+- [x] `UCP600-18B`
 - [x] `UCP600-18C`
 - [x] `UCP600-20D`
 - [x] `UCP600-28A`

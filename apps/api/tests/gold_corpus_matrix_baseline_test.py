@@ -31,7 +31,7 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_003_port_mismatch.json": ["CROSSDOC-BL-002"],
         "set_004_late_shipment.json": ["CROSSDOC-BL-003"],
         "set_005_insurance_undervalue.json": ["CROSSDOC-INSURANCE-1"],
-        "set_006_goods_mismatch.json": ["CROSSDOC-INV-003"],
+        "set_006_goods_mismatch.json": ["UCP600-18D"],
         "set_007_missing_insurance_document.json": ["DOCSET-MISSING-INSURANCE-CERTIFICATE"],
         "set_008_invoice_after_expiry.json": ["CROSSDOC-INV-004"],
         "set_009_invoice_lc_reference_mismatch.json": ["CROSSDOC-INV-005"],
@@ -99,7 +99,14 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
 
     goods_set = _load_expected("set_006_goods_mismatch.json")
     goods_false_positives = _false_positive_rule_ids(goods_set)
-    assert "PRICE-VERIFY-2" in goods_false_positives
+    assert {
+        "PRICE-VERIFY-2",
+        "CROSSDOC-INV-003",
+        "UCP600-18",
+        "UCP600-18A",
+        "UCP600-18B",
+        "UCP600-18C",
+    }.issubset(goods_false_positives)
 
     invoice_issuer_set = _load_expected("set_011_invoice_issuer_mismatch.json")
     invoice_issuer_false_positives = _false_positive_rule_ids(invoice_issuer_set)

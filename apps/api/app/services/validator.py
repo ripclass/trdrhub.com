@@ -1578,6 +1578,19 @@ def _extract_rule_overlap_keys(rule: Dict[str, Any]) -> List[str]:
             _infer_doc_from_field(right_path),
             right_path,
         )
+        if not key and isinstance(left_path, str):
+            lowered_left_path = left_path.strip().lower()
+            match = re.match(
+                r"^(?P<left_doc>[a-z0-9_]+)\.(?P<field>[a-z0-9_]+)_matches_(?P<right_doc>[a-z0-9_]+)$",
+                lowered_left_path,
+            )
+            if match:
+                key = _build_overlap_key(
+                    match.group("left_doc"),
+                    match.group("field"),
+                    match.group("right_doc"),
+                    match.group("field"),
+                )
         if key and key not in overlap_keys:
             overlap_keys.append(key)
 
@@ -1642,7 +1655,14 @@ def _text_contains_any(text: str, keywords: List[str]) -> bool:
 
 
 def _has_goods_context(lc_context: Dict[str, Any], doc_set: Dict[str, Any]) -> bool:
-    lc_goods = lc_context.get("goods_description")
+    credit_context = doc_set.get("credit") if isinstance(doc_set.get("credit"), dict) else {}
+    mt700 = lc_context.get("mt700") if isinstance(lc_context.get("mt700"), dict) else {}
+    lc_goods = (
+        lc_context.get("goods_description")
+        or credit_context.get("goods_description")
+        or mt700.get("goods_description")
+        or mt700.get("45A")
+    )
     invoice_ctx = doc_set.get("invoice") or {}
     packing_ctx = doc_set.get("packing_list") or {}
     invoice_goods = invoice_ctx.get("goods_description") or invoice_ctx.get("description") or invoice_ctx.get("product_description")

@@ -98,7 +98,20 @@ def _suppress_advisory_findings_for_documentary_context(
         for issue in issues
         if isinstance(issue, dict)
     }
-    if not rules.intersection({"CROSSDOC-INV-003", "CROSSDOC-GOODS-1"}):
+    has_goods_overlap = False
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        overlap_keys = issue.get("overlap_keys")
+        if not isinstance(overlap_keys, list):
+            continue
+        if any(
+            str(key or "").strip() == "invoice.goods_description|lc.goods_description"
+            for key in overlap_keys
+        ):
+            has_goods_overlap = True
+            break
+    if not has_goods_overlap and not rules.intersection({"CROSSDOC-INV-003", "CROSSDOC-GOODS-1"}):
         return issues
 
     return [

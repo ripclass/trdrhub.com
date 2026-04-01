@@ -46,6 +46,23 @@ def test_result_finalization_suppresses_price_findings_when_goods_mismatch_exist
     assert [issue["rule"] for issue in filtered] == ["CROSSDOC-INV-003"]
 
 
+def test_result_finalization_suppresses_price_findings_when_documentary_goods_overlap_exists() -> None:
+    fn = _load_symbols()["_suppress_advisory_findings_for_documentary_context"]
+
+    filtered = fn(
+        [
+            {
+                "rule": "UCP600-18D",
+                "title": "Commercial Invoice: Goods Description Must Correspond to LC",
+                "overlap_keys": ["invoice.goods_description|lc.goods_description"],
+            },
+            {"rule": "PRICE-VERIFY-2", "title": "Significant Price Discrepancy"},
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-18D"]
+
+
 def test_result_finalization_keeps_price_findings_without_goods_mismatch() -> None:
     fn = _load_symbols()["_suppress_advisory_findings_for_documentary_context"]
 

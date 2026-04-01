@@ -207,6 +207,47 @@ def _resolve_insurance_rule_context(
     return (existing if isinstance(existing, dict) else {}), "missing"
 
 
+def _project_invoice_goods_correspondence(
+    payload: Dict[str, Any],
+    extracted_context: Dict[str, Any],
+    lc_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    invoice_context = payload.get("invoice")
+    if not isinstance(invoice_context, dict) or not invoice_context:
+        return {}
+    if not isinstance(lc_context, dict) or not lc_context:
+        return invoice_context
+
+    invoice_goods = (
+        invoice_context.get("goods_description")
+        or invoice_context.get("description")
+        or invoice_context.get("product_description")
+    )
+    mt700 = lc_context.get("mt700") if isinstance(lc_context.get("mt700"), dict) else {}
+    lc_goods = (
+        lc_context.get("goods_description")
+        or mt700.get("goods_description")
+        or mt700.get("45A")
+    )
+    if not invoice_goods or not lc_goods:
+        return invoice_context
+
+    from app.services.validation.crossdoc_validator import CrossDocValidator
+
+    invoice_issue = CrossDocValidator()._check_invoice_goods(
+        invoice_context,
+        {"goods_description": lc_goods},
+    )
+    projected = dict(invoice_context)
+    projected["goods_description_matches_lc"] = invoice_issue is None
+
+    payload["invoice"] = projected
+    if isinstance(extracted_context.get("invoice"), dict):
+        extracted_context["invoice"] = dict(extracted_context["invoice"], goods_description_matches_lc=projected["goods_description_matches_lc"])
+
+    return projected
+
+
 async def _build_db_rule_watch_debug(
     *,
     domain: str,
@@ -415,6 +456,11 @@ def _filter_price_issues_for_documentary_context(
         rule_token = str(rule_token or "").strip().upper()
         if rule_token:
             existing_rules.add(rule_token)
+        overlap_keys = issue.get("overlap_keys") if isinstance(issue, dict) else None
+        if isinstance(overlap_keys, list):
+            for key in overlap_keys:
+                if str(key or "").strip() == "invoice.goods_description|lc.goods_description":
+                    return []
     if existing_rules.intersection({"CROSSDOC-INV-003", "CROSSDOC-GOODS-1"}):
         return []
 
@@ -768,6 +814,7 @@ async def execute_validation_pipeline(
                 payload,
                 extracted_context,
             )
+            _project_invoice_goods_correspondence(payload, extracted_context, lc_ctx)
 
             # Country code mapping (common variations)
             COUNTRY_CODE_MAP = {
@@ -911,7 +958,7 @@ async def execute_validation_pipeline(
                     domain="icc.ucp600",
                     jurisdiction=primary_jurisdiction,
                     document_data=db_rule_payload,
-                    watch_rule_ids=("UCP600-18", "UCP600-18A", "UCP600-20D", "UCP600-28", "UCP600-28A"),
+                    watch_rule_ids=("UCP600-18", "UCP600-18A", "UCP600-18D", "UCP600-20D", "UCP600-28", "UCP600-28A"),
                 )
             except Exception as rule_watch_err:
                 rule_watch_debug = {"error": str(rule_watch_err)}
