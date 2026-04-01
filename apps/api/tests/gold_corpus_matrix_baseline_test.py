@@ -39,7 +39,7 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_011_invoice_issuer_mismatch.json": ["CROSSDOC-INV-002"],
         "set_012_bl_shipper_mismatch.json": ["CROSSDOC-BL-004"],
         "set_013_bl_consignee_mismatch.json": ["CROSSDOC-BL-005"],
-        "set_014_insurance_currency_mismatch.json": ["CROSSDOC-INS-003"],
+        "set_014_insurance_currency_mismatch.json": ["UCP600-28D"],
         "set_015_po_number_missing.json": ["CROSSDOC-PO-NUMBER"],
         "set_016_exporter_bin_missing.json": ["CROSSDOC-BIN"],
         "set_017_exporter_tin_missing.json": ["CROSSDOC-TIN"],
@@ -111,7 +111,7 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
 
     insurance_currency_set = _load_expected("set_014_insurance_currency_mismatch.json")
     insurance_currency_false_positives = _false_positive_rule_ids(insurance_currency_set)
-    assert {"CROSSDOC-INS-002", "CROSSDOC-INSURANCE-1"}.issubset(insurance_currency_false_positives)
+    assert {"CROSSDOC-INS-002", "CROSSDOC-INSURANCE-1", "CROSSDOC-INS-003"}.issubset(insurance_currency_false_positives)
 
     po_set = _load_expected("set_015_po_number_missing.json")
     po_false_positives = _false_positive_rule_ids(po_set)

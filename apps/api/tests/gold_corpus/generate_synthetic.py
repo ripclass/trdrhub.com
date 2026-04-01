@@ -1492,7 +1492,7 @@ def generate_set_014_insurance_currency_mismatch():
             {"document_type": "insurance", "field_name": "currency", "expected_value": "EUR", "match_type": "exact", "criticality": "important"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-INS-003", "severity": "major", "document_type": "insurance", "title_contains": "currency", "description": "Insurance currency mismatch"}
+            {"rule_id": "UCP600-28D", "severity": "minor", "document_type": "insurance", "title_contains": "currency", "description": "Insurance document currency differs from the LC"}
         ],
         "false_positive_checks": [
             {
@@ -1502,6 +1502,10 @@ def generate_set_014_insurance_currency_mismatch():
             {
                 "rule_id": "CROSSDOC-INSURANCE-1",
                 "description": "Currency mismatch should not also degrade into insurance undervalue."
+            },
+            {
+                "rule_id": "CROSSDOC-INS-003",
+                "description": "Legacy crossdoc insurance currency mismatch should stay suppressed when UCP600-28D is the specific live finding."
             }
         ],
     }

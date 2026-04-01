@@ -132,3 +132,16 @@ def test_validation_execution_keeps_lc_type_unknown_when_it_is_the_only_signal()
     issues = [{"rule": "LC-TYPE-UNKNOWN", "ruleset_domain": "system.lc_type"}]
 
     assert fn(issues) == issues
+
+
+def test_validation_execution_suppresses_legacy_insurance_currency_duplicate_when_specific_ucp_rule_exists() -> None:
+    fn = _load_symbols()["_suppress_legacy_issue_noise"]
+
+    filtered = fn(
+        [
+            {"rule": "CROSSDOC-INS-003", "ruleset_domain": "icc.lcopilot.crossdoc"},
+            {"rule": "UCP600-28D", "ruleset_domain": "icc.ucp600"},
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-28D"]
