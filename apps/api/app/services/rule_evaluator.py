@@ -177,7 +177,13 @@ class RuleEvaluator:
         if any(token in consequence for token in ("discrepancy", "violation", "mismatch", "missing")):
             return True
 
-        if str(rule.get("domain") or "").strip().lower() == "lc_ops":
+        domain = str(rule.get("domain") or "").strip().lower()
+        rule_type = str(rule.get("rule_type") or "").strip().lower()
+
+        if domain == "lc_ops" and rule_type in {"letter", "singleton"}:
+            return True
+
+        if domain == "lc_ops":
             invalid = (rule.get("expected_outcome") or {}).get("invalid") or []
             if any(str(item).strip().lower().startswith("remediation:") for item in invalid):
                 return True

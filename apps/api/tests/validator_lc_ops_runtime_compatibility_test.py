@@ -136,3 +136,84 @@ async def test_validate_document_async_surfaces_specific_lc_ops_discrepancy_with
 
     assert "UCP600-28A" in rule_ids
     assert "ISBP745-A1" not in rule_ids
+
+
+@pytest.mark.asyncio
+async def test_validate_document_async_treats_lc_ops_letter_rules_as_discrepancies_without_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _MissingMetadataRulesService:
+        async def get_active_ruleset(
+            self,
+            domain: str,
+            jurisdiction: str = "global",
+            document_type: str | None = None,
+        ) -> dict[str, object] | None:
+            if domain == "icc.ucp600":
+                return {
+                    "rules": [
+                        {
+                            "rule_id": "UCP600-28A",
+                            "domain": "lc_ops",
+                            "jurisdiction": "global",
+                            "severity": "fail",
+                            "deterministic": True,
+                            "requires_llm": False,
+                            "rule_type": "letter",
+                            "title": "Insurance Document: Originals Must Be Presented",
+                            "conditions": [
+                                {
+                                    "field": "insurance_doc.originals_presented",
+                                    "operator": "less_than",
+                                    "reference_field": "insurance_doc.originals_issued",
+                                    "type": "amount_comparison",
+                                }
+                            ],
+                            "expected_outcome": {
+                                "valid": ["Presentation complies"],
+                                "invalid": [
+                                    "Not all issued originals of the insurance document presented."
+                                ],
+                            },
+                        }
+                    ],
+                    "ruleset_version": "1.0.2",
+                    "rulebook_version": "UCP600:2007",
+                }
+            return {"rules": [], "ruleset_version": "1.0.2", "rulebook_version": domain}
+
+    fake_service = _MissingMetadataRulesService()
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: fake_service)
+
+    async def _fake_inject_semantic_conditions(rules, document_data, evaluator):
+        return rules, {}
+
+    monkeypatch.setattr(
+        validator_module,
+        "_inject_semantic_conditions",
+        _fake_inject_semantic_conditions,
+    )
+
+    results = await validator_module.validate_document_async(
+        {
+            "domain": "icc.ucp600",
+            "jurisdiction": "global",
+            "lc": {
+                "requirements_graph_v1": {
+                    "required_document_types": ["insurance_certificate"],
+                },
+            },
+            "insurance": {
+                "originals_presented": 1,
+                "originals_issued": 2,
+            },
+            "insurance_doc": {
+                "originals_presented": 1,
+                "originals_issued": 2,
+            },
+        },
+        document_type="commercial_invoice",
+    )
+
+    rule_ids = [result.get("rule") for result in results]
+    assert rule_ids == ["UCP600-28A"]

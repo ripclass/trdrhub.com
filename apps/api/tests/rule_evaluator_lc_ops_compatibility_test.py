@@ -53,6 +53,41 @@ def test_lc_ops_amount_comparison_reference_field_triggers_discrepancy() -> None
     assert "Not all issued originals" in outcome["message"]
 
 
+def test_lc_ops_letter_rule_defaults_to_discrepancy_trigger_without_consequence_class() -> None:
+    evaluator = RuleEvaluator()
+
+    rule = {
+        "rule_id": "UCP600-28A",
+        "title": "Insurance Document: Originals Must Be Presented",
+        "domain": "lc_ops",
+        "rule_type": "letter",
+        "conditions": [
+            {
+                "field": "insurance_doc.originals_presented",
+                "operator": "less_than",
+                "reference_field": "insurance_doc.originals_issued",
+                "type": "amount_comparison",
+            }
+        ],
+        "expected_outcome": {
+            "valid": ["Presentation complies"],
+            "invalid": ["Not all issued originals of the insurance document presented."],
+        },
+    }
+    context = {
+        "insurance_doc": {
+            "originals_presented": 1,
+            "originals_issued": 2,
+        }
+    }
+
+    outcome = evaluator.evaluate_rule(rule, context)
+
+    assert outcome["passed"] is False
+    assert outcome["not_applicable"] is False
+    assert "Not all issued originals" in outcome["message"]
+
+
 def test_lc_ops_field_match_reference_field_uses_discrepancy_trigger_semantics() -> None:
     evaluator = RuleEvaluator()
 
