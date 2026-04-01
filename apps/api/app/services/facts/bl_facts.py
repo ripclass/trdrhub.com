@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from .models import DocumentFact, DocumentFactSet
-from .normalization import normalize_date, normalize_party_name, normalize_reference
+from .normalization import normalize_date, normalize_location, normalize_party_name, normalize_reference
 
 
 _BL_FACT_FIELDS: Dict[str, Tuple[str, ...]] = {
@@ -143,6 +143,13 @@ def _first_value(
 def _normalize_fact_value(field_name: str, value: Any) -> Optional[Any]:
     if field_name == "on_board_date":
         return normalize_date(value)
+    if field_name in {
+        "port_of_loading",
+        "port_of_discharge",
+        "airport_of_departure",
+        "airport_of_destination",
+    }:
+        return normalize_location(value)
     if field_name in {"shipper", "consignee"}:
         return normalize_party_name(value)
     return normalize_reference(value)

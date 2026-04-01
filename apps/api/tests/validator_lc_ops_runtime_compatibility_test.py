@@ -16,6 +16,12 @@ os.environ["DEBUG"] = "false"
 
 from app.services import rules_service as rules_service_module  # noqa: E402
 from app.services import validator as validator_module  # noqa: E402
+from app.services.facts import (  # noqa: E402
+    apply_bl_fact_graph_to_validation_inputs,
+    apply_insurance_fact_graph_to_validation_inputs,
+    apply_invoice_fact_graph_to_validation_inputs,
+    apply_lc_fact_graph_to_validation_inputs,
+)
 
 
 class _LcOpsCompatibilityRulesService:
@@ -348,6 +354,214 @@ async def test_validate_document_async_suppresses_unrelated_transport_and_notice
                 "originals_issued": 2,
             },
         },
+        document_type="commercial_invoice",
+    )
+
+    rule_ids = [result.get("rule") for result in results]
+    assert rule_ids == ["UCP600-28A"]
+
+
+@pytest.mark.asyncio
+async def test_validate_document_async_uses_projected_lc_aliases_and_normalized_ports_for_live_q28a_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FocusedRulesService:
+        async def get_active_ruleset(
+            self,
+            domain: str,
+            jurisdiction: str = "global",
+            document_type: str | None = None,
+        ) -> dict[str, object] | None:
+            if domain != "icc.ucp600":
+                return {"rules": [], "ruleset_version": "1.0.2", "rulebook_version": domain}
+
+            return {
+                "rules": [
+                    {
+                        "rule_id": "UCP600-18B",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "invoice",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "letter",
+                        "consequence_class": "invoice_discrepancy",
+                        "conditions": [
+                            {
+                                "field": "invoice.buyer_name",
+                                "operator": "not_equals",
+                                "reference_field": "lc.applicant_name",
+                                "type": "field_match",
+                            }
+                        ],
+                    },
+                    {
+                        "rule_id": "UCP600-18C",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "invoice",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "letter",
+                        "consequence_class": "invoice_discrepancy",
+                        "conditions": [
+                            {
+                                "field": "invoice.currency_code",
+                                "operator": "not_equals",
+                                "reference_field": "lc.currency_code",
+                                "type": "field_match",
+                            }
+                        ],
+                    },
+                    {
+                        "rule_id": "UCP600-20D",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "transport",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "letter",
+                        "consequence_class": "bill_of_lading_discrepancy",
+                        "conditions": [
+                            {
+                                "field": "bill_of_lading.port_of_loading",
+                                "operator": "not_equals",
+                                "reference_field": "lc.port_of_loading",
+                                "type": "field_match",
+                            }
+                        ],
+                    },
+                    {
+                        "rule_id": "UCP600-28A",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "insurance",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "letter",
+                        "consequence_class": "insurance_doc_discrepancy",
+                        "conditions": [
+                            {
+                                "field": "insurance_doc.originals_presented",
+                                "operator": "less_than",
+                                "reference_field": "insurance_doc.originals_issued",
+                                "type": "amount_comparison",
+                            }
+                        ],
+                    },
+                    {
+                        "rule_id": "UCP600-28D",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "insurance",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "letter",
+                        "consequence_class": "insurance_doc_discrepancy",
+                        "conditions": [
+                            {
+                                "field": "insurance_doc.currency_code",
+                                "operator": "not_equals",
+                                "reference_field": "lc.currency_code",
+                                "type": "field_match",
+                            }
+                        ],
+                    },
+                ],
+                "ruleset_version": "1.0.2",
+                "rulebook_version": "UCP600:2007",
+            }
+
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _FocusedRulesService())
+
+    async def _fake_inject_semantic_conditions(rules, document_data, evaluator):
+        return rules, {}
+
+    monkeypatch.setattr(
+        validator_module,
+        "_inject_semantic_conditions",
+        _fake_inject_semantic_conditions,
+    )
+
+    documents = [
+        {
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "letter_of_credit",
+                "facts": [
+                    {"field_name": "applicant", "normalized_value": "Global Trade Corp", "verification_state": "confirmed"},
+                    {"field_name": "currency", "normalized_value": "USD", "verification_state": "confirmed"},
+                    {"field_name": "port_of_loading", "normalized_value": "Chittagong, Bangladesh", "verification_state": "confirmed"},
+                ],
+            },
+            "requirements_graph_v1": {
+                "required_document_types": ["commercial_invoice", "bill_of_lading", "insurance_certificate"],
+                "requirements_structured_v1": {
+                    "document_quantities": {
+                        "insurance_certificate": {"originals_required": 2},
+                    }
+                },
+            },
+        },
+        {
+            "document_type": "commercial_invoice",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "commercial_invoice",
+                "facts": [
+                    {"field_name": "buyer", "normalized_value": "Global Trade Corp", "verification_state": "confirmed"},
+                    {"field_name": "currency", "normalized_value": "USD", "verification_state": "confirmed"},
+                ],
+            },
+        },
+        {
+            "document_type": "bill_of_lading",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "bill_of_lading",
+                "facts": [
+                    {"field_name": "port_of_loading", "normalized_value": "Chittagong, Bangladesh", "verification_state": "confirmed"},
+                ],
+            },
+        },
+        {
+            "document_type": "insurance_certificate",
+            "fact_graph_v1": {
+                "version": "fact_graph_v1",
+                "document_type": "insurance_certificate",
+                "facts": [
+                    {"field_name": "currency", "normalized_value": "USD", "verification_state": "confirmed"},
+                    {"field_name": "originals_presented", "normalized_value": 1, "verification_state": "confirmed"},
+                ],
+            },
+        },
+    ]
+    payload = {
+        "domain": "icc.ucp600",
+        "jurisdiction": "global",
+        "documents": documents,
+        "lc": {},
+    }
+    extracted_context = {
+        "documents": documents,
+        "lc": {},
+    }
+
+    apply_lc_fact_graph_to_validation_inputs(payload, extracted_context)
+    apply_invoice_fact_graph_to_validation_inputs(payload, extracted_context)
+    apply_bl_fact_graph_to_validation_inputs(payload, extracted_context)
+    apply_insurance_fact_graph_to_validation_inputs(payload, extracted_context)
+    payload["insurance_doc"] = payload["insurance"]
+
+    results = await validator_module.validate_document_async(
+        payload,
         document_type="commercial_invoice",
     )
 

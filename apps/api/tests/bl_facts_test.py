@@ -152,10 +152,27 @@ def test_build_bl_fact_set_confirms_raw_text_supported_ports() -> None:
     assert pol_fact["origin"] == "artifact_raw_text"
     assert pol_fact["evidence_source"] == "artifact_raw_text"
     assert pol_fact["evidence_snippet"] == "Port of Loading: Chattogram"
+    assert pol_fact["normalized_value"] == "Chittagong"
     assert pod_fact["verification_state"] == "confirmed"
     assert pod_fact["origin"] == "artifact_raw_text"
     assert pod_fact["evidence_source"] == "artifact_raw_text"
     assert pod_fact["evidence_snippet"] == "Port of Discharge: New York"
+
+
+def test_build_bl_fact_set_normalizes_chattogram_alias_to_chittagong() -> None:
+    payload = build_bl_fact_set(
+        {
+            "document_type": "bill_of_lading",
+            "transport_subtype": "bill_of_lading",
+            "extracted_fields": {
+                "port_of_loading": "Chattogram, Bangladesh",
+            },
+        }
+    )
+
+    pol_fact = _fact_by_name(payload, "port_of_loading")
+
+    assert pol_fact["normalized_value"] == "Chittagong, Bangladesh"
 
 
 def test_build_bl_fact_set_preserves_operator_confirmed_values() -> None:

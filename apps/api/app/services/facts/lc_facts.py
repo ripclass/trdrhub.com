@@ -9,6 +9,7 @@ from .normalization import (
     normalize_amount,
     normalize_currency,
     normalize_date,
+    normalize_location,
     normalize_party_name,
     normalize_reference,
 )
@@ -379,6 +380,8 @@ def _normalize_fact_value(field_name: str, value: Any) -> Optional[Any]:
         return normalize_amount(value)
     if field_name == "currency":
         return normalize_currency(value)
+    if field_name in {"port_of_loading", "port_of_discharge"}:
+        return normalize_location(value)
     if field_name in {"applicant", "beneficiary", "issuing_bank", "advising_bank"}:
         return normalize_party_name(value)
     if field_name == "documents_required":

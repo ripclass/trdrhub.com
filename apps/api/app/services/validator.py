@@ -2073,6 +2073,8 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
     for idx, outcome in enumerate(outcomes):
         if outcome.get("not_applicable", False):
             continue
+        if outcome.get("passed", False):
+            continue
 
         envelope = rule_envelopes[idx] if idx < len(rule_envelopes) else {"rule": {}, "meta": base_metadata}
         rule_def = envelope.get("rule", {}) or {}

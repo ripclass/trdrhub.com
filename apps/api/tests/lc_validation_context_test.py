@@ -124,11 +124,16 @@ def test_project_lc_validation_context_uses_only_resolved_rendered_lc_facts() ->
     assert projected["expiry_date"] == "2026-10-15"
     assert projected["latest_shipment"] == "2026-09-30"
     assert projected["applicant"] == "ABC Imports Ltd."
+    assert projected["applicant_name"] == "ABC Imports Ltd."
+    assert projected["buyer"] == "ABC Imports Ltd."
     assert "beneficiary" not in projected
     assert projected["amount"]["value"] == "125000.50"
     assert projected["amount"]["currency"] == "USD"
     assert projected["currency"] == "USD"
+    assert projected["currency_code"] == "USD"
     assert projected["port_of_loading"] == "Chittagong"
+    assert projected["loading_port"] == "Chittagong"
+    assert projected["pol"] == "Chittagong"
     assert projected["goods_description"] == "100% Cotton T-Shirts"
     assert projected["documents_required"] == ["Commercial Invoice", "Packing List"]
     assert projected["incoterm"] == "FOB"
@@ -190,10 +195,12 @@ def test_project_lc_validation_context_uses_requirements_graph_core_terms_when_f
     assert projected["number"] == "EXP2026BD001"
     assert projected["lc_number"] == "EXP2026BD001"
     assert projected["applicant"] == "Global Trade Corp"
+    assert projected["applicant_name"] == "Global Trade Corp"
     assert projected["beneficiary"] == "Bangladesh Export Ltd"
     assert projected["amount"]["value"] == "125000.00"
     assert projected["amount"]["currency"] == "USD"
     assert projected["currency"] == "USD"
+    assert projected["currency_code"] == "USD"
     assert projected["issue_date"] == "2025-11-26"
     assert projected["expiry_date"] == "2026-03-31"
 
@@ -273,6 +280,7 @@ def test_apply_lc_fact_graph_to_validation_inputs_mutates_payload_and_context_fo
     assert projected["number"] == "EXP2026BD001"
     assert projected["lc_number"] == "EXP2026BD001"
     assert projected["issue_date"] == "2026-04-15"
+    assert projected["date_of_issue"] == "2026-04-15"
     assert "beneficiary" not in projected
     assert payload["lc"]["number"] == "EXP2026BD001"
     assert "beneficiary" not in payload["lc"]

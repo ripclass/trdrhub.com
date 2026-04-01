@@ -119,7 +119,7 @@ _LC_VALIDATION_ALIASES = {
     "issuing_bank": ("issuing_bank", "issuer", "issuing_bank_name"),
     "advising_bank": ("advising_bank", "advising_bank_name"),
     "amount": ("amount", "credit_amount", "value"),
-    "currency": ("currency", "ccy"),
+    "currency": ("currency", "currency_code", "ccy"),
     "port_of_loading": ("port_of_loading", "loading_port", "pol"),
     "port_of_discharge": ("port_of_discharge", "discharge_port", "pod"),
     "incoterm": ("incoterm",),
@@ -476,38 +476,42 @@ def project_lc_validation_context(
     def _apply_projected_lc_term(field_name: str, fact_value: Any) -> None:
         if fact_value in (None, "", []):
             return
+        aliases = _LC_VALIDATION_ALIASES.get(field_name, (field_name,))
         if field_name == "lc_number":
-            projected["lc_number"] = fact_value
-            projected["number"] = fact_value
-            projected["reference"] = fact_value
+            for alias in aliases:
+                projected[alias] = fact_value
             return
         if field_name == "issue_date":
-            projected["issue_date"] = fact_value
+            for alias in aliases:
+                projected[alias] = fact_value
             projected.setdefault("dates", {})
             projected["dates"]["issue"] = fact_value
             projected["dates"]["issue_date"] = fact_value
             return
         if field_name == "expiry_date":
-            projected["expiry_date"] = fact_value
+            for alias in aliases:
+                projected[alias] = fact_value
             projected.setdefault("dates", {})
             projected["dates"]["expiry"] = fact_value
             projected["dates"]["expiry_date"] = fact_value
             return
         if field_name == "latest_shipment_date":
-            projected["latest_shipment"] = fact_value
-            projected["latest_shipment_date"] = fact_value
+            for alias in aliases:
+                projected[alias] = fact_value
             projected.setdefault("dates", {})
             projected["dates"]["latest_shipment"] = fact_value
             projected["dates"]["latest_shipment_date"] = fact_value
             return
         if field_name == "port_of_loading":
-            projected["port_of_loading"] = fact_value
+            for alias in aliases:
+                projected[alias] = fact_value
             projected.setdefault("ports", {})
             projected["ports"]["loading"] = fact_value
             projected["ports"]["port_of_loading"] = fact_value
             return
         if field_name == "port_of_discharge":
-            projected["port_of_discharge"] = fact_value
+            for alias in aliases:
+                projected[alias] = fact_value
             projected.setdefault("ports", {})
             projected["ports"]["discharge"] = fact_value
             projected["ports"]["port_of_discharge"] = fact_value
@@ -515,14 +519,18 @@ def project_lc_validation_context(
         if field_name == "amount":
             currency = projected.get("currency")
             projected["amount"] = {"value": fact_value, "currency": currency} if currency else {"value": fact_value}
-            projected["credit_amount"] = fact_value
+            for alias in aliases:
+                if alias != "amount":
+                    projected[alias] = fact_value
             return
         if field_name == "currency":
-            projected["currency"] = fact_value
+            for alias in aliases:
+                projected[alias] = fact_value
             if isinstance(projected.get("amount"), dict):
                 projected["amount"]["currency"] = fact_value
             return
-        projected[field_name] = fact_value
+        for alias in aliases:
+            projected[alias] = fact_value
 
     if isinstance(selected_fact_graph, dict):
         for fact in selected_fact_graph.get("facts") or []:

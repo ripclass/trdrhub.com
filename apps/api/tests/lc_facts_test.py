@@ -170,3 +170,19 @@ def test_build_lc_fact_set_recovers_core_fields_from_artifact_raw_text() -> None
     assert _fact_by_name(payload, "port_of_loading")["normalized_value"] == "Chittagong, Bangladesh"
     assert _fact_by_name(payload, "port_of_discharge")["normalized_value"] == "New York, USA"
     assert _fact_by_name(payload, "ucp_reference")["normalized_value"] == "UCP LATEST VERSION"
+
+
+def test_build_lc_fact_set_normalizes_chattogram_alias_to_chittagong() -> None:
+    payload = build_lc_fact_set(
+        {
+            "document_type": "letter_of_credit",
+            "extraction_lane": "document_ai",
+            "extracted_fields": {
+                "port_of_loading": "Chattogram, Bangladesh",
+            },
+        }
+    )
+
+    fact = _fact_by_name(payload, "port_of_loading")
+
+    assert fact["normalized_value"] == "Chittagong, Bangladesh"

@@ -46,6 +46,22 @@ def normalize_currency(value: Any) -> Optional[str]:
     return text.upper()
 
 
+_LOCATION_TOKEN_REPLACEMENTS = (
+    (re.compile(r"\bchattogram\b", re.IGNORECASE), "Chittagong"),
+)
+
+
+def normalize_location(value: Any) -> Optional[str]:
+    text = _clean_text(value)
+    if not text:
+        return None
+
+    normalized = text
+    for pattern, replacement in _LOCATION_TOKEN_REPLACEMENTS:
+        normalized = pattern.sub(replacement, normalized)
+    return normalized
+
+
 def normalize_date(value: Any) -> Optional[str]:
     text = _clean_text(value)
     if not text:
