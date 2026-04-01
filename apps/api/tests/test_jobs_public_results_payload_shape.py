@@ -71,6 +71,43 @@ def test_extract_option_e_payload_accepts_flat_unversioned_structured_result():
     assert structured["documents_structured"] == [{"document_type": "commercial_invoice"}]
 
 
+def test_extract_option_e_payload_preserves_validation_contract_surfaces():
+    helpers = _load_helpers()
+    extract_option_e_payload = helpers["_extract_option_e_payload"]
+
+    payload = {
+        "structured_result": {
+            "documents_structured": [{"document_type": "insurance_certificate"}],
+            "issues": [{"rule": "UCP600-28A", "severity": "major"}],
+            "submission_eligibility": {
+                "can_submit": False,
+                "reasons": ["validation_contract_review"],
+            },
+            "bank_verdict": {
+                "verdict": "CAUTION",
+                "can_submit": False,
+            },
+            "validation_contract_v1": {
+                "final_verdict": "review",
+                "ruleset_verdict": "review",
+                "rules_evidence": {
+                    "primary_decision_lane": "documentary",
+                    "documentary_review_needed": True,
+                },
+            },
+        }
+    }
+
+    structured = extract_option_e_payload(payload)
+
+    assert structured is not None
+    assert structured["version"] == "structured_result_v1"
+    assert structured["validation_contract_v1"]["final_verdict"] == "review"
+    assert structured["submission_eligibility"]["can_submit"] is False
+    assert structured["bank_verdict"]["verdict"] == "CAUTION"
+    assert structured["issues"][0]["rule"] == "UCP600-28A"
+
+
 def test_build_fallback_structured_result_reconstructs_completed_session_payload():
     helpers = _load_helpers()
     build_fallback_structured_result = helpers["_build_fallback_structured_result"]
