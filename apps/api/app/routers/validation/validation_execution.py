@@ -163,6 +163,97 @@ def _resolve_insurance_rule_context(
     return (existing if isinstance(existing, dict) else {}), "missing"
 
 
+async def _build_db_rule_watch_debug(
+    *,
+    domain: str,
+    jurisdiction: str,
+    document_data: Dict[str, Any],
+    watch_rule_ids: tuple[str, ...] = ("UCP600-28", "UCP600-28A"),
+) -> Dict[str, Any]:
+    """
+    Inspect a few specific normalized DB rules against the exact runtime payload.
+
+    This is a narrow live breadcrumb for diagnosing staged rule imports without
+    widening the main validation contract.
+    """
+    from app.services.rule_evaluator import RuleEvaluator
+    from app.services.rules_service import get_rules_service
+
+    rules_service = get_rules_service()
+    ruleset_data = await rules_service.get_active_ruleset(
+        domain,
+        jurisdiction,
+        document_type=None,
+    )
+    if not isinstance(ruleset_data, dict):
+        return {
+            "domain": domain,
+            "jurisdiction": jurisdiction,
+            "error": "ruleset_unavailable",
+        }
+
+    rules = ruleset_data.get("rules") or []
+    if not isinstance(rules, list):
+        rules = []
+
+    evaluator = RuleEvaluator()
+    watched: Dict[str, Any] = {}
+    for rule_id in watch_rule_ids:
+        rule = next(
+            (
+                candidate
+                for candidate in rules
+                if isinstance(candidate, dict)
+                and str(candidate.get("rule_id") or "").strip().upper() == rule_id.upper()
+            ),
+            None,
+        )
+        if not isinstance(rule, dict):
+            watched[rule_id] = {"present": False}
+            continue
+
+        field_paths = []
+        for condition in rule.get("conditions") or []:
+            if not isinstance(condition, dict):
+                continue
+            for key in ("field", "path", "left_path", "reference_field", "value_ref", "computed_field"):
+                candidate = condition.get(key)
+                if isinstance(candidate, str) and candidate not in field_paths:
+                    field_paths.append(candidate)
+
+        resolved_fields = {
+            path: evaluator.resolve_field_path(document_data, path)
+            for path in field_paths
+        }
+        outcome = evaluator.evaluate_rule(rule, document_data)
+        watched[rule_id] = {
+            "present": True,
+            "domain": rule.get("domain"),
+            "document_type": rule.get("document_type"),
+            "rule_type": rule.get("rule_type"),
+            "consequence_class": rule.get("consequence_class"),
+            "execution_priority": rule.get("execution_priority"),
+            "parent_rule": rule.get("parent_rule"),
+            "condition_count": len(rule.get("conditions") or []),
+            "resolved_fields": resolved_fields,
+            "outcome": {
+                "passed": outcome.get("passed"),
+                "not_applicable": outcome.get("not_applicable"),
+                "message": outcome.get("message"),
+            },
+        }
+
+    ruleset_meta = ruleset_data.get("ruleset") if isinstance(ruleset_data.get("ruleset"), dict) else {}
+    return {
+        "domain": domain,
+        "jurisdiction": jurisdiction,
+        "ruleset_version": ruleset_data.get("ruleset_version") or ruleset_meta.get("ruleset_version"),
+        "rulebook_version": ruleset_data.get("rulebook_version") or ruleset_meta.get("rulebook_version"),
+        "rules_count": len(rules),
+        "watched_rules": watched,
+    }
+
+
 def _shared_get(shared: Any, name: str) -> Any:
     if isinstance(shared, dict):
         return shared[name]
@@ -648,6 +739,16 @@ async def execute_validation_pipeline(
                 primary_jurisdiction, supplement_domains, primary_doc_type
             )
 
+            rule_watch_debug = None
+            try:
+                rule_watch_debug = await _build_db_rule_watch_debug(
+                    domain="icc.ucp600",
+                    jurisdiction=primary_jurisdiction,
+                    document_data=db_rule_payload,
+                )
+            except Exception as rule_watch_err:
+                rule_watch_debug = {"error": str(rule_watch_err)}
+
             db_rule_issues, db_rules_timed_out = await _await_with_timeout(
                 "DB rules execution",
                 validate_document_async(
@@ -690,6 +791,7 @@ async def execute_validation_pipeline(
                     for issue in (db_rule_issues or [])[:10]
                     if isinstance(issue, dict)
                 ],
+                "rule_watch_debug": rule_watch_debug,
                 "timed_out": db_rules_timed_out,
             }
             if db_rules_timed_out:
