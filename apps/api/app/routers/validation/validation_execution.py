@@ -75,6 +75,7 @@ _ICC_RULE_ID_PATTERN = re.compile(
     r"^(?P<prefix>[A-Z0-9]+)-(?P<article>[A-Z]*\d+)(?P<suffix>[A-Z][A-Z0-9]*)?$"
 )
 _SPECIFIC_RULE_SUPPRESSION_MAP = {
+    "UCP600-18A": {"CROSSDOC-INV-002"},
     "UCP600-20D": {"CROSSDOC-BL-001"},
     "UCP600-28D": {"CROSSDOC-INS-003"},
 }

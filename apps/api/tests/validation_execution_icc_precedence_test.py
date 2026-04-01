@@ -113,6 +113,19 @@ def test_validation_execution_suppresses_legacy_crossdoc_duplicate_when_specific
     assert [issue["rule"] for issue in filtered] == ["UCP600-20D"]
 
 
+def test_validation_execution_suppresses_legacy_invoice_issuer_duplicate_when_specific_ucp_rule_exists() -> None:
+    fn = _load_symbols()["_suppress_legacy_issue_noise"]
+
+    filtered = fn(
+        [
+            {"rule": "CROSSDOC-INV-002", "ruleset_domain": "icc.lcopilot.crossdoc"},
+            {"rule": "UCP600-18A", "ruleset_domain": "icc.ucp600"},
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-18A"]
+
+
 def test_validation_execution_hides_lc_type_unknown_when_actionable_findings_exist() -> None:
     fn = _load_symbols()["_suppress_legacy_issue_noise"]
 

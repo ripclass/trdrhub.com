@@ -1254,12 +1254,26 @@ def generate_set_011_invoice_issuer_mismatch():
             {"document_type": "invoice", "field_name": "seller_name", "expected_value": invoice.seller_name, "match_type": "contains", "criticality": "critical"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-INV-002", "severity": "critical", "document_type": "invoice", "title_contains": "issuer", "description": "Invoice issuer mismatch"}
+            {
+                "rule_id": "UCP600-18A",
+                "severity": "minor",
+                "document_type": "invoice",
+                "title_contains": "beneficiary",
+                "description": "Commercial invoice issuer must match the LC beneficiary",
+            }
         ],
         "false_positive_checks": [
             {
                 "rule_id": "CROSSDOC-INV-003",
                 "description": "Pure issuer mismatch should not also turn into a goods mismatch."
+            },
+            {
+                "rule_id": "CROSSDOC-INV-002",
+                "description": "Specific UCP600-18A should suppress the legacy cross-document duplicate."
+            },
+            {
+                "rule_id": "UCP600-18",
+                "description": "Specific UCP600-18A should suppress the broad umbrella article."
             }
         ],
     }
