@@ -45,6 +45,7 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_017_exporter_tin_missing.json": ["CROSSDOC-TIN"],
         "set_018_invoice_exact_wording_missing.json": ["CROSSDOC-EXACT-WORDING"],
         "set_019_insurance_originals_mismatch.json": ["UCP600-28A"],
+        "set_020_bl_port_of_loading_mismatch.json": ["UCP600-20D"],
     }
 
     for filename, expected_rules in expected_rule_matrix.items():
@@ -73,6 +74,7 @@ def test_gold_corpus_expected_contract_outcomes_match_live_locked_baseline() -> 
         "set_017_exporter_tin_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
         "set_018_invoice_exact_wording_missing.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
         "set_019_insurance_originals_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
+        "set_020_bl_port_of_loading_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
     }
 
     for filename, expected in expected_contract_matrix.items():
@@ -130,3 +132,7 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     insurance_originals_set = _load_expected("set_019_insurance_originals_mismatch.json")
     insurance_originals_false_positives = _false_positive_rule_ids(insurance_originals_set)
     assert {"UCP600-18", "UCP600-20", "UCP600-28"}.issubset(insurance_originals_false_positives)
+
+    loading_port_set = _load_expected("set_020_bl_port_of_loading_mismatch.json")
+    loading_port_false_positives = _false_positive_rule_ids(loading_port_set)
+    assert {"UCP600-20", "CROSSDOC-BL-002", "UCP600-28A"}.issubset(loading_port_false_positives)

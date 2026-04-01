@@ -1958,6 +1958,117 @@ def generate_set_019_insurance_originals_mismatch():
     return set_id
 
 
+def generate_set_020_bl_port_of_loading_mismatch():
+    """Generate Set 020: B/L port of loading differs from the LC loading port."""
+    set_id = "set_020_bl_port_of_loading_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BDQ20D",
+        amount=103400.00,
+        currency="USD",
+        port_of_loading="Chittagong, Bangladesh",
+        port_of_discharge="New York, USA",
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-Q20D",
+        invoice_date="2026-02-18",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name=lc.applicant_name,
+        buyer_address=lc.applicant_address,
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=lc.unit_price,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026Q20D",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="MSC DHAKA",
+        voyage_number="V.2026F",
+        port_of_loading="Mongla, Bangladesh",
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,640 KG",
+        container_number="MSKU7654321",
+        seal_number="SL765432",
+        shipped_on_board_date="2026-03-01",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(
+        lc,
+        set_dir / "Insurance_Certificate.pdf",
+        issue_date="2026-03-01",
+    )
+
+    expected = {
+        "set_id": set_id,
+        "description": "Bill of lading shows a different port of loading than the LC",
+        "version": "1.0",
+        "expected_compliance_rate": 82.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "warning",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {
+                "document_type": "lc",
+                "field_name": "lc_number",
+                "expected_value": lc.lc_number,
+                "match_type": "exact",
+                "criticality": "critical",
+            },
+            {
+                "document_type": "bill_of_lading",
+                "field_name": "bl_number",
+                "expected_value": bl.bl_number,
+                "match_type": "contains",
+                "criticality": "important",
+            },
+        ],
+        "expected_issues": [
+            {
+                "rule_id": "UCP600-20D",
+                "severity": "minor",
+                "title_contains": "loading",
+                "description": "Bill of lading port of loading differs from the LC",
+            }
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "UCP600-20",
+                "description": "The umbrella transport article should stay suppressed when UCP600-20D is the actionable child rule.",
+            },
+            {
+                "rule_id": "CROSSDOC-BL-002",
+                "description": "Port of discharge crossdoc mismatch should not fire on a loading-port-only discrepancy.",
+            },
+            {
+                "rule_id": "UCP600-28A",
+                "description": "Insurance originals rule should not leak into a clean transport-only discrepancy.",
+            },
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
 def main():
     """Generate all synthetic test sets."""
     print("=" * 60)
@@ -1987,6 +2098,7 @@ def main():
         generate_set_017_exporter_tin_missing(),
         generate_set_018_invoice_exact_wording_missing(),
         generate_set_019_insurance_originals_mismatch(),
+        generate_set_020_bl_port_of_loading_mismatch(),
     ]
     
     print("\n" + "=" * 60)

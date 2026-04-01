@@ -1,0 +1,48 @@
+{
+  "set_id": "set_020_bl_port_of_loading_mismatch",
+  "description": "Bill of lading shows a different port of loading than the LC",
+  "version": "1.0",
+  "expected_compliance_rate": 82.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "warning",
+  "expected_final_verdict": "review",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "lc_number",
+      "expected_value": "EXP2026BDQ20D",
+      "match_type": "exact",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "bill_of_lading",
+      "field_name": "bl_number",
+      "expected_value": "MSKU2026Q20D",
+      "match_type": "contains",
+      "criticality": "important"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "UCP600-20D",
+      "severity": "minor",
+      "title_contains": "loading",
+      "description": "Bill of lading port of loading differs from the LC"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "UCP600-20",
+      "description": "The umbrella transport article should stay suppressed when UCP600-20D is the actionable child rule."
+    },
+    {
+      "rule_id": "CROSSDOC-BL-002",
+      "description": "Port of discharge crossdoc mismatch should not fire on a loading-port-only discrepancy."
+    },
+    {
+      "rule_id": "UCP600-28A",
+      "description": "Insurance originals rule should not leak into a clean transport-only discrepancy."
+    }
+  ]
+}
