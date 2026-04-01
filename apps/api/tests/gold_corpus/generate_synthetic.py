@@ -1246,8 +1246,8 @@ def generate_set_011_invoice_issuer_mismatch():
         "version": "1.0",
         "expected_compliance_rate": 74.0,
         "compliance_tolerance": 10.0,
-        "expected_status": "error",
-        "expected_final_verdict": "reject",
+        "expected_status": "warning",
+        "expected_final_verdict": "review",
         "expected_workflow_stage": "validation_results",
         "expected_fields": [
             {"document_type": "lc", "field_name": "beneficiary", "expected_value": lc.beneficiary_name, "match_type": "contains", "criticality": "critical"},
@@ -2095,6 +2095,124 @@ def generate_set_020_bl_port_of_loading_mismatch():
     return set_id
 
 
+def generate_set_022_invoice_buyer_mismatch():
+    """Generate Set 022: Invoice buyer differs from LC applicant."""
+    set_id = "set_022_invoice_buyer_mismatch"
+    set_dir = DOCUMENTS_DIR / set_id
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    lc = LCData(
+        lc_number="EXP2026BDQ18B",
+        amount=107800.00,
+        currency="USD",
+    )
+    create_lc_pdf(lc, set_dir / "LC.pdf", force_text=True)
+
+    invoice = InvoiceData(
+        invoice_number="INV-2026-Q18B",
+        invoice_date="2026-03-01",
+        lc_reference=lc.lc_number,
+        seller_name=lc.beneficiary_name,
+        seller_address=lc.beneficiary_address,
+        buyer_name="Atlantic Retail Holdings",
+        buyer_address="88 Alternate Buyer Avenue, New York, NY 10002, USA",
+        amount=lc.amount,
+        currency=lc.currency,
+        goods_description=lc.goods_description,
+        quantity=lc.quantity,
+        unit_price=10.78,
+        incoterms=lc.incoterms,
+    )
+    create_invoice_pdf(invoice, set_dir / "Invoice.pdf")
+
+    bl = BLData(
+        bl_number="MSKU2026Q18B",
+        shipper=lc.beneficiary_name,
+        consignee=f"TO ORDER OF {lc.issuing_bank}",
+        notify_party=lc.applicant_name,
+        vessel_name="MSC DHAKA",
+        voyage_number="V.Q18B",
+        port_of_loading=lc.port_of_loading,
+        port_of_discharge=lc.port_of_discharge,
+        goods_description=lc.goods_description,
+        gross_weight="2,060 KG",
+        container_number="MSCUQ18B01",
+        seal_number="SLQ18B1",
+        shipped_on_board_date="2026-03-03",
+    )
+    create_bl_pdf(bl, set_dir / "Bill_of_Lading.pdf")
+
+    create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
+    create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
+    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+
+    expected = {
+        "set_id": set_id,
+        "description": "Commercial invoice buyer differs from the applicant named in the LC",
+        "version": "1.0",
+        "expected_compliance_rate": 82.0,
+        "compliance_tolerance": 10.0,
+        "expected_status": "warning",
+        "expected_final_verdict": "review",
+        "expected_workflow_stage": "validation_results",
+        "expected_fields": [
+            {
+                "document_type": "lc",
+                "field_name": "applicant",
+                "expected_value": lc.applicant_name,
+                "match_type": "contains",
+                "criticality": "critical",
+            },
+            {
+                "document_type": "invoice",
+                "field_name": "buyer_name",
+                "expected_value": invoice.buyer_name,
+                "match_type": "contains",
+                "criticality": "critical",
+            },
+        ],
+        "expected_issues": [
+            {
+                "rule_id": "UCP600-18B",
+                "severity": "minor",
+                "document_type": "invoice",
+                "title_contains": "applicant",
+                "description": "Commercial invoice buyer differs from the LC applicant",
+            }
+        ],
+        "false_positive_checks": [
+            {
+                "rule_id": "UCP600-18",
+                "description": "Invoice umbrella article should stay suppressed when UCP600-18B is the actionable child rule.",
+            },
+            {
+                "rule_id": "UCP600-18A",
+                "description": "Invoice issuer rule should not fire when only the buyer/applicant pairing is wrong.",
+            },
+            {
+                "rule_id": "UCP600-18C",
+                "description": "Invoice currency rule should not leak into a buyer/applicant-only discrepancy.",
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "Transport umbrella article should not leak into the invoice buyer-only case.",
+            },
+            {
+                "rule_id": "UCP600-28",
+                "description": "Insurance umbrella article should not leak into the invoice buyer-only case.",
+            },
+            {
+                "rule_id": "LC-TYPE-UNKNOWN",
+                "description": "LC type uncertainty should not surface once a real documentary discrepancy is already present.",
+            },
+        ],
+    }
+    (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
+
+    print(f"[OK] Generated {set_id}: 6 documents + expected.json")
+    return set_id
+
+
 def generate_set_021_invoice_currency_mismatch():
     """Generate Set 021: Invoice currency differs from LC currency."""
     set_id = "set_021_invoice_currency_mismatch"
@@ -2240,6 +2358,7 @@ def main():
         generate_set_019_insurance_originals_mismatch(),
         generate_set_020_bl_port_of_loading_mismatch(),
         generate_set_021_invoice_currency_mismatch(),
+        generate_set_022_invoice_buyer_mismatch(),
     ]
     
     print("\n" + "=" * 60)

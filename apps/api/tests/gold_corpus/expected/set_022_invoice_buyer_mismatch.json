@@ -1,0 +1,61 @@
+{
+  "set_id": "set_022_invoice_buyer_mismatch",
+  "description": "Commercial invoice buyer differs from the applicant named in the LC",
+  "version": "1.0",
+  "expected_compliance_rate": 82.0,
+  "compliance_tolerance": 10.0,
+  "expected_status": "warning",
+  "expected_final_verdict": "review",
+  "expected_workflow_stage": "validation_results",
+  "expected_fields": [
+    {
+      "document_type": "lc",
+      "field_name": "applicant",
+      "expected_value": "Global Trade Corp",
+      "match_type": "contains",
+      "criticality": "critical"
+    },
+    {
+      "document_type": "invoice",
+      "field_name": "buyer_name",
+      "expected_value": "Atlantic Retail Holdings",
+      "match_type": "contains",
+      "criticality": "critical"
+    }
+  ],
+  "expected_issues": [
+    {
+      "rule_id": "UCP600-18B",
+      "severity": "minor",
+      "document_type": "invoice",
+      "title_contains": "applicant",
+      "description": "Commercial invoice buyer differs from the LC applicant"
+    }
+  ],
+  "false_positive_checks": [
+    {
+      "rule_id": "UCP600-18",
+      "description": "Invoice umbrella article should stay suppressed when UCP600-18B is the actionable child rule."
+    },
+    {
+      "rule_id": "UCP600-18A",
+      "description": "Invoice issuer rule should not fire when only the buyer/applicant pairing is wrong."
+    },
+    {
+      "rule_id": "UCP600-18C",
+      "description": "Invoice currency rule should not leak into a buyer/applicant-only discrepancy."
+    },
+    {
+      "rule_id": "UCP600-20",
+      "description": "Transport umbrella article should not leak into the invoice buyer-only case."
+    },
+    {
+      "rule_id": "UCP600-28",
+      "description": "Insurance umbrella article should not leak into the invoice buyer-only case."
+    },
+    {
+      "rule_id": "LC-TYPE-UNKNOWN",
+      "description": "LC type uncertainty should not surface once a real documentary discrepancy is already present."
+    }
+  ]
+}
