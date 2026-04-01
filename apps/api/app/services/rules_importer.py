@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
@@ -73,7 +74,13 @@ class RulesImporter:
         # OPTIMIZATION: Pre-fetch all rule_ids that exist in the database
         # This reduces N queries to just 1 query for lookups
         incoming_rule_ids = [r.get("rule_id") for r in rules_payload if r.get("rule_id")]
-        
+        duplicate_counts = Counter(incoming_rule_ids)
+        duplicate_rule_ids = sorted(rule_id for rule_id, count in duplicate_counts.items() if count > 1)
+        if duplicate_rule_ids:
+            sample = ", ".join(duplicate_rule_ids[:10])
+            suffix = f" (+{len(duplicate_rule_ids) - 10} more)" if len(duplicate_rule_ids) > 10 else ""
+            raise ValueError(f"Duplicate rule_ids in payload: {sample}{suffix}")
+
         existing_rules_map: Dict[str, RuleRecord] = {}
         if incoming_rule_ids:
             # Batch query - much faster than N individual queries

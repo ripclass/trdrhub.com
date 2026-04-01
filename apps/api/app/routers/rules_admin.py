@@ -5,6 +5,7 @@ import json
 import hashlib
 import logging
 import re
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -265,23 +266,26 @@ def _validate_ruleset_json(rules_json: list, domain: str = "icc", jurisdiction: 
     
     if not jsonschema:
         warnings.append("jsonschema library not installed - skipping schema validation")
-        return ValidationReport(valid=True, rule_count=len(rules_json), warnings=warnings)
+    else:
+        try:
+            schema = _load_ruleset_schema()
+            validate(instance=rules_json, schema=schema)
+        except ValidationError as e:
+            errors.append(f"Schema validation failed: {e.message}")
+            if e.path:
+                errors.append(f"  Path: {'/'.join(str(p) for p in e.path)}")
+        except Exception as e:
+            errors.append(f"Validation error: {str(e)}")
     
-    try:
-        schema = _load_ruleset_schema()
-        validate(instance=rules_json, schema=schema)
-    except ValidationError as e:
-        errors.append(f"Schema validation failed: {e.message}")
-        if e.path:
-            errors.append(f"  Path: {'/'.join(str(p) for p in e.path)}")
-    except Exception as e:
-        errors.append(f"Validation error: {str(e)}")
-    
-    # Additional validation: check for duplicate rule_ids
+    # Additional validation: duplicate rule_ids are fatal because they will
+    # violate the primary-key constraint during import even for draft uploads.
     rule_ids = [rule.get("rule_id") for rule in rules_json if isinstance(rule, dict)]
-    duplicates = [rid for rid in rule_ids if rule_ids.count(rid) > 1]
+    duplicate_counts = Counter(rid for rid in rule_ids if rid)
+    duplicates = sorted(rid for rid, count in duplicate_counts.items() if count > 1)
     if duplicates:
-        warnings.append(f"Duplicate rule_ids found: {set(duplicates)}")
+        sample = ", ".join(duplicates[:10])
+        suffix = f" (+{len(duplicates) - 10} more)" if len(duplicates) > 10 else ""
+        errors.append(f"Duplicate rule_ids found: {sample}{suffix}")
     
     # Extract metadata
     domains = set(rule.get("domain") for rule in rules_json if isinstance(rule, dict) and rule.get("domain"))
@@ -290,7 +294,8 @@ def _validate_ruleset_json(rules_json: list, domain: str = "icc", jurisdiction: 
     metadata = {
         "domains": list(domains),
         "jurisdictions": list(jurisdictions),
-        "rule_ids": rule_ids[:10]  # First 10 for preview
+        "rule_ids": rule_ids[:10],  # First 10 for preview
+        "duplicate_rule_ids": duplicates[:20],
     }
     
     return ValidationReport(
