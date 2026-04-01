@@ -600,6 +600,7 @@ def activate_rules_for_lc(
         "hs_code": 0,
         "signed_invoice": 0,
         "insurance": 0,
+        "notice": 0,
     }
 
     active: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
@@ -636,6 +637,9 @@ def activate_rules_for_lc(
             continue
         if not toggles["insurance_required"] and _rule_targets_insurance(rule):
             drop_stats["insurance"] += 1
+            continue
+        if _rule_requires_notice_context(rule) and not _has_notice_context(doc_set):
+            drop_stats["notice"] += 1
             continue
         active.append((rule, meta))
 
@@ -696,6 +700,15 @@ DOC_SYNONYMS = {
     "courier_receipt": "courier_receipt",
     "post_receipt": "post_receipt",
     "certificate_of_posting": "certificate_of_posting",
+    "transport_document": "transport_document",
+    "multimodal_transport_document": "multimodal_transport_document",
+    "combined_transport_document": "multimodal_transport_document",
+    "sea_waybill": "sea_waybill",
+    "charter_party_bill_of_lading": "charter_party_bill_of_lading",
+    "air_transport_document": "air_waybill",
+    "air_transport": "air_waybill",
+    "road_transport_document": "road_transport_document",
+    "railway_consignment_note": "railway_consignment_note",
 }
 
 REQUIREMENTS_GRAPH_TRANSPORT_TYPES = {
@@ -735,6 +748,10 @@ FIELD_PREFIX_TO_DOC = {
     "insurance_doc.": "insurance_certificate",
     "insurance.": "insurance_certificate",
     "inspection_certificate.": "inspection_certificate",
+    "sea_waybill.": "sea_waybill",
+    "courier_doc.": "courier_receipt",
+    "post_doc.": "post_receipt",
+    "certificate_of_posting.": "certificate_of_posting",
 }
 
 GOODS_TAG_HINTS = {"goods", "description", "product", "hs_code", "hs code", "quantity", "hs-code"}
@@ -1307,6 +1324,11 @@ def _rule_targets_insurance(rule: Dict[str, Any]) -> bool:
 
 def _rule_targets_documents(rule: Dict[str, Any]) -> Set[str]:
     targets: Set[str] = set()
+    raw_document_type = str(rule.get("document_type") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    normalized_document_type = _normalize_doc_label(raw_document_type)
+    if normalized_document_type:
+        targets.add(normalized_document_type)
+    targets.update(_infer_targets_from_rule_metadata(rule, raw_document_type))
     doc_entries = rule.get("documents") or rule.get("document_types") or []
     if isinstance(doc_entries, str):
         doc_entries = [doc_entries]
@@ -1321,6 +1343,36 @@ def _rule_targets_documents(rule: Dict[str, Any]) -> Set[str]:
         inferred = _infer_doc_from_field(path)
         if inferred:
             targets.add(inferred)
+    return targets
+
+
+def _infer_targets_from_rule_metadata(rule: Dict[str, Any], raw_document_type: str) -> Set[str]:
+    targets: Set[str] = set()
+    title = str(rule.get("title") or "").strip().lower()
+    tags = _normalize_tags(rule)
+
+    if raw_document_type == "transport":
+        if "multimodal" in title or "multimodal" in tags:
+            targets.add("multimodal_transport_document")
+        elif "sea waybill" in title or "sea_waybill" in tags:
+            targets.add("sea_waybill")
+        elif "charter party" in title or "charter_party_bill_of_lading" in tags:
+            targets.add("charter_party_bill_of_lading")
+        elif "air transport" in title or "air_transport" in tags:
+            targets.add("air_waybill")
+        elif "road" in title or "rail" in title or "inland waterway" in title:
+            targets.add("road_transport_document")
+        elif "bill of lading" in title or "bill_of_lading" in tags:
+            targets.add("bill_of_lading")
+        else:
+            targets.add("transport_document")
+
+    if raw_document_type == "certificate":
+        if tags.intersection({"courier", "post_receipt", "certificate_of_posting"}) or (
+            "courier receipt" in title or "certificate of posting" in title
+        ):
+            targets.update({"courier_receipt", "post_receipt", "certificate_of_posting"})
+
     return targets
 
 
@@ -1417,6 +1469,30 @@ def _extract_rule_field_paths(rule: Dict[str, Any]) -> List[str]:
                 if isinstance(candidate, str):
                     paths.append(candidate.lower())
     return paths
+
+
+def _rule_requires_notice_context(rule: Dict[str, Any]) -> bool:
+    title = str(rule.get("title") or "").strip().lower()
+    tags = _normalize_tags(rule)
+    paths = _extract_rule_field_paths(rule)
+
+    if any(path.startswith("notice.") for path in paths):
+        return True
+    if any(path.startswith("presentation.") for path in paths):
+        return True
+    if any(path.startswith("bank.") for path in paths):
+        return True
+    if tags.intersection({"notice", "waiver", "non_compliance", "time_limits"}):
+        return True
+    return "discrepant documents" in title or "waiver" in title
+
+
+def _has_notice_context(doc_set: Dict[str, Any]) -> bool:
+    for key in ("notice", "presentation", "bank"):
+        value = doc_set.get(key)
+        if isinstance(value, dict) and value:
+            return True
+    return False
 
 
 def _normalize_tags(rule: Dict[str, Any]) -> Set[str]:

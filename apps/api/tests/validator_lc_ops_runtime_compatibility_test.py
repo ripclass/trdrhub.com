@@ -219,3 +219,137 @@ async def test_validate_document_async_treats_lc_ops_letter_rules_as_discrepanci
 
     rule_ids = [result.get("rule") for result in results]
     assert rule_ids == ["UCP600-28A"]
+
+
+@pytest.mark.asyncio
+async def test_validate_document_async_suppresses_unrelated_transport_and_notice_rules_for_insurance_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _ScopedRulesService:
+        async def get_active_ruleset(
+            self,
+            domain: str,
+            jurisdiction: str = "global",
+            document_type: str | None = None,
+        ) -> dict[str, object] | None:
+            if domain != "icc.ucp600":
+                return {"rules": [], "ruleset_version": "1.0.2", "rulebook_version": domain}
+
+            return {
+                "rules": [
+                    {
+                        "rule_id": "UCP600-16",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "lc",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "umbrella",
+                        "title": "Discrepant Documents, Waiver and Notice",
+                        "tags": ["notice", "waiver", "non_compliance", "time_limits"],
+                        "conditions": [
+                            {
+                                "left_path": "presentation.status",
+                                "right_path": "non_complying",
+                                "type": "field_match",
+                            },
+                            {"field": "notice.content.refusal_statement", "type": "field_presence"},
+                        ],
+                    },
+                    {
+                        "rule_id": "UCP600-19",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "transport",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "umbrella",
+                        "title": "Transport Document Covering at Least Two Different Modes of Transport",
+                        "tags": ["transport_document", "multimodal", "shipment", "carrier"],
+                        "conditions": [
+                            {"field": "transport_document.carrier_name", "type": "field_presence"},
+                        ],
+                    },
+                    {
+                        "rule_id": "UCP600-25",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "certificate",
+                        "severity": "warn",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "umbrella",
+                        "title": "Courier Receipt, Post Receipt or Certificate of Posting",
+                        "tags": ["courier", "post_receipt", "certificate_of_posting"],
+                        "conditions": [
+                            {"field": "courier_doc.courier_name", "type": "field_presence"},
+                            {"field": "post_doc.signature_or_stamp_and_date", "type": "field_presence"},
+                        ],
+                    },
+                    {
+                        "rule_id": "UCP600-28A",
+                        "domain": "lc_ops",
+                        "jurisdiction": "global",
+                        "document_type": "insurance",
+                        "severity": "fail",
+                        "deterministic": True,
+                        "requires_llm": False,
+                        "rule_type": "letter",
+                        "consequence_class": "insurance_doc_discrepancy",
+                        "title": "Insurance Document: Originals Must Be Presented",
+                        "conditions": [
+                            {
+                                "field": "insurance_doc.originals_presented",
+                                "operator": "less_than",
+                                "reference_field": "insurance_doc.originals_issued",
+                                "type": "amount_comparison",
+                            }
+                        ],
+                        "expected_outcome": {
+                            "valid": ["Presentation complies"],
+                            "invalid": ["Not all issued originals of the insurance document presented."],
+                        },
+                    },
+                ],
+                "ruleset_version": "1.0.2",
+                "rulebook_version": "UCP600:2007",
+            }
+
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _ScopedRulesService())
+
+    async def _fake_inject_semantic_conditions(rules, document_data, evaluator):
+        return rules, {}
+
+    monkeypatch.setattr(
+        validator_module,
+        "_inject_semantic_conditions",
+        _fake_inject_semantic_conditions,
+    )
+
+    results = await validator_module.validate_document_async(
+        {
+            "domain": "icc.ucp600",
+            "jurisdiction": "global",
+            "lc": {
+                "requirements_graph_v1": {
+                    "required_document_types": ["commercial_invoice", "bill_of_lading", "insurance_certificate"],
+                },
+            },
+            "invoice": {"currency_code": "USD"},
+            "bill_of_lading": {"port_of_loading": "Chittagong"},
+            "insurance": {
+                "originals_presented": 1,
+                "originals_issued": 2,
+            },
+            "insurance_doc": {
+                "originals_presented": 1,
+                "originals_issued": 2,
+            },
+        },
+        document_type="commercial_invoice",
+    )
+
+    rule_ids = [result.get("rule") for result in results]
+    assert rule_ids == ["UCP600-28A"]

@@ -37,6 +37,7 @@ def _load_validator_requirement_symbols() -> Dict[str, Any]:
     target_functions = {
         "_get_lc_classification",
         "_normalize_doc_label",
+        "_infer_targets_from_rule_metadata",
         "_infer_doc_from_field",
         "_extract_rule_field_paths",
         "_normalize_tags",
@@ -52,6 +53,9 @@ def _load_validator_requirement_symbols() -> Dict[str, Any]:
         "_rule_targets_signed_invoice",
         "_rule_targets_insurance",
         "_rule_targets_documents",
+        "_condition_declares_document_types",
+        "_rule_requires_notice_context",
+        "_has_notice_context",
     }
 
     selected_nodes: List[ast.AST] = []

@@ -109,3 +109,34 @@ def test_rule_matches_doc_requirements_rejects_unsupported_special_targets() -> 
     )
 
     assert matches is False
+
+
+def test_rule_targets_documents_infers_multimodal_transport_from_rule_metadata() -> None:
+    rule = {
+        "document_type": "transport",
+        "title": "Transport Document Covering at Least Two Different Modes of Transport",
+        "tags": ["transport_document", "multimodal", "shipment", "carrier"],
+        "conditions": [
+            {"field": "transport_document.carrier_name", "type": "field_presence"},
+        ],
+    }
+
+    targets = validator_module._rule_targets_documents(rule)
+
+    assert targets == {"multimodal_transport_document"}
+
+
+def test_rule_targets_documents_infers_courier_family_from_certificate_metadata() -> None:
+    rule = {
+        "document_type": "certificate",
+        "title": "Courier Receipt, Post Receipt or Certificate of Posting",
+        "tags": ["courier", "post_receipt", "certificate_of_posting"],
+        "conditions": [
+            {"field": "courier_doc.courier_name", "type": "field_presence"},
+            {"field": "post_doc.signature_or_stamp_and_date", "type": "field_presence"},
+        ],
+    }
+
+    targets = validator_module._rule_targets_documents(rule)
+
+    assert targets == {"courier_receipt", "post_receipt", "certificate_of_posting"}
