@@ -778,3 +778,4 @@ async def test_validate_document_async_staged_ucp18a_shape_uses_projected_transf
 
     rule_ids = [result.get("rule") for result in results]
     assert rule_ids == ["UCP600-18A"]
+    assert results[0].get("overlap_keys") == ["invoice.issuer|lc.beneficiary"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from app.services.facts import (
@@ -74,10 +74,49 @@ _ICC_RULEBOOK_PREFIXES = {
 _ICC_RULE_ID_PATTERN = re.compile(
     r"^(?P<prefix>[A-Z0-9]+)-(?P<article>[A-Z]*\d+)(?P<suffix>[A-Z][A-Z0-9]*)?$"
 )
-_SPECIFIC_RULE_SUPPRESSION_MAP = {
-    "UCP600-18A": {"CROSSDOC-INV-002"},
-    "UCP600-20D": {"CROSSDOC-BL-001"},
-    "UCP600-28D": {"CROSSDOC-INS-003"},
+_OVERLAP_DOC_ALIASES = {
+    "air_waybill": "bill_of_lading",
+    "bill_of_lading": "bill_of_lading",
+    "commercial_invoice": "invoice",
+    "credit": "lc",
+    "insurance": "insurance",
+    "insurance_certificate": "insurance",
+    "insurance_doc": "insurance",
+    "insurance_policy": "insurance",
+    "invoice": "invoice",
+    "lc": "lc",
+    "letter_of_credit": "lc",
+    "ocean_bill_of_lading": "bill_of_lading",
+    "transport": "bill_of_lading",
+    "transport_document": "bill_of_lading",
+}
+_OVERLAP_FIELD_ALIASES = {
+    "applicant": "applicant",
+    "applicant_name": "applicant",
+    "beneficiary": "beneficiary",
+    "beneficiary_name": "beneficiary",
+    "buyer": "applicant",
+    "buyer_name": "applicant",
+    "currency": "currency",
+    "currency_code": "currency",
+    "description": "goods_description",
+    "goods_description": "goods_description",
+    "issuer": "issuer",
+    "issuer_name": "issuer",
+    "lc_number": "lc_reference",
+    "lc_reference": "lc_reference",
+    "number_of_originals": "originals_presented",
+    "original_count": "originals_presented",
+    "originals_issued": "originals_required",
+    "originals_presented": "originals_presented",
+    "originals_required": "originals_required",
+    "pol": "port_of_loading",
+    "pod": "port_of_discharge",
+    "port_of_discharge": "port_of_discharge",
+    "port_of_loading": "port_of_loading",
+    "product_description": "goods_description",
+    "seller": "issuer",
+    "seller_name": "issuer",
 }
 
 _INSURANCE_RULE_DOCUMENT_TYPES = {
@@ -453,6 +492,59 @@ def _suppress_broad_icc_umbrella_rules(
     return filtered
 
 
+def _normalize_overlap_doc_token(value: Any) -> Optional[str]:
+    token = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not token:
+        return None
+    return _OVERLAP_DOC_ALIASES.get(token, token)
+
+
+def _normalize_overlap_field_token(value: Any) -> Optional[str]:
+    token = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not token:
+        return None
+    if "." in token:
+        token = token.split(".")[-1]
+    return _OVERLAP_FIELD_ALIASES.get(token, token)
+
+
+def _build_overlap_key(
+    source_doc: Any,
+    source_field: Any,
+    target_doc: Any,
+    target_field: Any,
+) -> Optional[str]:
+    source_doc_token = _normalize_overlap_doc_token(source_doc)
+    target_doc_token = _normalize_overlap_doc_token(target_doc)
+    source_field_token = _normalize_overlap_field_token(source_field)
+    target_field_token = _normalize_overlap_field_token(target_field)
+    if not (source_doc_token and source_field_token and target_doc_token and target_field_token):
+        return None
+    terms = sorted(
+        [
+            f"{source_doc_token}.{source_field_token}",
+            f"{target_doc_token}.{target_field_token}",
+        ]
+    )
+    return "|".join(terms)
+
+
+def _extract_issue_overlap_keys(issue: Dict[str, Any]) -> List[str]:
+    overlap_keys = issue.get("overlap_keys")
+    if isinstance(overlap_keys, list):
+        normalized = [str(key).strip() for key in overlap_keys if str(key).strip()]
+        if normalized:
+            return normalized
+
+    key = _build_overlap_key(
+        issue.get("source_doc"),
+        issue.get("source_field"),
+        issue.get("target_doc"),
+        issue.get("target_field"),
+    )
+    return [key] if key else []
+
+
 def _suppress_legacy_issue_noise(
     issues: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -465,27 +557,38 @@ def _suppress_legacy_issue_noise(
     if not issues:
         return []
 
-    present_rules = {
-        str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
-        for issue in issues
-        if isinstance(issue, dict) and str(issue.get("rule") or issue.get("rule_id") or "").strip()
-    }
-
-    suppressed_rules: set[str] = set()
-    for specific_rule, legacy_rules in _SPECIFIC_RULE_SUPPRESSION_MAP.items():
-        if specific_rule in present_rules:
-            suppressed_rules.update(str(rule).strip().upper() for rule in legacy_rules if str(rule).strip())
+    present_rules: set[str] = set()
+    icc_overlap_keys: set[str] = set()
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        rule_id = str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
+        if rule_id:
+            present_rules.add(rule_id)
+        domain = str(issue.get("ruleset_domain") or "").strip().lower()
+        if domain.startswith("icc.") and not domain.startswith("icc.lcopilot.crossdoc"):
+            icc_overlap_keys.update(_extract_issue_overlap_keys(issue))
 
     actionable_issue_present = any(rule_id != "LC-TYPE-UNKNOWN" for rule_id in present_rules)
 
     filtered: list[dict[str, Any]] = []
     for issue in issues:
-        rule_id = str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
-        if rule_id in suppressed_rules:
+        if not isinstance(issue, dict):
             continue
+        rule_id = str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
         if rule_id == "LC-TYPE-UNKNOWN" and actionable_issue_present:
             continue
-        filtered.append(issue)
+        domain = str(issue.get("ruleset_domain") or "").strip().lower()
+        issue_overlap_keys = set(_extract_issue_overlap_keys(issue))
+        if (
+            domain.startswith("icc.lcopilot.crossdoc")
+            and issue_overlap_keys
+            and icc_overlap_keys.intersection(issue_overlap_keys)
+        ):
+            continue
+        cleaned_issue = dict(issue)
+        cleaned_issue.pop("overlap_keys", None)
+        filtered.append(cleaned_issue)
 
     return filtered
 
@@ -1268,6 +1371,7 @@ async def execute_validation_pipeline(
                 "display_card": True,
                 "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.lcopilot.crossdoc",
                 "auto_generated": issue_dict.get("auto_generated", False),
+                "overlap_keys": _extract_issue_overlap_keys(issue_dict),
             })
 
     # Add DB rule issues (2500+ rules from database)
@@ -1297,6 +1401,7 @@ async def execute_validation_pipeline(
                 "execution_priority": issue_dict.get("execution_priority"),
                 "parent_rule": issue_dict.get("parent_rule"),
                 "has_specific_family_rules": issue_dict.get("has_specific_family_rules"),
+                "overlap_keys": issue_dict.get("overlap_keys") or [],
             })
         logger.info("Added %d DB rule issues to failed_results", len(db_rule_issues))
 

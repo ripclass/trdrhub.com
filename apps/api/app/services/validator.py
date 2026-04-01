@@ -1452,6 +1452,138 @@ def _infer_doc_from_field(field_path: Optional[str]) -> Optional[str]:
     return None
 
 
+_OVERLAP_FIELD_ALIASES = {
+    "applicant": "applicant",
+    "applicant_name": "applicant",
+    "beneficiary": "beneficiary",
+    "beneficiary_name": "beneficiary",
+    "buyer": "applicant",
+    "buyer_name": "applicant",
+    "copies": "copies",
+    "copies_presented": "copies",
+    "copies_required": "copies",
+    "currency": "currency",
+    "currency_code": "currency",
+    "date": "date",
+    "date_of_issue": "date_of_issue",
+    "description": "goods_description",
+    "dispatch_date": "shipment_date",
+    "goods": "goods_description",
+    "goods_description": "goods_description",
+    "insured_amount": "insured_amount",
+    "issuer": "issuer",
+    "issuer_name": "issuer",
+    "latest_shipment": "latest_shipment",
+    "latest_shipment_date": "latest_shipment",
+    "lc_number": "lc_reference",
+    "lc_reference": "lc_reference",
+    "net_weight": "weight",
+    "gross_weight": "weight",
+    "on_board": "on_board",
+    "original_count": "originals_presented",
+    "number_of_originals": "originals_presented",
+    "originals_issued": "originals_required",
+    "originals_presented": "originals_presented",
+    "originals_required": "originals_required",
+    "packing_date": "date",
+    "place_of_delivery": "place_of_delivery",
+    "place_of_receipt": "place_of_receipt",
+    "pol": "port_of_loading",
+    "pod": "port_of_discharge",
+    "port_of_discharge": "port_of_discharge",
+    "port_of_loading": "port_of_loading",
+    "product_description": "goods_description",
+    "seller": "issuer",
+    "seller_name": "issuer",
+    "shipment_date": "shipment_date",
+    "shipper": "shipper",
+}
+
+
+def _normalize_overlap_doc_label(value: Any) -> Optional[str]:
+    normalized = _normalize_doc_label(value)
+    token = str(normalized or value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not token:
+        return None
+    if token in REQUIREMENTS_GRAPH_INVOICE_TYPES or token in {"invoice", "commercial_invoice"}:
+        return "invoice"
+    if token in REQUIREMENTS_GRAPH_TRANSPORT_TYPES or token in {
+        "bill_of_lading",
+        "ocean_bill_of_lading",
+        "charter_party_bill_of_lading",
+        "transport_document",
+        "transport",
+    }:
+        return "bill_of_lading"
+    if token in REQUIREMENTS_GRAPH_INSURANCE_TYPES or token in {
+        "insurance",
+        "insurance_doc",
+        "insurance_certificate",
+        "insurance_policy",
+    }:
+        return "insurance"
+    if token in {"lc", "credit", "letter_of_credit"}:
+        return "lc"
+    if token in {"packing_list", "certificate_of_origin", "inspection_certificate", "beneficiary_certificate"}:
+        return token
+    return token
+
+
+def _normalize_overlap_field_label(value: Any) -> Optional[str]:
+    token = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not token:
+        return None
+    if "." in token:
+        token = token.split(".")[-1]
+    return _OVERLAP_FIELD_ALIASES.get(token, token)
+
+
+def _build_overlap_key(
+    left_doc: Optional[str],
+    left_field: Optional[str],
+    right_doc: Optional[str],
+    right_field: Optional[str],
+) -> Optional[str]:
+    left_doc_token = _normalize_overlap_doc_label(left_doc)
+    right_doc_token = _normalize_overlap_doc_label(right_doc)
+    left_field_token = _normalize_overlap_field_label(left_field)
+    right_field_token = _normalize_overlap_field_label(right_field)
+    if not (left_doc_token and left_field_token and right_doc_token and right_field_token):
+        return None
+    terms = sorted(
+        [
+            f"{left_doc_token}.{left_field_token}",
+            f"{right_doc_token}.{right_field_token}",
+        ]
+    )
+    return "|".join(terms)
+
+
+def _extract_rule_overlap_keys(rule: Dict[str, Any]) -> List[str]:
+    overlap_keys: List[str] = []
+    default_doc = _normalize_overlap_doc_label(rule.get("document_type"))
+
+    for condition in rule.get("conditions") or []:
+        if not isinstance(condition, dict):
+            continue
+        left_path = condition.get("left_path") or condition.get("field") or condition.get("path")
+        right_path = (
+            condition.get("right_path")
+            or condition.get("reference_field")
+            or condition.get("value_ref")
+        )
+        key = _build_overlap_key(
+            _infer_doc_from_field(left_path) or default_doc,
+            left_path,
+            _infer_doc_from_field(right_path),
+            right_path,
+        )
+        if key and key not in overlap_keys:
+            overlap_keys.append(key)
+
+    return overlap_keys
+
+
 def _extract_rule_field_paths(rule: Dict[str, Any]) -> List[str]:
     paths: List[str] = []
     for bucket_name in ("applies_if", "conditions"):
@@ -2120,6 +2252,7 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             "execution_priority": rule_def.get("execution_priority"),
             "parent_rule": rule_def.get("parent_rule"),
             "has_specific_family_rules": has_specific_family_rules,
+            "overlap_keys": _extract_rule_overlap_keys(rule_def),
         }
 
         sem_keys = semantic_registry.get(result_payload["rule"], [])

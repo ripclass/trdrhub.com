@@ -21,11 +21,16 @@ def _load_symbols() -> Dict[str, Any]:
                 if isinstance(target, ast.Name) and target.id in {
                     "_ICC_RULEBOOK_PREFIXES",
                     "_ICC_RULE_ID_PATTERN",
-                    "_SPECIFIC_RULE_SUPPRESSION_MAP",
+                    "_OVERLAP_DOC_ALIASES",
+                    "_OVERLAP_FIELD_ALIASES",
                 }:
                     selected_nodes.append(node)
                     break
         elif isinstance(node, ast.FunctionDef) and node.name in {
+            "_normalize_overlap_doc_token",
+            "_normalize_overlap_field_token",
+            "_build_overlap_key",
+            "_extract_issue_overlap_keys",
             "_parse_icc_rule_identity",
             "_suppress_broad_icc_umbrella_rules",
             "_suppress_legacy_issue_noise",
@@ -37,6 +42,7 @@ def _load_symbols() -> Dict[str, Any]:
     namespace: Dict[str, Any] = {
         "Any": Any,
         "Dict": Dict,
+        "List": __import__("typing").List,
         "Optional": __import__("typing").Optional,
         "re": re,
     }
@@ -105,8 +111,19 @@ def test_validation_execution_suppresses_legacy_crossdoc_duplicate_when_specific
 
     filtered = fn(
         [
-            {"rule": "CROSSDOC-BL-001", "ruleset_domain": "icc.lcopilot.crossdoc"},
-            {"rule": "UCP600-20D", "ruleset_domain": "icc.ucp600"},
+            {
+                "rule": "CROSSDOC-BL-001",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "source_doc": "bill_of_lading",
+                "source_field": "port_of_loading",
+                "target_doc": "letter_of_credit",
+                "target_field": "port_of_loading",
+            },
+            {
+                "rule": "UCP600-20D",
+                "ruleset_domain": "icc.ucp600",
+                "overlap_keys": ["bill_of_lading.port_of_loading|lc.port_of_loading"],
+            },
         ]
     )
 
@@ -118,8 +135,19 @@ def test_validation_execution_suppresses_legacy_invoice_issuer_duplicate_when_sp
 
     filtered = fn(
         [
-            {"rule": "CROSSDOC-INV-002", "ruleset_domain": "icc.lcopilot.crossdoc"},
-            {"rule": "UCP600-18A", "ruleset_domain": "icc.ucp600"},
+            {
+                "rule": "CROSSDOC-INV-002",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "source_doc": "commercial_invoice",
+                "source_field": "issuer",
+                "target_doc": "letter_of_credit",
+                "target_field": "beneficiary",
+            },
+            {
+                "rule": "UCP600-18A",
+                "ruleset_domain": "icc.ucp600",
+                "overlap_keys": ["invoice.issuer|lc.beneficiary"],
+            },
         ]
     )
 
@@ -132,7 +160,11 @@ def test_validation_execution_hides_lc_type_unknown_when_actionable_findings_exi
     filtered = fn(
         [
             {"rule": "LC-TYPE-UNKNOWN", "ruleset_domain": "system.lc_type"},
-            {"rule": "UCP600-20D", "ruleset_domain": "icc.ucp600"},
+            {
+                "rule": "UCP600-20D",
+                "ruleset_domain": "icc.ucp600",
+                "overlap_keys": ["bill_of_lading.port_of_loading|lc.port_of_loading"],
+            },
         ]
     )
 
@@ -152,8 +184,19 @@ def test_validation_execution_suppresses_legacy_insurance_currency_duplicate_whe
 
     filtered = fn(
         [
-            {"rule": "CROSSDOC-INS-003", "ruleset_domain": "icc.lcopilot.crossdoc"},
-            {"rule": "UCP600-28D", "ruleset_domain": "icc.ucp600"},
+            {
+                "rule": "CROSSDOC-INS-003",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "source_doc": "insurance_certificate",
+                "source_field": "currency",
+                "target_doc": "letter_of_credit",
+                "target_field": "currency",
+            },
+            {
+                "rule": "UCP600-28D",
+                "ruleset_domain": "icc.ucp600",
+                "overlap_keys": ["insurance.currency|lc.currency"],
+            },
         ]
     )
 
