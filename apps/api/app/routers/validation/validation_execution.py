@@ -223,7 +223,7 @@ async def _build_db_rule_watch_debug(
         for condition in rule.get("conditions") or []:
             if not isinstance(condition, dict):
                 continue
-            for key in ("field", "path", "left_path", "reference_field", "value_ref", "computed_field"):
+            for key in ("field", "path", "left_path", "right_path", "reference_field", "value_ref", "computed_field"):
                 candidate = condition.get(key)
                 if isinstance(candidate, str) and candidate not in field_paths:
                     field_paths.append(candidate)
@@ -721,6 +721,8 @@ async def execute_validation_pipeline(
                 "supplement_domains": supplement_domains,
                 # LC data
                 "lc": lc_ctx,
+                "credit": lc_ctx,
+                "beneficiary": (lc_ctx or {}).get("beneficiary") if isinstance(lc_ctx, dict) else None,
                 "lc_number": v2_baseline.lc_number if v2_baseline else None,
                 "amount": v2_baseline.amount if v2_baseline else None,
                 "currency": v2_baseline.currency if v2_baseline else None,

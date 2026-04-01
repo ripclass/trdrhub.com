@@ -132,6 +132,38 @@ def test_lc_ops_field_match_reference_field_uses_discrepancy_trigger_semantics()
     assert compliant_outcome["passed"] is True
 
 
+def test_location_field_match_treats_city_and_city_country_as_equivalent() -> None:
+    evaluator = RuleEvaluator()
+
+    rule = {
+        "rule_id": "UCP600-20D",
+        "title": "Bill of Lading: Port of Loading Must Match LC",
+        "domain": "lc_ops",
+        "consequence_class": "bill_of_lading_discrepancy",
+        "conditions": [
+            {
+                "field": "bill_of_lading.port_of_loading",
+                "operator": "not_equals",
+                "reference_field": "lc.port_of_loading",
+                "type": "field_match",
+            }
+        ],
+        "expected_outcome": {
+            "valid": ["Presentation complies"],
+            "invalid": ["Port mismatch"],
+        },
+    }
+
+    context = {
+        "bill_of_lading": {"port_of_loading": "Chittagong, Bangladesh"},
+        "lc": {"port_of_loading": "Chittagong"},
+    }
+
+    outcome = evaluator.evaluate_rule(rule, context)
+
+    assert outcome["passed"] is True
+
+
 def test_lc_ops_date_comparison_supports_computed_banking_day_reference() -> None:
     evaluator = RuleEvaluator()
 

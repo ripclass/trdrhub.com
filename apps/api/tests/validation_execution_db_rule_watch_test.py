@@ -97,6 +97,65 @@ async def test_build_db_rule_watch_debug_evaluates_watched_rule(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
+async def test_build_db_rule_watch_debug_resolves_right_path_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _RightPathRulesService:
+        async def get_active_ruleset(
+            self,
+            domain: str,
+            jurisdiction: str = "global",
+            document_type: str | None = None,
+        ) -> dict[str, object] | None:
+            return {
+                "rules": [
+                    {
+                        "rule_id": "UCP600-18",
+                        "domain": "lc_ops",
+                        "document_type": "invoice",
+                        "rule_type": "umbrella",
+                        "consequence_class": "domain_logic",
+                        "execution_priority": "fallback",
+                        "conditions": [
+                            {
+                                "type": "field_match",
+                                "left_path": "invoice.issuer",
+                                "right_path": "beneficiary",
+                            },
+                            {
+                                "type": "field_match",
+                                "left_path": "invoice.currency",
+                                "right_path": "credit.currency",
+                            },
+                        ],
+                    }
+                ],
+                "ruleset": {
+                    "ruleset_version": "1.0.2",
+                    "rulebook_version": "UCP600",
+                },
+                "ruleset_version": "1.0.2",
+                "rulebook_version": "UCP600",
+            }
+
+    monkeypatch.setattr(rules_service_module, "get_rules_service", lambda: _RightPathRulesService())
+
+    debug = await validation_execution_module._build_db_rule_watch_debug(
+        domain="icc.ucp600",
+        jurisdiction="global",
+        document_data={
+            "invoice": {"issuer": "Bangladesh Export Ltd", "currency": "USD"},
+            "beneficiary": "Bangladesh Export Ltd",
+            "credit": {"currency": "USD"},
+        },
+        watch_rule_ids=("UCP600-18",),
+    )
+
+    watch = debug["watched_rules"]["UCP600-18"]
+    assert watch["resolved_fields"]["invoice.issuer"] == "Bangladesh Export Ltd"
+    assert watch["resolved_fields"]["beneficiary"] == "Bangladesh Export Ltd"
+    assert watch["resolved_fields"]["credit.currency"] == "USD"
+
+
+@pytest.mark.asyncio
 async def test_build_db_rule_watch_debug_marks_missing_rules(monkeypatch: pytest.MonkeyPatch) -> None:
     class _EmptyRulesService:
         async def get_active_ruleset(self, domain: str, jurisdiction: str = "global", document_type: str | None = None):

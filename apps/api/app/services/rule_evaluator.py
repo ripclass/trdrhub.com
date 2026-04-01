@@ -14,6 +14,15 @@ from decimal import Decimal
 from app.core.lc_types import LCType
 
 logger = logging.getLogger(__name__)
+_LOCATION_RULE_PATH_MARKERS = (
+    "port_of_loading",
+    "port_of_discharge",
+    "loading_port",
+    "discharge_port",
+    "airport_of_departure",
+    "airport_of_destination",
+    "destination_port",
+)
 
 
 def _normalize_lc_type_list(value: Any) -> List[str]:
@@ -172,6 +181,21 @@ class RuleEvaluator:
             return left <= right
         return False
 
+    def _normalize_location_for_compare(self, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        candidate = value.strip()
+        if not candidate:
+            return candidate
+        lowered = candidate.lower().replace("chattogram", "chittagong")
+        primary = lowered.split(",", 1)[0].strip()
+        primary = re.sub(r"\s+", " ", primary)
+        return primary
+
+    def _is_location_field(self, field_path: Optional[str]) -> bool:
+        text = str(field_path or "").strip().lower()
+        return any(marker in text for marker in _LOCATION_RULE_PATH_MARKERS)
+
     def _is_discrepancy_trigger_rule(self, rule: Dict[str, Any]) -> bool:
         consequence = str(rule.get("consequence_class") or "").strip().lower()
         if any(token in consequence for token in ("discrepancy", "violation", "mismatch", "missing")):
@@ -299,6 +323,12 @@ class RuleEvaluator:
 
         field_cmp = field_value
         compare_cmp = compare_value
+        if self._is_location_field(field_path):
+            field_cmp = self._normalize_location_for_compare(field_cmp)
+            if isinstance(compare_cmp, list):
+                compare_cmp = [self._normalize_location_for_compare(item) for item in compare_cmp]
+            else:
+                compare_cmp = self._normalize_location_for_compare(compare_cmp)
         if case_insensitive:
             field_cmp = _ci(field_cmp)
             if isinstance(compare_cmp, list):
