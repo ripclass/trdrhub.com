@@ -291,6 +291,10 @@ class CrossDocIssue:
             # For STATS attribution - only the document with the actual issue
             "affected_documents": affected_documents,
             "affected_document_names": affected_doc_names,
+            # Preserve semantic overlap metadata so generic ICC/crossdoc dedup
+            # can compare the same document-field pair without rule-id maps.
+            "source_doc": self.source_doc.value,
+            "target_doc": self.target_doc.value,
             "source_field": self.source_field,
             "target_field": self.target_field,
             "ucp_reference": self.ucp_article,
