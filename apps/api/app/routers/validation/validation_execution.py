@@ -412,8 +412,9 @@ def _suppress_broad_icc_umbrella_rules(
     issues: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
-    Prefer the most specific ICC finding when both the umbrella article rule and
-    a letter-rule for the same article fail in the same result set.
+    Prefer actionable ICC letter rules over fallback umbrella doctrine rows.
+    If an umbrella row belongs to a family that already has specific child rules
+    in the active ruleset, do not surface the umbrella as a user-facing finding.
     """
     if not issues:
         return []
@@ -429,6 +430,16 @@ def _suppress_broad_icc_umbrella_rules(
 
     filtered: list[dict[str, Any]] = []
     for issue in issues:
+        rule_type = str(issue.get("rule_type") or "").strip().lower()
+        execution_priority = str(issue.get("execution_priority") or "").strip().lower()
+        consequence_class = str(issue.get("consequence_class") or "").strip().lower()
+        if (
+            rule_type == "umbrella"
+            and execution_priority == "fallback"
+            and consequence_class == "domain_logic"
+            and bool(issue.get("has_specific_family_rules"))
+        ):
+            continue
         identity = _parse_icc_rule_identity(issue)
         if identity and not identity[2] and (identity[0], identity[1]) in specific_families:
             continue

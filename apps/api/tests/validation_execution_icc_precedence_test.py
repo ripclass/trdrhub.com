@@ -65,6 +65,26 @@ def test_validation_execution_keeps_umbrella_icc_rule_without_specific_letter_fa
     assert fn(issues) == issues
 
 
+def test_validation_execution_suppresses_fallback_umbrella_when_family_has_specific_rules() -> None:
+    fn = _load_symbols()["_suppress_broad_icc_umbrella_rules"]
+
+    filtered = fn(
+        [
+            {
+                "rule": "UCP600-18",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+                "has_specific_family_rules": True,
+            },
+            {"rule": "UCP600-28A", "ruleset_domain": "icc.ucp600"},
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-28A"]
+
+
 def test_validation_execution_prefers_specific_isbp_letter_rule_over_umbrella_article() -> None:
     fn = _load_symbols()["_suppress_broad_icc_umbrella_rules"]
 

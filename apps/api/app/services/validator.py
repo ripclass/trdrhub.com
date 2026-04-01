@@ -2055,6 +2055,21 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
         {"rule": rule, "meta": meta}
         for rule, meta in filtered_rules_with_meta
     ]
+    icc_specific_families: set[tuple[str, str]] = set()
+    icc_rule_pattern = re.compile(r"^(?P<prefix>[A-Z0-9]+)-(?P<article>[A-Z]*\d+)(?P<suffix>[A-Z][A-Z0-9]*)?$")
+    icc_rulebook_prefixes = {"UCP600", "ISBP745", "ISBP821", "ISP98", "URR725", "URDG758", "URC522", "EUCP"}
+    for envelope in rule_envelopes:
+        rule = envelope.get("rule") or {}
+        rule_id = str(rule.get("rule_id") or "").strip().upper()
+        if not rule_id:
+            continue
+        match = icc_rule_pattern.match(rule_id)
+        if not match:
+            continue
+        if match.group("prefix") not in icc_rulebook_prefixes:
+            continue
+        if match.group("suffix"):
+            icc_specific_families.add((match.group("prefix"), match.group("article")))
     prepared_rules = [env["rule"] for env in rule_envelopes]
     semantic_registry: Dict[str, List[str]] = {}
     prepared_rules, semantic_registry = await _inject_semantic_conditions(
@@ -2079,9 +2094,14 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
         envelope = rule_envelopes[idx] if idx < len(rule_envelopes) else {"rule": {}, "meta": base_metadata}
         rule_def = envelope.get("rule", {}) or {}
         meta = envelope.get("meta") or base_metadata or {}
+        rule_id = outcome.get("rule_id", rule_def.get("rule_id", "unknown"))
+        match = icc_rule_pattern.match(str(rule_id or "").strip().upper())
+        has_specific_family_rules = False
+        if match and not match.group("suffix"):
+            has_specific_family_rules = (match.group("prefix"), match.group("article")) in icc_specific_families
 
         result_payload = {
-            "rule": outcome.get("rule_id", rule_def.get("rule_id", "unknown")),
+            "rule": rule_id,
             "title": rule_def.get("title") or outcome.get("rule_id", "unknown"),
             "description": rule_def.get("description"),
             "article": rule_def.get("article"),
@@ -2095,6 +2115,11 @@ async def validate_document_async(document_data: Dict[str, Any], document_type: 
             "ruleset_version": meta.get("ruleset_version"),
             "rulebook_version": meta.get("rulebook_version"),
             "ruleset_domain": meta.get("domain"),
+            "rule_type": rule_def.get("rule_type"),
+            "consequence_class": rule_def.get("consequence_class"),
+            "execution_priority": rule_def.get("execution_priority"),
+            "parent_rule": rule_def.get("parent_rule"),
+            "has_specific_family_rules": has_specific_family_rules,
         }
 
         sem_keys = semantic_registry.get(result_payload["rule"], [])
