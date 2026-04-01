@@ -178,13 +178,20 @@ async def _build_db_rule_watch_debug(
     """
     from app.services.rule_evaluator import RuleEvaluator
     from app.services.rules_service import get_rules_service
+    from app.services.validator import _ruleset_lookup_jurisdictions
 
     rules_service = get_rules_service()
-    ruleset_data = await rules_service.get_active_ruleset(
-        domain,
-        jurisdiction,
-        document_type=None,
-    )
+    resolved_jurisdiction = jurisdiction
+    ruleset_data = None
+    for lookup_jurisdiction in _ruleset_lookup_jurisdictions(domain, jurisdiction):
+        ruleset_data = await rules_service.get_active_ruleset(
+            domain,
+            lookup_jurisdiction,
+            document_type=None,
+        )
+        if isinstance(ruleset_data, dict):
+            resolved_jurisdiction = lookup_jurisdiction
+            break
     if not isinstance(ruleset_data, dict):
         return {
             "domain": domain,
@@ -247,6 +254,7 @@ async def _build_db_rule_watch_debug(
     return {
         "domain": domain,
         "jurisdiction": jurisdiction,
+        "resolved_jurisdiction": resolved_jurisdiction,
         "ruleset_version": ruleset_data.get("ruleset_version") or ruleset_meta.get("ruleset_version"),
         "rulebook_version": ruleset_data.get("rulebook_version") or ruleset_meta.get("rulebook_version"),
         "rules_count": len(rules),

@@ -19,15 +19,20 @@ from app.services import rules_service as rules_service_module  # noqa: E402
 
 
 class _WatchRulesService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str | None]] = []
+
     async def get_active_ruleset(
         self,
         domain: str,
         jurisdiction: str = "global",
         document_type: str | None = None,
     ) -> dict[str, object] | None:
+        self.calls.append((domain, jurisdiction, document_type))
         assert domain == "icc.ucp600"
-        assert jurisdiction == "global"
         assert document_type is None
+        if jurisdiction != "global":
+            return None
         return {
             "rules": [
                 {
@@ -68,7 +73,7 @@ async def test_build_db_rule_watch_debug_evaluates_watched_rule(monkeypatch: pyt
 
     debug = await validation_execution_module._build_db_rule_watch_debug(
         domain="icc.ucp600",
-        jurisdiction="global",
+        jurisdiction="bd",
         document_data={
             "insurance_doc": {
                 "originals_presented": 1,
@@ -79,6 +84,11 @@ async def test_build_db_rule_watch_debug_evaluates_watched_rule(monkeypatch: pyt
 
     watch = debug["watched_rules"]["UCP600-28A"]
     assert debug["ruleset_version"] == "1.0.1"
+    assert debug["resolved_jurisdiction"] == "global"
+    assert fake_service.calls == [
+        ("icc.ucp600", "bd", None),
+        ("icc.ucp600", "global", None),
+    ]
     assert watch["present"] is True
     assert watch["resolved_fields"]["insurance_doc.originals_presented"] == 1
     assert watch["resolved_fields"]["insurance_doc.originals_issued"] == 2
