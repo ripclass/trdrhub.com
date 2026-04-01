@@ -1250,6 +1250,11 @@ async def execute_validation_pipeline(
                 "isbp_description": issue_dict.get("isbp_description") or _get_isbp_desc(isbp_ref),
                 "display_card": True,
                 "ruleset_domain": issue_dict.get("ruleset_domain") or "icc.ucp600",
+                "rule_type": issue_dict.get("rule_type"),
+                "consequence_class": issue_dict.get("consequence_class"),
+                "execution_priority": issue_dict.get("execution_priority"),
+                "parent_rule": issue_dict.get("parent_rule"),
+                "has_specific_family_rules": issue_dict.get("has_specific_family_rules"),
             })
         logger.info("Added %d DB rule issues to failed_results", len(db_rule_issues))
 
