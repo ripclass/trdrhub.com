@@ -21,12 +21,14 @@ def _load_symbols() -> Dict[str, Any]:
                 if isinstance(target, ast.Name) and target.id in {
                     "_ICC_RULEBOOK_PREFIXES",
                     "_ICC_RULE_ID_PATTERN",
+                    "_SPECIFIC_RULE_SUPPRESSION_MAP",
                 }:
                     selected_nodes.append(node)
                     break
         elif isinstance(node, ast.FunctionDef) and node.name in {
             "_parse_icc_rule_identity",
             "_suppress_broad_icc_umbrella_rules",
+            "_suppress_legacy_issue_noise",
         }:
             selected_nodes.append(node)
 
@@ -96,3 +98,37 @@ def test_validation_execution_prefers_specific_isbp_letter_rule_over_umbrella_ar
     )
 
     assert [issue["rule"] for issue in filtered] == ["ISBP745-A14B"]
+
+
+def test_validation_execution_suppresses_legacy_crossdoc_duplicate_when_specific_ucp_rule_exists() -> None:
+    fn = _load_symbols()["_suppress_legacy_issue_noise"]
+
+    filtered = fn(
+        [
+            {"rule": "CROSSDOC-BL-001", "ruleset_domain": "icc.lcopilot.crossdoc"},
+            {"rule": "UCP600-20D", "ruleset_domain": "icc.ucp600"},
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-20D"]
+
+
+def test_validation_execution_hides_lc_type_unknown_when_actionable_findings_exist() -> None:
+    fn = _load_symbols()["_suppress_legacy_issue_noise"]
+
+    filtered = fn(
+        [
+            {"rule": "LC-TYPE-UNKNOWN", "ruleset_domain": "system.lc_type"},
+            {"rule": "UCP600-20D", "ruleset_domain": "icc.ucp600"},
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-20D"]
+
+
+def test_validation_execution_keeps_lc_type_unknown_when_it_is_the_only_signal() -> None:
+    fn = _load_symbols()["_suppress_legacy_issue_noise"]
+
+    issues = [{"rule": "LC-TYPE-UNKNOWN", "ruleset_domain": "system.lc_type"}]
+
+    assert fn(issues) == issues

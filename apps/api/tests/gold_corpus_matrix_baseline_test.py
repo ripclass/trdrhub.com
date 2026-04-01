@@ -135,4 +135,10 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
 
     loading_port_set = _load_expected("set_020_bl_port_of_loading_mismatch.json")
     loading_port_false_positives = _false_positive_rule_ids(loading_port_set)
-    assert {"UCP600-20", "CROSSDOC-BL-002", "UCP600-28A"}.issubset(loading_port_false_positives)
+    assert {
+        "UCP600-20",
+        "CROSSDOC-BL-001",
+        "CROSSDOC-BL-002",
+        "UCP600-28A",
+        "LC-TYPE-UNKNOWN",
+    }.issubset(loading_port_false_positives)

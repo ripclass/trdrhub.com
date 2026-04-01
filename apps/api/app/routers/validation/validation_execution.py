@@ -74,6 +74,9 @@ _ICC_RULEBOOK_PREFIXES = {
 _ICC_RULE_ID_PATTERN = re.compile(
     r"^(?P<prefix>[A-Z0-9]+)-(?P<article>[A-Z]*\d+)(?P<suffix>[A-Z][A-Z0-9]*)?$"
 )
+_SPECIFIC_RULE_SUPPRESSION_MAP = {
+    "UCP600-20D": {"CROSSDOC-BL-001"},
+}
 
 _INSURANCE_RULE_DOCUMENT_TYPES = {
     "insurance_certificate",
@@ -442,6 +445,43 @@ def _suppress_broad_icc_umbrella_rules(
             continue
         identity = _parse_icc_rule_identity(issue)
         if identity and not identity[2] and (identity[0], identity[1]) in specific_families:
+            continue
+        filtered.append(issue)
+
+    return filtered
+
+
+def _suppress_legacy_issue_noise(
+    issues: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Remove legacy duplicate findings once a more specific actionable rule exists.
+
+    Also hide LC type uncertainty when the package already has real documentary
+    findings; otherwise the user sees two conflicting messages at once.
+    """
+    if not issues:
+        return []
+
+    present_rules = {
+        str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
+        for issue in issues
+        if isinstance(issue, dict) and str(issue.get("rule") or issue.get("rule_id") or "").strip()
+    }
+
+    suppressed_rules: set[str] = set()
+    for specific_rule, legacy_rules in _SPECIFIC_RULE_SUPPRESSION_MAP.items():
+        if specific_rule in present_rules:
+            suppressed_rules.update(str(rule).strip().upper() for rule in legacy_rules if str(rule).strip())
+
+    actionable_issue_present = any(rule_id != "LC-TYPE-UNKNOWN" for rule_id in present_rules)
+
+    filtered: list[dict[str, Any]] = []
+    for issue in issues:
+        rule_id = str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
+        if rule_id in suppressed_rules:
+            continue
+        if rule_id == "LC-TYPE-UNKNOWN" and actionable_issue_present:
             continue
         filtered.append(issue)
 
@@ -1282,6 +1322,7 @@ async def execute_validation_pipeline(
     # DEDUPLICATION - Remove duplicate issues by rule ID
     # =====================================================================
     failed_results = _suppress_broad_icc_umbrella_rules(failed_results)
+    failed_results = _suppress_legacy_issue_noise(failed_results)
 
     seen_rules = set()
     deduplicated_results = []

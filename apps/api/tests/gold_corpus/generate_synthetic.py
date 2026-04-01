@@ -2061,6 +2061,14 @@ def generate_set_020_bl_port_of_loading_mismatch():
                 "rule_id": "UCP600-28A",
                 "description": "Insurance originals rule should not leak into a clean transport-only discrepancy.",
             },
+            {
+                "rule_id": "CROSSDOC-BL-001",
+                "description": "Legacy crossdoc loading-port mismatch should stay suppressed when UCP600-20D is the specific live finding.",
+            },
+            {
+                "rule_id": "LC-TYPE-UNKNOWN",
+                "description": "LC type uncertainty should not surface once a real documentary discrepancy is already present.",
+            },
         ],
     }
     (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
