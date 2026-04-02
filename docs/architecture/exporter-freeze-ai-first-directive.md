@@ -83,7 +83,8 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - Phase 2 now starts with an honest contract milestone:
   - [x] project current AI validation into explicit `L1` / `L2` / `L3` layers
   - [x] move runtime ordering from post-deterministic projection to true AI-first execution
-  - [ ] deepen `L3` anomaly reasoning beyond `not_run`
+  - [x] deepen `L3` anomaly reasoning beyond `not_run`
+  - [ ] let severe AI-first anomalies drive review/escalation generically when deterministic rules are clean
 
 ## Phase Sequence
 

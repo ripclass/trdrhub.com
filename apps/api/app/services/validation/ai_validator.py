@@ -76,7 +76,20 @@ _L3_WARNING_STATUSES = {
     "parse_failed",
     "text_only",
 }
+_L3_MAJOR_REVIEWABLE_DOCUMENT_TYPES = {
+    "lc",
+    "invoice",
+    "bill_of_lading",
+    "insurance",
+}
+_L3_MAJOR_WARNING_STATUSES = {
+    "error",
+    "failed",
+    "fail",
+    "parse_failed",
+}
 _L3_LOW_CONFIDENCE_THRESHOLD = 0.35
+_L3_SEVERE_CONFIDENCE_THRESHOLD = 0.2
 
 
 class IssueSeverity(str, Enum):
@@ -143,6 +156,25 @@ def _normalize_confidence_value(value: Any) -> Optional[float]:
 
 def _snapshot_display_name(doc_type: str) -> str:
     return _L3_DOCUMENT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
+
+
+def _classify_l3_confidence_severity(
+    doc_type: str,
+    confidence: Optional[float],
+    status: str,
+) -> Optional[IssueSeverity]:
+    if confidence is None:
+        return None
+    normalized_status = str(status or "").strip().lower()
+    is_suspicious = confidence < _L3_LOW_CONFIDENCE_THRESHOLD and (
+        normalized_status in _L3_WARNING_STATUSES or confidence < _L3_SEVERE_CONFIDENCE_THRESHOLD
+    )
+    if not is_suspicious:
+        return None
+    is_major = doc_type in _L3_MAJOR_REVIEWABLE_DOCUMENT_TYPES and (
+        confidence < _L3_SEVERE_CONFIDENCE_THRESHOLD or normalized_status in _L3_MAJOR_WARNING_STATUSES
+    )
+    return IssueSeverity.MAJOR if is_major else IssueSeverity.MINOR
 
 
 def _collect_l3_document_snapshots(
@@ -248,12 +280,8 @@ def review_advanced_anomalies(
     for doc_type, snapshot in sorted(snapshots.items()):
         confidence = snapshot.get("confidence")
         status = str(snapshot.get("status") or "").strip().lower()
-        if confidence is None:
-            continue
-        is_suspicious = confidence < _L3_LOW_CONFIDENCE_THRESHOLD and (
-            status in _L3_WARNING_STATUSES or confidence < 0.2
-        )
-        if not is_suspicious:
+        severity = _classify_l3_confidence_severity(doc_type, confidence, status)
+        if severity is None:
             continue
 
         display_name = str(snapshot.get("display_name") or _snapshot_display_name(doc_type))
@@ -262,13 +290,14 @@ def review_advanced_anomalies(
                 "document_type": doc_type,
                 "confidence": round(confidence, 3),
                 "status": status or None,
+                "severity": severity.value,
             }
         )
         issues.append(
             AIValidationIssue(
                 rule_id=f"AI-L3-LOW-CONFIDENCE-{doc_type.upper().replace('_', '-')}",
                 title=f"Low Extraction Confidence: {display_name}",
-                severity=IssueSeverity.MINOR,
+                severity=severity,
                 message=(
                     f"{display_name} extraction quality is low enough that non-deterministic review may be needed "
                     f"before relying on the extracted values."
@@ -293,8 +322,8 @@ def review_advanced_anomalies(
         "l3_low_confidence_threshold": _L3_LOW_CONFIDENCE_THRESHOLD,
         "l3_issue_count": len(issues),
         "l3_critical_issues": 0,
-        "l3_major_issues": 0,
-        "l3_minor_issues": len(issues),
+        "l3_major_issues": sum(1 for issue in issues if issue.severity == IssueSeverity.MAJOR),
+        "l3_minor_issues": sum(1 for issue in issues if issue.severity == IssueSeverity.MINOR),
     }
     return issues, metadata
 

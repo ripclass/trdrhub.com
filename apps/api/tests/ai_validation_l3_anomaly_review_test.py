@@ -25,6 +25,7 @@ def _load_ai_validator_symbols() -> Dict[str, Any]:
         "_normalize_document_type",
         "_normalize_confidence_value",
         "_snapshot_display_name",
+        "_classify_l3_confidence_severity",
         "_collect_l3_document_snapshots",
         "review_advanced_anomalies",
     }
@@ -34,7 +35,10 @@ def _load_ai_validator_symbols() -> Dict[str, Any]:
         "_L3_DOCUMENT_TYPE_ALIASES",
         "_L3_DOCUMENT_LABELS",
         "_L3_WARNING_STATUSES",
+        "_L3_MAJOR_REVIEWABLE_DOCUMENT_TYPES",
+        "_L3_MAJOR_WARNING_STATUSES",
         "_L3_LOW_CONFIDENCE_THRESHOLD",
+        "_L3_SEVERE_CONFIDENCE_THRESHOLD",
     }
     for node in parsed.body:
         if isinstance(node, ast.Assign):
@@ -103,7 +107,47 @@ def test_review_advanced_anomalies_flags_only_suspicious_low_confidence_document
     assert metadata["l3_low_confidence_document_types"] == ["invoice"]
     assert metadata["l3_issue_count"] == 1
     assert metadata["l3_minor_issues"] == 1
+    assert metadata["l3_major_issues"] == 0
     assert "AI-L3-LOW-CONFIDENCE-INVOICE" in issue_ids
+
+
+def test_review_advanced_anomalies_escalates_core_doc_confidence_failures_to_major() -> None:
+    symbols = _load_ai_validator_symbols()
+    review_advanced_anomalies = symbols["review_advanced_anomalies"]
+    IssueSeverity = symbols["IssueSeverity"]
+
+    documents = [
+        {
+            "document_type": "letter_of_credit",
+            "filename": "LC.pdf",
+            "ocr_confidence": 0.18,
+            "status": "error",
+        }
+    ]
+    extracted_context = {
+        "lc": {
+            "raw_text": "IRREVOCABLE DOCUMENTARY CREDIT",
+            "_extraction_confidence": 0.18,
+            "status": "error",
+        },
+    }
+
+    issues, metadata = review_advanced_anomalies(documents, extracted_context)
+
+    assert len(issues) == 1
+    assert issues[0].rule_id == "AI-L3-LOW-CONFIDENCE-LC"
+    assert issues[0].severity == IssueSeverity.MAJOR
+    assert metadata["l3_issue_count"] == 1
+    assert metadata["l3_major_issues"] == 1
+    assert metadata["l3_minor_issues"] == 0
+    assert metadata["l3_low_confidence_details"] == [
+        {
+            "document_type": "lc",
+            "confidence": 0.18,
+            "status": "error",
+            "severity": "major",
+        }
+    ]
 
 
 def test_ai_validator_source_runs_l3_review_and_records_check_name() -> None:
