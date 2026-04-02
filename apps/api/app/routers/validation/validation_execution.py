@@ -840,6 +840,7 @@ async def execute_validation_pipeline(
     v2_baseline = None
     v2_issues = []
     v2_crossdoc_issues = []
+    ai_issues = []
     ai_validation_summary = None
     defer_final_validation = False
     workflow_stage_hint = None
@@ -958,29 +959,125 @@ async def execute_validation_pipeline(
             )
             raise _DeferredValidationFlow()
 
+        lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
+        requirements_graph_v1 = payload.get("requirements_graph_v1")
+        if not isinstance(requirements_graph_v1, dict):
+            requirements_graph_v1 = _response_shaping.build_requirements_graph_v1(
+                payload.get("documents") or extracted_context.get("documents") or []
+            )
+        if isinstance(lc_ctx, dict) and isinstance(requirements_graph_v1, dict):
+            lc_ctx.setdefault("requirements_graph_v1", requirements_graph_v1)
+            lc_ctx.setdefault("requirementsGraphV1", requirements_graph_v1)
+        if isinstance(lc_ctx, dict) and not isinstance(lc_ctx.get("lc_classification"), dict):
+            lc_ctx["lc_classification"] = build_lc_classification(lc_ctx, payload)
+        mt700 = lc_ctx.get("mt700") or {}
+
+        # =================================================================
+        # AI VALIDATION ENGINE (AI-FIRST EXECUTION)
+        # =================================================================
+        from app.services.validation.ai_validator import run_ai_validation
+
+        lc_data_for_ai = {}
+
+        lc_context = extracted_context.get("lc") or {}
+        lc_raw_text = (
+            lc_context.get("raw_text")
+            or extracted_context.get("lc_text")
+            or (payload.get("lc") or {}).get("raw_text")
+            or ""
+        )
+        lc_data_for_ai["raw_text"] = lc_raw_text
+        logger.info(f"AI Validation: LC raw_text length = {len(lc_raw_text)} chars")
+
+        lc_data_for_ai["goods_description"] = (
+            lc_context.get("goods_description")
+            or mt700.get("goods_description")
+            or mt700.get("45A")
+            or ""
+        )
+        logger.info(f"AI Validation: goods_description length = {len(lc_data_for_ai['goods_description'])} chars")
+
+        lc_data_for_ai["goods"] = (
+            lc_context.get("goods")
+            or lc_context.get("goods_items")
+            or mt700.get("goods")
+            or []
+        )
+        lc_data_for_ai["requirements_graph_v1"] = (
+            lc_context.get("requirements_graph_v1")
+            or lc_context.get("requirementsGraphV1")
+            or payload.get("requirements_graph_v1")
+            or extracted_context.get("requirements_graph_v1")
+        )
+
+        documents_for_ai = (
+            extracted_context.get("documents")
+            or payload.get("documents")
+            or []
+        )
+        logger.info(f"AI Validation: {len(documents_for_ai)} documents to check")
+
+        (ai_issues, ai_metadata), ai_validation_timed_out = await _await_with_timeout(
+            "AI validation",
+            run_ai_validation(
+                lc_data=lc_data_for_ai,
+                documents=documents_for_ai,
+                extracted_context=extracted_context,
+            ),
+            AI_VALIDATION_TIMEOUT_SECONDS,
+            ([], {"timed_out": True}),
+        )
+        if not isinstance(ai_metadata, dict):
+            ai_metadata = {}
+
+        logger.info(
+            "AI Validation: found %d issues (critical=%d, major=%d)",
+            len(ai_issues),
+            ai_metadata.get("critical_issues", 0),
+            ai_metadata.get("major_issues", 0),
+        )
+        ai_validation_layers = _build_ai_validation_layers(
+            ai_metadata,
+            timed_out=ai_validation_timed_out,
+        )
+        ai_validation_summary = {
+            "issue_count": len(ai_issues),
+            "critical_issues": int(ai_metadata.get("critical_issues", 0) or 0),
+            "major_issues": int(ai_metadata.get("major_issues", 0) or 0),
+            "minor_issues": int(ai_metadata.get("minor_issues", 0) or 0),
+            "documents_checked": len(documents_for_ai) if isinstance(documents_for_ai, list) else 0,
+            "derived_ai_verdict": (
+                "reject" if int(ai_metadata.get("critical_issues", 0) or 0) > 0 else (
+                "warn" if int(ai_metadata.get("major_issues", 0) or 0) > 0 else "pass"
+                )
+            ),
+            "layer_contract_version": "ai_layers_v1",
+            "execution_position": "pre_deterministic_runtime",
+            "layers": ai_validation_layers,
+            "metadata": ai_metadata or {},
+            "timed_out": ai_validation_timed_out,
+        }
+        if ai_validation_timed_out:
+            _append_timeout_event(
+                timeout_events,
+                stage="ai_validation",
+                label="AI validation",
+                timeout_seconds=AI_VALIDATION_TIMEOUT_SECONDS,
+                fallback="ai_issues_skipped",
+            )
+        checkpoint("ai_validation_complete")
+
         # =================================================================
         # EXECUTE DATABASE RULES (2500+ rules from DB)
         # Filters by jurisdiction, document_type, and domain
         # =================================================================
         db_rule_issues = []
         db_rules_debug = {"enabled": False, "status": "not_started"}
-        lc_ctx = extracted_context.get("lc") or payload.get("lc") or {}
-        requirements_graph_v1 = payload.get("requirements_graph_v1")
         try:
             # =============================================================
             # DYNAMIC JURISDICTION & DOMAIN DETECTION
             # Detects relevant rulesets based on LC and document content
             # =============================================================
-            if not isinstance(requirements_graph_v1, dict):
-                requirements_graph_v1 = _response_shaping.build_requirements_graph_v1(
-                    payload.get("documents") or extracted_context.get("documents") or []
-                )
-            if isinstance(lc_ctx, dict) and isinstance(requirements_graph_v1, dict):
-                lc_ctx.setdefault("requirements_graph_v1", requirements_graph_v1)
-                lc_ctx.setdefault("requirementsGraphV1", requirements_graph_v1)
-            if isinstance(lc_ctx, dict) and not isinstance(lc_ctx.get("lc_classification"), dict):
-                lc_ctx["lc_classification"] = build_lc_classification(lc_ctx, payload)
-            mt700 = lc_ctx.get("mt700") or {}
             coo = payload.get("certificate_of_origin") or {}
             invoice = payload.get("invoice") or {}
             bl = payload.get("bill_of_lading") or {}
@@ -1277,111 +1374,9 @@ async def execute_validation_pipeline(
         except Exception as e:
             logger.warning(f"Price verification skipped: {e}")
 
-        # =================================================================
-        # AI VALIDATION ENGINE
-        # =================================================================
-        from app.services.validation.ai_validator import run_ai_validation, AIValidationIssue
-
-        # Build LC data for AI from multiple potential sources
-        lc_data_for_ai = {}
-
-        # Get raw text from extracted_context (built from uploaded files)
-        # The LC raw text is stored in context["lc"]["raw_text"] or context["lc_text"]
-        lc_context = extracted_context.get("lc") or {}
-        lc_raw_text = (
-            lc_context.get("raw_text") or  # Primary: from lc object in extracted_context
-            extracted_context.get("lc_text") or  # Alternative: direct lc_text
-            (payload.get("lc") or {}).get("raw_text") or  # Fallback: from payload
-            ""
-        )
-        lc_data_for_ai["raw_text"] = lc_raw_text
-        logger.info(f"AI Validation: LC raw_text length = {len(lc_raw_text)} chars")
-
-        # Get goods description from various locations
-        mt700 = lc_context.get("mt700") or {}
-        lc_data_for_ai["goods_description"] = (
-            lc_context.get("goods_description") or
-            mt700.get("goods_description") or 
-            mt700.get("45A") or
-            ""
-        )
-        logger.info(f"AI Validation: goods_description length = {len(lc_data_for_ai['goods_description'])} chars")
-
-        # Get goods list
-        lc_data_for_ai["goods"] = (
-            lc_context.get("goods") or 
-            lc_context.get("goods_items") or 
-            mt700.get("goods") or
-            []
-        )
-        lc_data_for_ai["requirements_graph_v1"] = (
-            lc_context.get("requirements_graph_v1")
-            or lc_context.get("requirementsGraphV1")
-            or payload.get("requirements_graph_v1")
-            or extracted_context.get("requirements_graph_v1")
-        )
-
-        # Get documents from both payload and extracted_context
-        documents_for_ai = (
-            extracted_context.get("documents") or  # Primary: from extraction
-            payload.get("documents") or  # Fallback: from payload
-            []
-        )
-        logger.info(f"AI Validation: {len(documents_for_ai)} documents to check")
-
-        (ai_issues, ai_metadata), ai_validation_timed_out = await _await_with_timeout(
-            "AI validation",
-            run_ai_validation(
-                lc_data=lc_data_for_ai,
-                documents=documents_for_ai,
-                extracted_context=extracted_context,
-            ),
-            AI_VALIDATION_TIMEOUT_SECONDS,
-            ([], {"timed_out": True}),
-        )
-        if not isinstance(ai_metadata, dict):
-            ai_metadata = {}
-
-        logger.info(
-            "AI Validation: found %d issues (critical=%d, major=%d)",
-            len(ai_issues),
-            ai_metadata.get("critical_issues", 0),
-            ai_metadata.get("major_issues", 0),
-        )
-        ai_validation_layers = _build_ai_validation_layers(
-            ai_metadata,
-            timed_out=ai_validation_timed_out,
-        )
-        ai_validation_summary = {
-            "issue_count": len(ai_issues),
-            "critical_issues": int(ai_metadata.get("critical_issues", 0) or 0),
-            "major_issues": int(ai_metadata.get("major_issues", 0) or 0),
-            "minor_issues": int(ai_metadata.get("minor_issues", 0) or 0),
-            "documents_checked": len(documents_for_ai) if isinstance(documents_for_ai, list) else 0,
-            "derived_ai_verdict": (
-                "reject" if int(ai_metadata.get("critical_issues", 0) or 0) > 0 else (
-                "warn" if int(ai_metadata.get("major_issues", 0) or 0) > 0 else "pass"
-                )
-            ),
-            "layer_contract_version": "ai_layers_v1",
-            "execution_position": "post_deterministic_runtime",
-            "layers": ai_validation_layers,
-            "metadata": ai_metadata or {},
-            "timed_out": ai_validation_timed_out,
-        }
-        if ai_validation_timed_out:
-            _append_timeout_event(
-                timeout_events,
-                stage="ai_validation",
-                label="AI validation",
-                timeout_seconds=AI_VALIDATION_TIMEOUT_SECONDS,
-                fallback="ai_issues_skipped",
-            )
-
         # Convert AI issues to same format as crossdoc issues
         for ai_issue in ai_issues:
             v2_crossdoc_issues.append(ai_issue)
-        checkpoint("ai_validation_complete")
 
         # =================================================================
         # HYBRID VALIDATION ENHANCEMENTS

@@ -145,7 +145,7 @@ def test_validation_contract_uses_projected_ai_layers_as_first_class_contract_ev
             "critical_issues": 0,
             "major_issues": 0,
             "minor_issues": 0,
-            "execution_position": "post_deterministic_runtime",
+            "execution_position": "pre_deterministic_runtime",
             "layer_contract_version": "ai_layers_v1",
             "layers": {
                 "l1": {
@@ -196,7 +196,38 @@ def test_validation_contract_uses_projected_ai_layers_as_first_class_contract_ev
 
     assert contract["ai_verdict"] == "reject"
     assert contract["ai_layer_contract_version"] == "ai_layers_v1"
-    assert contract["ai_execution_position"] == "post_deterministic_runtime"
+    assert contract["ai_execution_position"] == "pre_deterministic_runtime"
     assert contract["ai_layers"]["l1"]["verdict"] == "reject"
     assert contract["evidence_summary"]["ai_layer_verdicts"]["l1"] == "reject"
     assert contract["evidence_summary"]["ai_layers_executed"] == ["l1"]
+
+
+def test_validation_execution_runs_ai_validation_before_deterministic_stages() -> None:
+    source = VALIDATION_EXECUTION_PATH.read_text(encoding="utf-8")
+    parsed = ast.parse(source)
+
+    execute_fn = next(
+        node
+        for node in parsed.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "execute_validation_pipeline"
+    )
+
+    ai_call_line = None
+    db_rules_call_line = None
+    crossdoc_call_line = None
+
+    for node in ast.walk(execute_fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "run_ai_validation":
+            ai_call_line = node.lineno
+        elif isinstance(func, ast.Name) and func.id == "validate_document_async":
+            db_rules_call_line = node.lineno
+        elif isinstance(func, ast.Attribute) and func.attr == "validate_all":
+            crossdoc_call_line = node.lineno
+
+    assert ai_call_line is not None
+    assert db_rules_call_line is not None
+    assert crossdoc_call_line is not None
+    assert ai_call_line < db_rules_call_line < crossdoc_call_line
