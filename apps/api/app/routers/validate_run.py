@@ -93,6 +93,8 @@ def build_router(shared: Any) -> APIRouter:
         audit_context = create_audit_context(request)
         payload: Dict[str, Any] = {}
         runtime_context: Dict[str, Any] = {"validation_session": None}
+        if hasattr(request, "state"):
+            request.state.validation_runtime_context = runtime_context
 
         try:
             parsed_request = await parse_validate_request(request)

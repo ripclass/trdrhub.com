@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import time as time_module
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -19,6 +20,17 @@ VALIDATE_RUN_PATH = ROOT / "app" / "routers" / "validate_run.py"
 
 
 def _load_module(path: Path, name: str):
+    routers_root = ROOT / "app" / "routers"
+    validation_root = routers_root / "validation"
+
+    routers_pkg = types.ModuleType("app.routers")
+    routers_pkg.__path__ = [str(routers_root)]
+    sys.modules["app.routers"] = routers_pkg
+
+    validation_pkg = types.ModuleType("app.routers.validation")
+    validation_pkg.__path__ = [str(validation_root)]
+    sys.modules["app.routers.validation"] = validation_pkg
+
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load module from {path}")
@@ -38,6 +50,14 @@ class _AuditService:
 
     def log_action(self, **kwargs) -> None:
         return None
+
+
+class _FakeRouter:
+    def __init__(self, *args, **kwargs) -> None:
+        self.routes = []
+
+    def add_api_route(self, path, endpoint, methods=None):
+        self.routes.append(SimpleNamespace(path=path, endpoint=endpoint, methods=methods or []))
 
 
 def _shared_bindings() -> dict[str, object]:
@@ -77,6 +97,7 @@ async def test_validate_run_wraps_generic_pipeline_failures_with_breadcrumbs(
         VALIDATE_RUN_PATH,
         "validate_run_failure_breadcrumbs_test",
     )
+    validate_run.APIRouter = _FakeRouter
     validate_run.bind_request_parsing_shared = lambda shared: None
     validate_run.bind_pipeline_runner_shared = lambda shared: None
 
@@ -116,6 +137,51 @@ async def test_validate_run_wraps_generic_pipeline_failures_with_breadcrumbs(
 
 
 @pytest.mark.asyncio
+async def test_validate_run_exposes_runtime_context_on_request_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEBUG", "false")
+    validate_run = _load_module(
+        VALIDATE_RUN_PATH,
+        "validate_run_request_state_runtime_context_test",
+    )
+    validate_run.APIRouter = _FakeRouter
+    validate_run.bind_request_parsing_shared = lambda shared: None
+    validate_run.bind_pipeline_runner_shared = lambda shared: None
+
+    seen: dict[str, object] = {}
+
+    async def fake_parse_validate_request(request):
+        seen["runtime_context"] = request.state.validation_runtime_context
+        return SimpleNamespace(
+            payload={},
+            files_list=[],
+            doc_type=None,
+            intake_only=False,
+        )
+
+    async def fake_run_validate_pipeline(**kwargs):
+        return {
+            "job_id": "job-state-1",
+            "structured_result": {},
+            "telemetry": {},
+        }
+
+    validate_run.parse_validate_request = fake_parse_validate_request
+    validate_run.run_validate_pipeline = fake_run_validate_pipeline
+
+    router = validate_run.build_router(_shared_bindings())
+    validate_doc = next(route.endpoint for route in router.routes if route.path == "/")
+
+    request = SimpleNamespace(headers={}, state=SimpleNamespace())
+    result = await validate_doc(request=request, current_user=None, db=object())
+
+    assert isinstance(seen["runtime_context"], dict)
+    assert request.state.validation_runtime_context is seen["runtime_context"]
+    assert result["job_id"] == "job-state-1"
+
+
+@pytest.mark.asyncio
 async def test_validate_run_enriches_http_exceptions_with_stage_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -124,6 +190,7 @@ async def test_validate_run_enriches_http_exceptions_with_stage_details(
         VALIDATE_RUN_PATH,
         "validate_run_http_failure_breadcrumbs_test",
     )
+    validate_run.APIRouter = _FakeRouter
     validate_run.bind_request_parsing_shared = lambda shared: None
     validate_run.bind_pipeline_runner_shared = lambda shared: None
 
@@ -174,6 +241,7 @@ async def test_validate_run_omits_non_resolvable_job_ids_from_error_details(
         VALIDATE_RUN_PATH,
         "validate_run_http_failure_without_resolvable_job_test",
     )
+    validate_run.APIRouter = _FakeRouter
     validate_run.bind_request_parsing_shared = lambda shared: None
     validate_run.bind_pipeline_runner_shared = lambda shared: None
 

@@ -230,6 +230,30 @@ app = FastAPI(
 )
 
 
+def _validation_breadcrumbs_from_request(request: Request) -> Dict[str, Any]:
+    runtime_context = getattr(request.state, "validation_runtime_context", None)
+    if not isinstance(runtime_context, dict):
+        return {}
+
+    failure_stage = (
+        runtime_context.get("pipeline_failure_stage")
+        or runtime_context.get("pipeline_stage")
+    )
+    checkpoint_trace = runtime_context.get("pipeline_checkpoints") or []
+    stage_trace = runtime_context.get("pipeline_stage_trace") or []
+
+    breadcrumbs: Dict[str, Any] = {}
+    if failure_stage:
+        breadcrumbs["failure_stage"] = str(failure_stage)
+    if isinstance(checkpoint_trace, list) and checkpoint_trace:
+        breadcrumbs["checkpoint_trace"] = [str(item) for item in checkpoint_trace]
+    if isinstance(stage_trace, list) and stage_trace:
+        breadcrumbs["pipeline_stage_trace"] = [str(item) for item in stage_trace]
+    if runtime_context.get("job_id_resolvable") and runtime_context.get("job_id") is not None:
+        breadcrumbs["job_id"] = str(runtime_context.get("job_id"))
+    return breadcrumbs
+
+
 @app.get("/healthz", tags=["health"], summary="Lightweight liveness probe")
 async def healthz() -> Dict[str, str]:
     """Simple health endpoint for load balancers and uptime checks."""
@@ -456,7 +480,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     # This ensures datetime objects are properly serialized to ISO strings
     import json
     error_dict = json.loads(error_response.model_dump_json())
-    
+    error_dict.update(_validation_breadcrumbs_from_request(request))
+
     return JSONResponse(
         status_code=500,
         content=error_dict,

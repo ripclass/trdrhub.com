@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import sys
+import types
 
 import pytest
 
@@ -15,6 +16,17 @@ PIPELINE_RUNNER_PATH = ROOT / "app" / "routers" / "validation" / "pipeline_runne
 
 
 def _load_module(path: Path, name: str):
+    routers_root = ROOT / "app" / "routers"
+    validation_root = routers_root / "validation"
+
+    routers_pkg = types.ModuleType("app.routers")
+    routers_pkg.__path__ = [str(routers_root)]
+    sys.modules["app.routers"] = routers_pkg
+
+    validation_pkg = types.ModuleType("app.routers.validation")
+    validation_pkg.__path__ = [str(validation_root)]
+    sys.modules["app.routers.validation"] = validation_pkg
+
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load module from {path}")
