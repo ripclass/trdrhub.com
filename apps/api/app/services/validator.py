@@ -1498,6 +1498,17 @@ _OVERLAP_FIELD_ALIASES = {
     "shipment_date": "on_board_date",
     "shipper": "shipper",
 }
+_INSURANCE_COVERAGE_SOURCE_FIELDS = {"insured_amount", "coverage_amount", "sum_insured"}
+_INSURANCE_COVERAGE_TARGET_FIELDS = {
+    "amount",
+    "credit_amount",
+    "value",
+    "invoice_amount",
+    "total_amount",
+    "total",
+    "cif_amount",
+    "invoice_value",
+}
 
 
 def _normalize_overlap_doc_label(value: Any) -> Optional[str]:
@@ -1550,6 +1561,18 @@ def _build_overlap_key(
     right_field_token = _normalize_overlap_field_label(right_field)
     if not (left_doc_token and left_field_token and right_doc_token and right_field_token):
         return None
+    if (
+        left_doc_token == "insurance"
+        and left_field_token in _INSURANCE_COVERAGE_SOURCE_FIELDS
+        and right_doc_token in {"lc", "invoice"}
+        and right_field_token in _INSURANCE_COVERAGE_TARGET_FIELDS
+    ) or (
+        right_doc_token == "insurance"
+        and right_field_token in _INSURANCE_COVERAGE_SOURCE_FIELDS
+        and left_doc_token in {"lc", "invoice"}
+        and left_field_token in _INSURANCE_COVERAGE_TARGET_FIELDS
+    ):
+        return "insurance.insured_amount|insurance.minimum_required_coverage"
     terms = sorted(
         [
             f"{left_doc_token}.{left_field_token}",
@@ -1572,6 +1595,14 @@ def _extract_rule_overlap_keys(rule: Dict[str, Any]) -> List[str]:
             or condition.get("reference_field")
             or condition.get("value_ref")
         )
+        computed_field = condition.get("computed_field")
+        if not right_path and isinstance(computed_field, str):
+            arithmetic_match = re.match(
+                r"^(?P<field>[A-Za-z0-9_.]+)\s*[*/+-]\s*\d+(?:\.\d+)?$",
+                computed_field.strip(),
+                re.IGNORECASE,
+            )
+            right_path = arithmetic_match.group("field") if arithmetic_match else computed_field
         key = _build_overlap_key(
             _infer_doc_from_field(left_path) or default_doc,
             left_path,

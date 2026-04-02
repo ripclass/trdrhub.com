@@ -125,6 +125,17 @@ _OVERLAP_FIELD_ALIASES = {
     "latest_shipment": "latest_shipment_date",
     "latest_shipment_date": "latest_shipment_date",
 }
+_INSURANCE_COVERAGE_SOURCE_FIELDS = {"insured_amount", "coverage_amount", "sum_insured"}
+_INSURANCE_COVERAGE_TARGET_FIELDS = {
+    "amount",
+    "credit_amount",
+    "value",
+    "invoice_amount",
+    "total_amount",
+    "total",
+    "cif_amount",
+    "invoice_value",
+}
 
 _INSURANCE_RULE_DOCUMENT_TYPES = {
     "insurance_certificate",
@@ -607,6 +618,18 @@ def _build_overlap_key(
     target_field_token = _normalize_overlap_field_token(target_field)
     if not (source_doc_token and source_field_token and target_doc_token and target_field_token):
         return None
+    if (
+        source_doc_token == "insurance"
+        and source_field_token in _INSURANCE_COVERAGE_SOURCE_FIELDS
+        and target_doc_token in {"lc", "invoice"}
+        and target_field_token in _INSURANCE_COVERAGE_TARGET_FIELDS
+    ) or (
+        target_doc_token == "insurance"
+        and target_field_token in _INSURANCE_COVERAGE_SOURCE_FIELDS
+        and source_doc_token in {"lc", "invoice"}
+        and source_field_token in _INSURANCE_COVERAGE_TARGET_FIELDS
+    ):
+        return "insurance.insured_amount|insurance.minimum_required_coverage"
     terms = sorted(
         [
             f"{source_doc_token}.{source_field_token}",

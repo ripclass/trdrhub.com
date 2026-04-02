@@ -23,6 +23,8 @@ def _load_symbols() -> Dict[str, Any]:
                     "_ICC_RULE_ID_PATTERN",
                     "_OVERLAP_DOC_ALIASES",
                     "_OVERLAP_FIELD_ALIASES",
+                    "_INSURANCE_COVERAGE_SOURCE_FIELDS",
+                    "_INSURANCE_COVERAGE_TARGET_FIELDS",
                 }:
                     selected_nodes.append(node)
                     break
@@ -249,6 +251,30 @@ def test_validation_execution_suppresses_legacy_insurance_currency_duplicate_whe
     )
 
     assert [issue["rule"] for issue in filtered] == ["UCP600-28D"]
+
+
+def test_validation_execution_suppresses_legacy_insurance_coverage_duplicate_when_specific_ucp_rule_exists() -> None:
+    fn = _load_symbols()["_suppress_legacy_issue_noise"]
+
+    filtered = fn(
+        [
+            {
+                "rule": "CROSSDOC-INSURANCE-1",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "source_doc": "insurance_certificate",
+                "source_field": "insured_amount",
+                "target_doc": "letter_of_credit",
+                "target_field": "amount",
+            },
+            {
+                "rule": "UCP600-28E",
+                "ruleset_domain": "icc.ucp600",
+                "overlap_keys": ["insurance.insured_amount|insurance.minimum_required_coverage"],
+            },
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-28E"]
 
 
 def test_validation_execution_extracts_exact_wording_overlap_key_from_crossdoc_issue() -> None:

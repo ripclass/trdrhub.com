@@ -1028,3 +1028,22 @@ def test_extract_rule_overlap_keys_canonicalizes_ucp20c_late_shipment_paths() ->
     assert validator_module._extract_rule_overlap_keys(rule) == [
         "bill_of_lading.on_board_date|lc.latest_shipment_date"
     ]
+
+
+def test_extract_rule_overlap_keys_canonicalizes_ucp28e_insurance_undercoverage_paths() -> None:
+    rule = {
+        "rule_id": "UCP600-28E",
+        "document_type": "invoice",
+        "conditions": [
+            {
+                "field": "insurance_doc.insured_amount",
+                "operator": "less_than",
+                "computed_field": "invoice.cif_amount * 1.10",
+                "type": "amount_comparison",
+            }
+        ],
+    }
+
+    assert validator_module._extract_rule_overlap_keys(rule) == [
+        "insurance.insured_amount|insurance.minimum_required_coverage"
+    ]
