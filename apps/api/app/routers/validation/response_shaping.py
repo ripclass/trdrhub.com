@@ -199,6 +199,70 @@ def _is_legacy_extraction_review_reason(reason: Any) -> bool:
     return False
 
 
+def _has_runtime_extraction_review_signal(document: Dict[str, Any]) -> bool:
+    if not isinstance(document, dict):
+        return False
+
+    if bool(document.get("review_required") or document.get("reviewRequired")):
+        return True
+
+    extraction_status = str(
+        document.get("extraction_status")
+        or document.get("extractionStatus")
+        or document.get("status")
+        or ""
+    ).strip().lower()
+    critical_field_states = (
+        document.get("critical_field_states")
+        if isinstance(document.get("critical_field_states"), dict)
+        else document.get("criticalFieldStates")
+        if isinstance(document.get("criticalFieldStates"), dict)
+        else {}
+    )
+    missing_critical_fields = any(
+        str(state or "").strip().lower() == "missing"
+        for state in critical_field_states.values()
+    )
+
+    artifacts = (
+        document.get("extraction_artifacts_v1")
+        if isinstance(document.get("extraction_artifacts_v1"), dict)
+        else document.get("extractionArtifactsV1")
+        if isinstance(document.get("extractionArtifactsV1"), dict)
+        else {}
+    )
+    selected_stage = str(
+        artifacts.get("selected_stage") or artifacts.get("final_stage") or ""
+    ).strip().lower()
+    degraded_selection_stages = {"binary_metadata_scrape"}
+    severe_reason_codes = {
+        "field_not_found",
+        "ocr_auth_error",
+        "ocr_auth_failure",
+        "ocr_empty_result",
+        "ocr_provider_unavailable",
+        "parse_failed",
+        "parser_empty_output",
+        "low_confidence",
+        "low_confidence_critical",
+    }
+    reason_codes = {
+        str(reason or "").strip().lower()
+        for key in ("canonical_reason_codes", "reason_codes", "review_reasons", "reviewReasons")
+        for reason in (artifacts.get(key) or [])
+        if str(reason or "").strip()
+    }
+
+    return bool(
+        reason_codes.intersection(severe_reason_codes)
+        or selected_stage in degraded_selection_stages
+        or (
+            missing_critical_fields
+            and extraction_status in {"partial", "warning", "error", "parse_failed", "text_only", "unknown"}
+        )
+    )
+
+
 def sanitize_public_document_contract_v1(document: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(document, dict):
         return document
@@ -213,7 +277,10 @@ def sanitize_public_document_contract_v1(document: Dict[str, Any]) -> Dict[str, 
         for reason in raw_review_reasons
         if str(reason or "").strip() and not _is_legacy_extraction_review_reason(reason)
     ]
-    review_required = bool(sanitized.get("review_required") or sanitized.get("reviewRequired")) and bool(review_reasons)
+    review_required = (
+        bool(review_reasons)
+        and bool(sanitized.get("review_required") or sanitized.get("reviewRequired"))
+    ) or _has_runtime_extraction_review_signal(sanitized)
 
     sanitized["missing_required_fields"] = []
     sanitized["missingRequiredFields"] = []
