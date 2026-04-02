@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import math
+from dataclasses import asdict, is_dataclass
+from datetime import date, datetime, time as dt_time
+from decimal import Decimal
+from enum import Enum
 from typing import Any, Dict, List
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 
 _SHARED_NAMES = [
@@ -80,6 +85,74 @@ def bind_shared(shared: Any) -> None:
             "Missing shared bindings for validation.result_finalization: "
             + ", ".join(sorted(missing_bindings))
         )
+
+
+def _make_json_safe(value: Any) -> Any:
+    """
+    Recursively coerce runtime payloads into JSON-safe values.
+
+    Degraded OCR/AI paths can surface values that are safe in Python but can fail
+    JSON column persistence or HTTP serialization later in the pipeline.
+    """
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+
+    if isinstance(value, Decimal):
+        try:
+            coerced = float(value)
+        except Exception:
+            return str(value)
+        return coerced if math.isfinite(coerced) else None
+
+    if isinstance(value, (datetime, date, dt_time)):
+        return value.isoformat()
+
+    if isinstance(value, UUID):
+        return str(value)
+
+    if isinstance(value, Enum):
+        return _make_json_safe(value.value)
+
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        try:
+            decoded = bytes(value).decode("utf-8")
+            if decoded.isprintable():
+                return decoded
+        except Exception:
+            pass
+        return f"<binary:{len(bytes(value))} bytes>"
+
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            sanitized[str(key)] = _make_json_safe(item)
+        return sanitized
+
+    if isinstance(value, (list, tuple, set)):
+        return [_make_json_safe(item) for item in value]
+
+    if hasattr(value, "model_dump") and callable(value.model_dump):
+        try:
+            return _make_json_safe(value.model_dump())
+        except Exception:
+            return str(value)
+
+    if is_dataclass(value):
+        try:
+            return _make_json_safe(asdict(value))
+        except Exception:
+            return str(value)
+
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        try:
+            return _make_json_safe(value.to_dict())
+        except Exception:
+            return str(value)
+
+    return str(value)
 
 
 def _suppress_advisory_findings_for_documentary_context(
@@ -1207,6 +1280,10 @@ async def finalize_validation_result(
         structured_result["_validation_contract_error"] = str(contract_err)
         logger.warning(f"Contract validation failed (non-blocking): {contract_err}")
 
+    structured_result = _make_json_safe(structured_result)
+    telemetry_payload = _make_json_safe(telemetry_payload)
+    db_rules_debug = _make_json_safe(db_rules_debug)
+
     if validation_session:
         validation_session.validation_results = {"structured_result": structured_result}
         validation_session.status = SessionStatus.COMPLETED.value
@@ -1219,12 +1296,12 @@ async def finalize_validation_result(
     # Add DB rules debug info to response
     structured_result["_db_rules_debug"] = db_rules_debug
 
-    return {
+    return _make_json_safe({
         "job_id": str(job_id),
         "jobId": str(job_id),
         "structured_result": structured_result,
         "telemetry": telemetry_payload,
-    }
+    })
 
 
 
