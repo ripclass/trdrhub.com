@@ -130,6 +130,30 @@ def test_validation_execution_suppresses_legacy_crossdoc_duplicate_when_specific
     assert [issue["rule"] for issue in filtered] == ["UCP600-20D"]
 
 
+def test_validation_execution_suppresses_legacy_late_shipment_duplicate_when_specific_ucp_rule_exists() -> None:
+    fn = _load_symbols()["_suppress_legacy_issue_noise"]
+
+    filtered = fn(
+        [
+            {
+                "rule": "CROSSDOC-BL-003",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "source_doc": "bill_of_lading",
+                "source_field": "shipment_date",
+                "target_doc": "letter_of_credit",
+                "target_field": "latest_shipment",
+            },
+            {
+                "rule": "UCP600-20C",
+                "ruleset_domain": "icc.ucp600",
+                "overlap_keys": ["bill_of_lading.on_board_date|lc.latest_shipment_date"],
+            },
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["UCP600-20C"]
+
+
 def test_validation_execution_suppresses_legacy_invoice_issuer_duplicate_when_specific_ucp_rule_exists() -> None:
     fn = _load_symbols()["_suppress_legacy_issue_noise"]
 

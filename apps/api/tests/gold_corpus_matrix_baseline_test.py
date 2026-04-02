@@ -29,7 +29,7 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_001_synthetic_bd.json": [],
         "set_002_amount_mismatch.json": ["CROSSDOC-AMOUNT-1"],
         "set_003_port_mismatch.json": ["CROSSDOC-BL-002"],
-        "set_004_late_shipment.json": ["CROSSDOC-BL-003"],
+        "set_004_late_shipment.json": ["UCP600-20C"],
         "set_005_insurance_undervalue.json": ["CROSSDOC-INSURANCE-1"],
         "set_006_goods_mismatch.json": ["UCP600-18D"],
         "set_007_missing_insurance_document.json": ["DOCSET-MISSING-INSURANCE-CERTIFICATE"],
@@ -127,6 +127,10 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     insurance_currency_set = _load_expected("set_014_insurance_currency_mismatch.json")
     insurance_currency_false_positives = _false_positive_rule_ids(insurance_currency_set)
     assert {"CROSSDOC-INS-002", "CROSSDOC-INSURANCE-1", "CROSSDOC-INS-003"}.issubset(insurance_currency_false_positives)
+
+    late_shipment_set = _load_expected("set_004_late_shipment.json")
+    late_shipment_false_positives = _false_positive_rule_ids(late_shipment_set)
+    assert {"CROSSDOC-BL-003", "UCP600-20", "LC-TYPE-UNKNOWN"}.issubset(late_shipment_false_positives)
 
     po_set = _load_expected("set_015_po_number_missing.json")
     po_false_positives = _false_positive_rule_ids(po_set)

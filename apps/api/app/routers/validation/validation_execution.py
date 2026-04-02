@@ -120,6 +120,10 @@ _OVERLAP_FIELD_ALIASES = {
     "required_wording": "exact_wording",
     "seller": "issuer",
     "seller_name": "issuer",
+    "shipment_date": "on_board_date",
+    "on_board_date": "on_board_date",
+    "latest_shipment": "latest_shipment_date",
+    "latest_shipment_date": "latest_shipment_date",
 }
 
 _INSURANCE_RULE_DOCUMENT_TYPES = {

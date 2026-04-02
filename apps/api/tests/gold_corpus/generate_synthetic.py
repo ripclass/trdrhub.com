@@ -705,9 +705,22 @@ def generate_set_004_late_shipment():
             {"document_type": "bl", "field_name": "shipped_on_board_date", "expected_value": "2026-03-05", "match_type": "contains", "criticality": "important"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-BL-003", "severity": "critical", "document_type": "bill", "title_contains": "shipment", "description": "Late shipment"}
+            {"rule_id": "UCP600-20C", "severity": "critical", "document_type": "bill", "title_contains": "shipment", "description": "Late shipment"}
         ],
-        "false_positive_checks": []
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-BL-003",
+                "description": "Legacy late-shipment duplicate should be suppressed when UCP600-20C is present."
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "Fallback article umbrella should not surface when UCP600-20C is present."
+            },
+            {
+                "rule_id": "LC-TYPE-UNKNOWN",
+                "description": "LC type fallback should not leak once the actionable shipment discrepancy is present."
+            }
+        ]
     }
     (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     

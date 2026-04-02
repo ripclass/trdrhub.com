@@ -25,12 +25,25 @@
   ],
   "expected_issues": [
     {
-      "rule_id": "CROSSDOC-BL-003",
+      "rule_id": "UCP600-20C",
       "severity": "critical",
       "document_type": "bill",
       "title_contains": "shipment",
       "description": "Late shipment"
     }
   ],
-  "false_positive_checks": []
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-BL-003",
+      "description": "Legacy late-shipment duplicate should be suppressed when UCP600-20C is present."
+    },
+    {
+      "rule_id": "UCP600-20",
+      "description": "Fallback article umbrella should not surface when UCP600-20C is present."
+    },
+    {
+      "rule_id": "LC-TYPE-UNKNOWN",
+      "description": "LC type fallback should not leak once the actionable shipment discrepancy is present."
+    }
+  ]
 }
