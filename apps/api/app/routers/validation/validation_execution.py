@@ -835,6 +835,21 @@ def _suppress_legacy_issue_noise(
     return filtered
 
 
+def _recover_validation_db_session(db: Any) -> None:
+    """
+    Clear failed SQLAlchemy transaction state before post-validation assembly.
+
+    Validation intentionally swallows some non-fatal stage errors so the request
+    can still return useful findings. If one of those errors poisoned the active
+    DB transaction, the next DB access would fail far away from the original
+    stage. A rollback here is safe because validation_execution does not rely on
+    uncommitted DB writes from the earlier runtime stages.
+    """
+    rollback = getattr(db, "rollback", None)
+    if callable(rollback):
+        rollback()
+
+
 async def execute_validation_pipeline(
     *,
     request,
@@ -1462,6 +1477,9 @@ async def execute_validation_pipeline(
         # v2_gate_result remains None, issues remain empty
     # =====================================================================
 
+    _recover_validation_db_session(db)
+    checkpoint("post_validation_db_recovery")
+
     # Ensure user has a company (demo user will have one)
     if not current_user.company:
         # Try to get or create company for user
@@ -1478,6 +1496,7 @@ async def execute_validation_pipeline(
         current_user.company_id = demo_company.id
         db.commit()
         db.refresh(current_user)
+    checkpoint("company_context_ready")
 
     # Skip quota checks for demo user (allows validation to work without billing)
     if current_user.email != "demo@trdrhub.com":
@@ -1494,12 +1513,14 @@ async def execute_validation_pipeline(
                     "next_action_url": exc.next_action_url,
                 },
             ) from exc
+    checkpoint("quota_check_complete")
 
     # =====================================================================
     # V2 VALIDATION - PRIMARY PATH (Legacy disabled)
     # Note: Session was already created above, before gating check
     # =====================================================================
     request_user_type = _extract_request_user_type(payload)
+    checkpoint("request_user_type_resolved")
 
     # Build unified issues list from v2 components
     results = []  # Legacy results - empty
