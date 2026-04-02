@@ -80,6 +80,9 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - That means the next exporter decision is explicit:
   - either open one bounded missing-fact batch for advanced transport/insurance flags
   - or freeze exporter here and move to Phase 2 AI-first integration plus Phase 2.5 UX polish
+- Phase 2 now starts with an honest contract milestone:
+  - [x] project current AI validation into explicit `L1` / `L2` / `L3` layers
+  - [ ] move runtime ordering from post-deterministic projection to true AI-first execution
 
 ## Phase Sequence
 
@@ -95,6 +98,9 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - Keep deterministic rules after AI stages.
 - Keep veto/arbitration last.
 - Merge all layers through the same validation contract.
+- Preserve truth in the contract:
+  - if a layer is not implemented yet, mark it as `not_run`
+  - if current execution is still post-deterministic, say so explicitly instead of faking AI-first completion
 
 ### Phase 2.5: Exporter Product Polish
 

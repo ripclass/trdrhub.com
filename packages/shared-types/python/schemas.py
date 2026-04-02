@@ -561,8 +561,54 @@ class TimelineEntry(BaseModel):
     timestamp: Optional[str] = None
 
 
+class AIValidationLayer(BaseModel):
+    layer: str
+    label: str
+    executed: bool
+    verdict: str
+    issue_count: int = Field(ge=0)
+    critical_issues: int = Field(ge=0)
+    major_issues: int = Field(ge=0)
+    minor_issues: int = Field(ge=0)
+    checks_performed: List[str]
+    reason: Optional[str] = None
+    evidence: Optional[Dict[str, Any]] = None
+
+    class Config:
+        extra = "allow"
+
+
+class AIValidationLayers(BaseModel):
+    l1: Optional[AIValidationLayer] = None
+    l2: Optional[AIValidationLayer] = None
+    l3: Optional[AIValidationLayer] = None
+
+    class Config:
+        extra = "allow"
+
+
+class AIValidationSummary(BaseModel):
+    issue_count: Optional[int] = Field(default=None, ge=0)
+    critical_issues: Optional[int] = Field(default=None, ge=0)
+    major_issues: Optional[int] = Field(default=None, ge=0)
+    minor_issues: Optional[int] = Field(default=None, ge=0)
+    documents_checked: Optional[int] = Field(default=None, ge=0)
+    derived_ai_verdict: Optional[str] = None
+    layer_contract_version: Optional[str] = None
+    execution_position: Optional[str] = None
+    layers: Optional[AIValidationLayers] = None
+    metadata: Optional[Dict[str, Any]] = None
+    timed_out: Optional[bool] = None
+
+    class Config:
+        extra = "allow"
+
+
 class ValidationContractV1(BaseModel):
     ai_verdict: Optional[str] = None
+    ai_layers: Optional[AIValidationLayers] = None
+    ai_execution_position: Optional[str] = None
+    ai_layer_contract_version: Optional[str] = None
     ruleset_verdict: Optional[str] = None
     final_verdict: Optional[str] = None
     arbitration_mode: Optional[str] = None
@@ -740,6 +786,7 @@ class StructuredResultPayload(BaseModel):
     lc_structured: Optional[LcStructuredPayload] = None
     extraction_core_v1: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_core_v1")
     extraction_diagnostics: Optional[Dict[str, Any]] = Field(default=None, alias="_extraction_diagnostics")
+    ai_validation: Optional[AIValidationSummary] = None
     validation_contract_v1: Optional[ValidationContractV1] = None
     submission_eligibility: Optional[SubmissionEligibility] = None
     raw_submission_eligibility: Optional[SubmissionEligibility] = None
@@ -1078,6 +1125,9 @@ SCHEMAS = {
     'StructuredResultDocumentRiskEntry': DocumentRiskEntry,
     'StructuredResultAnalytics': StructuredResultAnalytics,
     'StructuredResultTimelineEntry': TimelineEntry,
+    'AIValidationLayer': AIValidationLayer,
+    'AIValidationLayers': AIValidationLayers,
+    'AIValidationSummary': AIValidationSummary,
     'ValidationContractV1': ValidationContractV1,
     'SubmissionEligibility': SubmissionEligibility,
     'BankVerdict': BankVerdict,

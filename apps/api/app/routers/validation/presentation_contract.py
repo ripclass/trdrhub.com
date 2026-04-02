@@ -299,8 +299,29 @@ def _build_validation_contract(
     ai_critical = int(ai_validation.get("critical_issues", 0) or 0)
     ai_major = int(ai_validation.get("major_issues", 0) or 0)
     ai_minor = int(ai_validation.get("minor_issues", 0) or 0)
+    ai_layers = ai_validation.get("layers") if isinstance(ai_validation.get("layers"), dict) else {}
+    ai_execution_position = str(ai_validation.get("execution_position") or "").strip() or None
+    ai_layer_contract_version = str(ai_validation.get("layer_contract_version") or "").strip() or None
+    ai_layer_verdicts = {
+        layer_name: str(layer.get("verdict") or "").strip().lower()
+        for layer_name, layer in ai_layers.items()
+        if isinstance(layer, dict)
+    }
+    executed_ai_layer_verdicts = [
+        verdict
+        for layer_name, verdict in ai_layer_verdicts.items()
+        if verdict in {"pass", "warn", "reject"}
+        and isinstance(ai_layers.get(layer_name), dict)
+        and bool(ai_layers.get(layer_name, {}).get("executed"))
+    ]
 
-    if ai_critical > 0:
+    if "reject" in executed_ai_layer_verdicts:
+        ai_verdict = "reject"
+    elif "warn" in executed_ai_layer_verdicts:
+        ai_verdict = "warn"
+    elif executed_ai_layer_verdicts:
+        ai_verdict = "pass"
+    elif ai_critical > 0:
         ai_verdict = "reject"
     elif ai_major > 0:
         ai_verdict = "warn"
@@ -493,6 +514,9 @@ def _build_validation_contract(
 
     return {
         "ai_verdict": ai_verdict,
+        "ai_layers": ai_layers or None,
+        "ai_execution_position": ai_execution_position,
+        "ai_layer_contract_version": ai_layer_contract_version,
         "ruleset_verdict": ruleset_verdict,
         "final_verdict": final_verdict,
         "override_reason": override_reason,
@@ -528,6 +552,8 @@ def _build_validation_contract(
             "primary_decision_lane": primary_decision_lane,
             "domain_risk_summary": {k: v for k, v in domain_risk_summary.items() if v is not None},
             "reason_semantics": reason_semantics,
+            "ai_execution_position": ai_execution_position,
+            "ai_layer_verdicts": ai_layer_verdicts,
         },
         "evidence_summary": {
             "primary_review_drivers": review_required_reason,
@@ -546,6 +572,13 @@ def _build_validation_contract(
             "requirement_reason_codes": requirement_reason_codes,
             "requirements_review_needed": bool(requirement_readiness_items),
             "advisory_action_titles": list(advisory_lane.get("titles") or [])[:5],
+            "ai_execution_position": ai_execution_position,
+            "ai_layer_verdicts": ai_layer_verdicts,
+            "ai_layers_executed": sorted(
+                layer_name
+                for layer_name, layer in ai_layers.items()
+                if isinstance(layer, dict) and layer.get("executed")
+            ),
             "primary_requirement_actions": [
                 str(item.get("title") or "").strip()
                 for item in requirement_readiness_items

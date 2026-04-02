@@ -145,6 +145,116 @@ _INSURANCE_RULE_DOCUMENT_TYPES = {
 }
 
 
+def _derive_ai_layer_verdict(
+    *,
+    executed: bool,
+    critical_issues: int = 0,
+    major_issues: int = 0,
+    timed_out: bool = False,
+) -> str:
+    if not executed:
+        return "not_run"
+    if timed_out:
+        return "review"
+    if critical_issues > 0:
+        return "reject"
+    if major_issues > 0:
+        return "warn"
+    return "pass"
+
+
+def _build_ai_validation_layers(
+    ai_metadata: Dict[str, Any],
+    *,
+    timed_out: bool = False,
+) -> Dict[str, Dict[str, Any]]:
+    metadata = ai_metadata if isinstance(ai_metadata, dict) else {}
+    checks_performed = [
+        str(item).strip()
+        for item in (metadata.get("checks_performed") or [])
+        if str(item).strip()
+    ]
+    checks_seen = set(checks_performed)
+
+    l1_checks = [
+        check
+        for check in ("lc_requirement_parsing", "document_completeness")
+        if check in checks_seen
+    ]
+    l2_checks = [
+        check
+        for check in ("bl_field_validation", "packing_list_validation")
+        if check in checks_seen
+    ]
+
+    l1_issue_count = int(metadata.get("missing_critical_docs", 0) or 0)
+    l2_bl_issues = int(metadata.get("bl_missing_fields", 0) or 0)
+    l2_packing_issues = int(metadata.get("packing_list_issues", 0) or 0)
+    l2_issue_count = l2_bl_issues + l2_packing_issues
+
+    l1_executed = bool(l1_checks)
+    l2_executed = bool(l2_checks)
+
+    timed_out_reason = "timed_out" if timed_out else None
+
+    return {
+        "l1": {
+            "layer": "L1",
+            "label": "Document Completeness",
+            "executed": l1_executed,
+            "verdict": _derive_ai_layer_verdict(
+                executed=l1_executed,
+                critical_issues=l1_issue_count,
+                timed_out=timed_out,
+            ),
+            "issue_count": l1_issue_count,
+            "critical_issues": l1_issue_count,
+            "major_issues": 0,
+            "minor_issues": 0,
+            "checks_performed": l1_checks,
+            "reason": timed_out_reason if l1_executed else ("timed_out" if timed_out else "not_triggered"),
+            "evidence": {
+                "required_critical_docs": list(metadata.get("required_critical_docs") or []),
+                "missing_critical_docs": l1_issue_count,
+            },
+        },
+        "l2": {
+            "layer": "L2",
+            "label": "Requirement-To-Document Checks",
+            "executed": l2_executed,
+            "verdict": _derive_ai_layer_verdict(
+                executed=l2_executed,
+                major_issues=l2_issue_count,
+                timed_out=timed_out,
+            ),
+            "issue_count": l2_issue_count,
+            "critical_issues": 0,
+            "major_issues": l2_issue_count,
+            "minor_issues": 0,
+            "checks_performed": l2_checks,
+            "reason": timed_out_reason if l2_executed else ("timed_out" if timed_out else "not_triggered"),
+            "evidence": {
+                "bl_must_show": list(metadata.get("bl_must_show") or []),
+                "bl_missing_fields": l2_bl_issues,
+                "packing_list_issues": l2_packing_issues,
+            },
+        },
+        "l3": {
+            "layer": "L3",
+            "label": "Advanced Anomaly Review",
+            "executed": False,
+            "verdict": "not_run",
+            "issue_count": 0,
+            "critical_issues": 0,
+            "major_issues": 0,
+            "minor_issues": 0,
+            "checks_performed": [],
+            "reason": "timed_out" if timed_out and not (l1_executed or l2_executed) else "advanced_anomaly_reasoning_not_wired",
+            "evidence": {},
+        },
+    }
+
+
 def _insurance_document_type(document: Dict[str, Any]) -> str:
     return str(
         document.get("document_type")
@@ -1238,6 +1348,10 @@ async def execute_validation_pipeline(
             ai_metadata.get("critical_issues", 0),
             ai_metadata.get("major_issues", 0),
         )
+        ai_validation_layers = _build_ai_validation_layers(
+            ai_metadata,
+            timed_out=ai_validation_timed_out,
+        )
         ai_validation_summary = {
             "issue_count": len(ai_issues),
             "critical_issues": int(ai_metadata.get("critical_issues", 0) or 0),
@@ -1249,6 +1363,9 @@ async def execute_validation_pipeline(
                 "warn" if int(ai_metadata.get("major_issues", 0) or 0) > 0 else "pass"
                 )
             ),
+            "layer_contract_version": "ai_layers_v1",
+            "execution_position": "post_deterministic_runtime",
+            "layers": ai_validation_layers,
             "metadata": ai_metadata or {},
             "timed_out": ai_validation_timed_out,
         }

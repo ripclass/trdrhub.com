@@ -607,8 +607,48 @@ export type StructuredTimelineEntry = z.infer<typeof StructuredTimelineEntrySche
 export const TimelineEntrySchema = StructuredTimelineEntrySchema;
 export type TimelineEntry = StructuredTimelineEntry;
 
+export const AiValidationLayerSchema = z.object({
+  layer: z.enum(['L1', 'L2', 'L3']),
+  label: z.string(),
+  executed: z.boolean(),
+  verdict: z.enum(['pass', 'warn', 'reject', 'not_run']),
+  issue_count: z.number().nonnegative(),
+  critical_issues: z.number().nonnegative(),
+  major_issues: z.number().nonnegative(),
+  minor_issues: z.number().nonnegative(),
+  checks_performed: z.array(z.string()),
+  reason: z.string().optional(),
+  evidence: z.record(z.unknown()).optional(),
+}).passthrough();
+export type AiValidationLayer = z.infer<typeof AiValidationLayerSchema>;
+
+export const AiValidationLayersSchema = z.object({
+  l1: AiValidationLayerSchema.optional(),
+  l2: AiValidationLayerSchema.optional(),
+  l3: AiValidationLayerSchema.optional(),
+}).passthrough();
+export type AiValidationLayers = z.infer<typeof AiValidationLayersSchema>;
+
+export const AiValidationSummarySchema = z.object({
+  issue_count: z.number().nonnegative().optional(),
+  critical_issues: z.number().nonnegative().optional(),
+  major_issues: z.number().nonnegative().optional(),
+  minor_issues: z.number().nonnegative().optional(),
+  documents_checked: z.number().nonnegative().optional(),
+  derived_ai_verdict: z.enum(['pass', 'warn', 'reject']).optional(),
+  layer_contract_version: z.string().optional(),
+  execution_position: z.string().optional(),
+  layers: AiValidationLayersSchema.optional(),
+  metadata: z.record(z.unknown()).optional(),
+  timed_out: z.boolean().optional(),
+}).passthrough();
+export type AiValidationSummary = z.infer<typeof AiValidationSummarySchema>;
+
 export const ValidationContractV1Schema = z.object({
   ai_verdict: z.string().optional(),
+  ai_layers: AiValidationLayersSchema.optional().nullable(),
+  ai_execution_position: z.string().optional(),
+  ai_layer_contract_version: z.string().optional(),
   ruleset_verdict: z.string().optional(),
   final_verdict: z.enum(['pass', 'review', 'reject']).optional(),
   arbitration_mode: z.string().optional(),
@@ -792,6 +832,7 @@ export const StructuredResultSchema = z.object({
   lc_structured: LcStructuredPayloadSchema.optional(),
   _extraction_core_v1: z.record(z.unknown()).optional(),
   _extraction_diagnostics: z.record(z.unknown()).optional(),
+  ai_validation: AiValidationSummarySchema.optional(),
   validation_contract_v1: ValidationContractV1Schema.optional(),
   submission_eligibility: SubmissionEligibilitySchema.optional(),
   raw_submission_eligibility: SubmissionEligibilitySchema.optional(),
@@ -1207,6 +1248,9 @@ export const schemas = {
   StructuredResultDocumentRiskEntry: DocumentRiskEntrySchema,
   StructuredResultAnalytics: StructuredResultAnalyticsSchema,
   StructuredResultTimelineEntry: TimelineEntrySchema,
+  AiValidationLayer: AiValidationLayerSchema,
+  AiValidationLayers: AiValidationLayersSchema,
+  AiValidationSummary: AiValidationSummarySchema,
   ValidationContractV1: ValidationContractV1Schema,
   SubmissionEligibility: SubmissionEligibilitySchema,
   BankVerdict: BankVerdictSchema,
