@@ -49,6 +49,7 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - [x] `UCP600-20E`
 - [x] `UCP600-28A`
 - [x] `UCP600-28D`
+- [x] `UCP600-28E`
 - [x] `CROSSDOC-EXACT-WORDING`
 - [x] `CROSSDOC-PO-NUMBER`
 - [x] `CROSSDOC-BIN`
@@ -57,8 +58,8 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 ### Remaining Exporter Risks
 
 - [x] Replace rule-id-specific ICC-vs-legacy suppression with a generic overlap/dedup mechanism.
-- [ ] Promote the insurance undercoverage path to `UCP600-28E` with generic valuation/arithmetic support.
-- [ ] Finish one bounded exporter validation batch without drifting into endless atomic rollout.
+- [x] Promote the insurance undercoverage path to `UCP600-28E` with generic valuation/arithmetic support.
+- [x] Finish one bounded exporter validation batch without drifting into endless atomic rollout.
 - [ ] Freeze exporter on a documented baseline.
 - [ ] Implement explicit AI L1/L2/L3 staging ahead of deterministic rules.
 
@@ -70,8 +71,15 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - [x] Core transport-family live proof started
 - [x] Core insurance-family live proof started
 - [x] Generic overlap/dedup replaces the temporary rule-id bridge
-- [ ] Final bounded exporter validation batch completed
+- [x] Final bounded exporter validation batch completed
 - [ ] Exporter moved to blocker-fix mode only
+
+### Post-Batch Audit
+
+- Remaining staged UCP candidates such as `UCP600-20A/B/F/G` and `UCP600-28B/C/F/G` are now primarily missing-fact seams, not overlap/governance seams.
+- That means the next exporter decision is explicit:
+  - either open one bounded missing-fact batch for advanced transport/insurance flags
+  - or freeze exporter here and move to Phase 2 AI-first integration plus Phase 2.5 UX polish
 
 ## Phase Sequence
 

@@ -30,7 +30,7 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
         "set_002_amount_mismatch.json": ["CROSSDOC-AMOUNT-1"],
         "set_003_port_mismatch.json": ["UCP600-20E"],
         "set_004_late_shipment.json": ["UCP600-20C"],
-        "set_005_insurance_undervalue.json": ["CROSSDOC-INSURANCE-1"],
+        "set_005_insurance_undervalue.json": ["UCP600-28E"],
         "set_006_goods_mismatch.json": ["UCP600-18D"],
         "set_007_missing_insurance_document.json": ["DOCSET-MISSING-INSURANCE-CERTIFICATE"],
         "set_008_invoice_after_expiry.json": ["CROSSDOC-INV-004"],
@@ -111,6 +111,12 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     invoice_issuer_set = _load_expected("set_011_invoice_issuer_mismatch.json")
     invoice_issuer_false_positives = _false_positive_rule_ids(invoice_issuer_set)
     assert {"CROSSDOC-INV-002", "UCP600-18"}.issubset(invoice_issuer_false_positives)
+
+    insurance_undervalue_set = _load_expected("set_005_insurance_undervalue.json")
+    insurance_undervalue_false_positives = _false_positive_rule_ids(insurance_undervalue_set)
+    assert {"CROSSDOC-INSURANCE-1", "UCP600-18", "UCP600-20", "UCP600-28"}.issubset(
+        insurance_undervalue_false_positives
+    )
 
     missing_insurance_set = _load_expected("set_007_missing_insurance_document.json")
     missing_insurance_false_positives = _false_positive_rule_ids(missing_insurance_set)

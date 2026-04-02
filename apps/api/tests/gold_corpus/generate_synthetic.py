@@ -817,9 +817,26 @@ This is less than the required 110% coverage per UCP600.
             {"document_type": "lc", "field_name": "lc_amount", "expected_value": "150000.00", "match_type": "numeric_tolerance", "tolerance": 0.001, "criticality": "critical"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-INSURANCE-1", "severity": "major", "document_type": "insurance", "title_contains": "coverage", "description": "Insurance coverage insufficient"}
+            {"rule_id": "UCP600-28E", "severity": "minor", "document_type": "insurance", "title_contains": "110% of invoice value", "description": "Insurance coverage is below minimum 110% of invoice/CIF value"}
         ],
-        "false_positive_checks": []
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-INSURANCE-1",
+                "description": "Legacy insurance undercoverage duplicate should be suppressed when UCP600-28E is present."
+            },
+            {
+                "rule_id": "UCP600-18",
+                "description": "Invoice umbrella should not leak into the pure insurance undercoverage path."
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "Transport umbrella should not leak into the pure insurance undercoverage path."
+            },
+            {
+                "rule_id": "UCP600-28",
+                "description": "Insurance umbrella should be suppressed when specific UCP600-28E fires."
+            }
+        ]
     }
     (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     
