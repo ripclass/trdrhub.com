@@ -85,6 +85,7 @@ This directive replaces open-ended exporter firefighting with a bounded path:
   - [x] move runtime ordering from post-deterministic projection to true AI-first execution
   - [x] deepen `L3` anomaly reasoning beyond `not_run`
   - [ ] let severe AI-first anomalies drive review/escalation generically when deterministic rules are clean
+  - [ ] provisionalize same-document deterministic findings when `L3` marks extraction as major/unreliable
 
 ## Phase Sequence
 

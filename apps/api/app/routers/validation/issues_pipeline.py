@@ -104,15 +104,156 @@ def _partition_workflow_stage_issues(
     workflow_stage: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     stage = str((workflow_stage or {}).get("stage") or "").strip().lower()
-    if stage != "extraction_resolution":
-        return {"final_issues": list(issues or []), "provisional_issues": []}
+    severe_extraction_reason_codes = {
+        "field_not_found",
+        "ocr_auth_error",
+        "ocr_auth_failure",
+        "ocr_empty_result",
+        "ocr_provider_unavailable",
+        "parser_empty_output",
+        "parse_failed",
+        "low_confidence",
+        "low_confidence_critical",
+    }
+    degraded_selection_stages = {"binary_metadata_scrape"}
+    weak_fallback_document_names = {
+        "",
+        "supporting document",
+        "supporting_document",
+        "lc-related document",
+        "lc_related_document",
+    }
+
+    def _normalize_issue_text(value: Any) -> str:
+        return " ".join(str(value or "").strip().lower().split())
+
+    def _normalize_document_type_token(value: Any) -> str:
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _document_alias_tokens(document: Dict[str, Any]) -> Set[str]:
+        tokens: Set[str] = set()
+
+        def _add_token(raw: Any) -> None:
+            text = _normalize_issue_text(raw)
+            if not text:
+                return
+            tokens.add(text)
+            underscored = text.replace(" ", "_")
+            tokens.add(underscored)
+            basename = text.rsplit(".", 1)[0]
+            if basename:
+                tokens.add(basename)
+
+        doc_type = _normalize_document_type_token(
+            document.get("document_type") or document.get("documentType")
+        )
+        alias_map = {
+            "commercial_invoice": {"invoice", "commercial invoice"},
+            "invoice": {"invoice", "commercial invoice"},
+            "letter_of_credit": {"letter of credit", "lc"},
+            "lc": {"letter of credit", "lc"},
+            "bill_of_lading": {"bill of lading", "bl"},
+            "ocean_bill_of_lading": {"bill of lading", "bl"},
+            "insurance_certificate": {"insurance", "insurance certificate"},
+            "insurance_policy": {"insurance", "insurance policy"},
+            "insurance": {"insurance", "insurance certificate"},
+        }
+
+        if doc_type:
+            _add_token(doc_type)
+            for alias in alias_map.get(doc_type, set()):
+                _add_token(alias)
+
+        for raw in (
+            document.get("filename"),
+            document.get("file_name"),
+            document.get("name"),
+        ):
+            _add_token(raw)
+        return {token for token in tokens if token}
+
+    def _is_ai_major_extraction_unreliable_document(document: Dict[str, Any]) -> bool:
+        if not isinstance(document, dict):
+            return False
+
+        review_required = bool(
+            document.get("review_required") or document.get("reviewRequired")
+        )
+        extraction_status = str(
+            document.get("extraction_status")
+            or document.get("extractionStatus")
+            or document.get("status")
+            or ""
+        ).strip().lower()
+        critical_field_states = (
+            document.get("critical_field_states")
+            if isinstance(document.get("critical_field_states"), dict)
+            else document.get("criticalFieldStates")
+            if isinstance(document.get("criticalFieldStates"), dict)
+            else {}
+        )
+        missing_critical_fields = any(
+            str(state or "").strip().lower() == "missing"
+            for state in critical_field_states.values()
+        )
+
+        extraction_artifacts = (
+            document.get("extraction_artifacts_v1")
+            if isinstance(document.get("extraction_artifacts_v1"), dict)
+            else document.get("extractionArtifactsV1")
+            if isinstance(document.get("extractionArtifactsV1"), dict)
+            else {}
+        )
+        selected_stage = _normalize_issue_text(extraction_artifacts.get("selected_stage"))
+        raw_reason_codes = []
+        for key in ("canonical_reason_codes", "reason_codes", "review_reasons", "reviewReasons"):
+            values = extraction_artifacts.get(key)
+            if isinstance(values, list):
+                raw_reason_codes.extend(values)
+        reason_codes = {
+            _normalize_issue_field_key(code)
+            for code in raw_reason_codes
+            if str(code or "").strip()
+        }
+
+        if not review_required:
+            return False
+
+        return bool(
+            reason_codes.intersection(severe_extraction_reason_codes)
+            or selected_stage in degraded_selection_stages
+            or (
+                missing_critical_fields
+                and extraction_status in {"partial", "warning", "error", "parse_failed", "text_only", "unknown"}
+            )
+        )
 
     unresolved_doc_ids: Set[str] = set()
     unresolved_fields_by_doc: Dict[str, Set[str]] = {}
     unresolved_fields_any: Set[str] = set()
+    unreliable_doc_ids: Set[str] = set()
+    unreliable_doc_tokens: Set[str] = set()
+    unreliable_document_types: Set[str] = set()
+
     for document in documents or []:
         if not isinstance(document, dict):
             continue
+        doc_id = str(
+            document.get("document_id")
+            or document.get("documentId")
+            or document.get("id")
+            or ""
+        ).strip()
+        doc_type = _normalize_document_type_token(
+            document.get("document_type") or document.get("documentType")
+        )
+        if _is_ai_major_extraction_unreliable_document(document):
+            if doc_id:
+                unreliable_doc_ids.add(doc_id)
+            if doc_type:
+                unreliable_document_types.add(doc_type)
+            unreliable_doc_tokens.update(_document_alias_tokens(document))
+
         extraction_resolution = (
             document.get("extraction_resolution")
             if isinstance(document.get("extraction_resolution"), dict)
@@ -122,12 +263,6 @@ def _partition_workflow_stage_issues(
         )
         if not bool(extraction_resolution.get("required")):
             continue
-        doc_id = str(
-            document.get("document_id")
-            or document.get("documentId")
-            or document.get("id")
-            or ""
-        ).strip()
         if not doc_id:
             continue
         unresolved_doc_ids.add(doc_id)
@@ -140,19 +275,106 @@ def _partition_workflow_stage_issues(
         unresolved_fields_by_doc[doc_id] = field_names
         unresolved_fields_any.update(field_names)
 
+    if stage != "extraction_resolution" and not unreliable_doc_ids and not unreliable_doc_tokens:
+        return {"final_issues": list(issues or []), "provisional_issues": []}
+
+    def _issue_signal_text(issue: Dict[str, Any]) -> str:
+        parts: List[str] = []
+        for key in (
+            "rule",
+            "rule_id",
+            "title",
+            "message",
+            "description",
+            "expected",
+            "found",
+            "actual",
+            "suggestion",
+            "documentName",
+            "document_name",
+            "documentType",
+            "document_type",
+        ):
+            value = issue.get(key)
+            if value not in (None, ""):
+                parts.append(str(value))
+        for key in ("documents", "document_names", "documentNames", "document_types", "documentTypes"):
+            value = issue.get(key)
+            if isinstance(value, list):
+                parts.extend(str(item) for item in value if str(item or "").strip())
+        return _normalize_issue_text(" ".join(parts))
+
+    def _issue_targets_unreliable_document(issue: Dict[str, Any]) -> bool:
+        rule_id = str(issue.get("rule") or issue.get("rule_id") or issue.get("id") or "").strip().upper()
+        if rule_id.startswith("AI-L3-LOW-CONFIDENCE-"):
+            return False
+
+        issue_doc_ids = set(_normalize_issue_document_ids(issue))
+        if issue_doc_ids and issue_doc_ids.intersection(unreliable_doc_ids):
+            return True
+
+        signal_text = _issue_signal_text(issue)
+        return any(token in signal_text for token in unreliable_doc_tokens if token)
+
+    def _is_weak_fallback_issue(issue: Dict[str, Any]) -> bool:
+        rule_id = str(issue.get("rule") or issue.get("rule_id") or issue.get("id") or "").strip().upper()
+        if rule_id.startswith("AI-L3-LOW-CONFIDENCE-"):
+            return False
+
+        severity = _normalize_issue_text(issue.get("severity"))
+        if severity not in {"minor", "warning"}:
+            return False
+
+        if _normalize_issue_document_ids(issue):
+            return False
+
+        for key in ("field", "field_name", "source_field", "target_field", "lc_field"):
+            if str(issue.get(key) or "").strip():
+                return False
+        for key in ("documentType", "document_type"):
+            if str(issue.get(key) or "").strip():
+                return False
+        for key in ("documentTypes", "document_types"):
+            values = issue.get(key)
+            if isinstance(values, list) and any(str(item or "").strip() for item in values):
+                return False
+
+        document_name = _normalize_issue_text(issue.get("documentName") or issue.get("document_name"))
+        if document_name not in weak_fallback_document_names:
+            return False
+
+        expected = _normalize_issue_text(issue.get("expected"))
+        actual = _normalize_issue_text(issue.get("actual") or issue.get("found"))
+        return expected in {"", "—", "-", "n/a"} and actual in {"", "—", "-", "n/a"}
+
     final_issues: List[Dict[str, Any]] = []
     provisional_issues: List[Dict[str, Any]] = []
     for issue in issues or []:
         if not isinstance(issue, dict):
             final_issues.append(issue)
             continue
-        if _is_extraction_provisional_issue(
+
+        provisional_reason = None
+        if stage == "extraction_resolution" and _is_extraction_provisional_issue(
             issue,
             unresolved_doc_ids=unresolved_doc_ids,
             unresolved_fields_by_doc=unresolved_fields_by_doc,
             unresolved_fields_any=unresolved_fields_any,
         ):
-            provisional_issues.append(issue)
+            provisional_reason = "workflow_stage_extraction_resolution"
+        elif unreliable_doc_ids or unreliable_doc_tokens:
+            if _issue_targets_unreliable_document(issue):
+                provisional_reason = "ai_major_extraction_uncertainty"
+            elif _is_weak_fallback_issue(issue):
+                provisional_reason = "ai_major_extraction_fallback_noise"
+
+        if provisional_reason:
+            provisional_issue = dict(issue)
+            provisional_issue["provisional"] = True
+            provisional_issue["provisional_reason"] = provisional_reason
+            if unreliable_document_types:
+                provisional_issue["provisional_document_types"] = sorted(unreliable_document_types)
+            provisional_issues.append(provisional_issue)
             continue
         final_issues.append(issue)
 
