@@ -133,7 +133,7 @@ _INVOICE_VALIDATION_ALIASES = {
     "instrument_number": ("instrument_number", "invoice_number", "invoice_no", "inv_no"),
     "receipt_number": ("receipt_number", "receipt_no", "receipt_reference"),
     "invoice_date": ("invoice_date", "date", "issue_date"),
-    "amount": ("amount", "invoice_amount", "total_amount", "total"),
+    "amount": ("amount", "invoice_amount", "total_amount", "total", "cif_amount", "invoice_value"),
     "currency": ("currency", "currency_code"),
     "seller": ("seller", "seller_name", "exporter", "beneficiary", "issuer", "issuer_name"),
     "issuer": ("issuer", "issuer_name", "seller", "seller_name", "exporter", "beneficiary"),

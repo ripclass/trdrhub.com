@@ -57,6 +57,7 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 ### Remaining Exporter Risks
 
 - [x] Replace rule-id-specific ICC-vs-legacy suppression with a generic overlap/dedup mechanism.
+- [ ] Promote the insurance undercoverage path to `UCP600-28E` with generic valuation/arithmetic support.
 - [ ] Finish one bounded exporter validation batch without drifting into endless atomic rollout.
 - [ ] Freeze exporter on a documented baseline.
 - [ ] Implement explicit AI L1/L2/L3 staging ahead of deterministic rules.

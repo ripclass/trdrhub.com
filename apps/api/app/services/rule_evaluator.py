@@ -125,32 +125,61 @@ class RuleEvaluator:
             expr,
             re.IGNORECASE,
         )
-        if not match:
+        if match:
+            base_value = self.resolve_field_path(context, match.group("field"))
+            base_date = self._coerce_datetime(base_value)
+            if base_date is None:
+                return None
+
+            days = int(match.group("days"))
+            if match.group("sign") == "-":
+                days = -days
+
+            kind = match.group("kind").lower()
+            if kind == "banking_days":
+                if days >= 0:
+                    return self.add_banking_days(base_date, days)
+
+                current = base_date
+                remaining = abs(days)
+                while remaining > 0:
+                    current -= timedelta(days=1)
+                    if self.is_banking_day(current):
+                        remaining -= 1
+                return current
+
+            return self.add_calendar_days(base_date, days)
+
+        arithmetic_match = re.match(
+            r"^(?P<field>[A-Za-z0-9_.]+)\s*(?P<operator>[*/+-])\s*(?P<number>\d+(?:\.\d+)?)$",
+            expr,
+            re.IGNORECASE,
+        )
+        if not arithmetic_match:
             return None
 
-        base_value = self.resolve_field_path(context, match.group("field"))
-        base_date = self._coerce_datetime(base_value)
-        if base_date is None:
+        field_value = self.resolve_field_path(context, arithmetic_match.group("field"))
+        if field_value in (None, ""):
             return None
 
-        days = int(match.group("days"))
-        if match.group("sign") == "-":
-            days = -days
+        try:
+            left = Decimal(str(field_value).replace(",", "").strip())
+            right = Decimal(arithmetic_match.group("number"))
+        except Exception:
+            return None
 
-        kind = match.group("kind").lower()
-        if kind == "banking_days":
-            if days >= 0:
-                return self.add_banking_days(base_date, days)
-
-            current = base_date
-            remaining = abs(days)
-            while remaining > 0:
-                current -= timedelta(days=1)
-                if self.is_banking_day(current):
-                    remaining -= 1
-            return current
-
-        return self.add_calendar_days(base_date, days)
+        operator = arithmetic_match.group("operator")
+        if operator == "*":
+            return float(left * right)
+        if operator == "/":
+            if right == 0:
+                return None
+            return float(left / right)
+        if operator == "+":
+            return float(left + right)
+        if operator == "-":
+            return float(left - right)
+        return None
 
     def _compare_ordered_values(self, field_value: Any, compare_value: Any, operator: str) -> bool:
         field_date = self._coerce_datetime(field_value)

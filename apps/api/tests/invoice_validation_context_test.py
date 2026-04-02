@@ -193,3 +193,27 @@ def test_project_invoice_validation_context_projects_runtime_issuer_and_applican
     assert projected["buyer_name"] == "Global Trade Corp"
     assert projected["applicant"] == "Global Trade Corp"
     assert projected["applicant_name"] == "Global Trade Corp"
+
+
+def test_project_invoice_validation_context_projects_valuation_aliases_from_amount() -> None:
+    projected = project_invoice_validation_context(
+        {},
+        fact_graph={
+            "version": "fact_graph_v1",
+            "document_type": "commercial_invoice",
+            "facts": [
+                {
+                    "field_name": "amount",
+                    "value": "USD 150,000.00",
+                    "normalized_value": "150000.00",
+                    "verification_state": "confirmed",
+                },
+            ],
+        },
+    )
+
+    assert projected["amount"] == "150000.00"
+    assert projected["invoice_amount"] == "150000.00"
+    assert projected["total_amount"] == "150000.00"
+    assert projected["cif_amount"] == "150000.00"
+    assert projected["invoice_value"] == "150000.00"

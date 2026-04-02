@@ -53,6 +53,39 @@ def test_lc_ops_amount_comparison_reference_field_triggers_discrepancy() -> None
     assert "Not all issued originals" in outcome["message"]
 
 
+def test_lc_ops_amount_comparison_supports_computed_field_arithmetic() -> None:
+    evaluator = RuleEvaluator()
+
+    rule = {
+        "rule_id": "UCP600-28E",
+        "title": "Insurance Document: Minimum 110% of Invoice Value Required",
+        "domain": "lc_ops",
+        "consequence_class": "insurance_doc_discrepancy",
+        "conditions": [
+            {
+                "field": "insurance_doc.insured_amount",
+                "operator": "less_than",
+                "computed_field": "invoice.cif_amount * 1.10",
+                "type": "amount_comparison",
+            }
+        ],
+        "expected_outcome": {
+            "valid": ["Presentation complies"],
+            "invalid": ["Insurance coverage is less than 110% of the invoice value."],
+        },
+    }
+    context = {
+        "insurance_doc": {"insured_amount": 150000},
+        "invoice": {"cif_amount": 150000},
+    }
+
+    outcome = evaluator.evaluate_rule(rule, context)
+
+    assert outcome["passed"] is False
+    assert outcome["not_applicable"] is False
+    assert "110% of the invoice value" in outcome["message"]
+
+
 def test_lc_ops_letter_rule_defaults_to_discrepancy_trigger_without_consequence_class() -> None:
     evaluator = RuleEvaluator()
 
