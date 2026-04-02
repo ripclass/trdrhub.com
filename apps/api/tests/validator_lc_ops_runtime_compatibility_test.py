@@ -1009,3 +1009,22 @@ async def test_validate_document_async_staged_ucp18d_shape_uses_boolean_overlap_
 
     assert [result.get("rule") for result in results] == ["UCP600-18D"]
     assert results[0].get("overlap_keys") == ["invoice.goods_description|lc.goods_description"]
+
+
+def test_extract_rule_overlap_keys_canonicalizes_ucp20c_late_shipment_paths() -> None:
+    rule = {
+        "rule_id": "UCP600-20C",
+        "document_type": "transport",
+        "conditions": [
+            {
+                "field": "bill_of_lading.on_board_date",
+                "operator": "greater_than",
+                "reference_field": "lc.latest_shipment_date",
+                "type": "date_comparison",
+            }
+        ],
+    }
+
+    assert validator_module._extract_rule_overlap_keys(rule) == [
+        "bill_of_lading.on_board_date|lc.latest_shipment_date"
+    ]
