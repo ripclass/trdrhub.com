@@ -45,6 +45,29 @@ security = HTTPBearer(auto_error=True)
 _PROVIDER_CACHE: Optional[List[ProviderConfig]] = None
 
 
+class ExternalAuthProvisioningError(RuntimeError):
+    """Raised when a verified external identity cannot be provisioned locally."""
+
+
+def _find_existing_external_user(
+    db: Session,
+    *,
+    user_id: UUID,
+    auth_user_id: Optional[UUID],
+    email: str,
+) -> Optional[User]:
+    """Look up an external user using the same identity fallback order as provisioning."""
+
+    user = None
+    if auth_user_id:
+        user = db.query(User).filter(User.auth_user_id == auth_user_id).first()
+    if not user and email:
+        user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = db.query(User).filter(User.id == user_id).first()
+    return user
+
+
 def _build_provider_configs() -> List[ProviderConfig]:
     global _PROVIDER_CACHE  # pylint: disable=global-statement
     if _PROVIDER_CACHE is not None:
@@ -169,13 +192,12 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
         # If sub is not a valid UUID, leave auth_user_id as None
         pass
 
-    user = None
-    if auth_user_id:
-        user = db.query(User).filter(User.auth_user_id == auth_user_id).first()
-    if not user and email:
-        user = db.query(User).filter(User.email == email).first()
-    if not user:
-        user = db.query(User).filter(User.id == user_id).first()
+    user = _find_existing_external_user(
+        db,
+        user_id=user_id,
+        auth_user_id=auth_user_id,
+        email=email,
+    )
 
     if not user:
         try:
@@ -196,16 +218,27 @@ def _upsert_external_user(db: Session, claims: Dict[str, Any]) -> User:
             error_msg = str(e)
             logger.error(f"Failed to create external user {email}: {error_msg}")
             db.rollback()
-            raise
-    else:
-        user.email = email
-        if full_name:
-            user.full_name = full_name
-        if role_value and not user.role:
-            user.role = role_value
-        user.is_active = True
-        if auth_user_id and user.auth_user_id != auth_user_id:
-            user.auth_user_id = auth_user_id
+            user = _find_existing_external_user(
+                db,
+                user_id=user_id,
+                auth_user_id=auth_user_id,
+                email=email,
+            )
+            if not user:
+                raise ExternalAuthProvisioningError(
+                    f"Failed to provision external user {email}: {error_msg}"
+                ) from e
+
+    user.email = email
+    if full_name:
+        user.full_name = full_name
+    if role_value and not user.role:
+        user.role = role_value
+    user.is_active = True
+    if user.hashed_password is None:
+        user.hashed_password = ""
+    if auth_user_id and user.auth_user_id != auth_user_id:
+        user.auth_user_id = auth_user_id
 
     return user
 
@@ -357,6 +390,8 @@ async def authenticate_external_token(token: str, db: Session) -> Optional[User]
             db.refresh(user)
             logger.info(f"Created/updated external user: {user.email} (ID: {user.id})")
             return user
+        except ExternalAuthProvisioningError:
+            raise
         except Exception as e:
             logger.warning(f"Provider {provider.name} ({provider.issuer}) failed: {str(e)}")
             logger.debug(f"Provider failure details: {type(e).__name__}: {str(e)}", exc_info=True)
@@ -575,7 +610,13 @@ async def get_current_user(
         return user
 
     # External providers (Supabase/Auth0...)
-    external_user = await authenticate_external_token(token, db)
+    try:
+        external_user = await authenticate_external_token(token, db)
+    except ExternalAuthProvisioningError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"External authentication provisioning failed: {exc}",
+        ) from exc
     if external_user:
         if not external_user.is_active:
             raise HTTPException(
