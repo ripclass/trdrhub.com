@@ -1345,7 +1345,26 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     (structured as any)?.effective_submission_eligibility ??
     (structured as any)?.submission_eligibility ??
     null;
+  const rawSubmissionEligibility =
+    (structured as any)?.raw_submission_eligibility ??
+    effectiveEligibility ??
+    null;
+  const bankVerdict =
+    (raw as any)?.bank_verdict ??
+    (structured as any)?.bank_verdict ??
+    null;
+  const validationContract =
+    (raw as any)?.validation_contract_v1 ??
+    (structured as any)?.validation_contract_v1 ??
+    null;
   const finalVerdict = String((structured as any)?.validation_contract_v1?.final_verdict ?? '').trim().toLowerCase();
+  const rulesetVerdict =
+    String(
+      (raw as any)?.ruleset_verdict ??
+        (structured as any)?.ruleset_verdict ??
+        (structured as any)?.validation_contract_v1?.ruleset_verdict ??
+        '',
+    ).trim().toLowerCase() || null;
 
   if (
     effectiveEligibility &&
@@ -1393,6 +1412,19 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     sanctionsScreening,
     sanctionsBlocked,
     sanctionsBlockReason,
+    validation_contract_v1: validationContract,
+    submission_eligibility: effectiveEligibility,
+    raw_submission_eligibility: rawSubmissionEligibility,
+    effective_submission_eligibility: effectiveEligibility,
+    bank_verdict: bankVerdict,
+    ruleset_verdict: rulesetVerdict,
+    final_verdict:
+      finalVerdict === 'pass' || finalVerdict === 'review' || finalVerdict === 'reject'
+        ? (finalVerdict as 'pass' | 'review' | 'reject')
+        : null,
+    submission_can_submit:
+      typeof effectiveEligibility?.can_submit === 'boolean' ? effectiveEligibility.can_submit : undefined,
+    submission_reasons: Array.isArray(effectiveEligibility?.reasons) ? effectiveEligibility.reasons : undefined,
     
     // Contract Validation additions (Output-First layer)
     contractWarnings,

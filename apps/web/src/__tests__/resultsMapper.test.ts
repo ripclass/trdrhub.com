@@ -1236,6 +1236,48 @@ describe('results mapper - option e payload', () => {
     expect(mapped.workflowStage?.provisional_validation).toBe(true);
   });
 
+  it('mirrors top-level contract surfaces from structured_result', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      job_id: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        validation_contract_v1: {
+          final_verdict: 'review',
+          ruleset_verdict: 'review',
+        },
+        submission_eligibility: {
+          can_submit: false,
+          reasons: ['validation_contract_review'],
+        },
+        raw_submission_eligibility: {
+          can_submit: true,
+          reasons: [],
+        },
+        effective_submission_eligibility: {
+          can_submit: false,
+          reasons: ['validation_contract_review'],
+        },
+        bank_verdict: {
+          verdict: 'CAUTION',
+          can_submit: false,
+        },
+      },
+    };
+
+    const mapped = buildValidationResponse(payload);
+
+    expect(mapped.validation_contract_v1?.final_verdict).toBe('review');
+    expect(mapped.final_verdict).toBe('review');
+    expect(mapped.ruleset_verdict).toBe('review');
+    expect(mapped.submission_can_submit).toBe(false);
+    expect(mapped.submission_reasons).toEqual(['validation_contract_review']);
+    expect(mapped.bank_verdict?.verdict).toBe('CAUTION');
+    expect(mapped.effective_submission_eligibility?.can_submit).toBe(false);
+    expect(mapped.raw_submission_eligibility?.can_submit).toBe(true);
+  });
+
   it('clears derived extraction-resolution debt when backend workflow stage is validation_results', () => {
     const seeded = buildValidationResults();
     const payload = {

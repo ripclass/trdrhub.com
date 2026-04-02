@@ -1080,6 +1080,15 @@ class ValidationResults(BaseModel):
     sanctionsScreening: Optional[SanctionsScreeningSummary] = None
     sanctionsBlocked: Optional[bool] = None
     sanctionsBlockReason: Optional[str] = None
+    validation_contract_v1: Optional[ValidationContractV1] = None
+    submission_eligibility: Optional[SubmissionEligibility] = None
+    raw_submission_eligibility: Optional[SubmissionEligibility] = None
+    effective_submission_eligibility: Optional[SubmissionEligibility] = None
+    bank_verdict: Optional[BankVerdict] = None
+    ruleset_verdict: Optional[str] = None
+    final_verdict: Optional[str] = None
+    submission_can_submit: Optional[bool] = None
+    submission_reasons: Optional[List[str]] = None
     contractWarnings: Optional[List[ContractWarning]] = None
     contractValidation: Optional[ContractValidation] = None
 

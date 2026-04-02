@@ -342,6 +342,15 @@ export interface ValidationResults {
   sanctionsScreening?: SanctionsScreeningSummary | null;
   sanctionsBlocked?: boolean;
   sanctionsBlockReason?: string | null;
+  validation_contract_v1?: ValidationContractV1 | null;
+  submission_eligibility?: SubmissionEligibility | null;
+  raw_submission_eligibility?: SubmissionEligibility | null;
+  effective_submission_eligibility?: SubmissionEligibility | null;
+  bank_verdict?: StructuredResultBankVerdict | null;
+  ruleset_verdict?: string | null;
+  final_verdict?: 'pass' | 'review' | 'reject' | null;
+  submission_can_submit?: boolean;
+  submission_reasons?: string[];
   
   // Contract Validation additions (Output-First layer)
   contractWarnings?: ContractWarning[];

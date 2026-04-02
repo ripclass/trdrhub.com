@@ -1210,3 +1210,81 @@ def build_processing_summary_v2(
         "processing_time_ms": summary.get("processing_time_ms"),
         "extraction_quality": summary.get("extraction_quality"),
     }
+
+
+def build_public_validation_envelope(
+    *,
+    job_id: str,
+    structured_result: Dict[str, Any],
+    telemetry: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Build the public validation response envelope.
+
+    The canonical truth lives inside structured_result, but the public API also
+    mirrors key contract/readiness surfaces at the top level so immediate
+    /api/validate and persisted /api/results/{job_id} stay aligned.
+    """
+    envelope: Dict[str, Any] = {
+        "job_id": str(job_id),
+        "jobId": str(job_id),
+        "structured_result": structured_result,
+        "telemetry": telemetry or {},
+    }
+
+    if not isinstance(structured_result, dict):
+        return envelope
+
+    validation_contract = (
+        structured_result.get("validation_contract_v1")
+        if isinstance(structured_result.get("validation_contract_v1"), dict)
+        else {}
+    )
+    effective_submission = (
+        structured_result.get("effective_submission_eligibility")
+        if isinstance(structured_result.get("effective_submission_eligibility"), dict)
+        else structured_result.get("submission_eligibility")
+        if isinstance(structured_result.get("submission_eligibility"), dict)
+        else {}
+    )
+    raw_submission = (
+        structured_result.get("raw_submission_eligibility")
+        if isinstance(structured_result.get("raw_submission_eligibility"), dict)
+        else None
+    )
+    bank_verdict = (
+        structured_result.get("bank_verdict")
+        if isinstance(structured_result.get("bank_verdict"), dict)
+        else None
+    )
+
+    final_verdict = (
+        structured_result.get("final_verdict")
+        or validation_contract.get("final_verdict")
+    )
+    ruleset_verdict = (
+        structured_result.get("ruleset_verdict")
+        or validation_contract.get("ruleset_verdict")
+    )
+
+    if validation_contract:
+        envelope["validation_contract_v1"] = validation_contract
+    if bank_verdict:
+        envelope["bank_verdict"] = bank_verdict
+    if effective_submission:
+        envelope["submission_eligibility"] = effective_submission
+        envelope["effective_submission_eligibility"] = effective_submission
+        can_submit = effective_submission.get("can_submit")
+        if isinstance(can_submit, bool):
+            envelope["submission_can_submit"] = can_submit
+        reasons = effective_submission.get("reasons")
+        if isinstance(reasons, list):
+            envelope["submission_reasons"] = reasons
+    if raw_submission:
+        envelope["raw_submission_eligibility"] = raw_submission
+    if final_verdict:
+        envelope["final_verdict"] = final_verdict
+    if ruleset_verdict:
+        envelope["ruleset_verdict"] = ruleset_verdict
+
+    return envelope

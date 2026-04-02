@@ -29,6 +29,7 @@ from app.services.audit_service import AuditService
 from app.routers.validation import (
     refresh_structured_result_after_field_override as _refresh_structured_result_after_field_override,
 )
+from app.routers.validation.response_shaping import build_public_validation_envelope
 
 
 router = APIRouter(tags=["validation-jobs"])
@@ -980,12 +981,11 @@ def get_job_results(
         extra={"job_id": str(session.id), "version": structured_result.get("version")},
     )
 
-    return {
-        "job_id": str(session.id),
-        "jobId": str(session.id),
-        "structured_result": structured_result,
-        "telemetry": {"UnifiedStructuredResultServed": True},
-    }
+    return build_public_validation_envelope(
+        job_id=str(session.id),
+        structured_result=structured_result,
+        telemetry={"UnifiedStructuredResultServed": True},
+    )
 
 
 @router.post("/api/results/{job_id}/field-overrides")

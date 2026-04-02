@@ -1296,12 +1296,13 @@ async def finalize_validation_result(
     # Add DB rules debug info to response
     structured_result["_db_rules_debug"] = db_rules_debug
 
-    return _make_json_safe({
-        "job_id": str(job_id),
-        "jobId": str(job_id),
-        "structured_result": structured_result,
-        "telemetry": telemetry_payload,
-    })
+    return _make_json_safe(
+        _response_shaping.build_public_validation_envelope(
+            job_id=str(job_id),
+            structured_result=structured_result,
+            telemetry=telemetry_payload,
+        )
+    )
 
 
 
