@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import json
 from pathlib import Path
 import sys
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -13,7 +14,30 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-SESSION_SETUP_MODULE = "app.routers.validation.session_setup"
+SESSION_SETUP_PATH = ROOT / "app" / "routers" / "validation" / "session_setup.py"
+
+
+def _load_module(path: Path, name: str):
+    routers_root = ROOT / "app" / "routers"
+    validation_root = routers_root / "validation"
+
+    routers_pkg = types.ModuleType("app.routers")
+    routers_pkg.__path__ = [str(routers_root)]
+    sys.modules["app.routers"] = routers_pkg
+
+    validation_pkg = types.ModuleType("app.routers.validation")
+    validation_pkg.__path__ = [str(validation_root)]
+    sys.modules["app.routers.validation"] = validation_pkg
+
+    spec = importlib.util.spec_from_file_location(
+        f"app.routers.validation.{name}",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class _Logger:
@@ -179,7 +203,10 @@ async def test_prepare_validation_session_creates_persisted_session_for_authenti
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DEBUG", "false")
-    session_setup = importlib.reload(importlib.import_module(SESSION_SETUP_MODULE))
+    session_setup = _load_module(
+        SESSION_SETUP_PATH,
+        "session_setup_job_persistence_authenticated_test",
+    )
     session_setup.bind_shared(_shared_bindings())
     session_setup.ValidationSessionService = _ValidationSessionService
 
@@ -209,7 +236,10 @@ async def test_prepare_validation_session_marks_ephemeral_job_ids_as_non_resolva
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DEBUG", "false")
-    session_setup = importlib.reload(importlib.import_module(SESSION_SETUP_MODULE))
+    session_setup = _load_module(
+        SESSION_SETUP_PATH,
+        "session_setup_job_persistence_ephemeral_test",
+    )
     session_setup.bind_shared(_shared_bindings())
     session_setup.ValidationSessionService = _ValidationSessionService
 
@@ -232,3 +262,80 @@ async def test_prepare_validation_session_marks_ephemeral_job_ids_as_non_resolva
     assert runtime_context["job_id"] == result["job_id"]
     assert runtime_context["job_id_resolvable"] is False
     assert runtime_context["job_id_source"] == "ephemeral"
+
+
+@pytest.mark.asyncio
+async def test_prepare_validation_session_uses_extracted_lc_text_for_low_confidence_ai_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEBUG", "false")
+    session_setup = _load_module(
+        SESSION_SETUP_PATH,
+        "session_setup_low_confidence_ai_fallback_test",
+    )
+    expected_lc_text = (
+        "MT700 Export Letter of Credit\n"
+        ":50: GLOBAL IMPORTERS INC.\n"
+        ":59: DHAKA KNITWEAR & EXPORTS LTD.\n"
+        ":44E: CHITTAGONG SEA PORT, BANGLADESH\n"
+        ":44F: NEW YORK, USA\n"
+    )
+
+    async def _build_document_context(_files_list, _document_tags, job_id=None):
+        return {
+            "documents": [],
+            "documents_presence": {"letter_of_credit": {"present": True}},
+            "lc_text": expected_lc_text,
+            "lc": {
+                "raw_text": "short placeholder",
+                "port_of_loading": "CHITTAGONG SEA PORT, BANGLADESH",
+                "port_of_discharge": "NEW YORK, USA",
+            },
+        }
+
+    shared = _shared_bindings()
+    shared["_build_document_context"] = _build_document_context
+    shared["_extract_workflow_lc_type"] = lambda _lc: None
+    shared["detect_lc_type"] = lambda *_args, **_kwargs: {
+        "lc_type": "unknown",
+        "reason": "low-confidence-rule-guess",
+        "confidence": 0.2,
+    }
+
+    session_setup.bind_shared(shared)
+    session_setup.ValidationSessionService = _ValidationSessionService
+
+    captured: dict[str, object] = {}
+
+    async def _fake_detect_lc_type_ai(text: str):
+        captured["text"] = text
+        return {
+            "lc_type": "export",
+            "reason": "ai detected exporter lane",
+            "confidence": 0.96,
+            "is_draft": False,
+        }
+
+    import app.services.document_intelligence as document_intelligence
+
+    monkeypatch.setattr(document_intelligence, "detect_lc_type_ai", _fake_detect_lc_type_ai)
+
+    runtime_context: dict[str, object] = {}
+    payload = {"user_type": "exporter"}
+
+    result = await session_setup.prepare_validation_session(
+        request=SimpleNamespace(state=SimpleNamespace()),
+        current_user=SimpleNamespace(id="user-1", company_id=None, company=None, onboarding_data={}),
+        db=_Db(),
+        payload=payload,
+        files_list=[],
+        intake_only=False,
+        checkpoint=lambda _name: None,
+        start_time=0.0,
+        runtime_context=runtime_context,
+    )
+
+    assert captured["text"] == expected_lc_text
+    assert result["lc_type"] == "export"
+    assert result["lc_type_source"] == "ai"
+    assert payload["lc_type"] == "export"

@@ -248,7 +248,11 @@ async def prepare_validation_session(
         if lc_type_confidence < 0.70 or lc_type == LCType.UNKNOWN.value:
             try:
                 from app.services.document_intelligence import detect_lc_type_ai
-                lc_text = context.get("lc_text") or lc_context.get("raw_text", "")
+                lc_text = (
+                    payload.get("lc_text")
+                    or (extracted_context.get("lc_text") if isinstance(extracted_context, dict) else None)
+                    or lc_context.get("raw_text", "")
+                )
                 if lc_text and len(lc_text) > 100:
                     ai_result = await detect_lc_type_ai(lc_text)
                     if ai_result.get("confidence", 0) > lc_type_confidence:
