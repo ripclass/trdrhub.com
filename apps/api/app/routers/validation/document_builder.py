@@ -8,6 +8,11 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
+from .ocr_runtime import _empty_extraction_artifacts_v1
+from .response_shaping import (
+    _has_runtime_extraction_review_signal,
+    sanitize_public_document_contract_v1,
+)
 from .utilities import (
     severity_to_status,
     normalize_doc_type_key,
@@ -59,8 +64,7 @@ def build_document_summaries(
         )
         status = severity_to_status(stats.get("max_severity") if stats else None)
         discrepancy_count = stats.get("count", 0) if stats else 0
-
-        return {
+        summary = {
             "id": detail_id,
             "name": filename or f"Document {index + 1}",
             "type": humanize_doc_type(normalized_type),
@@ -72,10 +76,33 @@ def build_document_summaries(
             "factGraphV1": detail.get("fact_graph_v1") or detail.get("factGraphV1"),
             "requirementsGraphV1": detail.get("requirements_graph_v1") or detail.get("requirementsGraphV1"),
             "extractionLane": detail.get("extraction_lane") or detail.get("extractionLane"),
+            "extractionResolution": detail.get("extractionResolution") or detail.get("extraction_resolution"),
             "ocrConfidence": detail.get("ocr_confidence"),
             "extractionStatus": detail.get("extraction_status"),
+            "parse_complete": detail.get("parse_complete"),
+            "parseComplete": detail.get("parseComplete") if detail.get("parseComplete") is not None else detail.get("parse_complete"),
+            "parse_completeness": detail.get("parse_completeness"),
+            "parseCompleteness": detail.get("parseCompleteness") if detail.get("parseCompleteness") is not None else detail.get("parse_completeness"),
+            "missing_required_fields": detail.get("missing_required_fields") or [],
+            "required_fields_found": detail.get("required_fields_found"),
+            "required_fields_total": detail.get("required_fields_total"),
+            "review_required": bool(detail.get("review_required") or detail.get("reviewRequired")),
+            "reviewRequired": bool(detail.get("review_required") or detail.get("reviewRequired")),
+            "review_reasons": detail.get("review_reasons") or detail.get("reviewReasons") or [],
+            "reviewReasons": detail.get("review_reasons") or detail.get("reviewReasons") or [],
+            "critical_field_states": detail.get("critical_field_states") or detail.get("criticalFieldStates") or {},
+            "criticalFieldStates": detail.get("critical_field_states") or detail.get("criticalFieldStates") or {},
+            "extraction_artifacts_v1": detail.get("extraction_artifacts_v1") or detail.get("extractionArtifactsV1") or _empty_extraction_artifacts_v1(
+                raw_text=detail.get("raw_text") or detail.get("raw_text_preview") or "",
+                ocr_confidence=detail.get("ocr_confidence"),
+            ),
             "day1_runtime": detail.get("day1_runtime") if isinstance(detail.get("day1_runtime"), dict) else {},
         }
+        summary = sanitize_public_document_contract_v1(summary)
+        if _has_runtime_extraction_review_signal(summary):
+            summary["review_required"] = True
+            summary["reviewRequired"] = True
+        return summary
 
     if details:
         logger.info(
