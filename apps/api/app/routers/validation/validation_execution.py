@@ -186,6 +186,11 @@ def _build_ai_validation_layers(
         for check in ("bl_field_validation", "packing_list_validation")
         if check in checks_seen
     ]
+    l3_checks = [
+        check
+        for check in ("advanced_anomaly_review",)
+        if check in checks_seen
+    ]
 
     l1_issue_count = int(metadata.get("missing_critical_docs", 0) or 0)
     l2_bl_issues = int(metadata.get("bl_missing_fields", 0) or 0)
@@ -194,6 +199,11 @@ def _build_ai_validation_layers(
 
     l1_executed = bool(l1_checks)
     l2_executed = bool(l2_checks)
+    l3_issue_count = int(metadata.get("l3_issue_count", 0) or 0)
+    l3_critical_issues = int(metadata.get("l3_critical_issues", 0) or 0)
+    l3_major_issues = int(metadata.get("l3_major_issues", 0) or 0)
+    l3_minor_issues = int(metadata.get("l3_minor_issues", 0) or 0)
+    l3_executed = bool(l3_checks)
 
     timed_out_reason = "timed_out" if timed_out else None
 
@@ -242,15 +252,27 @@ def _build_ai_validation_layers(
         "l3": {
             "layer": "L3",
             "label": "Advanced Anomaly Review",
-            "executed": False,
-            "verdict": "not_run",
-            "issue_count": 0,
-            "critical_issues": 0,
-            "major_issues": 0,
-            "minor_issues": 0,
-            "checks_performed": [],
-            "reason": "timed_out" if timed_out and not (l1_executed or l2_executed) else "advanced_anomaly_reasoning_not_wired",
-            "evidence": {},
+            "executed": l3_executed,
+            "verdict": _derive_ai_layer_verdict(
+                executed=l3_executed,
+                critical_issues=l3_critical_issues,
+                major_issues=l3_major_issues,
+                timed_out=timed_out,
+            ),
+            "issue_count": l3_issue_count,
+            "critical_issues": l3_critical_issues,
+            "major_issues": l3_major_issues,
+            "minor_issues": l3_minor_issues,
+            "checks_performed": l3_checks,
+            "reason": timed_out_reason if l3_executed else ("timed_out" if timed_out else "not_triggered"),
+            "evidence": {
+                "documents_reviewed": list(metadata.get("l3_documents_reviewed") or []),
+                "documents_reviewed_count": int(metadata.get("l3_documents_reviewed_count", 0) or 0),
+                "low_confidence_document_types": list(metadata.get("l3_low_confidence_document_types") or []),
+                "low_confidence_count": int(metadata.get("l3_low_confidence_count", 0) or 0),
+                "low_confidence_threshold": metadata.get("l3_low_confidence_threshold"),
+                "low_confidence_details": list(metadata.get("l3_low_confidence_details") or []),
+            },
         },
     }
 

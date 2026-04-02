@@ -99,6 +99,22 @@ def test_build_ai_validation_layers_projects_current_runtime_checks_into_l1_l2_l
             "bl_must_show": ["voyage_number"],
             "bl_missing_fields": 2,
             "packing_list_issues": 0,
+            "checks_performed": [
+                "lc_requirement_parsing",
+                "document_completeness",
+                "bl_field_validation",
+                "advanced_anomaly_review",
+            ],
+            "l3_documents_reviewed": ["invoice", "lc"],
+            "l3_documents_reviewed_count": 2,
+            "l3_low_confidence_document_types": ["invoice"],
+            "l3_low_confidence_count": 1,
+            "l3_low_confidence_threshold": 0.35,
+            "l3_low_confidence_details": [
+                {"document_type": "invoice", "confidence": 0.22, "status": "warning"}
+            ],
+            "l3_issue_count": 1,
+            "l3_minor_issues": 1,
         }
     )
 
@@ -115,9 +131,12 @@ def test_build_ai_validation_layers_projects_current_runtime_checks_into_l1_l2_l
     assert layers["l2"]["major_issues"] == 2
     assert layers["l2"]["evidence"]["bl_must_show"] == ["voyage_number"]
 
-    assert layers["l3"]["executed"] is False
-    assert layers["l3"]["verdict"] == "not_run"
-    assert layers["l3"]["reason"] == "advanced_anomaly_reasoning_not_wired"
+    assert layers["l3"]["executed"] is True
+    assert layers["l3"]["verdict"] == "pass"
+    assert layers["l3"]["minor_issues"] == 1
+    assert layers["l3"]["checks_performed"] == ["advanced_anomaly_review"]
+    assert layers["l3"]["evidence"]["low_confidence_document_types"] == ["invoice"]
+    assert layers["l3"]["reason"] is None
 
 
 def test_validation_contract_uses_projected_ai_layers_as_first_class_contract_evidence() -> None:
@@ -176,15 +195,14 @@ def test_validation_contract_uses_projected_ai_layers_as_first_class_contract_ev
                 "l3": {
                     "layer": "L3",
                     "label": "Advanced Anomaly Review",
-                    "executed": False,
-                    "verdict": "not_run",
-                    "issue_count": 0,
+                    "executed": True,
+                    "verdict": "pass",
+                    "issue_count": 1,
                     "critical_issues": 0,
                     "major_issues": 0,
-                    "minor_issues": 0,
-                    "checks_performed": [],
-                    "reason": "advanced_anomaly_reasoning_not_wired",
-                    "evidence": {},
+                    "minor_issues": 1,
+                    "checks_performed": ["advanced_anomaly_review"],
+                    "evidence": {"low_confidence_document_types": ["invoice"]},
                 },
             },
         },
@@ -198,8 +216,9 @@ def test_validation_contract_uses_projected_ai_layers_as_first_class_contract_ev
     assert contract["ai_layer_contract_version"] == "ai_layers_v1"
     assert contract["ai_execution_position"] == "pre_deterministic_runtime"
     assert contract["ai_layers"]["l1"]["verdict"] == "reject"
+    assert contract["ai_layers"]["l3"]["executed"] is True
     assert contract["evidence_summary"]["ai_layer_verdicts"]["l1"] == "reject"
-    assert contract["evidence_summary"]["ai_layers_executed"] == ["l1"]
+    assert contract["evidence_summary"]["ai_layers_executed"] == ["l1", "l3"]
 
 
 def test_validation_execution_runs_ai_validation_before_deterministic_stages() -> None:

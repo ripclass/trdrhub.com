@@ -31,6 +31,53 @@ _GRAPH_CRITICAL_DOC_TYPES = {
     "beneficiary_certificate": ("Beneficiary Certificate", "must_state"),
 }
 
+_L3_REVIEWABLE_DOCUMENT_TYPES = {
+    "lc",
+    "invoice",
+    "bill_of_lading",
+    "packing_list",
+    "certificate_of_origin",
+    "insurance",
+    "inspection_certificate",
+    "beneficiary_certificate",
+}
+_L3_DOCUMENT_TYPE_ALIASES = {
+    "air_waybill": "bill_of_lading",
+    "bill_of_lading": "bill_of_lading",
+    "bl": "bill_of_lading",
+    "certificate_of_origin": "certificate_of_origin",
+    "coo": "certificate_of_origin",
+    "commercial_invoice": "invoice",
+    "insurance": "insurance",
+    "insurance_certificate": "insurance",
+    "insurance_policy": "insurance",
+    "invoice": "invoice",
+    "lc": "lc",
+    "letter_of_credit": "lc",
+    "packing_list": "packing_list",
+}
+_L3_DOCUMENT_LABELS = {
+    "beneficiary_certificate": "Beneficiary Certificate",
+    "bill_of_lading": "Bill of Lading",
+    "certificate_of_origin": "Certificate of Origin",
+    "inspection_certificate": "Inspection Certificate",
+    "insurance": "Insurance Document",
+    "invoice": "Commercial Invoice",
+    "lc": "Letter of Credit",
+    "packing_list": "Packing List",
+}
+_L3_WARNING_STATUSES = {
+    "warning",
+    "warn",
+    "partial",
+    "error",
+    "failed",
+    "fail",
+    "parse_failed",
+    "text_only",
+}
+_L3_LOW_CONFIDENCE_THRESHOLD = 0.35
+
 
 class IssueSeverity(str, Enum):
     CRITICAL = "critical"
@@ -71,6 +118,185 @@ class AIValidationIssue:
             "auto_generated": True,
             "passed": False,
         }
+
+
+def _normalize_document_type(value: Any) -> str:
+    normalized = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    return _L3_DOCUMENT_TYPE_ALIASES.get(normalized, normalized)
+
+
+def _normalize_confidence_value(value: Any) -> Optional[float]:
+    if value in (None, "", []):
+        return None
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return None
+    if confidence > 1.0 and confidence <= 100.0:
+        confidence = confidence / 100.0
+    if confidence < 0.0:
+        confidence = 0.0
+    if confidence > 1.0:
+        confidence = 1.0
+    return confidence
+
+
+def _snapshot_display_name(doc_type: str) -> str:
+    return _L3_DOCUMENT_LABELS.get(doc_type, doc_type.replace("_", " ").title())
+
+
+def _collect_l3_document_snapshots(
+    documents: List[Dict[str, Any]],
+    extracted_context: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    snapshots: Dict[str, Dict[str, Any]] = {}
+
+    def ensure_snapshot(doc_type: str) -> Dict[str, Any]:
+        snapshot = snapshots.setdefault(
+            doc_type,
+            {
+                "document_type": doc_type,
+                "display_name": _snapshot_display_name(doc_type),
+                "confidence": None,
+                "status": None,
+                "has_text": False,
+                "has_fields": False,
+            },
+        )
+        return snapshot
+
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        doc_type = _normalize_document_type(
+            document.get("document_type") or document.get("documentType") or document.get("type")
+        )
+        if doc_type not in _L3_REVIEWABLE_DOCUMENT_TYPES:
+            continue
+        snapshot = ensure_snapshot(doc_type)
+        confidence = _normalize_confidence_value(
+            document.get("_extraction_confidence")
+            or document.get("extraction_confidence")
+            or document.get("extractionConfidence")
+            or document.get("ocr_confidence")
+            or document.get("ocrConfidence")
+        )
+        if confidence is not None:
+            snapshot["confidence"] = confidence
+        status = str(
+            document.get("status")
+            or document.get("extraction_status")
+            or document.get("extractionStatus")
+            or ""
+        ).strip().lower()
+        if status:
+            snapshot["status"] = status
+        raw_text = document.get("raw_text")
+        if isinstance(raw_text, str) and raw_text.strip():
+            snapshot["has_text"] = True
+        extracted_fields = document.get("extracted_fields") or document.get("extractedFields")
+        if isinstance(extracted_fields, dict) and extracted_fields:
+            snapshot["has_fields"] = True
+
+    for key, value in (extracted_context or {}).items():
+        if not isinstance(value, dict):
+            continue
+        doc_type = _normalize_document_type(key)
+        if doc_type not in _L3_REVIEWABLE_DOCUMENT_TYPES:
+            continue
+        snapshot = ensure_snapshot(doc_type)
+        confidence = _normalize_confidence_value(
+            value.get("_extraction_confidence")
+            or value.get("extraction_confidence")
+            or value.get("extractionConfidence")
+            or value.get("ocr_confidence")
+            or value.get("ocrConfidence")
+        )
+        if confidence is not None:
+            snapshot["confidence"] = confidence
+        status = str(
+            value.get("status")
+            or value.get("extraction_status")
+            or value.get("extractionStatus")
+            or ""
+        ).strip().lower()
+        if status:
+            snapshot["status"] = status
+        raw_text = value.get("raw_text")
+        if isinstance(raw_text, str) and raw_text.strip():
+            snapshot["has_text"] = True
+        snapshot["has_fields"] = snapshot["has_fields"] or bool(value)
+
+    return snapshots
+
+
+def review_advanced_anomalies(
+    documents: List[Dict[str, Any]],
+    extracted_context: Dict[str, Any],
+) -> Tuple[List[AIValidationIssue], Dict[str, Any]]:
+    """
+    Run a bounded L3 anomaly scan over extraction quality signals.
+
+    This stays intentionally narrow during exporter freeze:
+    - it does not duplicate documentary rule checks
+    - it only flags suspicious extraction quality on present core documents
+    """
+    snapshots = _collect_l3_document_snapshots(documents, extracted_context)
+    issues: List[AIValidationIssue] = []
+    low_confidence_details: List[Dict[str, Any]] = []
+
+    for doc_type, snapshot in sorted(snapshots.items()):
+        confidence = snapshot.get("confidence")
+        status = str(snapshot.get("status") or "").strip().lower()
+        if confidence is None:
+            continue
+        is_suspicious = confidence < _L3_LOW_CONFIDENCE_THRESHOLD and (
+            status in _L3_WARNING_STATUSES or confidence < 0.2
+        )
+        if not is_suspicious:
+            continue
+
+        display_name = str(snapshot.get("display_name") or _snapshot_display_name(doc_type))
+        low_confidence_details.append(
+            {
+                "document_type": doc_type,
+                "confidence": round(confidence, 3),
+                "status": status or None,
+            }
+        )
+        issues.append(
+            AIValidationIssue(
+                rule_id=f"AI-L3-LOW-CONFIDENCE-{doc_type.upper().replace('_', '-')}",
+                title=f"Low Extraction Confidence: {display_name}",
+                severity=IssueSeverity.MINOR,
+                message=(
+                    f"{display_name} extraction quality is low enough that non-deterministic review may be needed "
+                    f"before relying on the extracted values."
+                ),
+                expected="Stable extraction confidence on the uploaded documentary evidence",
+                found=f"{display_name} confidence {confidence:.2f}" + (f" with status '{status}'" if status else ""),
+                suggestion=(
+                    "Review the extracted values for this document manually and consider re-uploading a clearer scan "
+                    "if the text or fields look unreliable."
+                ),
+                documents=[display_name],
+                ucp_reference="UCP600 Article 14",
+            )
+        )
+
+    metadata = {
+        "l3_documents_reviewed": sorted(snapshots.keys()),
+        "l3_documents_reviewed_count": len(snapshots),
+        "l3_low_confidence_document_types": [item["document_type"] for item in low_confidence_details],
+        "l3_low_confidence_details": low_confidence_details,
+        "l3_low_confidence_count": len(low_confidence_details),
+        "l3_low_confidence_threshold": _L3_LOW_CONFIDENCE_THRESHOLD,
+        "l3_issue_count": len(issues),
+        "l3_critical_issues": 0,
+        "l3_major_issues": 0,
+        "l3_minor_issues": len(issues),
+    }
+    return issues, metadata
 
 
 # =============================================================================
@@ -553,7 +779,21 @@ async def run_ai_validation(
         metadata["packing_list_issues"] = 0
     
     # =================================================================
-    # 5. DEDUPLICATE ISSUES
+    # 5. ADVANCED ANOMALY REVIEW (L3)
+    # =================================================================
+    logger.info("Step 5: Running bounded advanced anomaly review...")
+    metadata["checks_performed"].append("advanced_anomaly_review")
+    l3_issues, l3_metadata = review_advanced_anomalies(documents, extracted_context)
+    all_issues.extend(l3_issues)
+    metadata.update(l3_metadata)
+    logger.info(
+        "Step 5: L3 reviewed %d documents and flagged %d low-confidence anomalies",
+        metadata.get("l3_documents_reviewed_count", 0),
+        metadata.get("l3_issue_count", 0),
+    )
+
+    # =================================================================
+    # 6. DEDUPLICATE ISSUES
     # =================================================================
     seen_rules: Set[str] = set()
     unique_issues: List[AIValidationIssue] = []
@@ -566,15 +806,16 @@ async def run_ai_validation(
             logger.info(f"Removing duplicate issue: {issue.rule_id}")
     
     # =================================================================
-    # 6. SUMMARY
+    # 7. SUMMARY
     # =================================================================
     metadata["total_issues"] = len(unique_issues)
     metadata["critical_issues"] = sum(1 for i in unique_issues if i.severity == IssueSeverity.CRITICAL)
     metadata["major_issues"] = sum(1 for i in unique_issues if i.severity == IssueSeverity.MAJOR)
+    metadata["minor_issues"] = sum(1 for i in unique_issues if i.severity == IssueSeverity.MINOR)
     
     logger.info(
         f"AI Validation complete: {len(unique_issues)} issues "
-        f"(critical={metadata['critical_issues']}, major={metadata['major_issues']})"
+        f"(critical={metadata['critical_issues']}, major={metadata['major_issues']}, minor={metadata['minor_issues']})"
     )
     
     return unique_issues, metadata
