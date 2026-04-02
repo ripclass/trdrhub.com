@@ -1257,6 +1257,11 @@ def build_public_validation_envelope(
         if isinstance(structured_result.get("bank_verdict"), dict)
         else None
     )
+    provisional_issues = (
+        structured_result.get("_provisional_issues")
+        if isinstance(structured_result.get("_provisional_issues"), list)
+        else None
+    )
 
     final_verdict = (
         structured_result.get("final_verdict")
@@ -1282,6 +1287,8 @@ def build_public_validation_envelope(
             envelope["submission_reasons"] = reasons
     if raw_submission:
         envelope["raw_submission_eligibility"] = raw_submission
+    if provisional_issues is not None:
+        envelope["provisional_issues"] = provisional_issues
     if final_verdict:
         envelope["final_verdict"] = final_verdict
     if ruleset_verdict:

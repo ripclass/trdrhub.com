@@ -49,6 +49,13 @@ def test_build_public_validation_envelope_mirrors_contract_surfaces() -> None:
             "verdict": "CAUTION",
             "can_submit": False,
         },
+        "_provisional_issues": [
+            {
+                "rule": "AI-L3-LOW-CONFIDENCE-INVOICE",
+                "title": "Invoice extraction is unreliable",
+                "severity": "major",
+            }
+        ],
     }
 
     payload = build_public_validation_envelope(
@@ -69,3 +76,4 @@ def test_build_public_validation_envelope_mirrors_contract_surfaces() -> None:
     assert payload["effective_submission_eligibility"]["can_submit"] is False
     assert payload["raw_submission_eligibility"]["can_submit"] is True
     assert payload["bank_verdict"]["verdict"] == "CAUTION"
+    assert payload["provisional_issues"][0]["rule"] == "AI-L3-LOW-CONFIDENCE-INVOICE"

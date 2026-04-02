@@ -185,6 +185,54 @@ describe('ExporterResults', () => {
     expect(severityBadge.className).toContain('bg-[#E24A4A]/10');
   });
 
+  it('renders provisional findings as a separate lane from final discrepancy findings', async () => {
+    const user = userEvent.setup();
+    activeResults = buildValidationResults({
+      issues: [
+        {
+          id: 'issue-final-1',
+          title: 'Invoice extraction is unreliable',
+          description: 'AI L3 marked this invoice as low-confidence.',
+          severity: 'major',
+          documents: ['Invoice.pdf'],
+          expected: 'Reliable invoice extraction',
+          actual: 'Low-confidence invoice extraction',
+          suggestion: 'Review the invoice source and rerun validation.',
+          rule: 'AI-L3-LOW-CONFIDENCE-INVOICE',
+        } as any,
+      ],
+      provisional_issues: [
+        {
+          id: 'issue-prov-1',
+          title: 'Invoice amount could not be trusted',
+          description: 'This deterministic finding remains provisional until extraction is confirmed.',
+          severity: 'major',
+          documents: ['Invoice.pdf'],
+          expected: 'Trusted invoice amount extraction',
+          actual: 'Invoice amount remains provisional',
+          suggestion: 'Confirm the source invoice before treating this as final.',
+          rule: 'CROSSDOC-INV-005',
+        } as any,
+      ],
+    });
+
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('tab', { name: /Issues/i }));
+
+    expect(screen.getByRole('heading', { name: /^Provisional Findings$/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/These findings were generated from a document the AI layer marked as extraction-unreliable/i),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('issue-card-issue-final-1')).toBeInTheDocument();
+    expect(screen.getByTestId('issue-card-issue-prov-1')).toBeInTheDocument();
+
+    const noteCard = findCardByTitle(/Overall Validation Note/i);
+    expect(within(noteCard).getByText(/^Provisional findings$/i)).toBeInTheDocument();
+  });
+
   it('renders merged analytics content in overview', async () => {
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>

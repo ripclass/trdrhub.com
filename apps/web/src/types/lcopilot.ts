@@ -318,6 +318,7 @@ export interface ValidationResults {
   summary: ProcessingSummaryPayload;
   documents: ValidationDocument[];
   issues: IssueCard[];
+  provisional_issues?: IssueCard[];
   analytics: ValidationAnalytics;
   timeline: TimelineEvent[];
   structured_result: OptionEStructuredResult;

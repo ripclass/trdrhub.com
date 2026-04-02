@@ -1123,6 +1123,7 @@ export const ValidationResultsSchema = z.object({
   summary: ProcessingSummarySchema,
   documents: z.array(ValidationDocumentSchema),
   issues: z.array(IssueCardSchema),
+  provisional_issues: z.array(IssueCardSchema).optional(),
   analytics: StructuredResultAnalyticsSchema,
   timeline: z.array(StructuredTimelineEntrySchema),
   structured_result: StructuredResultSchema,

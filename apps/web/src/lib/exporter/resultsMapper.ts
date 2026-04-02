@@ -1297,6 +1297,15 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     documents,
     (structured as any)?.issue_provenance_v1 ?? null,
   );
+  const rawProvisionalIssues =
+    (raw as any)?.provisional_issues ??
+    (structured as any)?._provisional_issues ??
+    [];
+  const provisionalIssues = mapIssues(
+    ensureArray(rawProvisionalIssues),
+    documents,
+    (structured as any)?.issue_provenance_v1 ?? null,
+  );
   
   const processingSummaryPayload = (structured as any)?.processing_summary_v2 ?? structured.processing_summary;
   const summary = ensureSummary(
@@ -1390,6 +1399,7 @@ export const buildValidationResponse = (raw: any): ValidationResults => {
     summary,
     documents,
     issues,
+    provisional_issues: provisionalIssues,
     analytics,
     timeline,
     structured_result: structured as ValidationResults['structured_result'],

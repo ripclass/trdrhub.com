@@ -1278,6 +1278,59 @@ describe('results mapper - option e payload', () => {
     expect(mapped.raw_submission_eligibility?.can_submit).toBe(true);
   });
 
+  it('maps provisional issues from the public envelope separately from final issues', () => {
+    const seeded = buildValidationResults();
+    const payload = {
+      jobId: seeded.jobId,
+      structured_result: {
+        ...seeded.structured_result,
+        issues: [
+          {
+            id: 'final-issue-1',
+            rule: 'AI-L3-LOW-CONFIDENCE-INVOICE',
+            title: 'Invoice extraction is unreliable',
+            severity: 'major',
+            documents: ['Invoice.pdf'],
+            expected: 'Reliable invoice extraction',
+            found: 'Low-confidence invoice extraction',
+            suggested_fix: 'Review the invoice source and rerun validation.',
+          },
+        ],
+        _provisional_issues: [
+          {
+            id: 'prov-issue-1',
+            rule: 'CROSSDOC-INV-005',
+            title: 'Invoice amount could not be trusted',
+            severity: 'major',
+            documents: ['Invoice.pdf'],
+            expected: 'Trusted invoice amount extraction',
+            found: 'Invoice amount remains provisional',
+            suggested_fix: 'Confirm the source invoice before treating this as final.',
+          },
+        ],
+      },
+      provisional_issues: [
+        {
+          id: 'prov-issue-1',
+          rule: 'CROSSDOC-INV-005',
+          title: 'Invoice amount could not be trusted',
+          severity: 'major',
+          documents: ['Invoice.pdf'],
+          expected: 'Trusted invoice amount extraction',
+          found: 'Invoice amount remains provisional',
+          suggested_fix: 'Confirm the source invoice before treating this as final.',
+        },
+      ],
+    };
+
+    const mapped = buildValidationResponse(payload);
+
+    expect(mapped.issues).toHaveLength(1);
+    expect(mapped.issues[0]?.rule).toBe('AI-L3-LOW-CONFIDENCE-INVOICE');
+    expect(mapped.provisional_issues).toHaveLength(1);
+    expect(mapped.provisional_issues?.[0]?.rule).toBe('CROSSDOC-INV-005');
+  });
+
   it('clears derived extraction-resolution debt when backend workflow stage is validation_results', () => {
     const seeded = buildValidationResults();
     const payload = {

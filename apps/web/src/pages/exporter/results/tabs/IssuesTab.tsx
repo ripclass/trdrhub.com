@@ -28,6 +28,7 @@ interface LaneCounts {
 interface IssuesTabProps {
   hasIssueCards: boolean;
   issueCards: IssueCard[];
+  provisionalIssueCards: IssueCard[];
   filteredIssueCards: IssueCard[];
   reviewFindings: ReviewFindingCardData[];
   severityCounts: SeverityCounts;
@@ -72,6 +73,7 @@ const renderReviewFindingCards = (reviewFindings: ReviewFindingCardData[]) => (
 export function IssuesTab({
   hasIssueCards,
   issueCards,
+  provisionalIssueCards,
   filteredIssueCards,
   reviewFindings,
   severityCounts,
@@ -134,6 +136,30 @@ export function IssuesTab({
       };
     }
 
+    if (provisionalIssueCards.length > 0 && issueCards.length === 0 && reviewFindings.length === 0) {
+      return {
+        tone: "warning" as const,
+        title: "Overall Validation Note",
+        summary:
+          "No final documentary discrepancies are open, but provisional findings remain because extraction reliability on a core document is still under review.",
+        nextStep:
+          "Treat the provisional findings below as conditional. Confirm the source document or rerun with a cleaner file before acting on them as final discrepancies.",
+        Icon: AlertTriangle,
+      };
+    }
+
+    if (provisionalIssueCards.length > 0) {
+      return {
+        tone: "warning" as const,
+        title: "Overall Validation Note",
+        summary:
+          "Final discrepancy findings are open, and additional provisional findings remain tied to extraction uncertainty.",
+        nextStep:
+          "Resolve the final discrepancy findings first. Keep the provisional findings below in review until the underlying document extraction is confirmed.",
+        Icon: AlertTriangle,
+      };
+    }
+
     if (issueCards.length === 0 && reviewFindings.length === 0) {
       return {
         tone: "success" as const,
@@ -177,7 +203,14 @@ export function IssuesTab({
         : "Resolve the discrepancy findings below before treating the case as ready for submission.",
       Icon: FileWarning,
     };
-  }, [issueCards.length, reviewFindings.length, totalComplianceAlerts, totalDiscrepancyFindings, workflowStage]);
+  }, [
+    issueCards.length,
+    provisionalIssueCards.length,
+    reviewFindings.length,
+    totalComplianceAlerts,
+    totalDiscrepancyFindings,
+    workflowStage,
+  ]);
   const noteToneClass =
     overallValidationNote.tone === "success"
       ? "border-success/40 bg-success/5 text-success"
@@ -210,8 +243,12 @@ export function IssuesTab({
               <p className="text-2xl font-bold text-sky-700">{totalComplianceAlerts}</p>
             </div>
             <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/60">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total findings</p>
-              <p className="text-2xl font-bold text-foreground">{issueCards.length + reviewFindings.length}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                {provisionalIssueCards.length > 0 ? "Provisional findings" : "Total findings"}
+              </p>
+              <p className="text-2xl font-bold text-foreground">
+                {provisionalIssueCards.length > 0 ? provisionalIssueCards.length : issueCards.length + reviewFindings.length}
+              </p>
             </div>
           </div>
         </CardContent>
@@ -252,6 +289,35 @@ export function IssuesTab({
       )}
 
       <div className="space-y-6">
+        {provisionalIssueCards.length > 0 && (
+          <section className="space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Provisional Findings
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                These findings were generated from a document the AI layer marked as extraction-unreliable. Keep them in review until the source evidence is confirmed.
+              </p>
+            </div>
+            {provisionalIssueCards.map((card, index) => {
+              const normalizedSeverity = normalizeDiscrepancySeverity(card.severity);
+              const fallbackId = card.id || `${card.rule ?? "rule"}-${card.title ?? index}-provisional`;
+              return (
+                <ExporterIssueCard
+                  key={fallbackId}
+                  issue={card}
+                  normalizedSeverity={normalizedSeverity}
+                  documentStatusMap={documentStatusMap}
+                  fallbackId={fallbackId}
+                  lcNumber={lcNumber}
+                  companyName={companyName}
+                  onDraftEmail={onDraftEmail}
+                />
+              );
+            })}
+          </section>
+        )}
+
         {Array.from(grouped.documentary.values()).some((cards) => cards.length > 0) && (
           <section className="space-y-4">
             <div className="space-y-1">

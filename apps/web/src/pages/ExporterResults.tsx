@@ -1541,6 +1541,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const documents = resultData?.documents?.length ? resultData.documents : fallbackDocuments;
   resultsLogger.debug('Documents loaded', { count: documents.length });
   const issueCards = resultData?.issues ?? [];
+  const provisionalIssueCards = resultData?.provisional_issues ?? [];
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
   const backendWorkflowStage =
@@ -4406,6 +4407,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             <IssuesTab
               hasIssueCards={hasIssueCards}
               issueCards={issueCards}
+              provisionalIssueCards={provisionalIssueCards}
               filteredIssueCards={filteredIssueCards}
               reviewFindings={checklistReviewFindings}
               severityCounts={severityCounts}

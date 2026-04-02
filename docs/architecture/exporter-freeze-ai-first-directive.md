@@ -86,8 +86,9 @@ This directive replaces open-ended exporter firefighting with a bounded path:
   - [x] deepen `L3` anomaly reasoning beyond `not_run`
   - [x] let severe AI-first anomalies drive review/escalation generically when deterministic rules are clean
   - [x] provisionalize same-document deterministic findings when `L3` marks extraction as major/unreliable
-  - [ ] mirror contract/readiness verdicts at the top-level public response envelope on degraded paths
-  - [ ] start exporter Phase 2.5 tab-by-tab product audit
+  - [x] mirror contract/readiness verdicts at the top-level public response envelope on degraded paths
+  - [x] expose provisional findings as a first-class public/UI lane instead of burying them in raw structured payloads
+  - [x] start exporter Phase 2.5 tab-by-tab product audit
 
 ## Phase Sequence
 

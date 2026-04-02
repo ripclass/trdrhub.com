@@ -1063,6 +1063,7 @@ class ValidationResults(BaseModel):
     summary: StructuredProcessingSummary
     documents: List[ValidationDocument]
     issues: List[IssueCard]
+    provisional_issues: Optional[List[IssueCard]] = None
     analytics: StructuredResultAnalytics
     timeline: List[TimelineEntry]
     structured_result: StructuredResultPayload
