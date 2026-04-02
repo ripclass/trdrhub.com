@@ -39,6 +39,8 @@ def _load_ai_validator_symbols() -> Dict[str, Any]:
         "_L3_MAJOR_WARNING_STATUSES",
         "_L3_LOW_CONFIDENCE_THRESHOLD",
         "_L3_SEVERE_CONFIDENCE_THRESHOLD",
+        "_L3_DEGRADED_SELECTION_STAGES",
+        "_L3_EXTRACTION_FAILURE_REASON_CODES",
     }
     for node in parsed.body:
         if isinstance(node, ast.Assign):
@@ -146,6 +148,63 @@ def test_review_advanced_anomalies_escalates_core_doc_confidence_failures_to_maj
             "confidence": 0.18,
             "status": "error",
             "severity": "major",
+            "review_required": False,
+            "reason_codes": [],
+            "selected_stage": None,
+        }
+    ]
+
+
+def test_review_advanced_anomalies_escalates_review_required_extraction_failures_without_numeric_confidence() -> None:
+    symbols = _load_ai_validator_symbols()
+    review_advanced_anomalies = symbols["review_advanced_anomalies"]
+    IssueSeverity = symbols["IssueSeverity"]
+
+    documents = [
+        {
+            "document_type": "commercial_invoice",
+            "filename": "Invoice.png",
+            "status": "partial",
+            "review_required": True,
+            "extraction_artifacts_v1": {
+                "selected_stage": "binary_metadata_scrape",
+                "reason_codes": [
+                    "OCR_AUTH_ERROR",
+                    "OCR_EMPTY_RESULT",
+                    "PARSER_EMPTY_OUTPUT",
+                ],
+            },
+        }
+    ]
+    extracted_context = {
+        "invoice": {
+            "status": "partial",
+            "review_required": True,
+        },
+    }
+
+    issues, metadata = review_advanced_anomalies(documents, extracted_context)
+
+    assert len(issues) == 1
+    assert issues[0].rule_id == "AI-L3-LOW-CONFIDENCE-INVOICE"
+    assert issues[0].severity == IssueSeverity.MAJOR
+    assert "manual review" in issues[0].found.lower()
+    assert metadata["l3_issue_count"] == 1
+    assert metadata["l3_major_issues"] == 1
+    assert metadata["l3_minor_issues"] == 0
+    assert metadata["l3_low_confidence_details"] == [
+        {
+            "document_type": "invoice",
+            "confidence": None,
+            "status": "partial",
+            "severity": "major",
+            "review_required": True,
+            "reason_codes": [
+                "OCR_AUTH_ERROR",
+                "OCR_EMPTY_RESULT",
+                "PARSER_EMPTY_OUTPUT",
+            ],
+            "selected_stage": "binary_metadata_scrape",
         }
     ]
 

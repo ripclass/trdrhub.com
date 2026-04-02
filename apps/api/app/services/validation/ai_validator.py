@@ -90,6 +90,19 @@ _L3_MAJOR_WARNING_STATUSES = {
 }
 _L3_LOW_CONFIDENCE_THRESHOLD = 0.35
 _L3_SEVERE_CONFIDENCE_THRESHOLD = 0.2
+_L3_DEGRADED_SELECTION_STAGES = {
+    "binary_metadata_scrape",
+}
+_L3_EXTRACTION_FAILURE_REASON_CODES = {
+    "OCR_AUTH_ERROR",
+    "OCR_AUTH_FAILURE",
+    "OCR_EMPTY_RESULT",
+    "OCR_PROVIDER_UNAVAILABLE",
+    "PARSER_EMPTY_OUTPUT",
+    "PARSE_FAILED",
+    "LOW_CONFIDENCE",
+    "LOW_CONFIDENCE_CRITICAL",
+}
 
 
 class IssueSeverity(str, Enum):
@@ -159,20 +172,41 @@ def _snapshot_display_name(doc_type: str) -> str:
 
 
 def _classify_l3_confidence_severity(
-    doc_type: str,
-    confidence: Optional[float],
-    status: str,
+    snapshot: Dict[str, Any],
 ) -> Optional[IssueSeverity]:
+    doc_type = str(snapshot.get("document_type") or "").strip().lower()
+    confidence = snapshot.get("confidence")
+    status = str(snapshot.get("status") or "").strip().lower()
+    review_required = bool(snapshot.get("review_required"))
+    reason_codes = {
+        str(item or "").strip().upper()
+        for item in (snapshot.get("reason_codes") or [])
+        if str(item or "").strip()
+    }
+    selected_stage = str(snapshot.get("selected_stage") or "").strip().lower()
+
     if confidence is None:
-        return None
+        severe_signal = bool(reason_codes.intersection(_L3_EXTRACTION_FAILURE_REASON_CODES))
+        if not review_required and not severe_signal and selected_stage not in _L3_DEGRADED_SELECTION_STAGES:
+            return None
+        if doc_type in _L3_MAJOR_REVIEWABLE_DOCUMENT_TYPES and (
+            severe_signal or selected_stage in _L3_DEGRADED_SELECTION_STAGES
+        ):
+            return IssueSeverity.MAJOR
+        return IssueSeverity.MINOR if review_required or severe_signal else None
+
     normalized_status = str(status or "").strip().lower()
     is_suspicious = confidence < _L3_LOW_CONFIDENCE_THRESHOLD and (
         normalized_status in _L3_WARNING_STATUSES or confidence < _L3_SEVERE_CONFIDENCE_THRESHOLD
     )
+    if not is_suspicious and review_required and reason_codes.intersection(_L3_EXTRACTION_FAILURE_REASON_CODES):
+        is_suspicious = True
     if not is_suspicious:
         return None
     is_major = doc_type in _L3_MAJOR_REVIEWABLE_DOCUMENT_TYPES and (
-        confidence < _L3_SEVERE_CONFIDENCE_THRESHOLD or normalized_status in _L3_MAJOR_WARNING_STATUSES
+        confidence < _L3_SEVERE_CONFIDENCE_THRESHOLD
+        or normalized_status in _L3_MAJOR_WARNING_STATUSES
+        or bool(reason_codes.intersection(_L3_EXTRACTION_FAILURE_REASON_CODES))
     )
     return IssueSeverity.MAJOR if is_major else IssueSeverity.MINOR
 
@@ -193,6 +227,9 @@ def _collect_l3_document_snapshots(
                 "status": None,
                 "has_text": False,
                 "has_fields": False,
+                "review_required": False,
+                "reason_codes": [],
+                "selected_stage": None,
             },
         )
         return snapshot
@@ -223,12 +260,27 @@ def _collect_l3_document_snapshots(
         ).strip().lower()
         if status:
             snapshot["status"] = status
+        snapshot["review_required"] = snapshot["review_required"] or bool(
+            document.get("review_required") or document.get("reviewRequired")
+        )
         raw_text = document.get("raw_text")
         if isinstance(raw_text, str) and raw_text.strip():
             snapshot["has_text"] = True
         extracted_fields = document.get("extracted_fields") or document.get("extractedFields")
         if isinstance(extracted_fields, dict) and extracted_fields:
             snapshot["has_fields"] = True
+        artifacts = document.get("extraction_artifacts_v1") or document.get("extractionArtifactsV1")
+        if isinstance(artifacts, dict):
+            selected_stage = str(artifacts.get("selected_stage") or artifacts.get("final_stage") or "").strip()
+            if selected_stage:
+                snapshot["selected_stage"] = selected_stage
+            reason_codes = [
+                str(item).strip().upper()
+                for item in (artifacts.get("reason_codes") or [])
+                if str(item).strip()
+            ]
+            if reason_codes:
+                snapshot["reason_codes"] = sorted(set((snapshot.get("reason_codes") or []) + reason_codes))
 
     for key, value in (extracted_context or {}).items():
         if not isinstance(value, dict):
@@ -254,10 +306,25 @@ def _collect_l3_document_snapshots(
         ).strip().lower()
         if status:
             snapshot["status"] = status
+        snapshot["review_required"] = snapshot["review_required"] or bool(
+            value.get("review_required") or value.get("reviewRequired")
+        )
         raw_text = value.get("raw_text")
         if isinstance(raw_text, str) and raw_text.strip():
             snapshot["has_text"] = True
         snapshot["has_fields"] = snapshot["has_fields"] or bool(value)
+        artifacts = value.get("extraction_artifacts_v1") or value.get("extractionArtifactsV1")
+        if isinstance(artifacts, dict):
+            selected_stage = str(artifacts.get("selected_stage") or artifacts.get("final_stage") or "").strip()
+            if selected_stage:
+                snapshot["selected_stage"] = selected_stage
+            reason_codes = [
+                str(item).strip().upper()
+                for item in (artifacts.get("reason_codes") or [])
+                if str(item).strip()
+            ]
+            if reason_codes:
+                snapshot["reason_codes"] = sorted(set((snapshot.get("reason_codes") or []) + reason_codes))
 
     return snapshots
 
@@ -280,18 +347,28 @@ def review_advanced_anomalies(
     for doc_type, snapshot in sorted(snapshots.items()):
         confidence = snapshot.get("confidence")
         status = str(snapshot.get("status") or "").strip().lower()
-        severity = _classify_l3_confidence_severity(doc_type, confidence, status)
+        severity = _classify_l3_confidence_severity(snapshot)
         if severity is None:
             continue
 
         display_name = str(snapshot.get("display_name") or _snapshot_display_name(doc_type))
+        reason_codes = list(snapshot.get("reason_codes") or [])
+        selected_stage = str(snapshot.get("selected_stage") or "").strip().lower() or None
         low_confidence_details.append(
             {
                 "document_type": doc_type,
-                "confidence": round(confidence, 3),
+                "confidence": round(confidence, 3) if confidence is not None else None,
                 "status": status or None,
                 "severity": severity.value,
+                "review_required": bool(snapshot.get("review_required")),
+                "reason_codes": reason_codes,
+                "selected_stage": selected_stage,
             }
+        )
+        found_text = (
+            f"{display_name} confidence {confidence:.2f}" + (f" with status '{status}'" if status else "")
+            if confidence is not None
+            else f"{display_name} requires manual review due to extraction fallback signals"
         )
         issues.append(
             AIValidationIssue(
@@ -303,7 +380,7 @@ def review_advanced_anomalies(
                     f"before relying on the extracted values."
                 ),
                 expected="Stable extraction confidence on the uploaded documentary evidence",
-                found=f"{display_name} confidence {confidence:.2f}" + (f" with status '{status}'" if status else ""),
+                found=found_text,
                 suggestion=(
                     "Review the extracted values for this document manually and consider re-uploading a clearer scan "
                     "if the text or fields look unreliable."
