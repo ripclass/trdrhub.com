@@ -28,7 +28,7 @@ def test_gold_corpus_expected_matrix_matches_live_locked_baseline() -> None:
     expected_rule_matrix = {
         "set_001_synthetic_bd.json": [],
         "set_002_amount_mismatch.json": ["CROSSDOC-AMOUNT-1"],
-        "set_003_port_mismatch.json": ["CROSSDOC-BL-002"],
+        "set_003_port_mismatch.json": ["UCP600-20E"],
         "set_004_late_shipment.json": ["UCP600-20C"],
         "set_005_insurance_undervalue.json": ["CROSSDOC-INSURANCE-1"],
         "set_006_goods_mismatch.json": ["UCP600-18D"],
@@ -59,7 +59,7 @@ def test_gold_corpus_expected_contract_outcomes_match_live_locked_baseline() -> 
     expected_contract_matrix = {
         "set_001_synthetic_bd.json": {"final_verdict": "pass", "workflow_stage": "validation_results"},
         "set_002_amount_mismatch.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
-        "set_003_port_mismatch.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
+        "set_003_port_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
         "set_004_late_shipment.json": {"final_verdict": "reject", "workflow_stage": "validation_results"},
         "set_005_insurance_undervalue.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
         "set_006_goods_mismatch.json": {"final_verdict": "review", "workflow_stage": "validation_results"},
@@ -131,6 +131,10 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
     late_shipment_set = _load_expected("set_004_late_shipment.json")
     late_shipment_false_positives = _false_positive_rule_ids(late_shipment_set)
     assert {"CROSSDOC-BL-003", "UCP600-20", "LC-TYPE-UNKNOWN"}.issubset(late_shipment_false_positives)
+
+    discharge_port_set = _load_expected("set_003_port_mismatch.json")
+    discharge_port_false_positives = _false_positive_rule_ids(discharge_port_set)
+    assert {"CROSSDOC-BL-002", "UCP600-20", "LC-TYPE-UNKNOWN"}.issubset(discharge_port_false_positives)
 
     po_set = _load_expected("set_015_po_number_missing.json")
     po_false_positives = _false_positive_rule_ids(po_set)

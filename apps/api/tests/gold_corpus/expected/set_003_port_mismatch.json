@@ -5,7 +5,7 @@
   "expected_compliance_rate": 75.0,
   "compliance_tolerance": 10.0,
   "expected_status": "error",
-  "expected_final_verdict": "reject",
+  "expected_final_verdict": "review",
   "expected_workflow_stage": "validation_results",
   "expected_fields": [
     {
@@ -25,12 +25,25 @@
   ],
   "expected_issues": [
     {
-      "rule_id": "CROSSDOC-BL-002",
+      "rule_id": "UCP600-20E",
       "severity": "critical",
       "document_type": "bill",
       "title_contains": "discharge",
       "description": "Port of discharge mismatch"
     }
   ],
-  "false_positive_checks": []
+  "false_positive_checks": [
+    {
+      "rule_id": "CROSSDOC-BL-002",
+      "description": "Legacy discharge-port duplicate should be suppressed when UCP600-20E is present."
+    },
+    {
+      "rule_id": "UCP600-20",
+      "description": "Fallback article umbrella should not surface when UCP600-20E is present."
+    },
+    {
+      "rule_id": "LC-TYPE-UNKNOWN",
+      "description": "LC type fallback should not leak once the actionable discharge-port discrepancy is present."
+    }
+  ]
 }

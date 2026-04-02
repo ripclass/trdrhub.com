@@ -628,9 +628,22 @@ def generate_set_003_port_mismatch():
             {"document_type": "bl", "field_name": "port_of_discharge", "expected_value": "Long Beach", "match_type": "contains", "criticality": "important"},
         ],
         "expected_issues": [
-            {"rule_id": "CROSSDOC-BL-002", "severity": "critical", "document_type": "bill", "title_contains": "discharge", "description": "Port of discharge mismatch"}
+            {"rule_id": "UCP600-20E", "severity": "critical", "document_type": "bill", "title_contains": "discharge", "description": "Port of discharge mismatch"}
         ],
-        "false_positive_checks": []
+        "false_positive_checks": [
+            {
+                "rule_id": "CROSSDOC-BL-002",
+                "description": "Legacy discharge-port duplicate should be suppressed when UCP600-20E is present."
+            },
+            {
+                "rule_id": "UCP600-20",
+                "description": "Fallback article umbrella should not surface when UCP600-20E is present."
+            },
+            {
+                "rule_id": "LC-TYPE-UNKNOWN",
+                "description": "LC type fallback should not leak once the actionable discharge-port discrepancy is present."
+            }
+        ]
     }
     (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     
