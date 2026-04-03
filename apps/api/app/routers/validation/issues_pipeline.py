@@ -104,6 +104,14 @@ def _partition_workflow_stage_issues(
     workflow_stage: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     stage = str((workflow_stage or {}).get("stage") or "").strip().lower()
+    workflow_ready_for_final_validation = bool(
+        (workflow_stage or {}).get("ready_for_final_validation")
+        or (workflow_stage or {}).get("readyForFinalValidation")
+    )
+    workflow_provisional_validation = bool(
+        (workflow_stage or {}).get("provisional_validation")
+        or (workflow_stage or {}).get("provisionalValidation")
+    )
     severe_extraction_reason_codes = {
         "field_not_found",
         "ocr_auth_error",
@@ -258,7 +266,16 @@ def _partition_workflow_stage_issues(
             and selected_stage not in degraded_selection_stages
             and extraction_resolution_required is not True
         )
-        if (validation_ready or workflow_validation_ready) and selected_stage not in degraded_selection_stages:
+        workflow_final_ready = (
+            stage == "validation_results"
+            and workflow_ready_for_final_validation
+            and not workflow_provisional_validation
+        )
+        if (
+            validation_ready
+            or workflow_validation_ready
+            or workflow_final_ready
+        ) and selected_stage not in degraded_selection_stages:
             if not reason_codes.intersection(hard_unreliable_reason_codes):
                 return False
 

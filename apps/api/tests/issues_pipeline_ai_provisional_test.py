@@ -233,3 +233,51 @@ def test_partition_keeps_validation_results_issue_final_without_ready_flags() ->
 
     assert [issue["rule"] for issue in result["final_issues"]] == ["UCP600-20C"]
     assert result["provisional_issues"] == []
+
+
+def test_partition_keeps_final_ready_workflow_issue_final_even_with_stale_doc_resolution_flags() -> None:
+    module = _load_symbols()
+
+    result = module["_partition_workflow_stage_issues"](
+        [
+            {
+                "rule": "UCP600-28E",
+                "title": "Insurance Document: Minimum 110% of Invoice Value Required",
+                "description": "Insurance coverage is below minimum 110% of invoice/CIF value.",
+                "severity": "minor",
+                "documentName": "Supporting Document",
+            }
+        ],
+        [
+            {
+                "document_id": "doc-insurance",
+                "document_type": "insurance_certificate",
+                "review_required": True,
+                "extraction_status": "partial",
+                "extraction_resolution": {
+                    "required": True,
+                    "unresolved_count": 1,
+                    "fields": [
+                        {
+                            "field_name": "bin_tin",
+                            "reason_code": "FIELD_NOT_FOUND",
+                        }
+                    ],
+                },
+                "extraction_artifacts_v1": {
+                    "selected_stage": "plaintext_native",
+                    "canonical_reason_codes": [
+                        "FIELD_NOT_FOUND",
+                    ],
+                },
+            }
+        ],
+        {
+            "stage": "validation_results",
+            "ready_for_final_validation": True,
+            "provisional_validation": False,
+        },
+    )
+
+    assert [issue["rule"] for issue in result["final_issues"]] == ["UCP600-28E"]
+    assert result["provisional_issues"] == []
