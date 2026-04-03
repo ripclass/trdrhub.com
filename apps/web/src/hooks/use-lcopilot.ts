@@ -662,10 +662,17 @@ export const useResults = (currentJobId?: string | null) => {
 
 export const useCanonicalJobResult = (
   jobId: string | null,
-  options: { enabled?: boolean; fallbackDelayMs?: number } = {},
+  options: {
+    enabled?: boolean;
+    fallbackDelayMs?: number;
+    terminalResultsTimeoutMs?: number;
+    authRetryDelayMs?: number;
+  } = {},
 ) => {
   const enabled = (options.enabled ?? true) && !!jobId;
   const fallbackDelayMs = options.fallbackDelayMs ?? 1000;
+  const terminalResultsTimeoutMs = options.terminalResultsTimeoutMs ?? 8000;
+  const authRetryDelayMs = options.authRetryDelayMs ?? 1200;
   const queryClient = useQueryClient();
   const { jobStatus, isPolling, error: jobError } = useJob(enabled ? jobId : null);
   const [results, setResults] = useState<ValidationResults | null>(null);
@@ -717,23 +724,14 @@ export const useCanonicalJobResult = (
         }
 
         try {
-          const rawData = await fetchValidationResults(jobId);
-          const data = normalizeValidationResultsResponse(rawData, jobId);
-          queryClient.setQueryData(['results', jobId], data ?? rawData);
-          if (data) {
-            setResults(data);
-            setResultsJobId(jobId);
-            setResultsError(null);
-            setAuthRetryCount(0);
-            setTerminalResultsTimedOut(false);
-            return data;
-          }
-          const validationError = toResultsError({ message: 'Results payload missing structured_result' });
-          if (!suppressError) {
-            setResultsError(validationError);
-            throw validationError;
-          }
-          return null;
+          const data = await fetchValidationResults(jobId);
+          queryClient.setQueryData(['results', jobId], data);
+          setResults(data);
+          setResultsJobId(jobId);
+          setResultsError(null);
+          setAuthRetryCount(0);
+          setTerminalResultsTimedOut(false);
+          return data;
         } catch (err: any) {
           const validationError = toResultsError(err);
           const authHydrationFailure = reason === 'auto' && isAuthHydrationError(validationError) && authRetryCount < 3;
@@ -758,10 +756,15 @@ export const useCanonicalJobResult = (
     [authRetryCount, enabled, jobId, jobStatus?.status, queryClient, terminalResultsTimedOut],
   );
 
+  const cachedResults =
+    jobId
+      ? normalizeValidationResultsResponse(queryClient.getQueryData(['results', jobId]) ?? null, jobId)
+      : null;
+
   const visibleResults =
     jobId && resultsJobId !== jobId
-      ? queryClient.getQueryData<ValidationResults>(['results', jobId]) ?? null
-      : results;
+      ? cachedResults
+      : results ?? cachedResults;
 
   const normalizedStatus = normalizeJobStatus(jobStatus?.status);
   const isTerminal = TERMINAL_JOB_STATUSES.has(normalizedStatus);
@@ -777,17 +780,17 @@ export const useCanonicalJobResult = (
 
     const timeoutId = setTimeout(() => {
       setTerminalResultsTimedOut(true);
-    }, 8000);
+    }, terminalResultsTimeoutMs);
 
     return () => clearTimeout(timeoutId);
-  }, [enabled, isTerminalWithoutResults]);
+  }, [enabled, isTerminalWithoutResults, terminalResultsTimeoutMs]);
 
   useEffect(() => {
     if (!enabled || !jobId || visibleResults || isLoadingResults || !isTerminal) {
       return;
     }
 
-    const delayMs = authRetryCount > 0 ? 1200 : 0;
+    const delayMs = authRetryCount > 0 ? authRetryDelayMs : 0;
     const timeoutId = setTimeout(() => {
       refreshResults('auto').catch(() => {
         // surfaced through hook state once the job is terminal
@@ -795,7 +798,7 @@ export const useCanonicalJobResult = (
     }, delayMs);
 
     return () => clearTimeout(timeoutId);
-  }, [authRetryCount, enabled, isLoadingResults, isTerminal, jobId, refreshResults, visibleResults]);
+  }, [authRetryCount, authRetryDelayMs, enabled, isLoadingResults, isTerminal, jobId, refreshResults, visibleResults]);
 
   useEffect(() => {
     if (!enabled || !jobId || visibleResults || isLoadingResults || jobStatus?.status) {

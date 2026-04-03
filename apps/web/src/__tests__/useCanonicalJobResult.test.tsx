@@ -139,8 +139,38 @@ describe('useCanonicalJobResult', () => {
     expect(second.result.current.results?.jobId).toBe('job-cache');
   });
 
+  it('surfaces cached canonical results even when local state for the same job is still empty', async () => {
+    const payload = buildValidationResults({ jobId: 'job-cache-bridge' });
+    mockedApiGet.mockImplementation(async (url: string) => {
+      if (url === '/api/jobs/job-cache-bridge') {
+        return { data: { jobId: 'job-cache-bridge', status: 'completed' } } as any;
+      }
+      if (url === '/api/results/job-cache-bridge') {
+        return new Promise(() => {});
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const queryClient = new QueryClient();
+    const { result, rerender, unmount } = renderHook(({ jobId }) => useCanonicalJobResult(jobId), {
+      initialProps: { jobId: 'job-cache-bridge' as string | null },
+      wrapper: buildWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(mockedApiGet).toHaveBeenCalledWith('/api/results/job-cache-bridge'));
+
+    act(() => {
+      queryClient.setQueryData(['results', 'job-cache-bridge'], payload);
+      rerender({ jobId: 'job-cache-bridge' });
+    });
+
+    expect(result.current.results?.jobId).toBe('job-cache-bridge');
+    act(() => {
+      unmount();
+    });
+  });
+
   it('stops reporting loading when a terminal job cannot load results after timeout', async () => {
-    vi.useFakeTimers();
     mockedApiGet.mockImplementation(async (url: string) => {
       if (url === '/api/jobs/job-timeout') {
         return { data: { jobId: 'job-timeout', status: 'completed' } } as any;
@@ -152,24 +182,19 @@ describe('useCanonicalJobResult', () => {
     });
 
     const queryClient = new QueryClient();
-    const { result } = renderHook(() => useCanonicalJobResult('job-timeout'), {
-      wrapper: buildWrapper(queryClient),
-    });
+    const { result } = renderHook(
+      () => useCanonicalJobResult('job-timeout', { terminalResultsTimeoutMs: 25 }),
+      {
+        wrapper: buildWrapper(queryClient),
+      },
+    );
 
     await waitFor(() => expect(mockedApiGet).toHaveBeenCalledWith('/api/results/job-timeout'));
-
-    await act(async () => {
-      vi.advanceTimersByTime(4500);
-    });
-
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.results).toBeNull();
-
-    vi.useRealTimers();
   });
 
   it('retries auth-hydration failures before surfacing terminal results errors', async () => {
-    vi.useFakeTimers();
     let resultsAttempts = 0;
     mockedApiGet.mockImplementation(async (url: string) => {
       if (url === '/api/jobs/job-auth-race') {
@@ -186,23 +211,15 @@ describe('useCanonicalJobResult', () => {
     });
 
     const queryClient = new QueryClient();
-    const { result } = renderHook(() => useCanonicalJobResult('job-auth-race'), {
-      wrapper: buildWrapper(queryClient),
-    });
+    const { result } = renderHook(
+      () => useCanonicalJobResult('job-auth-race', { authRetryDelayMs: 10 }),
+      {
+        wrapper: buildWrapper(queryClient),
+      },
+    );
 
-    await waitFor(() => expect(resultsAttempts).toBe(1));
-
-    await act(async () => {
-      vi.advanceTimersByTime(1300);
-    });
-    await waitFor(() => expect(resultsAttempts).toBe(2));
-
-    await act(async () => {
-      vi.advanceTimersByTime(1300);
-    });
     await waitFor(() => expect(result.current.results?.jobId).toBe('job-auth-race'));
+    expect(resultsAttempts).toBeGreaterThanOrEqual(3);
     expect(result.current.resultsError).toBeNull();
-
-    vi.useRealTimers();
   });
 });
