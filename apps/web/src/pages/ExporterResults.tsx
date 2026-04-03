@@ -1107,6 +1107,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const [selectedDocumentForDrawer, setSelectedDocumentForDrawer] = useState<DocumentForDrawer | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const hasAutoDirectedExtractionStageRef = useRef(false);
+  const submissionHistoryRef = useRef<HTMLDivElement | null>(null);
   
   useEffect(() => {
     if (!initialTab) {
@@ -2934,6 +2935,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const canSubmitFromValidation = canonicalResultTruth.canSubmitFromValidation;
   const canGenerateCustomsPack =
     exporterPresentationTruth.presentationStatus !== 'not_ready' && !isExtractionResolutionStage;
+  const sortedSubmissions = useMemo(() => {
+    return [...(submissionsData?.items ?? [])].sort((left, right) => {
+      const leftTime = new Date(left.submitted_at || left.created_at).getTime();
+      const rightTime = new Date(right.submitted_at || right.created_at).getTime();
+      return rightTime - leftTime;
+    });
+  }, [submissionsData]);
+  const latestSubmission = sortedSubmissions[0] ?? null;
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsQueryEnabled && guardrailsLoading) return false;
@@ -2955,6 +2964,137 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     contractRequirementReadiness.hasItems,
     exporterPresentationTruth.presentationStatus,
     isExtractionResolutionStage,
+  ]);
+  const latestSubmissionStatusMeta = useMemo(() => {
+    if (!latestSubmission) return null;
+    if (latestSubmission.status === 'accepted') {
+      return { label: 'Accepted by bank', variant: 'default' as const, tone: 'success' as const };
+    }
+    if (latestSubmission.status === 'pending') {
+      return { label: 'Pending bank review', variant: 'secondary' as const, tone: 'warning' as const };
+    }
+    if (latestSubmission.status === 'rejected' || latestSubmission.status === 'failed') {
+      return { label: latestSubmission.status === 'rejected' ? 'Rejected by bank' : 'Submission failed', variant: 'destructive' as const, tone: 'destructive' as const };
+    }
+    if (latestSubmission.status === 'cancelled') {
+      return { label: 'Submission cancelled', variant: 'secondary' as const, tone: 'warning' as const };
+    }
+    return { label: safeString(latestSubmission.status), variant: 'outline' as const, tone: 'warning' as const };
+  }, [latestSubmission]);
+  const customsCurrentStep = useMemo(() => {
+    if (isExtractionResolutionStage) {
+      return {
+        tone: 'warning' as const,
+        title: 'Resolve extracted fields before presentation work',
+        detail:
+          workflowStage?.summary ||
+          'Validation remains provisional until unresolved extracted fields are confirmed from source evidence.',
+        helper: 'Next surface: Documents tab',
+        action: 'documents' as const,
+        actionLabel: 'Open Documents',
+      };
+    }
+
+    if (customsPackReadiness.status === 'blocked') {
+      return {
+        tone: 'destructive' as const,
+        title: 'Clear hard blockers before generating or submitting the customs pack',
+        detail: customsPackReadiness.summary,
+        helper:
+          customsPackReadiness.blockers.length > 0
+            ? `${customsPackReadiness.blockers.length} blocker${customsPackReadiness.blockers.length === 1 ? '' : 's'} still prevent clean presentation.`
+            : 'Presentation remains blocked by the current validation state.',
+        action: 'overview' as const,
+        actionLabel: 'Review Checklist',
+      };
+    }
+
+    if (latestSubmission?.status === 'pending') {
+      return {
+        tone: 'warning' as const,
+        title: `Monitor bank review${latestSubmission.bank_name ? ` with ${latestSubmission.bank_name}` : ''}`,
+        detail: 'The latest submission is already with a bank. Use the timeline below to watch for acknowledgement, rejection, or follow-up events.',
+        helper: latestSubmissionStatusMeta?.label ?? 'Pending bank review',
+        action: 'history' as const,
+        actionLabel: 'View Timeline',
+      };
+    }
+
+    if (latestSubmission?.status === 'accepted') {
+      return {
+        tone: 'success' as const,
+        title: `Submission acknowledged${latestSubmission.bank_name ? ` by ${latestSubmission.bank_name}` : ''}`,
+        detail: 'The latest package has already been accepted by the bank. Keep this lane for monitoring receipts and downstream events.',
+        helper: latestSubmissionStatusMeta?.label ?? 'Accepted by bank',
+        action: 'history' as const,
+        actionLabel: 'View Timeline',
+      };
+    }
+
+    if (
+      latestSubmission &&
+      (latestSubmission.status === 'rejected' ||
+        latestSubmission.status === 'failed' ||
+        latestSubmission.status === 'cancelled') &&
+      isReadyToSubmit
+    ) {
+      return {
+        tone: latestSubmission.status === 'cancelled' ? 'warning' as const : 'destructive' as const,
+        title: 'Manifest is ready for another submission',
+        detail: 'The latest submission did not stay active. Review the timeline below, then send a fresh submission when you are ready.',
+        helper: latestSubmissionStatusMeta?.label ?? 'A prior submission needs follow-up',
+        action: 'submit' as const,
+        actionLabel: 'Continue Submission',
+      };
+    }
+
+    if (!packGenerated) {
+      return {
+        tone: 'primary' as const,
+        title: 'Generate the customs pack',
+        detail: 'Create the manifest and document bundle before previewing, downloading, or submitting this LC package.',
+        helper: canGenerateCustomsPack ? 'The package is clear to generate now.' : 'Generation remains unavailable until presentation work is unblocked.',
+        action: 'generate' as const,
+        actionLabel: 'Generate Pack Now',
+      };
+    }
+
+    if (isReadyToSubmit) {
+      return {
+        tone: 'success' as const,
+        title: latestSubmission ? 'Manifest is ready for another bank submission' : 'Manifest is ready for bank submission',
+        detail: latestSubmission
+          ? 'A prior submission exists. Review the manifest and send a new submission only if you need another bank lane.'
+          : 'No hard blockers remain. Review the manifest, choose a bank, and submit the LC package.',
+        helper: latestSubmissionStatusMeta?.label ?? 'Submission path is open',
+        action: 'submit' as const,
+        actionLabel: latestSubmission ? 'Continue Submission' : 'Start Submission',
+      };
+    }
+
+    return {
+      tone: 'warning' as const,
+      title: 'Manifest is ready, but submission is still on hold',
+      detail: customsPackReadiness.summary,
+      helper:
+        customsFollowUpItems.length > 0
+          ? `${customsFollowUpItems.length} review item${customsFollowUpItems.length === 1 ? '' : 's'} still need operator attention.`
+          : 'Review the remaining presentation state before treating this package as submission-ready.',
+      action: 'discrepancies' as const,
+      actionLabel: 'Review Open Items',
+    };
+  }, [
+    canGenerateCustomsPack,
+    customsFollowUpItems.length,
+    customsPackReadiness.blockers.length,
+    customsPackReadiness.status,
+    customsPackReadiness.summary,
+    isExtractionResolutionStage,
+    isReadyToSubmit,
+    latestSubmission,
+    latestSubmissionStatusMeta?.label,
+    packGenerated,
+    workflowStage?.summary,
   ]);
 
   // Contract Validation warnings (Output-First layer)
@@ -3911,6 +4051,86 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
           </TabsContent>
           <TabsContent value="customs" className="space-y-6">
+            <Card
+              className={cn(
+                "shadow-soft border",
+                customsCurrentStep.tone === 'success'
+                  ? 'border-emerald-500/30 bg-emerald-500/5'
+                  : customsCurrentStep.tone === 'destructive'
+                  ? 'border-destructive/30 bg-destructive/5'
+                  : customsCurrentStep.tone === 'primary'
+                  ? 'border-primary/20 bg-primary/5'
+                  : 'border-amber-500/30 bg-amber-500/5',
+              )}
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      Current Step
+                    </CardDescription>
+                    <CardTitle className="text-lg font-semibold mt-1">{customsCurrentStep.title}</CardTitle>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {latestSubmission?.bank_name && (
+                      <Badge variant="outline">Latest bank: {latestSubmission.bank_name}</Badge>
+                    )}
+                    {latestSubmissionStatusMeta && (
+                      <Badge variant={latestSubmissionStatusMeta.variant}>{latestSubmissionStatusMeta.label}</Badge>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="space-y-2">
+                  <p className="text-sm text-foreground">{customsCurrentStep.detail}</p>
+                  <p className="text-xs text-muted-foreground">{customsCurrentStep.helper}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {customsCurrentStep.action === 'documents' && (
+                    <Button variant="outline" onClick={() => setActiveTab('documents')}>
+                      Open Documents
+                    </Button>
+                  )}
+                  {customsCurrentStep.action === 'overview' && (
+                    <Button variant="outline" onClick={() => setActiveTab('overview')}>
+                      Review Checklist
+                    </Button>
+                  )}
+                  {customsCurrentStep.action === 'generate' && (
+                    <Button
+                      onClick={() => generateCustomsPackMutation.mutate()}
+                      disabled={generateCustomsPackMutation.isPending || !canGenerateCustomsPack}
+                    >
+                      <RefreshCw className={cn("w-4 h-4 mr-2", generateCustomsPackMutation.isPending && "animate-spin")} />
+                      {generateCustomsPackMutation.isPending ? 'Generating...' : customsCurrentStep.actionLabel}
+                    </Button>
+                  )}
+                  {customsCurrentStep.action === 'submit' && (
+                    <Button
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={handleSubmitToBank}
+                      disabled={createSubmissionMutation.isPending || guardrailsLoading}
+                    >
+                      {customsCurrentStep.actionLabel}
+                    </Button>
+                  )}
+                  {customsCurrentStep.action === 'discrepancies' && (
+                    <Button variant="outline" onClick={() => setActiveTab('discrepancies')}>
+                      Review Open Items
+                    </Button>
+                  )}
+                  {customsCurrentStep.action === 'history' && (
+                    <Button
+                      variant="outline"
+                      onClick={() => submissionHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    >
+                      View Timeline
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
             <Card className="shadow-soft border border-border/60">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg font-semibold flex items-center gap-2">
@@ -4158,7 +4378,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             </Card>
             
             {/* Submission History (moved from separate tab) */}
-            <Card className="shadow-soft border border-border/60">
+            <Card ref={submissionHistoryRef} className="shadow-soft border border-border/60">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg font-semibold flex items-center gap-2">
                   <History className="w-5 h-5" />
@@ -4174,7 +4394,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <Loader2 className="w-8 h-8 mx-auto text-muted-foreground mb-4 animate-spin" />
                     <p className="text-muted-foreground">Loading submission history...</p>
                   </div>
-                ) : !submissionsData || submissionsData.items.length === 0 ? (
+                ) : sortedSubmissions.length === 0 ? (
                   <div className="text-center py-8">
                     <Building2 className="w-10 h-10 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground mb-1">No submissions yet</p>
@@ -4184,7 +4404,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {submissionsData.items.map((submission) => (
+                    {sortedSubmissions.map((submission) => (
                       <SubmissionHistoryCard 
                         key={submission.id} 
                         submission={submission}

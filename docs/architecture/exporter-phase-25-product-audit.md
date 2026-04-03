@@ -77,6 +77,8 @@ Current gaps:
 
 - [x] surfaced the Overview next-action card instead of leaving it hidden
 - [x] sorted the Documents tab by operator urgency so unresolved required documents rise above clean uploads
+- [x] added a Customs current-step card that explains the real next action from readiness and submission truth
+- [x] sorted submission history by latest activity so the newest bank lane stays on top
 
 ### Priority 1: Overview
 

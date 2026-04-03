@@ -1224,9 +1224,77 @@ describe('ExporterResults', () => {
     );
     await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
     const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    expect(within(customsPanel).getByText(/Generate the customs pack/i)).toBeInTheDocument();
+    expect(within(customsPanel).getByRole('button', { name: /Generate Pack Now/i })).toBeInTheDocument();
     await waitFor(() =>
       expect(within(customsPanel).getByRole('button', { name: /Submit to Bank/i })).toBeInTheDocument(),
     );
+  });
+
+  it('uses the latest bank submission as the current customs step when review is already in flight', async () => {
+    const { exporterApi } = await import('@/api/exporter');
+    const listBankSubmissions = vi.mocked(exporterApi.listBankSubmissions);
+    listBankSubmissions.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'submission-older',
+          company_id: 'company',
+          user_id: 'user',
+          validation_session_id: 'session',
+          lc_number: 'LC123',
+          bank_name: 'Standard Chartered Bank',
+          status: 'accepted',
+          created_at: '2026-04-01T08:00:00Z',
+          submitted_at: '2026-04-01T08:00:00Z',
+        },
+        {
+          id: 'submission-latest',
+          company_id: 'company',
+          user_id: 'user',
+          validation_session_id: 'session',
+          lc_number: 'LC123',
+          bank_name: 'HSBC Bank',
+          status: 'pending',
+          created_at: '2026-04-02T09:00:00Z',
+          submitted_at: '2026-04-02T09:00:00Z',
+        },
+      ],
+      total: 2,
+    });
+
+    const eligibleResults = buildValidationResults();
+    eligibleResults.issues = [];
+    eligibleResults.summary = {
+      ...eligibleResults.summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+    };
+    eligibleResults.structured_result = {
+      ...eligibleResults.structured_result,
+      issues: [],
+      processing_summary: {
+        ...eligibleResults.structured_result?.processing_summary,
+        total_issues: 0,
+        severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+      },
+      submission_eligibility: { can_submit: true, reasons: [] },
+      effective_submission_eligibility: { can_submit: true, reasons: [] },
+    } as typeof eligibleResults.structured_result;
+    activeResults = eligibleResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults lcNumber="LC123" />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    await waitFor(() =>
+      expect(within(customsPanel).getByText(/Monitor bank review with HSBC Bank/i)).toBeInTheDocument(),
+    );
+    expect(within(customsPanel).getAllByText(/Pending bank review/i).length).toBeGreaterThan(0);
+    expect(within(customsPanel).getByRole('button', { name: /View Timeline/i })).toBeInTheDocument();
   });
 
   it('downgrades ready-to-submit surfaces when checklist review is still unresolved', async () => {
