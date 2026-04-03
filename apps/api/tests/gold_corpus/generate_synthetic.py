@@ -371,9 +371,14 @@ def create_insurance_certificate(
     issue_date: Optional[str] = None,
     currency_override: Optional[str] = None,
     originals_presented: Optional[int] = None,
+    insured_amount_override: Optional[float] = None,
 ):
     """Create an Insurance Certificate."""
-    insured_amount = lc.amount * 1.1  # 110% coverage
+    insured_amount = (
+        insured_amount_override
+        if insured_amount_override is not None
+        else lc.amount * 1.1  # 110% coverage
+    )
     certificate_date = issue_date or datetime.now().strftime('%Y-%m-%d')
     insurance_currency = currency_override or lc.currency
     originals_lines = ""
@@ -477,7 +482,12 @@ def generate_set_001_synthetic_bd():
     
     create_packing_list(lc, invoice, set_dir / "Packing_List.pdf")
     create_certificate_of_origin(lc, set_dir / "Certificate_of_Origin.pdf")
-    create_insurance_certificate(lc, set_dir / "Insurance_Certificate.pdf", issue_date="2026-03-01")
+    create_insurance_certificate(
+        lc,
+        set_dir / "Insurance_Certificate.pdf",
+        issue_date="2026-03-01",
+        insured_amount_override=invoice.amount * 1.1,
+    )
     
     print(f"[OK] Generated {set_id}: 6 documents")
     return set_id
@@ -553,8 +563,13 @@ def generate_set_002_amount_mismatch():
         "expected_issues": [
             {"rule_id": "CROSSDOC-AMOUNT-1", "severity": "critical", "document_type": "invoice", "title_contains": "amount", "description": "Invoice exceeds LC amount"}
         ],
-        "false_positive_checks": []
-    }
+        "false_positive_checks": [
+            {
+                "rule_id": "UCP600-28E",
+                "description": "Set 002 should isolate invoice-vs-LC amount mismatch without creating an insurance undercoverage side effect"
+            }
+        ]
+      }
     (EXPECTED_DIR / f"{set_id}.json").write_text(json.dumps(expected, indent=2) + "\n")
     
     print(f"[OK] Generated {set_id}: 6 documents + expected.json")

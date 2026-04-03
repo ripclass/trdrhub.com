@@ -41,5 +41,10 @@
       "description": "Invoice exceeds LC amount"
     }
   ],
-  "false_positive_checks": []
+  "false_positive_checks": [
+    {
+      "rule_id": "UCP600-28E",
+      "description": "Set 002 should isolate invoice-vs-LC amount mismatch without creating an insurance undercoverage side effect"
+    }
+  ]
 }

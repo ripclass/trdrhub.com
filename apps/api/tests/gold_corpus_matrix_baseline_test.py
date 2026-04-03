@@ -97,6 +97,10 @@ def test_gold_corpus_false_positive_guards_cover_retired_noise() -> None:
         "CROSSDOC-TIMING-001",
     }.issubset(clean_false_positives)
 
+    amount_set = _load_expected("set_002_amount_mismatch.json")
+    amount_false_positives = _false_positive_rule_ids(amount_set)
+    assert "UCP600-28E" in amount_false_positives
+
     goods_set = _load_expected("set_006_goods_mismatch.json")
     goods_false_positives = _false_positive_rule_ids(goods_set)
     assert {
