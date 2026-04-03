@@ -94,10 +94,11 @@ This directive replaces open-ended exporter firefighting with a bounded path:
   - [x] let severe AI-first anomalies drive review/escalation generically when deterministic rules are clean
   - [x] provisionalize same-document deterministic findings when `L3` marks extraction as major/unreliable
   - [x] mirror contract/readiness verdicts at the top-level public response envelope on degraded paths
-  - [x] expose provisional findings as a first-class public/UI lane instead of burying them in raw structured payloads
-  - [x] start exporter Phase 2.5 tab-by-tab product audit
-  - [x] freeze backend/corpus baseline before Phase 2.5 UI work
-  - [x] replace hardcoded exporter bank selector data with a live exporter-safe bank directory
+- [x] expose provisional findings as a first-class public/UI lane instead of burying them in raw structured payloads
+- [x] start exporter Phase 2.5 tab-by-tab product audit
+- [x] freeze backend/corpus baseline before Phase 2.5 UI work
+- [x] replace hardcoded exporter bank selector data with a live exporter-safe bank directory
+- [x] tolerate legacy orphaned bank-user rows by falling back to explicit bank-company rows in the exporter directory
 
 ## Phase Sequence
 

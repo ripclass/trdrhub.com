@@ -32,6 +32,7 @@ from app.models.rbac import (
     DEFAULT_TOOL_ACCESS,
 )
 from app.routers.auth import get_current_user
+from app.services.bank_company_registry import is_bank_company, mark_company_as_bank
 
 router = APIRouter(prefix="/admin/banks", tags=["admin-banks"])
 
@@ -126,9 +127,8 @@ async def list_banks(
     admin: User = Depends(require_system_admin),
 ):
     """List all bank companies"""
-    banks = db.query(Company).filter(
-        Company.type == "bank"
-    ).order_by(Company.created_at.desc()).all()
+    companies = db.query(Company).order_by(Company.created_at.desc()).all()
+    banks = [company for company in companies if is_bank_company(company)]
     
     result = []
     for bank in banks:
@@ -141,7 +141,7 @@ async def list_banks(
             id=str(bank.id),
             name=bank.name,
             legal_name=bank.legal_name,
-            type=bank.type or "bank",
+            type="bank",
             country=bank.country,
             contact_email=bank.contact_email,
             regulator_id=bank.regulator_id,
@@ -191,11 +191,11 @@ async def create_bank(
     bank = Company(
         name=request.bank_name,
         legal_name=request.legal_name or request.bank_name,
-        type="bank",
         country=request.country,
         contact_email=request.contact_email,
         regulator_id=request.regulator_id,
     )
+    mark_company_as_bank(bank)
     db.add(bank)
     db.flush()  # Get the bank ID
     
@@ -265,11 +265,10 @@ async def get_bank(
 ):
     """Get detailed information about a bank"""
     bank = db.query(Company).filter(
-        Company.id == bank_id,
-        Company.type == "bank"
+        Company.id == bank_id
     ).first()
     
-    if not bank:
+    if not bank or not is_bank_company(bank):
         raise HTTPException(status_code=404, detail="Bank not found")
     
     # Get all users in this bank
@@ -316,7 +315,7 @@ async def get_bank(
         "id": str(bank.id),
         "name": bank.name,
         "legal_name": bank.legal_name,
-        "type": bank.type,
+        "type": "bank",
         "country": bank.country,
         "contact_email": bank.contact_email,
         "regulator_id": bank.regulator_id,
@@ -336,11 +335,10 @@ async def update_bank(
 ):
     """Update bank details"""
     bank = db.query(Company).filter(
-        Company.id == bank_id,
-        Company.type == "bank"
+        Company.id == bank_id
     ).first()
     
-    if not bank:
+    if not bank or not is_bank_company(bank):
         raise HTTPException(status_code=404, detail="Bank not found")
     
     if request.bank_name:
@@ -351,6 +349,7 @@ async def update_bank(
         bank.contact_email = request.contact_email
     if request.regulator_id:
         bank.regulator_id = request.regulator_id
+    mark_company_as_bank(bank)
     
     db.commit()
     
@@ -369,11 +368,10 @@ async def invite_bank_user(
     Creates the user account immediately and sends credentials.
     """
     bank = db.query(Company).filter(
-        Company.id == bank_id,
-        Company.type == "bank"
+        Company.id == bank_id
     ).first()
     
-    if not bank:
+    if not bank or not is_bank_company(bank):
         raise HTTPException(status_code=404, detail="Bank not found")
     
     # Check if user already exists
@@ -470,11 +468,10 @@ async def deactivate_bank(
 ):
     """Deactivate a bank (soft delete)"""
     bank = db.query(Company).filter(
-        Company.id == bank_id,
-        Company.type == "bank"
+        Company.id == bank_id
     ).first()
     
-    if not bank:
+    if not bank or not is_bank_company(bank):
         raise HTTPException(status_code=404, detail="Bank not found")
     
     # Deactivate all users in this bank

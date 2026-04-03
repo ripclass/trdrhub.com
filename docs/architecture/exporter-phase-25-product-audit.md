@@ -70,6 +70,7 @@ Current gaps:
 - customs, submission, and history responsibilities are bundled into one broad lane
 - this is likely the biggest launch UX risk after Documents
 - the tab needs clearer primary action, readiness explanation, and submission-state hierarchy
+- production bank provisioning still carries legacy linkage debt; exporter submit now tolerates it, but bank user/company linkage still needs normalization
 
 ## Immediate Product Priorities
 
@@ -80,6 +81,7 @@ Current gaps:
 - [x] added a Customs current-step card that explains the real next action from readiness and submission truth
 - [x] sorted submission history by latest activity so the newest bank lane stays on top
 - [x] replaced the hardcoded bank selector with an exporter-safe live bank directory
+- [x] added a bounded bank-company fallback for legacy live data where bank users exist but are not linked to their bank company
 
 ### Priority 1: Overview
 
