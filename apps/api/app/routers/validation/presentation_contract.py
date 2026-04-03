@@ -222,6 +222,7 @@ def _extract_rule_evidence_items(issues: Optional[List[Dict[str, Any]]]) -> List
             continue
         rule_id = (
             issue.get("rule_id")
+            or issue.get("rule")
             or issue.get("ruleId")
             or issue.get("source_rule_id")
             or issue.get("sourceRuleId")

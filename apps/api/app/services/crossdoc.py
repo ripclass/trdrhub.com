@@ -325,7 +325,7 @@ def build_issue_cards(discrepancies: List[Dict[str, Any]]) -> Tuple[List[Dict[st
 
 
 def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any]:
-    severity = _normalize_issue_severity(discrepancy.get("severity"))
+    severity = _normalize_issue_severity(discrepancy)
     semantic_payload = None
     semantic_list = discrepancy.get("semantic_differences")
     if isinstance(semantic_list, list) and semantic_list:
@@ -382,28 +382,96 @@ def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any
         "title": discrepancy.get("title") or discrepancy.get("rule") or "Review Required",
         "description": discrepancy.get("message") or discrepancy.get("description") or "",
         "severity": severity,
+        "sourceSeverity": discrepancy.get("severity"),
+        "priority": discrepancy.get("priority"),
         "documentName": document_label,
         "documentType": discrepancy.get("document_type"),
         "documentIds": discrepancy.get("document_ids") or discrepancy.get("documentIds"),
         "documentTypes": discrepancy.get("document_types") or discrepancy.get("documentTypes"),
+        "documents": discrepancy.get("documents"),
+        "document_names": discrepancy.get("document_names"),
         "expected": expected_text,
         "actual": actual_text,
         "suggestion": suggestion,
         "field": _extract_field_name(discrepancy),
         "ucp_reference": ucp_ref if ucp_ref else None,
         "isbp_reference": isbp_ref if isbp_ref else None,
+        "ruleset_domain": discrepancy.get("ruleset_domain"),
+        "rule_type": discrepancy.get("rule_type"),
+        "consequence_class": discrepancy.get("consequence_class"),
+        "execution_priority": discrepancy.get("execution_priority"),
+        "parent_rule": discrepancy.get("parent_rule"),
+        "expected_outcome": discrepancy.get("expected_outcome"),
+        "conditions": discrepancy.get("conditions"),
+        "overlap_keys": discrepancy.get("overlap_keys"),
     }
 
 
-def _normalize_issue_severity(value: Optional[str]) -> str:
+def _normalize_issue_severity(discrepancy: Dict[str, Any] | Optional[str]) -> str:
+    if isinstance(discrepancy, dict):
+        value = discrepancy.get("severity")
+        if not value:
+            return "minor"
+        normalized = str(value).lower().strip()
+        if normalized in {"critical", "high"}:
+            return "critical"
+        if normalized in {"major", "medium", "warn", "warning"}:
+            return "major"
+        if normalized in {"fail", "reject", "blocked"}:
+            return "critical" if _is_blocking_temporal_discrepancy(discrepancy) else "major"
+        return "minor"
+    value = discrepancy
     if not value:
         return "minor"
-    normalized = value.lower()
+    normalized = str(value).lower().strip()
     if normalized in {"critical", "high"}:
         return "critical"
     if normalized in {"major", "medium", "warn", "warning"}:
         return "major"
+    if normalized in {"fail", "reject", "blocked"}:
+        return "major"
     return "minor"
+
+
+def _is_blocking_temporal_discrepancy(discrepancy: Dict[str, Any]) -> bool:
+    title = str(discrepancy.get("title") or "").strip().lower()
+    description = str(
+        discrepancy.get("description")
+        or discrepancy.get("message")
+        or ""
+    ).strip().lower()
+    combined_text = f"{title} {description}"
+    if "latest shipment date" in combined_text:
+        return True
+    if "shipment date" in combined_text and "later than" in combined_text:
+        return True
+    if "expiry" in combined_text and any(token in combined_text for token in ("after", "later than", "exceed")):
+        return True
+
+    for condition in discrepancy.get("conditions") or []:
+        if not isinstance(condition, dict):
+            continue
+        condition_type = str(condition.get("type") or "").strip().lower()
+        field = str(condition.get("field") or "").strip().lower()
+        reference_field = str(
+            condition.get("reference_field")
+            or condition.get("referenceField")
+            or ""
+        ).strip().lower()
+        computed_field = str(condition.get("computed_field") or "").strip().lower()
+        joined = " ".join(part for part in (field, reference_field, computed_field) if part)
+        if condition_type in {"date_comparison", "date_order"} and any(
+            token in joined
+            for token in (
+                "latest_shipment",
+                "shipment_date",
+                "expiry_date",
+                "presentation_period",
+            )
+        ):
+            return True
+
+    return False
 
 
 def _infer_primary_document(discrepancy: Dict[str, Any]) -> str:
@@ -454,7 +522,7 @@ def _format_reference_issue(discrepancy: Dict[str, Any]) -> Dict[str, Any]:
         "rule": discrepancy.get("rule"),
         "title": discrepancy.get("title") or discrepancy.get("rule") or "",
         "description": discrepancy.get("message") or discrepancy.get("description") or "",
-        "severity": discrepancy.get("severity", "minor"),
+        "severity": _normalize_issue_severity(discrepancy),
         "documents": discrepancy.get("documents", []),
         "document_names": discrepancy.get("document_names", []),
         "document_ids": discrepancy.get("document_ids", []),
