@@ -661,11 +661,13 @@ def _suppress_broad_icc_umbrella_rules(
 
     specific_families: set[tuple[str, str]] = set()
     requirement_backed_documentary_issue_present = False
+    crossdoc_documentary_issue_present = False
     for issue in issues:
         identity = _parse_icc_rule_identity(issue)
         if identity and identity[2]:
             specific_families.add((identity[0], identity[1]))
         domain = str(issue.get("ruleset_domain") or "").strip().lower()
+        rule_id = str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
         requirement_source = str(issue.get("requirement_source") or "").strip().lower()
         requirement_kind = (
             str(issue.get("requirement_kind") or "")
@@ -685,8 +687,16 @@ def _suppress_broad_icc_umbrella_rules(
             }
         ):
             requirement_backed_documentary_issue_present = True
+        if domain.startswith("icc.lcopilot.crossdoc") and rule_id.startswith(
+            ("CROSSDOC-", "DOCSET-")
+        ):
+            crossdoc_documentary_issue_present = True
 
-    if not specific_families and not requirement_backed_documentary_issue_present:
+    if (
+        not specific_families
+        and not requirement_backed_documentary_issue_present
+        and not crossdoc_documentary_issue_present
+    ):
         return issues
 
     filtered: list[dict[str, Any]] = []
@@ -704,7 +714,7 @@ def _suppress_broad_icc_umbrella_rules(
             continue
         identity = _parse_icc_rule_identity(issue)
         if (
-            requirement_backed_documentary_issue_present
+            (requirement_backed_documentary_issue_present or crossdoc_documentary_issue_present)
             and identity
             and not identity[2]
             and domain.startswith("icc.")

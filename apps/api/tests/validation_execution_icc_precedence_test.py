@@ -358,3 +358,70 @@ def test_validation_execution_suppresses_fallback_icc_umbrellas_when_requirement
     )
 
     assert [issue["rule"] for issue in filtered] == ["CROSSDOC-EXACT-WORDING"]
+
+
+def test_validation_execution_suppresses_fallback_icc_umbrellas_when_crossdoc_documentary_issue_exists() -> None:
+    fn = _load_symbols()["_suppress_broad_icc_umbrella_rules"]
+
+    filtered = fn(
+        [
+            {
+                "rule": "CROSSDOC-INV-004",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "title": "Invoice Dated After LC Expiry",
+            },
+            {
+                "rule": "UCP600-18",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+            },
+            {
+                "rule": "UCP600-20",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+            },
+            {
+                "rule": "UCP600-28",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+            },
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["CROSSDOC-INV-004"]
+
+
+def test_validation_execution_suppresses_fallback_icc_umbrellas_when_docset_issue_exists() -> None:
+    fn = _load_symbols()["_suppress_broad_icc_umbrella_rules"]
+
+    filtered = fn(
+        [
+            {
+                "rule": "DOCSET-MISSING-INSURANCE-CERTIFICATE",
+                "ruleset_domain": "icc.lcopilot.crossdoc",
+                "title": "Missing Insurance Certificate",
+            },
+            {
+                "rule": "UCP600-18",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+            },
+            {
+                "rule": "UCP600-20",
+                "ruleset_domain": "icc.ucp600",
+                "rule_type": "umbrella",
+                "execution_priority": "fallback",
+                "consequence_class": "domain_logic",
+            },
+        ]
+    )
+
+    assert [issue["rule"] for issue in filtered] == ["DOCSET-MISSING-INSURANCE-CERTIFICATE"]
