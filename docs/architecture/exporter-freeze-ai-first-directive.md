@@ -1,7 +1,7 @@
 # Exporter Freeze And AI-First Directive
 
 Date: 2026-04-01
-Status: Active
+Status: Exporter backend frozen; Phase 2.5 active
 
 ## Purpose
 
@@ -37,6 +37,8 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - [x] Immediate `/api/validate/` and persisted `/api/results/{id}` agree on proven paths.
 - [x] Deterministic ICC rule execution is working live.
 - [x] Release-gated gold corpus exists and is meaningful.
+- [x] Generic ICC umbrella/noise suppression now survives late-stage result assembly.
+- [x] Gold corpus `set_002` is re-isolated as an amount-only case instead of accidentally creating insurance undercoverage.
 
 ### Live-Proven Rule Paths
 
@@ -60,8 +62,9 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - [x] Replace rule-id-specific ICC-vs-legacy suppression with a generic overlap/dedup mechanism.
 - [x] Promote the insurance undercoverage path to `UCP600-28E` with generic valuation/arithmetic support.
 - [x] Finish one bounded exporter validation batch without drifting into endless atomic rollout.
-- [ ] Freeze exporter on a documented baseline.
-- [ ] Implement explicit AI L1/L2/L3 staging ahead of deterministic rules.
+- [x] Freeze exporter on a documented baseline.
+- [x] Implement explicit AI L1/L2/L3 staging ahead of deterministic rules.
+- [ ] Convert exporter workstream from backend validation rollout to product-polish-only execution.
 
 ## Exporter Freeze Checklist
 
@@ -72,7 +75,7 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - [x] Core insurance-family live proof started
 - [x] Generic overlap/dedup replaces the temporary rule-id bridge
 - [x] Final bounded exporter validation batch completed
-- [ ] Exporter moved to blocker-fix mode only
+- [x] Exporter moved to blocker-fix mode only
 
 ### Post-Batch Audit
 
@@ -80,6 +83,10 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - That means the next exporter decision is explicit:
   - either open one bounded missing-fact batch for advanced transport/insurance flags
   - or freeze exporter here and move to Phase 2 AI-first integration plus Phase 2.5 UX polish
+- Freeze decision taken:
+  - exporter backend is now in blocker-fix mode only
+  - corpus/runtime baseline is locked around the currently proven validation families
+  - remaining advanced ICC coverage is not launch-critical unless it blocks a real exporter flow
 - Phase 2 now starts with an honest contract milestone:
   - [x] project current AI validation into explicit `L1` / `L2` / `L3` layers
   - [x] move runtime ordering from post-deterministic projection to true AI-first execution
@@ -89,6 +96,7 @@ This directive replaces open-ended exporter firefighting with a bounded path:
   - [x] mirror contract/readiness verdicts at the top-level public response envelope on degraded paths
   - [x] expose provisional findings as a first-class public/UI lane instead of burying them in raw structured payloads
   - [x] start exporter Phase 2.5 tab-by-tab product audit
+  - [x] freeze backend/corpus baseline before Phase 2.5 UI work
 
 ## Phase Sequence
 
@@ -114,6 +122,11 @@ This directive replaces open-ended exporter firefighting with a bounded path:
 - Fix user flow gaps
 - Fix UI/UX rough edges
 - Make exporter launch-ready
+- Current execution order:
+  1. overview polish and decision clarity
+  2. documents review workflow clarity
+  3. customs/submission path cleanup
+  4. discrepancy lane refinement only if it blocks launch
 
 ### Phase 3: Importer Dashboard
 

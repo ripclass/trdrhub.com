@@ -2185,6 +2185,66 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     }
     return requiredTypes;
   }, [canonicalRequiredDocs, lcRequirementTypes]);
+  const sortedDocuments = useMemo(() => {
+    const requiredTypeOrder = new Map<string, number>();
+    const registerRequiredType = (rawType: string, index: number) => {
+      buildRequirementTypeCandidates(normalizeRequirementCode(rawType)).forEach((candidate) => {
+        if (!requiredTypeOrder.has(candidate)) {
+          requiredTypeOrder.set(candidate, index);
+        }
+      });
+    };
+
+    canonicalRequiredDocs.forEach((doc, index) => {
+      registerRequiredType(String(doc?.code || ''), index + 1);
+    });
+    if (canonicalRequiredDocs.length === 0) {
+      lcRequirementTypes.forEach((rawType, index) => {
+        registerRequiredType(rawType, index + 1);
+      });
+    }
+
+    const documentPriority = (document: ValidationDocument) => {
+      const normalizedType = String(document.typeKey || '').toLowerCase();
+      const isLcDocument = normalizedType === 'letter_of_credit';
+      const isRequiredDocument = lcRequiredDocumentTypeSet.has(normalizedType);
+      const extractionNeedsConfirmation = Boolean(document.extractionResolution?.required);
+      const reviewState = document.reviewState ?? 'ready';
+      const requirementStatus = document.requirementStatus ?? 'matched';
+      const issueCount = Number(document.issuesCount ?? 0);
+      const status = String(document.status || 'warning').toLowerCase();
+
+      const urgencyRank =
+        extractionNeedsConfirmation
+          ? 0
+          : reviewState === 'blocked' || status === 'error'
+          ? 1
+          : reviewState === 'needs_review' || requirementStatus === 'partial' || issueCount > 0 || status === 'warning'
+          ? 2
+          : 3;
+
+      const requiredRank = isRequiredDocument ? 0 : 1;
+      const requirementOrder = requiredTypeOrder.get(normalizedType) ?? Number.MAX_SAFE_INTEGER;
+
+      return [
+        isLcDocument ? 0 : 1,
+        urgencyRank,
+        requiredRank,
+        requirementOrder,
+        String(document.name || '').toLowerCase(),
+      ] as const;
+    };
+
+    return [...documents].sort((left, right) => {
+      const leftPriority = documentPriority(left);
+      const rightPriority = documentPriority(right);
+      for (let idx = 0; idx < leftPriority.length; idx += 1) {
+        if (leftPriority[idx] < rightPriority[idx]) return -1;
+        if (leftPriority[idx] > rightPriority[idx]) return 1;
+      }
+      return 0;
+    });
+  }, [canonicalRequiredDocs, documents, lcRequiredDocumentTypeSet, lcRequirementTypes]);
   const checklistReviewFindings = useMemo<RequirementReviewFinding[]>(() => {
     const classifyFindingCategory = ({
       matchedDoc,
@@ -3801,11 +3861,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   )}
                 </CardContent>
               </Card>
-              <Card hidden className="shadow-soft border border-border/60">
+              <Card className="shadow-soft border border-border/60">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold">What To Do Next</CardTitle>
+                  <CardTitle className="text-lg font-semibold">Operator Next Actions</CardTitle>
                   <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    The most important next steps for this case
+                    The most important next steps from the current review state
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -4138,7 +4198,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>
 
           <TabsContent value="documents" className="space-y-4">
-            {documents.map((document) => {
+            {sortedDocuments.map((document) => {
               const fieldEntries = Object.entries(document.extractedFields || {});
               const hasFieldEntries = fieldEntries.length > 0;
               const parseComplete = (document as any).parseComplete;
