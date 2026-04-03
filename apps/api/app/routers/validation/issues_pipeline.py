@@ -253,7 +253,12 @@ def _partition_workflow_stage_issues(
             "low_confidence",
             "low_confidence_critical",
         }
-        if validation_ready and selected_stage not in degraded_selection_stages:
+        workflow_validation_ready = (
+            stage == "validation_results"
+            and selected_stage not in degraded_selection_stages
+            and extraction_resolution_required is not True
+        )
+        if (validation_ready or workflow_validation_ready) and selected_stage not in degraded_selection_stages:
             if not reason_codes.intersection(hard_unreliable_reason_codes):
                 return False
 

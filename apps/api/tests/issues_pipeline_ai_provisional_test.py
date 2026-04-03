@@ -191,3 +191,45 @@ def test_partition_keeps_ready_for_validation_deterministic_issue_final() -> Non
 
     assert [issue["rule"] for issue in result["final_issues"]] == ["UCP600-20E"]
     assert result["provisional_issues"] == []
+
+
+def test_partition_keeps_validation_results_issue_final_without_ready_flags() -> None:
+    module = _load_symbols()
+
+    result = module["_partition_workflow_stage_issues"](
+        [
+            {
+                "rule": "UCP600-20C",
+                "title": "Bill of Lading: Shipment Date Must Not Be Later Than LC",
+                "description": "Shipment date is later than the LC latest shipment date.",
+                "severity": "minor",
+                "documentName": "Bill of Lading",
+                "documentType": "bill_of_lading",
+            }
+        ],
+        [
+            {
+                "document_id": "doc-bl",
+                "document_type": "bill_of_lading",
+                "filename": "Bill_of_Lading.pdf",
+                "review_required": True,
+                "extraction_status": "success",
+                "extraction_resolution": None,
+                "critical_field_states": {
+                    "net_weight": "parse_failed",
+                    "issue_date": "found",
+                },
+                "extraction_artifacts_v1": {
+                    "selected_stage": "plaintext_native",
+                    "canonical_reason_codes": [
+                        "FIELD_NOT_FOUND",
+                        "FORMAT_INVALID",
+                    ],
+                },
+            }
+        ],
+        {"stage": "validation_results"},
+    )
+
+    assert [issue["rule"] for issue in result["final_issues"]] == ["UCP600-20C"]
+    assert result["provisional_issues"] == []
