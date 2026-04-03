@@ -1260,6 +1260,189 @@ describe('ExporterResults', () => {
     );
   });
 
+  it('keeps canonical pass cases ready even when documents still carry stale extraction-era warnings', async () => {
+    const liveLikeResults = buildValidationResults();
+    liveLikeResults.issues = [];
+    liveLikeResults.documents = [
+      {
+        id: 'doc-lc',
+        documentId: 'doc-lc',
+        name: 'LC.pdf',
+        filename: 'LC.pdf',
+        type: 'Letter of Credit',
+        typeKey: 'letter_of_credit',
+        extractionStatus: 'partial',
+        status: 'warning',
+        issuesCount: 0,
+        extractedFields: {},
+      },
+      {
+        id: 'doc-invoice',
+        documentId: 'doc-invoice',
+        name: 'Invoice.pdf',
+        filename: 'Invoice.pdf',
+        type: 'Commercial Invoice',
+        typeKey: 'commercial_invoice',
+        extractionStatus: 'partial',
+        status: 'warning',
+        issuesCount: 0,
+        extractedFields: {},
+      },
+      {
+        id: 'doc-bl',
+        documentId: 'doc-bl',
+        name: 'Bill_of_Lading.pdf',
+        filename: 'Bill_of_Lading.pdf',
+        type: 'Bill of Lading',
+        typeKey: 'bill_of_lading',
+        extractionStatus: 'success',
+        status: 'warning',
+        issuesCount: 0,
+        reviewReasons: ['critical_net_weight_parse_failed'],
+        extractedFields: {},
+      },
+      {
+        id: 'doc-pack',
+        documentId: 'doc-pack',
+        name: 'Packing_List.pdf',
+        filename: 'Packing_List.pdf',
+        type: 'Packing List',
+        typeKey: 'packing_list',
+        extractionStatus: 'partial',
+        status: 'warning',
+        issuesCount: 0,
+        extractedFields: {},
+      },
+      {
+        id: 'doc-coo',
+        documentId: 'doc-coo',
+        name: 'Certificate_of_Origin.pdf',
+        filename: 'Certificate_of_Origin.pdf',
+        type: 'Certificate Of Origin',
+        typeKey: 'certificate_of_origin',
+        extractionStatus: 'partial',
+        status: 'warning',
+        issuesCount: 0,
+        extractedFields: {},
+      },
+      {
+        id: 'doc-insurance',
+        documentId: 'doc-insurance',
+        name: 'Insurance_Certificate.pdf',
+        filename: 'Insurance_Certificate.pdf',
+        type: 'Insurance Certificate',
+        typeKey: 'insurance_certificate',
+        extractionStatus: 'partial',
+        status: 'warning',
+        issuesCount: 0,
+        extractedFields: {},
+      },
+    ];
+    liveLikeResults.summary = {
+      ...liveLikeResults.summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+      document_status: { success: 1, warning: 5, error: 0 },
+      status_counts: { success: 1, warning: 5, error: 0 },
+    };
+    liveLikeResults.structured_result = {
+      ...liveLikeResults.structured_result,
+      issues: [],
+      final_verdict: 'pass',
+      workflow_stage: {
+        stage: 'validation_results',
+        provisional_validation: false,
+        ready_for_final_validation: true,
+        unresolved_documents: 0,
+        unresolved_fields: 0,
+        document_lane_counts: { document_ai: 6 },
+        summary: 'Extraction is sufficiently resolved. Validation findings reflect the current confirmed document set.',
+      },
+      lc_structured: {
+        ...(liveLikeResults.structured_result?.lc_structured ?? {}),
+        required_documents_detailed: [
+          { code: 'commercial_invoice', display_name: 'Commercial Invoice', raw_text: 'Commercial Invoice' },
+          { code: 'bill_of_lading', display_name: 'Ocean Bill Of Lading', raw_text: 'Ocean Bill Of Lading' },
+          { code: 'packing_list', display_name: 'Packing List', raw_text: 'Packing List' },
+          { code: 'certificate_of_origin', display_name: 'Certificate Of Origin', raw_text: 'Certificate Of Origin' },
+          { code: 'insurance_certificate', display_name: 'Insurance Certificate', raw_text: 'Insurance Certificate' },
+        ],
+      },
+      processing_summary: {
+        ...liveLikeResults.structured_result?.processing_summary,
+        total_issues: 0,
+        severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+        warnings: 5,
+        errors: 0,
+        verified: 1,
+      },
+      processing_summary_v2: {
+        ...(liveLikeResults.structured_result?.processing_summary_v2 ?? {}),
+        total_issues: 0,
+        discrepancies: 0,
+        severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+        warnings: 5,
+        errors: 0,
+        verified: 1,
+        status_counts: { success: 1, warning: 5, error: 0 },
+        document_status: { success: 1, warning: 5, error: 0 },
+      },
+      validation_contract_v1: {
+        ...(liveLikeResults.structured_result?.validation_contract_v1 ?? {}),
+        final_verdict: 'pass',
+        ruleset_verdict: 'pass',
+        evidence_summary: {
+          ...(liveLikeResults.structured_result?.validation_contract_v1 as any)?.evidence_summary,
+          requirements_review_needed: false,
+          primary_decision_lane: 'none',
+        },
+        rules_evidence: {
+          ...(liveLikeResults.structured_result?.validation_contract_v1 as any)?.rules_evidence,
+          requirements_review_needed: false,
+          requirement_readiness_items: [],
+          requirement_reason_codes: [],
+          issue_lanes: {
+            documentary: { count: 0, blocking_count: 0, rule_ids: [], titles: [], highest_severity: null },
+            advisory: { count: 0, blocking_count: 0, rule_ids: [], titles: [], highest_severity: null },
+          },
+          primary_decision_lane: 'none',
+        },
+      },
+      submission_eligibility: { can_submit: true, reasons: [] },
+      effective_submission_eligibility: { can_submit: true, reasons: [] },
+      bank_verdict: {
+        verdict: 'SUBMIT',
+        verdict_color: 'green',
+        verdict_message: 'Ready for presentation based on current validation findings',
+        recommendation: 'Proceed with submission using the current validated document set.',
+        can_submit: true,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: 0,
+        issue_summary: { critical: 0, major: 0, minor: 0, total: 0 },
+        action_items: [],
+        action_items_count: 0,
+      },
+    } as typeof liveLikeResults.structured_result;
+    activeResults = liveLikeResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+    );
+
+    expect(
+      screen.queryByText(/Clean presentation still needs review because checklist items are unresolved/i),
+    ).toBeNull();
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    await waitFor(() =>
+      expect(within(customsPanel).getByRole('button', { name: /Submit to Bank/i })).toBeInTheDocument(),
+    );
+    expect(within(customsPanel).queryByText(/Checklist review is still open/i)).toBeNull();
+  });
+
   it('loads the bank selector from the exporter bank directory instead of a hardcoded list', async () => {
     const { exporterApi } = await import('@/api/exporter');
     const listAvailableBanks = vi.mocked(exporterApi.listAvailableBanks);

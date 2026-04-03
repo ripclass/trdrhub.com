@@ -1992,6 +1992,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return [] as string[];
   }, [lcClassification?.unmapped_requirements, lcData, lcPrimaryExtractedFields]);
 
+  const suppressChecklistExtractionReview = useMemo(
+    () =>
+      !isExtractionResolutionStage &&
+      canonicalResultTruth.finalVerdict === 'pass' &&
+      canonicalResultTruth.canSubmitFromValidation &&
+      !canonicalResultTruth.requirementReviewNeeded &&
+      canonicalResultTruth.primaryDecisionLane === 'none' &&
+      canonicalResultTruth.documentaryIssueCount === 0,
+    [
+      canonicalResultTruth.canSubmitFromValidation,
+      canonicalResultTruth.documentaryIssueCount,
+      canonicalResultTruth.finalVerdict,
+      canonicalResultTruth.primaryDecisionLane,
+      canonicalResultTruth.requirementReviewNeeded,
+      isExtractionResolutionStage,
+    ],
+  );
+
   const requirementChecklist = useMemo(() => {
     const normalizedDocs = documents.map((doc) => ({
       ...doc,
@@ -2084,8 +2102,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         const hasMissingFields = Boolean(
           matchedDoc && Array.isArray(matchedDoc.missingRequiredFields) && matchedDoc.missingRequiredFields.length > 0,
         );
+        const suppressNonBlockingReviewSignals = Boolean(
+          matchedDoc &&
+            suppressChecklistExtractionReview &&
+            !matchedDoc.extractionResolution?.required &&
+            Number(matchedDoc.issuesCount ?? 0) <= 0 &&
+            matchedDoc.reviewState !== 'blocked',
+        );
         const hasReviewSignals = Boolean(
           matchedDoc &&
+            !suppressNonBlockingReviewSignals &&
             ((matchedDoc.warningReasons ?? []).length > 0 ||
               (matchedDoc.reviewReasons ?? []).length > 0 ||
               matchedDoc.extractionResolution?.required ||
@@ -2132,7 +2158,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               })
           : [];
         const reviewNotes = matchedDoc
-          ? [...matchedDoc.warningReasons, ...matchedDoc.reviewReasons].filter(Boolean)
+          ? suppressNonBlockingReviewSignals
+            ? []
+            : [...matchedDoc.warningReasons, ...matchedDoc.reviewReasons].filter(Boolean)
           : ['Document not uploaded yet'];
 
         if (
@@ -2183,7 +2211,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       }>;
 
     return items;
-  }, [documents, canonicalRequiredDocs, lcRequirementTypes]);
+  }, [documents, canonicalRequiredDocs, lcRequirementTypes, suppressChecklistExtractionReview]);
   const requirementChecklistSummary = useMemo<RequirementChecklistSummary>(() => {
     return requirementChecklist.reduce(
       (acc, item) => {
