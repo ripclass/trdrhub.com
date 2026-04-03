@@ -1030,6 +1030,25 @@ def test_extract_rule_overlap_keys_canonicalizes_ucp20c_late_shipment_paths() ->
     ]
 
 
+def test_extract_rule_overlap_keys_canonicalizes_ucp20e_discharge_port_paths() -> None:
+    rule = {
+        "rule_id": "UCP600-20E",
+        "document_type": "transport",
+        "conditions": [
+            {
+                "field": "bill_of_lading.port_of_discharge",
+                "operator": "not_equals",
+                "reference_field": "lc.port_of_discharge",
+                "type": "field_match",
+            }
+        ],
+    }
+
+    assert validator_module._extract_rule_overlap_keys(rule) == [
+        "bill_of_lading.port_of_discharge|lc.port_of_discharge"
+    ]
+
+
 def test_extract_rule_overlap_keys_canonicalizes_ucp28e_insurance_undercoverage_paths() -> None:
     rule = {
         "rule_id": "UCP600-28E",

@@ -1266,7 +1266,7 @@ async def execute_validation_pipeline(
                     domain="icc.ucp600",
                     jurisdiction=primary_jurisdiction,
                     document_data=db_rule_payload,
-                    watch_rule_ids=("UCP600-18", "UCP600-18A", "UCP600-18D", "UCP600-20D", "UCP600-28", "UCP600-28A", "UCP600-28E"),
+                    watch_rule_ids=("UCP600-18", "UCP600-18A", "UCP600-18D", "UCP600-20C", "UCP600-20D", "UCP600-20E", "UCP600-28", "UCP600-28A", "UCP600-28E"),
                 )
             except Exception as rule_watch_err:
                 rule_watch_debug = {"error": str(rule_watch_err)}
