@@ -40,6 +40,8 @@ _SHARED_NAMES = [
     '_prepare_extractor_outputs_for_structured_result',
     '_response_shaping',
     '_run_validation_arbitration_escalation',
+    '_suppress_broad_icc_umbrella_rules',
+    '_suppress_legacy_issue_noise',
     '_sync_structured_result_collections',
     'build_customs_manifest_from_option_e',
     'build_unified_structured_result',
@@ -594,6 +596,12 @@ async def finalize_validation_result(
         # Merge with any existing issues (from crossdoc, etc.)
         structured_result["issues"] = existing_issues + formatted_issues
         structured_result["issues"] = _suppress_advisory_findings_for_documentary_context(
+            structured_result["issues"]
+        )
+        structured_result["issues"] = _suppress_broad_icc_umbrella_rules(
+            structured_result["issues"]
+        )
+        structured_result["issues"] = _suppress_legacy_issue_noise(
             structured_result["issues"]
         )
         logger.info("Added %d issue cards to structured_result (total issues: %d)", 
