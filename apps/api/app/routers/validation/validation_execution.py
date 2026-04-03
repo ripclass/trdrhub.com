@@ -660,12 +660,15 @@ def _suppress_broad_icc_umbrella_rules(
         return []
 
     specific_families: set[tuple[str, str]] = set()
+    umbrella_with_specific_family_rules_present = False
     requirement_backed_documentary_issue_present = False
     crossdoc_documentary_issue_present = False
     for issue in issues:
         identity = _parse_icc_rule_identity(issue)
         if identity and identity[2]:
             specific_families.add((identity[0], identity[1]))
+        if bool(issue.get("has_specific_family_rules")):
+            umbrella_with_specific_family_rules_present = True
         domain = str(issue.get("ruleset_domain") or "").strip().lower()
         rule_id = str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
         requirement_source = str(issue.get("requirement_source") or "").strip().lower()
@@ -694,6 +697,7 @@ def _suppress_broad_icc_umbrella_rules(
 
     if (
         not specific_families
+        and not umbrella_with_specific_family_rules_present
         and not requirement_backed_documentary_issue_present
         and not crossdoc_documentary_issue_present
     ):
