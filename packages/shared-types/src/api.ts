@@ -871,6 +871,26 @@ export const PaginatedResponseSchema = <T extends z.ZodType>(itemSchema: T) =>
   });
 
 // ============================================================================
+// Exporter Bank Directory Types
+// ============================================================================
+
+export const ExporterBankDirectoryItemSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  legal_name: z.string().optional(),
+  country: z.string().optional(),
+  regulator_id: z.string().optional(),
+  active_user_count: z.number().nonnegative(),
+});
+export type ExporterBankDirectoryItem = z.infer<typeof ExporterBankDirectoryItemSchema>;
+
+export const ExporterBankDirectoryResponseSchema = z.object({
+  items: z.array(ExporterBankDirectoryItemSchema),
+  total: z.number().nonnegative(),
+});
+export type ExporterBankDirectoryResponse = z.infer<typeof ExporterBankDirectoryResponseSchema>;
+
+// ============================================================================
 // API Response Wrappers
 // ============================================================================
 
@@ -1242,6 +1262,8 @@ export const schemas = {
   // Pagination
   PaginationParams: PaginationParamsSchema,
   PaginationMeta: PaginationMetaSchema,
+  ExporterBankDirectoryItem: ExporterBankDirectoryItemSchema,
+  ExporterBankDirectoryResponse: ExporterBankDirectoryResponseSchema,
 
   // Structured validation payload
   StructuredProcessingSummary: StructuredProcessingSummarySchema,

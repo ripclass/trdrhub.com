@@ -74,6 +74,22 @@ class BankSubmissionListResponse(BaseModel):
     total: int
 
 
+class ExporterBankDirectoryItem(BaseModel):
+    """Safe bank directory entry exposed to exporter users."""
+    id: UUID
+    name: str
+    legal_name: Optional[str] = None
+    country: Optional[str] = None
+    regulator_id: Optional[str] = None
+    active_user_count: int = Field(default=0, ge=0)
+
+
+class ExporterBankDirectoryResponse(BaseModel):
+    """Response for listing active banks available for exporter submissions."""
+    items: List[ExporterBankDirectoryItem] = Field(default_factory=list)
+    total: int = Field(default=0, ge=0)
+
+
 class SubmissionEventRead(BaseModel):
     """Response for submission event."""
     id: UUID

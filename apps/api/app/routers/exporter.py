@@ -7,19 +7,25 @@ import zipfile
 import io
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, desc
-from pydantic import BaseModel
+from sqlalchemy import and_, func, desc
 
 from ..database import get_db
 from ..core.security import get_current_user
-from ..models import User, UserRole, ValidationSession, Discrepancy, Document, DiscrepancySeverity
+from ..models import (
+    User,
+    UserRole,
+    ValidationSession,
+    Discrepancy,
+    Document,
+    DiscrepancySeverity,
+)
 from ..models.exporter_submission import (
     ExportSubmission, SubmissionEvent, CustomsPack,
     SubmissionStatus, SubmissionEventType
@@ -27,10 +33,12 @@ from ..models.exporter_submission import (
 from ..schemas.exporter_submission import (
     CustomsPackGenerateRequest, CustomsPackGenerateResponse, CustomsPackManifest,
     BankSubmissionCreate, BankSubmissionRead, BankSubmissionListResponse,
+    ExporterBankDirectoryResponse,
     SubmissionEventRead, SubmissionEventListResponse,
     GuardrailCheckRequest, GuardrailCheckResponse
 )
 from ..services.audit_service import AuditService
+from ..services.exporter_bank_directory import list_exporter_available_banks
 from ..middleware.audit_middleware import create_audit_context
 from ..models.audit_log import AuditAction, AuditResult
 from ..config import settings
@@ -451,6 +459,16 @@ All documents have been validated against LC requirements.
 
 
 # ===== Bank Submission Endpoints =====
+
+@router.get("/banks", response_model=ExporterBankDirectoryResponse)
+async def list_available_banks(
+    _current_user: User = Depends(require_exporter_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List active banks that exporters can submit to.
+    """
+    return list_exporter_available_banks(db)
 
 @router.post("/bank-submissions", response_model=BankSubmissionRead, status_code=status.HTTP_201_CREATED)
 async def create_bank_submission(

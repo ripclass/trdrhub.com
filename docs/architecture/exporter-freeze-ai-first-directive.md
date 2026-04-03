@@ -97,6 +97,7 @@ This directive replaces open-ended exporter firefighting with a bounded path:
   - [x] expose provisional findings as a first-class public/UI lane instead of burying them in raw structured payloads
   - [x] start exporter Phase 2.5 tab-by-tab product audit
   - [x] freeze backend/corpus baseline before Phase 2.5 UI work
+  - [x] replace hardcoded exporter bank selector data with a live exporter-safe bank directory
 
 ## Phase Sequence
 

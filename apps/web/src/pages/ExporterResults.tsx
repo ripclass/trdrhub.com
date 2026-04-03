@@ -1159,7 +1159,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     enabled: guardrailsQueryEnabled,
     refetchInterval: 30000, // Check every 30 seconds
   });
-  
+
+  const {
+    data: bankDirectory,
+    isLoading: banksLoading,
+    isError: banksError,
+  } = useQuery({
+    queryKey: ['exporter-banks'],
+    queryFn: () => exporterApi.listAvailableBanks(),
+    enabled: enableBankSubmission,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const banks = bankDirectory?.items ?? [];
+
   // Submission history
   const { data: submissionsData, isLoading: submissionsLoading } = useQuery({
     queryKey: ['exporter-submissions', resolvedLcNumber, validationSessionId],
@@ -1194,6 +1207,24 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       }
     };
   }, [submissionsData, queryClient, enableBankSubmission]);
+
+  useEffect(() => {
+    if (!selectedBankId) {
+      if (!showBankSelector && selectedBankName) {
+        setSelectedBankName('');
+      }
+      return;
+    }
+    const selectedBank = banks.find((bank) => bank.id === selectedBankId);
+    if (selectedBank) {
+      if (selectedBankName !== selectedBank.name) {
+        setSelectedBankName(selectedBank.name);
+      }
+      return;
+    }
+    setSelectedBankId('');
+    setSelectedBankName('');
+  }, [banks, selectedBankId, selectedBankName, showBankSelector]);
   
   // Check if result has invoiceId (future enhancement)
   const invoiceId = (resultData as any)?.invoiceId;
@@ -3413,13 +3444,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     };
   });
   const analyticsAvailable = Boolean(structuredResult?.analytics);
-  // Mock banks list (in production, fetch from API)
-  const banks = [
-    { id: "bank-1", name: "Standard Chartered Bank" },
-    { id: "bank-2", name: "HSBC Bank" },
-    { id: "bank-3", name: "Citibank" },
-    { id: "bank-4", name: "Deutsche Bank" },
-  ];
 
   
   const handleDownloadCustomsPack = async () => {
@@ -3459,6 +3483,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       toast({
         title: "Submission Blocked",
         description: "Resolve validation issues before submitting to the bank.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (banksError || (!banksLoading && banks.length === 0)) {
+      toast({
+        title: "No Banks Available",
+        description: "No active bank directory is available for exporter submissions right now.",
         variant: "destructive",
       });
       return;
@@ -4110,7 +4142,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <Button
                       className="bg-blue-600 hover:bg-blue-700 text-white"
                       onClick={handleSubmitToBank}
-                      disabled={createSubmissionMutation.isPending || guardrailsLoading}
+                      disabled={createSubmissionMutation.isPending}
                     >
                       {customsCurrentStep.actionLabel}
                     </Button>
@@ -4226,7 +4258,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                           size="sm"
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                           onClick={handleSubmitToBank}
-                          disabled={createSubmissionMutation.isPending || guardrailsLoading}
+                          disabled={createSubmissionMutation.isPending}
                         >
                           {createSubmissionMutation.isPending ? (
                             <>
@@ -4728,15 +4760,22 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="bank-select">Bank</Label>
-                <Select value={selectedBankId} onValueChange={(value) => {
-                  const bank = banks.find(b => b.id === value);
-                  setSelectedBankId(value);
-                  setSelectedBankName(bank?.name || "");
-                }}>
+                <Select
+                  value={selectedBankId}
+                  onValueChange={(value) => {
+                    setSelectedBankId(value);
+                  }}
+                  disabled={banksLoading || banks.length === 0}
+                >
                   <SelectTrigger id="bank-select">
-                    <SelectValue placeholder="Select a bank" />
+                    <SelectValue placeholder={banksLoading ? "Loading active banks..." : "Select a bank"} />
                   </SelectTrigger>
                   <SelectContent>
+                    {!banksLoading && banks.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        No active banks available yet.
+                      </div>
+                    )}
                     {banks.map((bank) => (
                       <SelectItem key={bank.id} value={bank.id}>
                         {bank.name}
@@ -4744,6 +4783,16 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     ))}
                   </SelectContent>
                 </Select>
+                {banksError ? (
+                  <p className="text-sm text-destructive">
+                    Bank directory could not be loaded. Please retry after refresh.
+                  </p>
+                ) : null}
+                {!banksLoading && banks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No active bank directory is available for submission yet.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="submission-note">Note (Optional)</Label>
@@ -4760,7 +4809,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               <Button variant="outline" onClick={() => setShowBankSelector(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleBankSelected} disabled={!selectedBankName}>
+              <Button onClick={handleBankSelected} disabled={!selectedBankName || banksLoading || banks.length === 0}>
                 Continue
               </Button>
             </DialogFooter>

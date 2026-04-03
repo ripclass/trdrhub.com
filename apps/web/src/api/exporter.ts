@@ -63,6 +63,20 @@ export interface BankSubmissionListResponse {
   total: number;
 }
 
+export interface ExporterBankDirectoryItem {
+  id: string;
+  name: string;
+  legal_name?: string;
+  country?: string;
+  regulator_id?: string;
+  active_user_count: number;
+}
+
+export interface ExporterBankDirectoryResponse {
+  items: ExporterBankDirectoryItem[];
+  total: number;
+}
+
 export type SubmissionEventType = 'created' | 'bank_ack' | 'bank_reject' | 'retry' | 'cancel' | 'manifest_generated' | 'receipt_generated';
 
 export interface SubmissionEventRead {
@@ -151,6 +165,14 @@ export const exporterApi = {
     limit?: number;
   }): Promise<BankSubmissionListResponse> {
     const response = await api.get('/api/exporter/bank-submissions', { params });
+    return response.data;
+  },
+
+  /**
+   * List active banks available to exporter submissions.
+   */
+  async listAvailableBanks(): Promise<ExporterBankDirectoryResponse> {
+    const response = await api.get('/api/exporter/banks');
     return response.data;
   },
 

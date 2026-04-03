@@ -69,6 +69,7 @@ vi.mock('@/api/exporter', () => ({
       high_severity_discrepancies: 0,
       policy_checks_passed: true,
     }),
+    listAvailableBanks: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     listBankSubmissions: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     generateCustomsPack: vi.fn().mockResolvedValue({
       download_url: '',
@@ -109,6 +110,34 @@ vi.mock('@/api/exporter', () => ({
 vi.mock('@/config/exporterFeatureFlags', () => ({
   isExporterFeatureEnabled: vi.fn(() => true),
 }));
+
+if (!Element.prototype.hasPointerCapture) {
+  Object.defineProperty(Element.prototype, 'hasPointerCapture', {
+    configurable: true,
+    value: () => false,
+  });
+}
+
+if (!Element.prototype.setPointerCapture) {
+  Object.defineProperty(Element.prototype, 'setPointerCapture', {
+    configurable: true,
+    value: () => {},
+  });
+}
+
+if (!Element.prototype.releasePointerCapture) {
+  Object.defineProperty(Element.prototype, 'releasePointerCapture', {
+    configurable: true,
+    value: () => {},
+  });
+}
+
+if (!Element.prototype.scrollIntoView) {
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: () => {},
+  });
+}
 
 describe('ExporterResults', () => {
   beforeEach(() => {
@@ -1229,6 +1258,97 @@ describe('ExporterResults', () => {
     await waitFor(() =>
       expect(within(customsPanel).getByRole('button', { name: /Submit to Bank/i })).toBeInTheDocument(),
     );
+  });
+
+  it('loads the bank selector from the exporter bank directory instead of a hardcoded list', async () => {
+    const { exporterApi } = await import('@/api/exporter');
+    const listAvailableBanks = vi.mocked(exporterApi.listAvailableBanks);
+    listAvailableBanks.mockResolvedValue({
+      items: [
+        {
+          id: '8bb801b4-5dbd-44e3-bd8f-342847751111',
+          name: 'Eastern Bank PLC',
+          legal_name: 'Eastern Bank PLC',
+          country: 'BD',
+          regulator_id: 'EAST-01',
+          active_user_count: 3,
+        },
+        {
+          id: '8bb801b4-5dbd-44e3-bd8f-342847752222',
+          name: 'Dutch-Bangla Bank PLC',
+          legal_name: 'Dutch-Bangla Bank PLC',
+          country: 'BD',
+          regulator_id: 'DBBL-02',
+          active_user_count: 2,
+        },
+      ],
+      total: 2,
+    });
+
+    const eligibleResults = buildValidationResults();
+    eligibleResults.issues = [];
+    eligibleResults.summary = {
+      ...eligibleResults.summary,
+      total_issues: 0,
+      severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+    };
+    eligibleResults.structured_result = {
+      ...eligibleResults.structured_result,
+      issues: [],
+      processing_summary: {
+        ...eligibleResults.structured_result?.processing_summary,
+        total_issues: 0,
+        severity_breakdown: { critical: 0, major: 0, medium: 0, minor: 0 },
+      },
+      submission_eligibility: { can_submit: true, reasons: [] },
+      effective_submission_eligibility: { can_submit: true, reasons: [] },
+      bank_verdict: {
+        verdict: 'SUBMIT',
+        verdict_color: 'green',
+        verdict_message: 'Safe to submit',
+        recommendation: 'Ready for bank submission',
+        can_submit: true,
+        will_be_rejected: false,
+        estimated_discrepancy_fee: 0,
+        issue_summary: { critical: 0, major: 0, minor: 0, total: 0 },
+        action_items: [],
+        action_items_count: 0,
+      },
+    } as typeof eligibleResults.structured_result;
+    activeResults = eligibleResults;
+
+    const user = userEvent.setup();
+    render(renderWithProviders(<ExporterResults />));
+    await waitFor(() =>
+      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
+    let submitButton: HTMLElement | null = null;
+    await waitFor(() =>
+      expect(within(customsPanel).getAllByRole('button', { name: /Submit to Bank/i }).length).toBeGreaterThan(0),
+    );
+    await waitFor(() => {
+      submitButton =
+        within(customsPanel)
+          .getAllByRole('button', { name: /Submit to Bank/i })
+          .find((button) => !button.hasAttribute('disabled')) ?? null;
+      expect(submitButton).not.toBeNull();
+    });
+
+    await user.click(submitButton!);
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /Select Bank/i })).toBeInTheDocument(),
+    );
+
+    const bankDialog = screen.getByRole('dialog');
+    await user.click(within(bankDialog).getByRole('combobox'));
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: /Eastern Bank PLC/i })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('option', { name: /Dutch-Bangla Bank PLC/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Standard Chartered Bank/i })).not.toBeInTheDocument();
   });
 
   it('uses the latest bank submission as the current customs step when review is already in flight', async () => {

@@ -45,6 +45,7 @@ vi.mock('@/api/exporter', () => ({
       high_severity_discrepancies: 0,
       policy_checks_passed: true,
     }),
+    listAvailableBanks: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     listBankSubmissions: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     generateCustomsPack: vi.fn().mockResolvedValue({
       download_url: '',

@@ -829,6 +829,24 @@ class PaginatedResponse(BaseModel):
 
 
 # ============================================================================
+# Exporter Bank Directory Types
+# ============================================================================
+
+class ExporterBankDirectoryItem(BaseModel):
+    id: UUID
+    name: str
+    legal_name: Optional[str] = None
+    country: Optional[str] = None
+    regulator_id: Optional[str] = None
+    active_user_count: int = Field(default=0, ge=0)
+
+
+class ExporterBankDirectoryResponse(BaseModel):
+    items: List[ExporterBankDirectoryItem]
+    total: int = Field(default=0, ge=0)
+
+
+# ============================================================================
 # API Response Wrappers
 # ============================================================================
 
@@ -1178,6 +1196,8 @@ SCHEMAS = {
     # Pagination
     'PaginationParams': PaginationParams,
     'PaginationMeta': PaginationMeta,
+    'ExporterBankDirectoryItem': ExporterBankDirectoryItem,
+    'ExporterBankDirectoryResponse': ExporterBankDirectoryResponse,
 }
 
 

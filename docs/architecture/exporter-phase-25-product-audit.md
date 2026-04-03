@@ -79,6 +79,7 @@ Current gaps:
 - [x] sorted the Documents tab by operator urgency so unresolved required documents rise above clean uploads
 - [x] added a Customs current-step card that explains the real next action from readiness and submission truth
 - [x] sorted submission history by latest activity so the newest bank lane stays on top
+- [x] replaced the hardcoded bank selector with an exporter-safe live bank directory
 
 ### Priority 1: Overview
 
