@@ -60,6 +60,25 @@ def bind_shared(shared: Any) -> None:
         )
 
 
+def _resolve_request_user_type(payload: Dict[str, Any], current_user: Any) -> str:
+    explicit_user_type = str(payload.get("userType") or payload.get("user_type") or "").strip().lower()
+    if explicit_user_type:
+        return explicit_user_type
+
+    if current_user is None:
+        return ""
+
+    role = getattr(current_user, "role", None)
+    if role is None:
+        return ""
+
+    enum_like_value = getattr(role, "value", None)
+    if isinstance(enum_like_value, str) and enum_like_value.strip():
+        return enum_like_value.strip().lower()
+
+    return str(role).strip().lower()
+
+
 async def prepare_validation_session(
     *,
     request,
@@ -75,7 +94,9 @@ async def prepare_validation_session(
     # Build job context early so async extraction/two-stage telemetry always
     # emits a stable job_id sourced from server context (not request payload).
     metadata = payload.get("metadata")
-    user_type = payload.get("userType") or payload.get("user_type")
+    user_type = _resolve_request_user_type(payload, current_user)
+    if user_type and not (payload.get("userType") or payload.get("user_type")):
+        payload["user_type"] = user_type
     validation_session = None
     job_id = None
     create_persisted_session = bool(getattr(current_user, "id", None))
@@ -145,7 +166,7 @@ async def prepare_validation_session(
     # NO LC FOUND GATE - Block early if no LC document detected
     # This prevents expensive validation on incomplete document sets
     # =====================================================================
-    user_type = payload.get("userType") or payload.get("user_type")
+    user_type = _resolve_request_user_type(payload, current_user)
     documents_presence = (
         extracted_context.get("documents_presence") if extracted_context else {}
     ) or {}

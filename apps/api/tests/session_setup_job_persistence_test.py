@@ -339,3 +339,73 @@ async def test_prepare_validation_session_uses_extracted_lc_text_for_low_confide
     assert result["lc_type"] == "export"
     assert result["lc_type_source"] == "ai"
     assert payload["lc_type"] == "export"
+
+
+@pytest.mark.asyncio
+async def test_prepare_validation_session_infers_exporter_user_type_from_authenticated_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEBUG", "false")
+    session_setup = _load_module(
+        SESSION_SETUP_PATH,
+        "session_setup_infer_user_type_from_role_test",
+    )
+
+    async def _build_document_context(_files_list, _document_tags, job_id=None):
+        return {
+            "documents": [],
+            "documents_presence": {"letter_of_credit": {"present": True}},
+            "lc": {
+                "raw_text": "LC TEXT",
+                "applicant": "Global Trade Corp",
+                "beneficiary": "Bangladesh Export Ltd",
+                "port_of_loading": "Chattogram, Bangladesh",
+                "port_of_discharge": "New York, USA",
+            },
+        }
+
+    captured: dict[str, object] = {}
+
+    def _detect_lc_type(_lc_context, _shipment_context, request_context=None):
+        captured["request_context"] = dict(request_context or {})
+        if (request_context or {}).get("user_type") == "exporter":
+            return {"lc_type": "export", "reason": "lane-only exporter context", "confidence": 0.66}
+        return {"lc_type": "unknown", "reason": "missing lane context", "confidence": 0.0}
+
+    shared = _shared_bindings()
+    shared["_build_document_context"] = _build_document_context
+    shared["_extract_workflow_lc_type"] = lambda _lc: None
+    shared["detect_lc_type"] = _detect_lc_type
+
+    session_setup.bind_shared(shared)
+    session_setup.ValidationSessionService = _ValidationSessionService
+
+    runtime_context: dict[str, object] = {}
+    payload: dict[str, object] = {}
+
+    result = await session_setup.prepare_validation_session(
+        request=SimpleNamespace(state=SimpleNamespace()),
+        current_user=SimpleNamespace(
+            id="user-1",
+            company_id=None,
+            company=None,
+            onboarding_data={},
+            role="exporter",
+        ),
+        db=_Db(),
+        payload=payload,
+        files_list=[],
+        intake_only=False,
+        checkpoint=lambda _name: None,
+        start_time=0.0,
+        runtime_context=runtime_context,
+    )
+
+    assert payload["user_type"] == "exporter"
+    assert captured["request_context"] == {
+        "user_type": "exporter",
+        "workflow_type": None,
+        "company_country": None,
+    }
+    assert result["lc_type"] == "export"
+    assert result["lc_type_source"] == "auto"
