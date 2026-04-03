@@ -196,6 +196,31 @@ def _partition_workflow_stage_issues(
             str(state or "").strip().lower() == "missing"
             for state in critical_field_states.values()
         )
+        ready_for_validation = document.get("ready_for_validation")
+        if ready_for_validation is None:
+            ready_for_validation = document.get("readyForValidation")
+        resolution_required = document.get("resolution_required")
+        if resolution_required is None:
+            resolution_required = document.get("resolutionRequired")
+        extraction_resolution = (
+            document.get("extraction_resolution")
+            if isinstance(document.get("extraction_resolution"), dict)
+            else document.get("extractionResolution")
+            if isinstance(document.get("extractionResolution"), dict)
+            else {}
+        )
+        extraction_resolution_required = (
+            extraction_resolution.get("required")
+            if "required" in extraction_resolution
+            else None
+        )
+        validation_ready = False
+        if ready_for_validation is not None:
+            validation_ready = bool(ready_for_validation)
+        elif resolution_required is not None:
+            validation_ready = not bool(resolution_required)
+        elif extraction_resolution_required is not None:
+            validation_ready = not bool(extraction_resolution_required)
 
         extraction_artifacts = (
             document.get("extraction_artifacts_v1")
@@ -218,6 +243,19 @@ def _partition_workflow_stage_issues(
 
         if not review_required:
             return False
+
+        hard_unreliable_reason_codes = {
+            "ocr_auth_error",
+            "ocr_auth_failure",
+            "ocr_empty_result",
+            "ocr_provider_unavailable",
+            "parser_empty_output",
+            "low_confidence",
+            "low_confidence_critical",
+        }
+        if validation_ready and selected_stage not in degraded_selection_stages:
+            if not reason_codes.intersection(hard_unreliable_reason_codes):
+                return False
 
         return bool(
             reason_codes.intersection(severe_extraction_reason_codes)

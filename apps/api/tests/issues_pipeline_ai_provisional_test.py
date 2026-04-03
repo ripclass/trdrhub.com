@@ -148,3 +148,46 @@ def test_partition_keeps_validation_results_issues_final_without_unreliable_docu
 
     assert [issue["rule"] for issue in result["final_issues"]] == ["CROSSDOC-INV-005"]
     assert result["provisional_issues"] == []
+
+
+def test_partition_keeps_ready_for_validation_deterministic_issue_final() -> None:
+    module = _load_symbols()
+
+    result = module["_partition_workflow_stage_issues"](
+        [
+            {
+                "rule": "UCP600-20E",
+                "title": "Bill of Lading: Port of Discharge Must Match LC",
+                "description": "B/L port of discharge does not match LC stipulated port.",
+                "severity": "minor",
+                "documentName": "Bill of Lading",
+                "documentType": "bill_of_lading",
+            }
+        ],
+        [
+            {
+                "document_id": "doc-bl",
+                "document_type": "bill_of_lading",
+                "filename": "Bill_of_Lading.pdf",
+                "review_required": True,
+                "ready_for_validation": True,
+                "resolution_required": False,
+                "extraction_status": "success",
+                "critical_field_states": {
+                    "net_weight": "parse_failed",
+                    "issue_date": "found",
+                },
+                "extraction_artifacts_v1": {
+                    "selected_stage": "plaintext_native",
+                    "canonical_reason_codes": [
+                        "FIELD_NOT_FOUND",
+                        "FORMAT_INVALID",
+                    ],
+                },
+            }
+        ],
+        {"stage": "validation_results"},
+    )
+
+    assert [issue["rule"] for issue in result["final_issues"]] == ["UCP600-20E"]
+    assert result["provisional_issues"] == []
