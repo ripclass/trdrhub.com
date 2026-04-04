@@ -15,6 +15,9 @@ from ..database import Base
 
 class AuditAction(str, Enum):
     """Audit action types."""
+    CREATE = "create"
+    READ = "read"
+    UPDATE = "update"
     UPLOAD = "upload"
     VALIDATE = "validate"
     DOWNLOAD = "download"

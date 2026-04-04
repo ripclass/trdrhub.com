@@ -7,7 +7,7 @@ import zipfile
 import io
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 
@@ -553,7 +553,7 @@ async def create_bank_submission(
             },
             note=request.note,
             idempotency_key=request.idempotency_key,
-            submitted_at=datetime.utcnow()
+            submitted_at=datetime.now(timezone.utc)
         )
         
         db.add(submission)
