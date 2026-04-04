@@ -2098,6 +2098,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           }
           return false;
         });
+        if (matchedDoc && suppressChecklistExtractionReview) {
+          return {
+            key: seed.key,
+            label: seed.label,
+            requirementStatus: 'matched' as const,
+            reviewState: 'ready' as const,
+            matchedDoc,
+            reviewNotes: [],
+            requirementText: seed.requirementText,
+          };
+        }
         const rawMatchedRequirementStatus = matchedDoc?.requirementStatus;
         const hasMissingFields = Boolean(
           matchedDoc && Array.isArray(matchedDoc.missingRequiredFields) && matchedDoc.missingRequiredFields.length > 0,
