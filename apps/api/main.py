@@ -428,6 +428,7 @@ allowed_headers = [
     "Accept",
     "X-Requested-With",
     "X-CSRF-Token",
+    "X-Client-Request-ID",
 ]
 
 app.add_middleware(

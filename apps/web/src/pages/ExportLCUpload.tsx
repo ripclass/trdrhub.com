@@ -1031,6 +1031,14 @@ export default function ExportLCUpload({
 
     setLcIntake({ status: "uploading", file: nextFile });
 
+    // Generate a client request id so the LC intake phase also streams real
+    // backend progress over SSE instead of relying on the fake timer.
+    const intakeRequestId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `intake-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setClientRequestId(intakeRequestId);
+
     try {
       const response = await validate({
         files: [nextFile],
@@ -1039,6 +1047,7 @@ export default function ExportLCUpload({
         lcTypeOverride,
         intakeOnly: true,
         mode: "lc_intake",
+        clientRequestId: intakeRequestId,
       });
 
       if (response.status === "blocked" || response.status === "invalid") {
@@ -1097,6 +1106,8 @@ export default function ExportLCUpload({
       });
     } finally {
       event.target.value = '';
+      // Close the SSE progress stream for this intake run
+      setClientRequestId(null);
     }
   };
 
@@ -1637,7 +1648,7 @@ export default function ExportLCUpload({
         {lcIntake.status === "uploading" && (
           <Card className="mb-6 shadow-soft border-0">
             <CardContent className="pt-6">
-              <ValidationProgressIndicator fileCount={1} mode="lc" />
+              <ValidationProgressIndicator fileCount={1} mode="lc" realProgress={validationProgress} />
             </CardContent>
           </Card>
         )}
