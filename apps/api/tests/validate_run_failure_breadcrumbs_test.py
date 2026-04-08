@@ -107,6 +107,7 @@ async def test_validate_run_wraps_generic_pipeline_failures_with_breadcrumbs(
             files_list=[],
             doc_type=None,
             intake_only=False,
+            extract_only=False,
         )
 
     async def fake_run_validate_pipeline(**kwargs):
@@ -158,6 +159,7 @@ async def test_validate_run_exposes_runtime_context_on_request_state(
             files_list=[],
             doc_type=None,
             intake_only=False,
+            extract_only=False,
         )
 
     async def fake_run_validate_pipeline(**kwargs):
@@ -200,6 +202,7 @@ async def test_validate_run_enriches_http_exceptions_with_stage_details(
             files_list=[],
             doc_type=None,
             intake_only=False,
+            extract_only=False,
         )
 
     async def fake_run_validate_pipeline(**kwargs):
@@ -251,6 +254,7 @@ async def test_validate_run_omits_non_resolvable_job_ids_from_error_details(
             files_list=[],
             doc_type=None,
             intake_only=False,
+            extract_only=False,
         )
 
     async def fake_run_validate_pipeline(**kwargs):

@@ -45,6 +45,7 @@ class ParsedValidationRequest(NamedTuple):
     files_list: list[Any]
     doc_type: str
     intake_only: bool
+    extract_only: bool
 
 
 def extract_request_user_type(payload: dict[str, Any]) -> str:
@@ -224,12 +225,15 @@ async def parse_validate_request(request: Request) -> ParsedValidationRequest:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing document_type")
 
     intake_only = _extract_intake_only(payload)
+    extract_only_raw = payload.get("extract_only") or payload.get("extractOnly")
+    extract_only = bool(extract_only_raw) and str(extract_only_raw).strip().lower() not in {"false", "0", "no", ""}
 
     return ParsedValidationRequest(
         payload=payload,
         files_list=files_list,
         doc_type=doc_type,
         intake_only=bool(intake_only),
+        extract_only=bool(extract_only),
     )
 
 

@@ -8,7 +8,7 @@ from typing import Any, Dict
 from fastapi import APIRouter
 
 from app.routers.validation.pipeline_runner import bind_shared as bind_pipeline_runner_shared
-from app.routers.validation.pipeline_runner import run_validate_pipeline
+from app.routers.validation.pipeline_runner import run_resume_pipeline, run_validate_pipeline
 from app.routers.validation.request_parsing import bind_shared as bind_request_parsing_shared
 from app.routers.validation.request_parsing import parse_validate_request
 from app.utils.validation_progress import publish_completion, publish_progress
@@ -131,6 +131,7 @@ def build_router(shared: Any) -> APIRouter:
                 files_list=parsed_request.files_list,
                 doc_type=parsed_request.doc_type,
                 intake_only=parsed_request.intake_only,
+                extract_only=parsed_request.extract_only,
                 start_time=start_time,
                 timings=timings,
                 checkpoint=checkpoint,
@@ -314,8 +315,98 @@ def build_router(shared: Any) -> APIRouter:
                 "_transformation_error": str(e),
             }
 
+    async def resume_validate_doc(
+        job_id: str,
+        request: Request,
+        current_user: User = Depends(get_user_optional),
+        db: Session = Depends(get_db),
+    ):
+        """Resume a previously-extracted session and run the validation pipeline.
+
+        Expects `POST /api/validate/resume/{job_id}` with an optional JSON body:
+
+            {
+              "field_overrides": {
+                "<filename or doc_id>": { "field_name": "user value", ... }
+              },
+              "payload": { ... }   // optional passthrough to validation
+            }
+        """
+        from uuid import UUID as _UUID
+        from app.models import ValidationSession as _ValidationSession
+
+        start_time = time.time()
+        timings: Dict[str, float] = {}
+
+        def checkpoint(name: str) -> None:
+            timings[name] = round(time.time() - start_time, 3)
+
+        checkpoint("resume_request_received")
+
+        body: Dict[str, Any] = {}
+        try:
+            if request.headers.get("content-type", "").startswith("application/json"):
+                body = await request.json()
+        except Exception:
+            body = {}
+
+        field_overrides = body.get("field_overrides") or body.get("fieldOverrides") or {}
+        payload = body.get("payload") or {}
+
+        try:
+            job_uuid = _UUID(str(job_id))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid job_id: {job_id}") from exc
+
+        validation_session = db.query(_ValidationSession).filter(_ValidationSession.id == job_uuid).first()
+        if validation_session is None:
+            raise HTTPException(status_code=404, detail="Validation session not found")
+        if current_user is not None and validation_session.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Session belongs to a different user")
+        if str(validation_session.status or "").strip().lower() != "extraction_ready":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Session status is '{validation_session.status}', expected 'extraction_ready'. "
+                    "Call POST /api/validate/ with extract_only=true first."
+                ),
+            )
+
+        runtime_context: Dict[str, Any] = {"validation_session": validation_session, "job_id": str(validation_session.id)}
+        audit_service = AuditService(db)
+        audit_context = create_audit_context(request)
+
+        try:
+            result = await run_resume_pipeline(
+                request=request,
+                current_user=current_user,
+                db=db,
+                validation_session=validation_session,
+                payload=payload,
+                field_overrides=field_overrides,
+                start_time=start_time,
+                timings=timings,
+                checkpoint=checkpoint,
+                audit_service=audit_service,
+                audit_context=audit_context,
+                runtime_context=runtime_context,
+            )
+            return result
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error(
+                f"Resume validation failed for job_id={job_id}: {type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Resume validation failed: {exc}",
+            )
+
     router.add_api_route("/", validate_doc, methods=["POST"])
     router.add_api_route("/v2", validate_doc_v2, methods=["POST"])
+    router.add_api_route("/resume/{job_id}", resume_validate_doc, methods=["POST"])
 
     return router
 
