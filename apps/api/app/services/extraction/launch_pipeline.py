@@ -3305,7 +3305,70 @@ _FIELD_NAME_ALIASES: Dict[str, str] = {
     "tin_number": "exporter_tin",
     "bin": "exporter_bin",
     "tin": "exporter_tin",
+    # LC MT700 field aliases — the vision LLM keeps returning these legacy
+    # names even though the new schemas ask for the canonical ones.
+    "lc_type": "form_of_documentary_credit",
+    "form_of_doc_credit": "form_of_documentary_credit",
+    "ucp_reference": "applicable_rules",
+    "credit_form": "form_of_documentary_credit",
 }
+
+
+_AVAILABLE_BY_KEYWORDS = ("PAYMENT", "ACCEPTANCE", "NEGOTIATION", "DEFERRED", "MIXED")
+
+
+def _split_lc_availability_value(payload: Dict[str, Any]) -> None:
+    """Split a combined `available_with` value into available_with + available_by.
+
+    Vision LLM often returns Field 41a's two halves glued together, e.g.
+    `available_with = "ANY BANK IN USA / BY NEGOTIATION"` or just
+    `available_with = "BY NEGOTIATION"`. We detect the method keywords
+    (PAYMENT / ACCEPTANCE / NEGOTIATION / DEFERRED / MIXED) and lift them
+    into the canonical `available_by` field.
+    """
+    raw = payload.get("available_with")
+    if not isinstance(raw, str) or not raw.strip():
+        return
+    if payload.get("available_by"):
+        return  # already set, don't overwrite
+    text = raw.strip()
+    upper = text.upper()
+    matched_method: Optional[str] = None
+    for kw in _AVAILABLE_BY_KEYWORDS:
+        if kw in upper:
+            matched_method = kw
+            break
+    if not matched_method:
+        return
+    payload["available_by"] = matched_method
+    # Try to recover the bank-name half by stripping the "BY <METHOD>" tail.
+    import re as _re
+    cleaned = _re.sub(r"(?i)\bby\s+" + matched_method + r"\b.*$", "", text).strip(" /,;\n")
+    if cleaned and cleaned.upper() != upper:
+        payload["available_with"] = cleaned
+    elif cleaned == "" or cleaned.upper() == matched_method:
+        # The original value was JUST the method (e.g. "BY NEGOTIATION"),
+        # not a real bank name. Clear available_with so the user can fill it.
+        payload["available_with"] = None
+
+
+def _split_lc_expiry_place(payload: Dict[str, Any]) -> None:
+    """Recover `expiry_place` from a glued `expiry_date` like '2026-10-15USA'.
+
+    The vision LLM sometimes leaves the place stuck on the end of the date
+    when Field 31D is the unspaced SWIFT format `261015USA`.
+    """
+    if payload.get("expiry_place"):
+        return
+    expiry = payload.get("expiry_date")
+    if not isinstance(expiry, str):
+        return
+    # Look for an ISO date prefix followed by trailing letters.
+    import re as _re
+    m = _re.match(r"(\d{4}-\d{2}-\d{2})\s*([A-Za-z][A-Za-z\s,]+)$", expiry.strip())
+    if m:
+        payload["expiry_date"] = m.group(1)
+        payload["expiry_place"] = m.group(2).strip()
 
 
 def _canonicalize_field_names(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -3327,6 +3390,10 @@ def _canonicalize_field_names(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Only populate canonical when it's absent / empty.
         if existing is None or existing == "":
             payload[canonical] = alias_value
+    # Value-level splits for Field 41a and 31D where the LLM glues two
+    # things into one string.
+    _split_lc_availability_value(payload)
+    _split_lc_expiry_place(payload)
     return payload
 
 

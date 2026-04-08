@@ -127,6 +127,12 @@ const FIELD_ALIAS_MAP: Record<string, string[]> = {
   bl_number: ['bill_of_lading_number'],
   inspection_agency: ['inspector', 'inspection_company'],
   issuer: ['insurance_company', 'issuing_bank'],
+  // MT700 LC field aliases — vision LLM consistently returns these legacy
+  // names even though the new schemas ask for the canonical ones.
+  form_of_documentary_credit: ['lc_type', 'form_of_doc_credit', 'credit_form'],
+  applicable_rules: ['ucp_reference', 'rules', 'applicable_uniform_rules'],
+  drafts_at: ['payment_terms', 'tenor', 'usance'],
+  available_by: ['available_with_method'],
 };
 
 function readAliasedValue(extracted: Record<string, any>, fieldName: string): any {
