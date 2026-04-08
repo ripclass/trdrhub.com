@@ -49,12 +49,27 @@ describe('resolveLcopilotRoute', () => {
     })
   })
 
-  it('routes authenticated users without onboarding status to onboarding', () => {
+  it('fails open to exporter dashboard when onboarding status is unavailable (cold-start / API failure)', () => {
+    // A legit authenticated user should not be forced into the onboarding
+    // wizard just because the status endpoint timed out. Their role tells us
+    // where to land.
     expect(
       resolveLcopilotRoute({ user: buildUser(), onboardingStatus: null }),
     ).toEqual({
-      destination: '/onboarding',
-      reason: 'missing_onboarding_status',
+      destination: '/lcopilot/exporter-dashboard',
+      reason: 'exporter',
+    })
+  })
+
+  it('fails open to importer dashboard when onboarding status is unavailable for an importer', () => {
+    expect(
+      resolveLcopilotRoute({
+        user: buildUser({ role: 'importer', backendRole: 'importer' }),
+        onboardingStatus: null,
+      }),
+    ).toEqual({
+      destination: '/lcopilot/importer-dashboard',
+      reason: 'importer',
     })
   })
 

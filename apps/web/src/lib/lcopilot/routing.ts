@@ -78,8 +78,32 @@ export function resolveLcopilotRoute(params: {
     return { destination: '/login', reason: 'unauthenticated' }
   }
 
+  // When the onboarding API fails (cold-start timeout, 5xx, network error),
+  // OnboardingProvider catches the error and sets status to null. Treat an
+  // authenticated user with a legit backend role as already onboarded and
+  // route them to their dashboard — do NOT force them into the onboarding
+  // wizard just because the status endpoint was unreachable. The legitimate
+  // "new user never onboarded" path sends a real status object with
+  // completed:false, handled below.
   if (!onboardingStatus) {
-    return { destination: '/onboarding', reason: 'missing_onboarding_status' }
+    const fallbackRole = normalizeText(user.backendRole) || normalizeText(user.role)
+    const isBank = BANK_ROLES.has(fallbackRole)
+    const isSystemAdmin = fallbackRole === 'system_admin' || fallbackRole === 'admin' || user.role === 'admin'
+    if (isSystemAdmin) {
+      return { destination: '/admin', reason: 'system_admin' }
+    }
+    if (isBank) {
+      return { destination: '/hub', reason: 'bank_parked' }
+    }
+    if (fallbackRole === 'importer') {
+      return { destination: '/lcopilot/importer-dashboard', reason: 'importer' }
+    }
+    // Default authenticated users (including tenant_admin and anyone with an
+    // unknown role) land on the exporter dashboard. If they really are a new
+    // user that has never onboarded, the next status refresh will return a
+    // real completed:false record and the next navigation will correctly
+    // push them to /onboarding.
+    return { destination: '/lcopilot/exporter-dashboard', reason: 'exporter' }
   }
 
   if (!onboardingStatus.completed) {
