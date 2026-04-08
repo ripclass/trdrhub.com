@@ -407,6 +407,23 @@ class LaunchExtractionPipeline:
                     lc_format=lc_format,
                     allow_text_backfill=False,
                 )
+                # Run the shaped payload through the canonical LCDocument
+                # model so the downstream context has consistent MT700-aligned
+                # key names regardless of which extractor produced it. This
+                # is non-destructive — we only ADD canonical aliases that
+                # weren't already present, never overwrite.
+                try:
+                    from app.services.extraction.lc_document import LCDocument as _LCDocument
+                    canonical_lc = _LCDocument.from_legacy_dict(shaped_payload)
+                    canonical_keys = canonical_lc.to_lc_context()
+                    for _k, _v in canonical_keys.items():
+                        shaped_payload.setdefault(_k, _v)
+                    shaped_payload["_canonical_lc_document"] = canonical_lc.model_dump(exclude_none=True)
+                except Exception as _canonical_exc:  # noqa: BLE001 — never break extraction over normalization
+                    logger.warning(
+                        "LCDocument canonicalization failed for %s: %s",
+                        filename, _canonical_exc, exc_info=False,
+                    )
                 lc_review = _assess_lc_financial_completeness(shaped_payload, lc_subtype=lc_subtype)
                 user_facing_fields = _build_lc_user_facing_extracted_fields(shaped_payload)
                 fact_graph_v1 = (
