@@ -228,6 +228,318 @@ class LCDocument(BaseModel):
     # =======================================================================
 
     @classmethod
+    def from_iso20022(cls, payload: Dict[str, Any]) -> "LCDocument":
+        """Build an LCDocument from `iso20022_lc_extractor.extract_iso20022_lc_enhanced()`
+        output (and the async `extract_iso20022_with_ai_fallback` wrapper).
+
+        The ISO 20022 extractor returns a flat-ish dict with some nested
+        structures. Expected keys (post-step-3 when all mandatory fields
+        are populated):
+
+            {
+              "format": "iso20022",
+              "schema": "tsmt.014" | "tsrv.001" | ...,
+              "_detection_confidence": 0.95,
+              "_extraction_confidence": 0.9,
+              "_extraction_method": "iso20022_xml",
+              "number": "EXP2026BD001",
+              "sequence_of_total": "1/1",                 # NEW (Field 27)
+              "form_of_doc_credit": "IRREVOCABLE",
+              "applicable_rules": "UCP600",               # NEW (Field 40E)
+              "issue_date": "2026-04-15",                 # NEW (Field 31C)
+              "period_for_presentation": 21,              # NEW (Field 48)
+              "additional_conditions": [                  # NEW (Field 47A)
+                "DOCUMENTS MUST BE IN ENGLISH.",
+                "INSURANCE MUST COVER 110% ...",
+              ],
+              "available_with": {                         # NEW (Field 41a)
+                "name": "ICBC USA",
+                "bic": "ICBKUS33XXX",
+                ...
+              },
+              "available_by": "NEGOTIATION",              # NEW (Field 41a)
+              "amount": {"value": 458750.0, "currency": "USD"},
+              "currency": "USD",
+              "applicant": {"name": ..., "address": {...}, "bic": ...},
+              "beneficiary": {"name": ..., "address": {...}, "bic": ...},
+              "issuing_bank": {"name": ..., "bic": ...},
+              "advising_bank": {"name": ..., "bic": ...},
+              "dates": {
+                "expiry": "2026-10-15",
+                "place_of_expiry": "NEW YORK",
+                "latest_shipment": "2026-09-30",
+                "issue_date": "2026-04-15",
+                "issue_place": "NEW YORK",
+              },
+              "ports": {"loading": "...", "discharge": "..."},
+              "goods_description": "...",
+              "documents_required": [...],
+              "partial_shipments": "ALLOWED",
+              "transshipment": "NOT ALLOWED",
+              "incoterm": "FOB",
+            }
+        """
+        if not isinstance(payload, dict):
+            payload = {}
+
+        dates_block = payload.get("dates") if isinstance(payload.get("dates"), dict) else {}
+        ports_block = payload.get("ports") if isinstance(payload.get("ports"), dict) else {}
+
+        # Expiry — ISO 20022 nests under `dates`.
+        expiry: Optional[LCExpiry] = None
+        expiry_date_value = _coerce_date(dates_block.get("expiry"))
+        expiry_place_value = _str_or_none(dates_block.get("place_of_expiry"))
+        if expiry_date_value is not None or expiry_place_value is not None:
+            expiry = LCExpiry(date=expiry_date_value, place=expiry_place_value)
+
+        # Amount — ISO 20022 nests under {"amount": {"value", "currency"}}.
+        amount_value: Optional[LCAmount] = None
+        amount_block = payload.get("amount")
+        if isinstance(amount_block, dict):
+            value = _coerce_decimal(amount_block.get("value") or amount_block.get("amount"))
+            currency = _str_or_none(amount_block.get("currency") or payload.get("currency"))
+            if value is not None or currency is not None:
+                amount_value = LCAmount(value=value, currency=currency)
+        elif amount_block is not None:
+            value = _coerce_decimal(amount_block)
+            currency = _str_or_none(payload.get("currency"))
+            if value is not None or currency is not None:
+                amount_value = LCAmount(value=value, currency=currency)
+
+        # Availability — newly populated by _extract_mt700_mandatory_equivalents.
+        availability: Optional[LCAvailability] = None
+        avlbl_with_raw = payload.get("available_with")
+        avlbl_by_raw = payload.get("available_by")
+        if isinstance(avlbl_with_raw, dict):
+            avlbl_with_name = _str_or_none(avlbl_with_raw.get("name"))
+            avlbl_with_bic = _str_or_none(avlbl_with_raw.get("bic"))
+            if avlbl_with_name or avlbl_with_bic or avlbl_by_raw:
+                availability = LCAvailability(
+                    available_with=avlbl_with_name,
+                    available_with_bic=avlbl_with_bic,
+                    available_by=_str_or_none(avlbl_by_raw),
+                )
+        elif avlbl_with_raw or avlbl_by_raw:
+            availability = LCAvailability(
+                available_with=_str_or_none(avlbl_with_raw),
+                available_by=_str_or_none(avlbl_by_raw),
+            )
+
+        return cls(
+            sequence_of_total=_str_or_none(payload.get("sequence_of_total")),
+            form_of_documentary_credit=_str_or_none(
+                payload.get("form_of_doc_credit") or payload.get("form_of_documentary_credit")
+            ),
+            lc_number=_str_or_none(payload.get("number") or payload.get("lc_number")),
+            issue_date=_coerce_date(
+                payload.get("issue_date") or dates_block.get("issue_date")
+            ),
+            expiry=expiry,
+            applicable_rules=_str_or_none(payload.get("applicable_rules")),
+            applicant=_build_party(payload.get("applicant")),
+            beneficiary=_build_party(payload.get("beneficiary")),
+            amount=amount_value,
+            availability=availability,
+            port_of_loading=_str_or_none(ports_block.get("loading") or payload.get("port_of_loading")),
+            port_of_discharge=_str_or_none(ports_block.get("discharge") or payload.get("port_of_discharge")),
+            latest_shipment_date=_coerce_date(
+                dates_block.get("latest_shipment") or payload.get("latest_shipment_date")
+            ),
+            goods_description=_str_or_none(payload.get("goods_description")),
+            documents_required=_build_documents_required(payload.get("documents_required")),
+            additional_conditions=_coerce_string_list(payload.get("additional_conditions")),
+            period_for_presentation_days=_coerce_int(
+                payload.get("period_for_presentation_days")
+                or payload.get("period_for_presentation")
+            ),
+            amount_tolerance_percent=_coerce_decimal(
+                payload.get("amount_tolerance") or payload.get("tolerance")
+            ),
+            partial_shipments=_str_or_none(payload.get("partial_shipments")),
+            transshipment=_str_or_none(payload.get("transshipment")),
+            drafts=_build_drafts(payload),
+            confirmation_instructions=_str_or_none(payload.get("confirmation_instructions")),
+            instructions_to_paying_bank=_str_or_none(payload.get("instructions_to_paying_bank")),
+            charges=_str_or_none(payload.get("charges")),
+            issuing_bank=_build_party(payload.get("issuing_bank")),
+            advising_bank=_build_party(payload.get("advising_bank")),
+            confirming_bank=_build_party(payload.get("confirming_bank")),
+            source_format="iso20022",
+            source_message_type=_str_or_none(payload.get("schema")),
+            extraction_method=_str_or_none(payload.get("_extraction_method") or "iso20022_xml"),
+            extraction_confidence=_coerce_float(payload.get("_extraction_confidence")),
+            raw_field_dict=dict(payload),
+        )
+
+    @classmethod
+    def from_swift_mt700_full(cls, payload: Dict[str, Any]) -> "LCDocument":
+        """Build an LCDocument from `swift_mt700_full.parse_mt700_full()` output.
+
+        That parser returns a dict with shape::
+
+            {
+              "message_type": "MT700",
+              "raw": {<tag>: <value>, ...},
+              "blocks": {...},   # alias for raw
+              "fields": {
+                "reference": "EXP2026BD001",
+                "sequence": "1/1",
+                "form_of_doc_credit": "IRREVOCABLE",
+                "applicable_rules": "UCP LATEST VERSION",
+                "date_of_issue": "2026-04-15",  # already ISO-formatted
+                "expiry_details": {
+                    "expiry_place_and_date": "261015USA",
+                    "expiry_date_iso": "2026-10-15",
+                },
+                "applicant": "GLOBAL IMPORTERS INC.\\n1250 HUDSON STREET...",
+                "beneficiary": "DHAKA KNITWEAR...",
+                "credit_amount": {"currency": "USD", "amount": 458750.0, "raw": "..."},
+                "tolerance": "0",
+                "available_with": {"by": "41A", "details": "ANY BANK IN USA\\nBY NEGOTIATION"},
+                "shipment": {"drafts_at": "AT SIGHT", "drawee": None,
+                             "partial_shipments": None, "transshipment": None},
+                "period_for_presentation": "21 DAYS FROM SHIPMENT DATE",
+                "shipment_details": {
+                    "port_of_loading_airport_of_departure": "CHITTAGONG SEA PORT, BANGLADESH",
+                    "port_of_discharge_airport_of_destination": "NEW YORK, USA",
+                    "latest_date_of_shipment": "260930",  # still raw YYMMDD
+                    ...
+                },
+                "description_of_goods": "GARMENTS FOR EXPORT MARKET...",
+                "docs_required": ["SIGNED COMMERCIAL INVOICE ...", ...],
+                "additional_conditions": [...],
+                "charges": "ALL BANK CHARGES...",
+                "reimbursing_bank": "...",
+                "advising_bank": "...",
+                "instructions_to_paying_accepting_negotiating_bank": "...",
+              }
+            }
+        """
+        if not isinstance(payload, dict):
+            payload = {}
+        fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
+        raw_blocks = payload.get("raw") if isinstance(payload.get("raw"), dict) else {}
+
+        # Expiry: Field 31D combines date + place ("261015USA" or
+        # "261015 USA"). The parser's `expiry_date_iso` only works when the
+        # date and place are whitespace-separated; for the glued form we
+        # parse the leading 6 digits of `expiry_place_and_date` ourselves.
+        expiry: Optional[LCExpiry] = None
+        expiry_details = fields.get("expiry_details") if isinstance(fields.get("expiry_details"), dict) else {}
+        if expiry_details:
+            iso_date_value = _coerce_date(expiry_details.get("expiry_date_iso"))
+            combined = str(expiry_details.get("expiry_place_and_date") or "")
+            place_value: Optional[str] = None
+            if len(combined) > 6 and combined[:6].isdigit():
+                place_value = combined[6:].strip() or None
+                if iso_date_value is None:
+                    # Parser's own expiry_date_iso was None — recover from
+                    # the glued "YYMMDD<place>" form.
+                    iso_date_value = _coerce_date(combined[:6])
+            # Also handle the space-separated form "261015 USA"
+            if iso_date_value is None and combined:
+                tokens = combined.split()
+                if tokens:
+                    iso_date_value = _coerce_date(tokens[0])
+                    if place_value is None and len(tokens) > 1:
+                        place_value = " ".join(tokens[1:]).strip() or None
+            if iso_date_value is not None or place_value is not None:
+                expiry = LCExpiry(date=iso_date_value, place=place_value)
+
+        # Amount: credit_amount = {"currency", "amount", "raw"}
+        amount_value: Optional[LCAmount] = None
+        credit_amount = fields.get("credit_amount")
+        if isinstance(credit_amount, dict):
+            amount_scalar = _coerce_decimal(credit_amount.get("amount") or credit_amount.get("value"))
+            amount_currency = _str_or_none(credit_amount.get("currency"))
+            if amount_scalar is not None or amount_currency is not None:
+                amount_value = LCAmount(value=amount_scalar, currency=amount_currency)
+
+        # Available with / by: swift_mt700_full lumps them into one dict with
+        # a `by` key that's actually the MT700 tag id (41A / 41D), not the
+        # method. The `details` field holds the free-text bank name + method.
+        availability: Optional[LCAvailability] = None
+        avail_raw = fields.get("available_with")
+        if isinstance(avail_raw, dict) and avail_raw.get("details"):
+            details_text = str(avail_raw["details"])
+            # Split on newline — first line is bank, second is method.
+            lines = [ln.strip() for ln in details_text.splitlines() if ln.strip()]
+            bank = lines[0] if lines else None
+            method: Optional[str] = None
+            for line in lines[1:]:
+                upper = line.upper()
+                if any(kw in upper for kw in ("NEGOTIATION", "PAYMENT", "ACCEPTANCE", "DEFERRED")):
+                    method = line
+                    break
+            availability = LCAvailability(available_with=bank, available_by=method)
+
+        # Drafts: swift_mt700_full nests under `shipment`.
+        drafts: Optional[LCDrafts] = None
+        shipment = fields.get("shipment") if isinstance(fields.get("shipment"), dict) else {}
+        drafts_at_value = _str_or_none(shipment.get("drafts_at"))
+        drawee_value = _str_or_none(shipment.get("drawee"))
+        if drafts_at_value or drawee_value:
+            drafts = LCDrafts(drafts_at=drafts_at_value, drawee=drawee_value)
+
+        # Shipment details for ports + latest shipment date.
+        shipment_details = (
+            fields.get("shipment_details")
+            if isinstance(fields.get("shipment_details"), dict)
+            else {}
+        )
+        port_of_loading_value = _str_or_none(
+            shipment_details.get("port_of_loading_airport_of_departure")
+        )
+        port_of_discharge_value = _str_or_none(
+            shipment_details.get("port_of_discharge_airport_of_destination")
+        )
+        latest_shipment_date_value = _coerce_date(
+            shipment_details.get("latest_date_of_shipment")
+        )
+
+        # Period for presentation: swift_mt700_full keeps the raw text
+        # (e.g. "21 DAYS FROM SHIPMENT DATE"). Our _coerce_int pulls the
+        # leading integer.
+        period_days = _coerce_int(fields.get("period_for_presentation"))
+
+        return cls(
+            sequence_of_total=_str_or_none(fields.get("sequence")),
+            form_of_documentary_credit=_str_or_none(fields.get("form_of_doc_credit")),
+            lc_number=_str_or_none(fields.get("reference")),
+            issue_date=_coerce_date(fields.get("date_of_issue")),
+            expiry=expiry,
+            applicable_rules=_str_or_none(fields.get("applicable_rules")),
+            applicant=_build_party(fields.get("applicant")),
+            beneficiary=_build_party(fields.get("beneficiary")),
+            amount=amount_value,
+            availability=availability,
+            port_of_loading=port_of_loading_value,
+            port_of_discharge=port_of_discharge_value,
+            latest_shipment_date=latest_shipment_date_value,
+            goods_description=_str_or_none(fields.get("description_of_goods")),
+            documents_required=_build_documents_required(fields.get("docs_required")),
+            additional_conditions=_coerce_string_list(fields.get("additional_conditions")),
+            period_for_presentation_days=period_days,
+            amount_tolerance_percent=_coerce_decimal(fields.get("tolerance")),
+            partial_shipments=_str_or_none(shipment.get("partial_shipments")),
+            transshipment=_str_or_none(shipment.get("transshipment")),
+            drafts=drafts,
+            confirmation_instructions=None,  # swift_mt700_full doesn't parse Field 49
+            instructions_to_paying_bank=_str_or_none(
+                fields.get("instructions_to_paying_accepting_negotiating_bank")
+            ),
+            charges=_str_or_none(
+                fields.get("charges")[0] if isinstance(fields.get("charges"), list) and fields.get("charges")
+                else fields.get("charges")
+            ),
+            advising_bank=_build_party(fields.get("advising_bank")),
+            source_format="swift_mt700",
+            source_message_type="MT700",
+            extraction_method="swift_mt700_full",
+            raw_field_dict={"fields": dict(fields), "raw": dict(raw_blocks)},
+        )
+
+    @classmethod
     def from_vision_llm_output(
         cls,
         payload: Dict[str, Any],
@@ -499,7 +811,20 @@ class LCDocument(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _unwrap_single(value: Any) -> Any:
+    """Unwrap a one-element list/tuple into its scalar.
+
+    swift_mt700_full wraps repeatable MT700 tags (44E, 44F, 44C, 46A, 47A,
+    etc.) as lists even when the LC only provides one instance. Every coercer
+    in this module calls this helper first so callers never have to know.
+    """
+    if isinstance(value, (list, tuple)) and len(value) == 1:
+        return value[0]
+    return value
+
+
 def _str_or_none(value: Any) -> Optional[str]:
+    value = _unwrap_single(value)
     if value is None:
         return None
     if isinstance(value, str):
@@ -511,6 +836,7 @@ def _str_or_none(value: Any) -> Optional[str]:
 
 
 def _coerce_int(value: Any) -> Optional[int]:
+    value = _unwrap_single(value)
     if value is None:
         return None
     if isinstance(value, bool):
@@ -534,6 +860,7 @@ def _coerce_int(value: Any) -> Optional[int]:
 
 
 def _coerce_float(value: Any) -> Optional[float]:
+    value = _unwrap_single(value)
     if value is None:
         return None
     if isinstance(value, (int, float, Decimal)):
@@ -547,6 +874,7 @@ def _coerce_float(value: Any) -> Optional[float]:
 
 
 def _coerce_decimal(value: Any) -> Optional[Decimal]:
+    value = _unwrap_single(value)
     if value is None:
         return None
     if isinstance(value, Decimal):
@@ -568,6 +896,7 @@ def _coerce_decimal(value: Any) -> Optional[Decimal]:
 
 
 def _coerce_date(value: Any) -> Optional[date_type]:
+    value = _unwrap_single(value)
     if value is None:
         return None
     if isinstance(value, date_type) and not isinstance(value, datetime):

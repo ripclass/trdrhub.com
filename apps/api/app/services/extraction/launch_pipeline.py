@@ -158,6 +158,21 @@ MEASUREMENT_LABEL_ALIASES = {
 }
 
 
+_SWIFT_MT_TAG_RE = re.compile(r":20:|:32B:|:40A:|:50:|:59:|:46A:|:47A:")
+
+
+def _looks_like_swift_mt700(text: Optional[str]) -> bool:
+    """Heuristic: does this text look like raw SWIFT MT700 format?
+
+    Returns True only when we see multiple distinct MT700 colon-tag markers,
+    because a single match could be accidental.
+    """
+    if not text or not isinstance(text, str):
+        return False
+    matches = _SWIFT_MT_TAG_RE.findall(text)
+    return len(set(matches)) >= 2
+
+
 def _resolve_extraction_lane(*, extraction_method: Optional[str], support_only: bool = False) -> str:
     if support_only:
         return "support_only"
@@ -392,6 +407,35 @@ class LaunchExtractionPipeline:
                 extracted_text="",
                 subtype_hint=lc_subtype,
             )
+
+            # If vision failed AND the extracted text looks like raw SWIFT
+            # MT700 (has at least the :20: credit number tag), run the
+            # deterministic MT700 regex parser before falling back to the
+            # text-AI extractor. This gives us full MT700 field coverage
+            # (17 mandatory + 8 optional fields) on plaintext LCs, where
+            # the vision LLM can't render pages.
+            if not multimodal_struct and _looks_like_swift_mt700(extracted_text):
+                try:
+                    from app.services.extraction.swift_mt700_full import (
+                        parse_mt700_full as _parse_mt700_full,
+                    )
+                    from app.services.extraction.lc_document import LCDocument as _LCDocument
+                    _swift_parsed = _parse_mt700_full(extracted_text)
+                    _swift_lc = _LCDocument.from_swift_mt700_full(_swift_parsed)
+                    if _swift_lc.lc_number:  # parser found a real LC number
+                        multimodal_struct = _swift_lc.to_lc_context()
+                        multimodal_struct["_extraction_method"] = "swift_mt700_full"
+                        multimodal_struct["_status"] = "success"
+                        logger.info(
+                            "Launch pipeline: swift_mt700_full fallback extracted LC %s from %s",
+                            _swift_lc.lc_number, filename,
+                        )
+                except Exception as _swift_exc:  # noqa: BLE001
+                    logger.warning(
+                        "swift_mt700_full fallback failed for %s: %s",
+                        filename, _swift_exc, exc_info=False,
+                    )
+
             lc_struct = multimodal_struct or await extract_lc_ai_first(extracted_text)
             extraction_status = lc_struct.get("_status", "unknown") if isinstance(lc_struct, dict) else "unknown"
             if lc_struct and extraction_status != "failed":

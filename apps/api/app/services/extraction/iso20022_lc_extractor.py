@@ -208,105 +208,97 @@ def _extract_undertaking(root: ET.Element, context: Dict[str, Any]) -> None:
         if expiry:
             context.setdefault("dates", {})["expiry"] = expiry
 
+    # Fill in the MT700 mandatory fields that aren't covered by the
+    # undertaking-specific extraction above (sequence_of_total, issue_date,
+    # applicable_rules, available_with/by, additional_conditions,
+    # period_for_presentation).
+    _extract_mt700_mandatory_equivalents(root, context)
+
+
+def _first_descendant(root: ET.Element, *local_names: str) -> Optional[ET.Element]:
+    """Return the first descendant matching any of the local names.
+
+    Uses explicit `is not None` checks instead of element truthiness — a
+    leaf element like `<LcAmt Ccy="USD">458750.00</LcAmt>` has no children
+    and evaluates as falsy under `or`-chains, which is the ElementTree
+    truthiness gotcha that was silently skipping amount extraction before.
+    """
+    for name in local_names:
+        elem = _find_descendant(root, name)
+        if elem is not None:
+            return elem
+    return None
+
 
 def _extract_documentary_credit(root: ET.Element, context: Dict[str, Any]) -> None:
     """Extract from Documentary Credit schema (tsin/tsmt)."""
     # Find LC details block
-    lc_dtls = (
-        _find_descendant(root, "DocCdtDtls") or
-        _find_descendant(root, "DocCrdtDtls") or
-        _find_descendant(root, "LCDtls") or
-        _find_descendant(root, "TradInstr")
-    )
-    
-    if lc_dtls:
+    lc_dtls = _first_descendant(root, "DocCdtDtls", "DocCrdtDtls", "LCDtls", "TradInstr")
+
+    if lc_dtls is not None:
         # LC Reference
         ref = (
-            _get_text(lc_dtls, "DocCdtId") or
-            _get_text(lc_dtls, "LCId") or
-            _get_text(lc_dtls, "InstrId") or
-            _get_text(lc_dtls, "Id")
+            _get_text(lc_dtls, "DocCdtId")
+            or _get_text(lc_dtls, "LCId")
+            or _get_text(lc_dtls, "InstrId")
+            or _get_text(lc_dtls, "Id")
         )
         if ref:
             context["number"] = ref
 
-        form = (
-            _find_descendant(lc_dtls, "DocCdtFrm") or
-            _find_descendant(lc_dtls, "DocCrdtFrm")
-        )
+        form = _first_descendant(lc_dtls, "DocCdtFrm", "DocCrdtFrm")
         if form is not None:
             form_code = _get_text(form, "Cd") or _get_text(form, "Prtry") or _element_text(form)
             normalized_form = _normalize_iso_form_of_credit(form_code)
             if normalized_form:
                 context["form_of_doc_credit"] = normalized_form
-        
-        # Amount
-        amt = (
-            _find_descendant(lc_dtls, "LcAmt") or
-            _find_descendant(lc_dtls, "DocCdtAmt") or
-            _find_descendant(lc_dtls, "Amt")
-        )
+
+        # Amount — must use _first_descendant because <LcAmt> is a leaf
+        # element and ElementTree treats leaves as falsy in `or`-chains.
+        amt = _first_descendant(lc_dtls, "LcAmt", "DocCdtAmt", "Amt")
         if amt is not None:
             _extract_amount(amt, context)
-        
+
         # Applicant (Buyer/Orderer)
-        applicant = (
-            _find_descendant(lc_dtls, "Applcnt") or
-            _find_descendant(lc_dtls, "Buyer") or
-            _find_descendant(lc_dtls, "Ordrr")
-        )
-        if applicant:
+        applicant = _first_descendant(lc_dtls, "Applcnt", "Buyer", "Ordrr")
+        if applicant is not None:
             context["applicant"] = _parse_party_info(applicant)
-        
+
         # Beneficiary (Seller)
-        beneficiary = (
-            _find_descendant(lc_dtls, "Bnfcry") or
-            _find_descendant(lc_dtls, "Seller")
-        )
-        if beneficiary:
+        beneficiary = _first_descendant(lc_dtls, "Bnfcry", "Seller")
+        if beneficiary is not None:
             context["beneficiary"] = _parse_party_info(beneficiary)
-        
+
         # Issuing Bank
-        issuing_bank = (
-            _find_descendant(lc_dtls, "IssgBk") or
-            _find_descendant(lc_dtls, "IssuingBank") or
-            _find_descendant(lc_dtls, "IssrBk")
-        )
-        if issuing_bank:
+        issuing_bank = _first_descendant(lc_dtls, "IssgBk", "IssuingBank", "IssrBk")
+        if issuing_bank is not None:
             context["issuing_bank"] = _parse_party_info(issuing_bank)
-        
+
         # Advising Bank
-        advising_bank = (
-            _find_descendant(lc_dtls, "AdvsgBk") or
-            _find_descendant(lc_dtls, "AdvisingBank")
-        )
-        if advising_bank:
+        advising_bank = _first_descendant(lc_dtls, "AdvsgBk", "AdvisingBank")
+        if advising_bank is not None:
             context["advising_bank"] = _parse_party_info(advising_bank)
-    
+
     # Terms and Conditions
-    terms = (
-        _find_descendant(root, "TermsAndConds") or
-        _find_descendant(root, "TermsAndCond") or
-        _find_descendant(root, "LCTerms")
-    )
-    if terms:
+    terms = _first_descendant(root, "TermsAndConds", "TermsAndCond", "LCTerms")
+    if terms is not None:
         _extract_terms(terms, context)
-    
+
     # Shipment Details
-    shipment = (
-        _find_descendant(root, "ShipmntDtls") or
-        _find_descendant(root, "ShipmentRoute") or
-        _find_descendant(root, "Shipment")
-    )
-    if shipment:
+    shipment = _first_descendant(root, "ShipmntDtls", "ShipmentRoute", "Shipment")
+    if shipment is not None:
         _extract_shipment(shipment, context)
-    
+
     # Goods
-    goods = _find_descendant(root, "Goods") or _find_descendant(root, "GoodsDtls")
-    if goods:
+    goods = _first_descendant(root, "Goods", "GoodsDtls")
+    if goods is not None:
         _extract_goods(goods, context)
 
     _extract_required_documents(root, context)
+
+    # Fill in the MT700 mandatory fields the rest of this function doesn't
+    # cover (Field 27, 31C, 40E, 41a, 47A, 48).
+    _extract_mt700_mandatory_equivalents(root, context)
 
 
 def _extract_generic_trade_instrument(root: ET.Element, context: Dict[str, Any]) -> None:
@@ -351,6 +343,9 @@ def _extract_generic_trade_instrument(root: ET.Element, context: Dict[str, Any])
     terms = _find_descendant(trad_instr, "TermsAndCond")
     if terms:
         _extract_terms(terms, context)
+
+    # Fill in the MT700 mandatory fields not covered above.
+    _extract_mt700_mandatory_equivalents(root, context)
 
 
 def _populate_iso_lc_type(root: ET.Element, context: Dict[str, Any]) -> None:
@@ -451,6 +446,217 @@ def _normalize_iso_form_of_credit(value: Optional[str]) -> Optional[str]:
 # =====================================================================
 # HELPER FUNCTIONS
 # =====================================================================
+
+_ISO_AVAILABLE_BY_CODE_MAP = {
+    "PYMT": "PAYMENT",
+    "PYMNT": "PAYMENT",
+    "PAYMENT": "PAYMENT",
+    "ACCP": "ACCEPTANCE",
+    "ACPT": "ACCEPTANCE",
+    "ACCEPTANCE": "ACCEPTANCE",
+    "NEGO": "NEGOTIATION",
+    "NEGOTIATION": "NEGOTIATION",
+    "DFRD": "DEFERRED PAYMENT",
+    "DEFERRED": "DEFERRED PAYMENT",
+    "DEFRD": "DEFERRED PAYMENT",
+    "MIXD": "MIXED PAYMENT",
+    "MIXED": "MIXED PAYMENT",
+}
+
+
+def _normalize_iso_applicable_rules(code: Optional[str], version: Optional[str]) -> Optional[str]:
+    """Turn an ISO 20022 <ApplRules> code + version into an MT700 Field 40E value.
+
+    Examples:
+      code="UCP", version="600"     -> "UCP600"
+      code="UCP"                    -> "UCP LATEST VERSION"
+      code="ISP", version="98"      -> "ISP98"
+      code="URDG", version="758"    -> "URDG758"
+      code=None, version=None       -> None
+    """
+    code_clean = (code or "").strip().upper()
+    version_clean = (version or "").strip()
+    if not code_clean and not version_clean:
+        return None
+    if code_clean and version_clean:
+        # "UCP" + "600" -> "UCP600"; leave whitespace in for multi-word rules.
+        if code_clean.isalpha() and version_clean.isdigit():
+            return f"{code_clean}{version_clean}"
+        return f"{code_clean} {version_clean}".strip()
+    if code_clean:
+        return f"{code_clean} LATEST VERSION"
+    return version_clean or None
+
+
+def _parse_iso_available_by(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    normalized = str(value).strip().upper()
+    return _ISO_AVAILABLE_BY_CODE_MAP.get(normalized, normalized or None)
+
+
+def _coerce_iso_presentation_period_days(value: Optional[str]) -> Optional[int]:
+    """Accept '21', 'P21D' (ISO 8601 duration), '21 DAYS', etc."""
+    if value is None:
+        return None
+    s = str(value).strip().upper()
+    if not s:
+        return None
+    # ISO 8601 duration form: P21D, P2W, etc.
+    if s.startswith("P") and "D" in s:
+        try:
+            digits = s[1:].rstrip("D")
+            return int(digits)
+        except ValueError:
+            pass
+    if s.startswith("P") and "W" in s:
+        try:
+            digits = s[1:].rstrip("W")
+            return int(digits) * 7
+        except ValueError:
+            pass
+    # Plain "21" / "21 DAYS"
+    lead = "".join(ch for ch in s if ch.isdigit())
+    if lead:
+        try:
+            return int(lead[:6])
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_mt700_mandatory_equivalents(root: ET.Element, context: Dict[str, Any]) -> None:
+    """Populate the 6 MT700 mandatory fields the legacy extractor missed.
+
+    Covers:
+      - Field 27  (sequence_of_total)        — from <MsgPgntn> or <SeqNb>
+      - Field 31C (issue_date)               — from <IsseDt> / <IssueDate>
+                                                / <DtAndPlcOfIsse>
+      - Field 40E (applicable_rules)         — from <ApplRules> / <ApplcblRules>
+      - Field 41a (available_with/by)        — from <AvlblWth> / <AvlblBy>
+      - Field 47A (additional_conditions)    — from <AddtlCondtns> / <SpclTerms>
+      - Field 48  (period_for_presentation)  — from <PresntnPrd> / <PrsttnPrd>
+
+    Every field is best-effort. Missing elements are silently skipped — we
+    write a key only when we actually found something, so downstream
+    consumers can cleanly tell "unknown" (key absent) from "explicitly blank".
+    """
+
+    # ---- Field 27: Sequence of Total ----
+    # ISO 20022 has no direct equivalent. tsmt messages use <MsgPgntn> with
+    # <PgNb> and <LastPgInd>. Translate that to MT700 "page/total".
+    pagination = _first_descendant(root, "MsgPgntn", "MsgPagntn")
+    if pagination is not None:
+        page_nb = _get_text(pagination, "PgNb")
+        last_page = _get_text(pagination, "LastPgInd")
+        if page_nb:
+            page_num = page_nb.strip()
+            if last_page and last_page.strip().lower() in {"true", "yes", "1"}:
+                context["sequence_of_total"] = f"{page_num}/{page_num}"
+            else:
+                # Unknown total — just emit the page number with an open
+                # total so downstream knows this isn't necessarily "1/1".
+                context["sequence_of_total"] = f"{page_num}/?"
+    # Fall back to a flat SeqNb element.
+    if "sequence_of_total" not in context:
+        seq_nb = _get_descendant_text(root, "SeqNb") or _get_descendant_text(root, "SeqNo")
+        if seq_nb:
+            context["sequence_of_total"] = seq_nb.strip()
+
+    # ---- Field 31C: Issue Date (and optional issue place) ----
+    issue_date = (
+        _get_descendant_text(root, "IsseDt")
+        or _get_descendant_text(root, "IssueDate")
+        or _get_descendant_text(root, "IssDt")
+        or _get_descendant_text(root, "DtOfIsse")
+    )
+    if not issue_date:
+        # <DtAndPlcOfIsse><Dt>2026-04-15</Dt><Plc>NEW YORK</Plc></DtAndPlcOfIsse>
+        issue_block = _first_descendant(root, "DtAndPlcOfIsse", "DateAndPlaceOfIssue")
+        if issue_block is not None:
+            issue_date = _get_text(issue_block, "Dt") or _get_text(issue_block, "Date")
+            issue_place = _get_text(issue_block, "Plc") or _get_text(issue_block, "Place")
+            if issue_place:
+                context.setdefault("dates", {})["issue_place"] = issue_place.strip()
+    if issue_date:
+        context["issue_date"] = issue_date.strip()
+        context.setdefault("dates", {})["issue_date"] = issue_date.strip()
+
+    # ---- Field 40E: Applicable Rules ----
+    rules_elem = _first_descendant(root, "ApplRules", "ApplcblRules", "Rules")
+    if rules_elem is not None:
+        # Two common shapes:
+        #   <ApplRules><Cd>UCP</Cd><Vrsn>600</Vrsn></ApplRules>
+        #   <ApplRules><Prtry>UCP LATEST VERSION</Prtry></ApplRules>
+        code = _get_text(rules_elem, "Cd") or _get_text(rules_elem, "Code")
+        version = _get_text(rules_elem, "Vrsn") or _get_text(rules_elem, "Version")
+        prtry = _get_text(rules_elem, "Prtry") or _get_text(rules_elem, "Proprietary")
+        normalized_rules = _normalize_iso_applicable_rules(code, version)
+        if not normalized_rules and prtry:
+            normalized_rules = prtry.strip()
+        if not normalized_rules:
+            # Fall back to the element's own text content if it was a leaf.
+            leaf_text = (rules_elem.text or "").strip()
+            normalized_rules = leaf_text or None
+        if normalized_rules:
+            context["applicable_rules"] = normalized_rules
+
+    # ---- Field 41a: Available With / Available By ----
+    avlbl_with = _first_descendant(root, "AvlblWth", "AvailableWith")
+    if avlbl_with is not None:
+        # <AvlblWth> is usually a party; parse name + BIC.
+        party_info = _parse_party_info(avlbl_with)
+        if party_info:
+            context["available_with"] = party_info
+
+    avlbl_by = _first_descendant(root, "AvlblBy", "AvailableBy")
+    if avlbl_by is not None:
+        by_code = _get_text(avlbl_by, "Cd") or _get_text(avlbl_by, "Code")
+        by_prtry = _get_text(avlbl_by, "Prtry") or _get_text(avlbl_by, "Proprietary")
+        by_text = by_code or by_prtry or (avlbl_by.text or "").strip() or None
+        normalized_by = _parse_iso_available_by(by_text)
+        if normalized_by:
+            context["available_by"] = normalized_by
+
+    # ---- Field 47A: Additional Conditions (free-text rules list) ----
+    conditions: List[str] = []
+    for condition_name in ("AddtlCondtns", "AddlCondtns", "AdditionalConditions", "SpclTerms", "OthrInstrs"):
+        for elem in root.iter():
+            if _local_name(elem.tag) != condition_name:
+                continue
+            # Either free-text content or repeating <Txt> / <Cond> children.
+            inline_text = (elem.text or "").strip()
+            if inline_text:
+                conditions.append(inline_text)
+            for child in elem:
+                child_name = _local_name(child.tag)
+                if child_name in ("Txt", "Text", "Cond", "Condition"):
+                    child_text = _element_text(child).strip()
+                    if child_text:
+                        conditions.append(child_text)
+    if conditions:
+        # De-dupe preserving order
+        seen: set = set()
+        deduped: List[str] = []
+        for c in conditions:
+            if c not in seen:
+                deduped.append(c)
+                seen.add(c)
+        context["additional_conditions"] = deduped
+
+    # ---- Field 48: Period for Presentation ----
+    period_text = (
+        _get_descendant_text(root, "PresntnPrd")
+        or _get_descendant_text(root, "PrsttnPrd")
+        or _get_descendant_text(root, "PresentationPeriod")
+        or _get_descendant_text(root, "PrdForPresn")
+    )
+    if period_text:
+        period_days = _coerce_iso_presentation_period_days(period_text)
+        if period_days is not None:
+            context["period_for_presentation"] = period_days
+            context["period_for_presentation_days"] = period_days
+
 
 def _extract_amount(amt_elem: ET.Element, context: Dict[str, Any]) -> None:
     """Extract amount and currency from amount element."""
