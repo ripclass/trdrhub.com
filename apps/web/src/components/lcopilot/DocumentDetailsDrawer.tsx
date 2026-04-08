@@ -805,10 +805,10 @@ export function DocumentDetailsDrawer({
     isFactResolutionBackedDocument(resolvedDocument.documentType || resolvedDocument.typeKey || resolvedDocument.type) &&
     Array.isArray(resolvedDocument.resolutionItems);
   const resolvableFields = useMemo(() => {
-    // When the backend provides a non-empty fact-resolution queue, trust it
-    // as the authoritative list of fields to confirm. The backend is telling
-    // us exactly which fields need operator action — don't add extras.
-    if (hasQueueBackedResolution && (resolvedDocument.resolutionItems?.length ?? 0) > 0) {
+    // Queue-backed items are authoritative when present. The backend's
+    // fact-resolution queue is the explicit list of fields operators must
+    // confirm — don't add anything extra alongside it.
+    if (hasQueueBackedResolution) {
       return (resolvedDocument.resolutionItems || []).map((item) => ({
         key: normalizeReviewFieldKey(item.fieldName),
         currentValue:
@@ -822,10 +822,13 @@ export function DocumentDetailsDrawer({
       }));
     }
 
-    // Otherwise (no queue, or queue is empty) fall through to the catch-all
-    // logic. An empty queue with still-model_suggested fields in field_details
-    // means the backend auto-resolved what it could confidently but left some
-    // fields as suggestions the user may want to confirm manually.
+    // For non-queue-backed documents: only surface fields the backend has
+    // EXPLICITLY flagged as needing operator attention. Do NOT surface
+    // `model_suggested` fields from field_details as a catch-all — those
+    // are low-confidence extractions the backend already decided not to
+    // require confirmation for, and presenting them as "unresolved" creates
+    // the confusing "everything is resolved / but confirm these 13 things"
+    // contradiction.
     const candidates = new Map<string, { key: string; currentValue: string; label: string; verification: string }>();
     const addCandidate = (fieldName: string, verification = "not_found") => {
       const normalized = resolvePreferredOverrideFieldKey(
@@ -858,15 +861,6 @@ export function DocumentDetailsDrawer({
     Object.entries(criticalFieldStates).forEach(([fieldName, state]) => {
       if (isFieldMarkedMissing({ ...reasonContext, criticalFieldStates }, fieldName)) {
         addCandidate(fieldName, String(state || "not_found"));
-      }
-    });
-    // Surface any field_details entry with verification other than
-    // "confirmed" or "operator_confirmed". This is the key fallback that
-    // exposes model-suggested fields when the backend queue is empty.
-    Object.entries(mergedFieldDetails || {}).forEach(([fieldName, detail]) => {
-      const verification = normalizeReviewFieldKey((detail as Record<string, any>)?.verification);
-      if (verification && !["confirmed", "operator_confirmed"].includes(verification)) {
-        addCandidate(fieldName, verification);
       }
     });
 
