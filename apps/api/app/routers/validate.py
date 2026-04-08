@@ -1602,7 +1602,24 @@ async def _build_document_context(
     lc_required_document_types = _infer_required_document_types_from_lc(context.get("lc") or {})
     primary_lc_anchor_seen = False
 
-    for idx, upload_file in enumerate(files_list):
+    # Process the LC first so its extracted context is available as
+    # cross_doc_context when subsequent supporting docs are processed.
+    # Without this, the vision LLM has no idea what lc_number / amount /
+    # buyer_purchase_order_number / exporter_bin to look for on the
+    # invoice / BL / packing list.
+    _processing_order = list(range(len(files_list)))
+    def _is_lc_index(idx_val: int) -> bool:
+        try:
+            f = files_list[idx_val]
+            fname = getattr(f, "filename", "") or ""
+            tag = (normalized_tags or {}).get(fname, "")
+            return tag in ("letter_of_credit", "swift_message", "lc_application", "standby_letter_of_credit", "bank_guarantee")
+        except Exception:
+            return False
+    _processing_order.sort(key=lambda i: 0 if _is_lc_index(i) else 1)
+
+    for idx in _processing_order:
+        upload_file = files_list[idx]
         filename = getattr(upload_file, "filename", f"document_{idx+1}")
         content_type = getattr(upload_file, "content_type", "unknown")
         document_type = _resolve_document_type(filename, idx, normalized_tags)
@@ -1687,6 +1704,11 @@ async def _build_document_context(
             try:
                 file_bytes = await upload_file.read()
                 await upload_file.seek(0)
+                # Pass the LC's already-extracted context (when available)
+                # so the vision LLM can cross-reference fields like
+                # lc_number / buyer_purchase_order_number / exporter_bin
+                # on every supporting doc instead of guessing in isolation.
+                lc_context_for_cross_doc = context.get("lc") if isinstance(context, dict) else None
                 launch_pipeline_result = await launch_pipeline.process_document(
                     extracted_text=extracted_text,
                     document_type=document_type,
@@ -1694,6 +1716,7 @@ async def _build_document_context(
                     extraction_artifacts_v1=extraction_artifacts_v1,
                     file_bytes=file_bytes,
                     content_type=content_type,
+                    lc_context_for_cross_doc=lc_context_for_cross_doc,
                 )
             except Exception as launch_exc:
                 logger.warning("Launch extraction pipeline failed for %s: %s", filename, launch_exc, exc_info=True)

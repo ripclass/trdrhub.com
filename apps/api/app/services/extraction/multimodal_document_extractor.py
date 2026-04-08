@@ -509,6 +509,7 @@ async def _attempt_vision_tier(
     source_mode: str,
     subtype_hint: Optional[str],
     extracted_text: str,
+    cross_doc_context: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Run a single vision extraction attempt at a given tier (L1/L2/L3)."""
     provider, model = _resolve_vision_tier_config(tier)
@@ -520,11 +521,16 @@ async def _attempt_vision_tier(
         schema=schema,
         subtype_hint=subtype_hint,
         extracted_text=extracted_text,
+        cross_doc_context=cross_doc_context,
     )
     system_prompt = (
-        "You are an expert trade-finance document extractor. "
-        "Use the attached document pages as primary evidence. "
-        "Extract ONLY what is explicitly visible. Return valid JSON object only."
+        "You are a senior trade-finance document examiner extracting "
+        "structured data from a Letter of Credit presentation. "
+        "Read the attached page images carefully — you have both the rendered "
+        "PDF pages AND the raw text content. Cross-check both. "
+        "Return EVERY field you can see, in canonical JSON form. Don't be "
+        "lazy — if a value is on the page anywhere, return it. "
+        "Output ONLY a JSON object, no prose."
     )
 
     try:
@@ -586,6 +592,33 @@ async def _attempt_vision_tier(
     return wrapped
 
 
+_LC_DOCUMENT_TYPES = {
+    "letter_of_credit",
+    "swift_message",
+    "lc_application",
+    "standby_letter_of_credit",
+    "bank_guarantee",
+}
+
+
+def _tier_chain_for_document(document_type: str) -> Tuple[str, ...]:
+    """Pick the tier escalation order based on document type.
+
+    The LC is the source of truth for the entire validation. We skip the
+    cheap L1 (GPT-4.1) for LCs and start at L2 (Sonnet 4.6) directly,
+    escalating to L3 (Opus 4.6) if needed. The cheap L1 was returning
+    inconsistent field names and dropping fields like sequence_of_total
+    and applicable_rules even when they were plainly on the page.
+
+    Supporting docs continue to start at L1 — they're simpler and many
+    of them, so cost matters more there.
+    """
+    doc_type = (document_type or "").strip().lower()
+    if doc_type in _LC_DOCUMENT_TYPES:
+        return ("L2", "L3")
+    return ("L1", "L2", "L3")
+
+
 async def extract_document_multimodal_first(
     *,
     document_type: str,
@@ -594,13 +627,23 @@ async def extract_document_multimodal_first(
     content_type: Optional[str],
     extracted_text: str = "",
     subtype_hint: Optional[str] = None,
+    cross_doc_context: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Vision LLM extraction with L1 → L2 → L3 tier escalation.
+    """Vision LLM extraction with tier escalation.
 
-    L1 (default GPT-4.1) handles most cases. If L1 returns None or misses
-    most critical fields for the document type, escalate to L2 (default
-    Claude Sonnet). If L2 still falls short, escalate to L3 (default
-    Claude Opus). Each tier sees the same raw PDF page images.
+    For LC documents, starts at L2 (Sonnet 4.6) — the cheap L1 was
+    inconsistent at SWIFT MT700 field naming. For supporting docs, starts
+    at L1 (GPT-4.1) to keep costs reasonable.
+
+    `extracted_text` is the raw PDF text (from pdfminer/pypdf or OCR) — when
+    present, it's sent alongside the page images so the LLM has both
+    visual layout AND character-perfect text content. Empty string means
+    vision-only.
+
+    `cross_doc_context` is the LC's already-extracted summary (lc_number,
+    amount, currency, beneficiary, applicant, ports, etc.). When extracting
+    a supporting doc, this lets the LLM cross-reference the LC's values
+    instead of guessing in isolation.
     """
     if not file_bytes or not _is_supported_content_type(content_type, filename):
         return None
@@ -620,11 +663,9 @@ async def extract_document_multimodal_first(
     if not image_parts:
         return None
 
-    # Tier escalation: L1 first, escalate only if the result is weak. The
-    # `_vision_result_is_strong` check uses critical-field presence per doc
-    # type — half of the critical fields must be non-empty to count as strong.
+    tier_chain = _tier_chain_for_document(document_type)
     last_result: Optional[Dict[str, Any]] = None
-    for tier in ("L1", "L2", "L3"):
+    for tier in tier_chain:
         result = await _attempt_vision_tier(
             tier=tier,
             document_type=document_type,
@@ -633,6 +674,7 @@ async def extract_document_multimodal_first(
             source_mode=source_mode,
             subtype_hint=subtype_hint,
             extracted_text=extracted_text,
+            cross_doc_context=cross_doc_context,
         )
         if _vision_result_is_strong(result, document_type):
             return result
@@ -648,28 +690,169 @@ async def extract_document_multimodal_first(
                 tier, filename, document_type,
             )
 
-    # All three tiers were tried — return whatever the last attempt produced
+    # All tiers were tried — return whatever the last attempt produced
     # (which may be a weak result with some fields populated, or None).
     return last_result
 
 
-def _build_multimodal_prompt(*, document_type: str, schema: Dict[str, Any], subtype_hint: Optional[str], extracted_text: str) -> str:
+_MT700_ONE_SHOT_EXAMPLE = """
+EXAMPLE — for an MT700 LC the page would look like:
+  27: 1/1
+  40A: IRREVOCABLE
+  20: ABCD2026123
+  31C: 260315
+  40E: UCP LATEST VERSION
+  31D: 260920NEW YORK
+  50: ACME IMPORTERS LLC
+      123 5TH AVE, NEW YORK, NY, USA
+  59: GLOBAL EXPORT CO LTD
+      45 INDUSTRIAL ROAD, DHAKA, BANGLADESH
+  32B: USD 250,000.00
+  39A: 5/5
+  41D: ANY BANK BY NEGOTIATION
+  43P: ALLOWED
+  43T: NOT ALLOWED
+  44E: CHITTAGONG, BANGLADESH
+  44F: NEW YORK, USA
+  44C: 260830
+  45A: <goods description...>
+  46A: <documents required list...>
+  47A: <additional conditions list...>
+  48: 21 DAYS FROM SHIPMENT DATE
+  49: WITHOUT
+  71D: ALL CHARGES OUTSIDE BANGLADESH FOR APPLICANT ACCOUNT
+
+You should return EXACTLY:
+{
+  "lc_number": "ABCD2026123",
+  "sequence_of_total": "1/1",
+  "form_of_documentary_credit": "IRREVOCABLE",
+  "issue_date": "2026-03-15",
+  "applicable_rules": "UCP LATEST VERSION",
+  "expiry_date": "2026-09-20",
+  "expiry_place": "NEW YORK",
+  "applicant": "ACME IMPORTERS LLC, 123 5TH AVE, NEW YORK, NY, USA",
+  "beneficiary": "GLOBAL EXPORT CO LTD, 45 INDUSTRIAL ROAD, DHAKA, BANGLADESH",
+  "amount": 250000.00,
+  "currency": "USD",
+  "amount_tolerance": "5/5",
+  "available_with": "ANY BANK",
+  "available_by": "NEGOTIATION",
+  "partial_shipments": "ALLOWED",
+  "transshipment": "NOT ALLOWED",
+  "port_of_loading": "CHITTAGONG, BANGLADESH",
+  "port_of_discharge": "NEW YORK, USA",
+  "latest_shipment_date": "2026-08-30",
+  "goods_description": "<full text of 45A>",
+  "documents_required": ["<each line of 46A as a separate array entry>"],
+  "additional_conditions": ["<each line of 47A as a separate array entry>"],
+  "period_for_presentation": 21,
+  "confirmation_instructions": "WITHOUT",
+  "charges": "ALL CHARGES OUTSIDE BANGLADESH FOR APPLICANT ACCOUNT"
+}
+
+Notice: dates parsed to ISO format, amount as a number (not a string), 41D split
+into available_with + available_by, 31D split into expiry_date + expiry_place,
+documents_required and additional_conditions as ARRAYS not strings.
+"""
+
+
+def _build_multimodal_prompt(
+    *,
+    document_type: str,
+    schema: Dict[str, Any],
+    subtype_hint: Optional[str],
+    extracted_text: str,
+    cross_doc_context: Optional[Dict[str, Any]] = None,
+) -> str:
     fields = schema.get("fields") or []
     notes = schema.get("notes") or []
     support_text = (extracted_text or "").strip()
-    support_text = support_text[:4000] if support_text else ""
-    return (
-        f"Extract structured data from this {schema['title']}\n"
+    # Don't truncate text for the LC — we need every clause and every field.
+    is_lc = document_type.lower() in _LC_DOCUMENT_TYPES
+    text_cap = 16000 if is_lc else 4000
+    support_text = support_text[:text_cap] if support_text else ""
+
+    # Header / role
+    header = (
+        f"You are extracting structured data from this {schema['title']}.\n"
         f"Declared document type: {document_type}\n"
-        f"Subtype hint: {subtype_hint or 'none'}\n\n"
-        "Return one JSON object with EXACTLY these top-level keys (use null when absent):\n"
-        + "\n".join(f"- {field}" for field in fields)
-        + "\n\nRules:\n"
-        + "\n".join(f"- {note}" for note in notes)
-        + "\n- Preserve arrays as arrays when the field obviously contains multiple items."
-        + "\n- Do not add markdown. Do not add explanation. JSON only."
-        + (f"\n\nFallback OCR/native text context (secondary evidence only):\n{support_text}" if support_text else "")
     )
+    if subtype_hint:
+        header += f"Subtype hint: {subtype_hint}\n"
+
+    # Cross-doc context (only sent for supporting docs, never for the LC).
+    context_block = ""
+    if cross_doc_context and isinstance(cross_doc_context, dict):
+        ctx_lines = []
+        for key in (
+            "lc_number",
+            "amount",
+            "currency",
+            "applicant",
+            "beneficiary",
+            "port_of_loading",
+            "port_of_discharge",
+            "latest_shipment_date",
+            "expiry_date",
+            "buyer_purchase_order_number",
+            "exporter_bin",
+            "exporter_tin",
+        ):
+            if cross_doc_context.get(key) is not None:
+                ctx_lines.append(f"  {key}: {cross_doc_context[key]}")
+        if ctx_lines:
+            context_block = (
+                "\n\nLC CROSS-REFERENCE CONTEXT (the LC this document is presented under):\n"
+                + "\n".join(ctx_lines)
+                + "\nWhen extracting fields below, cross-check these LC values. "
+                "If the supporting document carries a copy of any of these "
+                "(e.g. lc_number, buyer_purchase_order_number, exporter_bin), "
+                "return them under the canonical key names — even if the doc "
+                "labels them differently."
+            )
+
+    # The "see everything" instruction.
+    instruction = (
+        "\n\nYour task: read the page images and the raw text, find every "
+        "field that is visible, and return a JSON object with the canonical "
+        "key names listed below. If a field is not on the document, OMIT it "
+        "(don't return null) — except for the schema's required keys where "
+        "null is OK. Be liberal: if you see a value that obviously belongs "
+        "to one of these fields under a different label, MAP IT.\n\n"
+        "Canonical keys you should look for:\n"
+        + "\n".join(f"  - {field}" for field in fields)
+    )
+
+    # Doc-type-specific notes from the schema.
+    if notes:
+        instruction += "\n\nFormatting rules:\n" + "\n".join(f"  - {note}" for note in notes)
+
+    instruction += (
+        "\n  - Preserve arrays as arrays for documents_required, "
+        "additional_conditions, and any other obviously-multi-valued field.\n"
+        "  - Dates: return ISO format YYYY-MM-DD when possible.\n"
+        "  - Amounts: return numbers, not strings (no commas, no currency).\n"
+        "  - Output ONLY a JSON object. No markdown, no prose, no explanations."
+    )
+
+    # MT700 one-shot ONLY for LC documents — gives the LLM a worked example
+    # of the field-tag-to-canonical-key mapping it always gets wrong.
+    one_shot = _MT700_ONE_SHOT_EXAMPLE if is_lc else ""
+
+    # Raw text. We send this for ALL doc types when available — pdfminer
+    # gives us character-perfect text content directly from the PDF, which
+    # is more reliable than reading text out of a JPEG.
+    text_block = ""
+    if support_text:
+        text_block = (
+            "\n\nRAW PDF TEXT CONTENT (extracted via pdfminer/pypdf — "
+            "use as the authoritative source for text values; use the page "
+            "images to understand layout and confirm formatting):\n"
+            f"```\n{support_text}\n```"
+        )
+
+    return header + one_shot + instruction + context_block + text_block
 
 
 async def _build_visual_parts(*, file_bytes: bytes, content_type: Optional[str], filename: str, max_pages: int) -> Tuple[List[Dict[str, str]], str]:
@@ -687,13 +870,16 @@ async def _render_pdf_to_images(file_bytes: bytes, *, max_pages: int) -> Tuple[L
     def _convert() -> List[Dict[str, str]]:
         from pdf2image import convert_from_bytes
 
-        images = convert_from_bytes(file_bytes, dpi=170, first_page=1, last_page=max_pages, fmt="jpeg")
+        # 220 DPI + JPEG quality 90 — enough resolution for the LLM to read
+        # MT700 small print and SWIFT field codes. Was 170 / 82 which lost
+        # detail on dense LC pages.
+        images = convert_from_bytes(file_bytes, dpi=220, first_page=1, last_page=max_pages, fmt="jpeg")
         result: List[Dict[str, str]] = []
         for img in images[:max_pages]:
             buf = io.BytesIO()
             if img.mode != "RGB":
                 img = img.convert("RGB")
-            img.save(buf, format="JPEG", quality=82, optimize=True)
+            img.save(buf, format="JPEG", quality=90, optimize=True)
             result.append({
                 "media_type": "image/jpeg",
                 "data": base64.b64encode(buf.getvalue()).decode("ascii"),
@@ -759,7 +945,7 @@ async def _generate_openai_compatible(*, provider: str, model: str, prompt: str,
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": content},
         ],
-        max_tokens=int(os.getenv("EXTRACTION_MULTIMODAL_MAX_TOKENS") or "2000"),
+        max_tokens=int(os.getenv("EXTRACTION_MULTIMODAL_MAX_TOKENS") or "8000"),
         temperature=0.1,
         response_format={"type": "json_object"},
     )
@@ -789,7 +975,7 @@ async def _generate_anthropic(*, model: str, prompt: str, system_prompt: str, im
         model=model,
         system=system_prompt,
         messages=[{"role": "user", "content": content}],
-        max_tokens=int(os.getenv("EXTRACTION_MULTIMODAL_MAX_TOKENS") or "2000"),
+        max_tokens=int(os.getenv("EXTRACTION_MULTIMODAL_MAX_TOKENS") or "8000"),
         temperature=0.1,
     )
     chunks: List[str] = []

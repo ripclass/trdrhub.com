@@ -33,6 +33,13 @@ interface DocSectionState {
   filename: string;
   documentType: string;
   fields: FieldState[];
+  /** LC-only: tag values (e.g. "IRREVOCABLE") shown as badges in the header. */
+  headerBadges?: { label: string; value: string }[];
+  /** LC-only: how many of `fields` are the required-section split point.
+   *  fields[0..requiredCount] = required, fields[requiredCount..] = optional. */
+  requiredCount?: number;
+  /** True for the LC's own section so we render it differently. */
+  isLetterOfCredit?: boolean;
 }
 
 interface FieldState {
@@ -149,6 +156,57 @@ function readAliasedValue(extracted: Record<string, any>, fieldName: string): an
   return canonical;
 }
 
+// LC review categorization (the LC is the source-of-truth document, so its
+// review screen needs to be different from supporting docs).
+//
+// HIDDEN: never shown to the user. Either trivial metadata or operational
+// concerns that don't drive validation outcomes.
+const LC_HIDDEN_FIELDS = new Set<string>([
+  'sequence_of_total',         // Field 27 — only matters if "1/1" is wrong, then we'd error elsewhere
+  'applicable_rules',          // Field 40E — engine-internal (UCP600 / ISP98 / etc.)
+  'available_with',            // Field 41a — bank operational, doesn't drive doc compliance
+  'available_by',              // Field 41a method — same
+  'drafts_at',                 // Field 42C — only matters if drafts are presented
+  'drawee',                    // Field 42a — same
+  'confirmation_instructions', // Field 49 — bank-to-bank
+  'instructions_to_paying_bank', // Field 78 — bank-to-bank
+  'amount_tolerance',          // Field 39A — handled by validation engine
+  'period_for_presentation',   // Field 48 — only matters when overrides 21-day default
+]);
+
+// HEADER: shown as a badge on the LC card header instead of as an editable
+// field. These tag the LC's "type" rather than asking the user to confirm a
+// value.
+const LC_HEADER_FIELDS = new Set<string>([
+  'form_of_documentary_credit',
+]);
+
+// REQUIRED: the 8 skeleton fields a bank examiner needs to validate.
+// Without these the system cannot run validation at all.
+const LC_REQUIRED_FIELDS = [
+  'lc_number',
+  'amount',
+  'currency',
+  'beneficiary',
+  'applicant',
+  'goods_description',
+  'documents_required',
+  'expiry_date',
+  'latest_shipment_date',
+];
+
+// OPTIONAL: useful but not deal-breakers. Shown in a separate section.
+const LC_OPTIONAL_FIELDS = [
+  'expiry_place',
+  'port_of_loading',
+  'port_of_discharge',
+  'additional_conditions',
+  'partial_shipments',  // Field 43P
+  'transshipment',      // Field 43T
+  'issue_date',
+  'charges',
+];
+
 // Field names whose values are typically long-form text (paragraphs, lists,
 // free-text rule descriptions). These render in a textarea instead of a
 // single-line input AND span both columns of the grid so the user can
@@ -214,6 +272,22 @@ function prettyFormatLongValue(value: string): string {
   return value;
 }
 
+function buildFieldState(fieldName: string, extracted: Record<string, any>): FieldState {
+  const rawValue = readAliasedValue(extracted, fieldName);
+  const stringified = coerceToString(rawValue);
+  const currentValue = LONG_FORM_FIELD_NAMES.has(fieldName)
+    ? prettyFormatLongValue(stringified)
+    : stringified;
+  return {
+    name: fieldName,
+    label: humanizeFieldName(fieldName),
+    currentValue,
+    aiGuess: currentValue,
+    isEmpty: !currentValue.trim(),
+    isConfirmed: false,
+  };
+}
+
 function buildDocSectionState(
   doc: ExtractionReadyDocument,
   requiredFields: string[],
@@ -223,26 +297,56 @@ function buildDocSectionState(
   const documentType = (doc.document_type || doc.documentType || 'unknown') as string;
   const docKey = (doc.id || doc.document_id || filename) as string;
 
-  const fields: FieldState[] = requiredFields.map((fieldName) => {
-    const rawValue = readAliasedValue(extracted, fieldName);
-    const stringified = coerceToString(rawValue);
-    // Long-form fields (goods_description, documents_required, etc.) come
-    // back as Python list reprs or paragraphs. Pretty-print them so the
-    // textarea is actually readable.
-    const currentValue = LONG_FORM_FIELD_NAMES.has(fieldName)
-      ? prettyFormatLongValue(stringified)
-      : stringified;
-    return {
-      name: fieldName,
-      label: humanizeFieldName(fieldName),
-      currentValue,
-      aiGuess: currentValue,
-      isEmpty: !currentValue.trim(),
-      isConfirmed: false,
-    };
-  });
+  const fields: FieldState[] = requiredFields.map((fieldName) => buildFieldState(fieldName, extracted));
 
   return { docKey, filename, documentType, fields };
+}
+
+/** LC-specific builder.
+ *
+ * Splits the LC's fields into:
+ *   - Header badges (form_of_documentary_credit etc.)
+ *   - Required section (8 skeleton fields)
+ *   - Optional section (only fields that have values OR are conditionally relevant)
+ *
+ * Hidden fields (LC_HIDDEN_FIELDS) are dropped entirely.
+ */
+function buildLCDocSectionState(doc: ExtractionReadyDocument): DocSectionState {
+  const extracted = (doc.extracted_fields || doc.extractedFields || {}) as Record<string, any>;
+  const filename = (doc.filename || doc.name || 'document') as string;
+  const documentType = (doc.document_type || doc.documentType || 'unknown') as string;
+  const docKey = (doc.id || doc.document_id || filename) as string;
+
+  // Header badges — pull values from the extracted dict, only show if populated
+  const headerBadges: { label: string; value: string }[] = [];
+  for (const fieldName of LC_HEADER_FIELDS) {
+    const value = coerceToString(readAliasedValue(extracted, fieldName));
+    if (value.trim()) {
+      headerBadges.push({ label: humanizeFieldName(fieldName), value });
+    }
+  }
+
+  // Required section (always shown)
+  const requiredFields: FieldState[] = LC_REQUIRED_FIELDS.map((fieldName) =>
+    buildFieldState(fieldName, extracted),
+  );
+
+  // Optional section — only show fields the AI actually populated. The
+  // user shouldn't be confronted with empty inputs for fields that don't
+  // typically appear or aren't relevant to validation.
+  const optionalFields: FieldState[] = LC_OPTIONAL_FIELDS
+    .map((fieldName) => buildFieldState(fieldName, extracted))
+    .filter((f) => !f.isEmpty);
+
+  return {
+    docKey,
+    filename,
+    documentType,
+    fields: [...requiredFields, ...optionalFields],
+    headerBadges,
+    requiredCount: requiredFields.length,
+    isLetterOfCredit: true,
+  };
 }
 
 export function ExtractionReview({
@@ -276,12 +380,13 @@ export function ExtractionReview({
       (payload.required_fields as any)?.lc_self_required || [];
     const built = (payload.documents || []).map((doc) => {
       const docType = String(doc.document_type || doc.documentType || '');
-      // LC uses the MT700 mandatory list, NOT the cross-doc applies_to_all
-      // set. The LC is the SOURCE of those cross-doc requirements, not a
-      // doc that must satisfy them.
+      // LC uses a dedicated builder that splits fields into header
+      // badges + required section + optional section, and HIDES fields
+      // that aren't user-relevant (40E applicable_rules, 27 sequence,
+      // 41a available_with/by, 49 confirmation, etc.).
       const isLC = docType === 'letter_of_credit' || docType === 'swift_message' || docType === 'lc_application';
-      if (isLC && Array.isArray(lcSelfRequired) && lcSelfRequired.length > 0) {
-        return buildDocSectionState(doc, lcSelfRequired);
+      if (isLC) {
+        return buildLCDocSectionState(doc);
       }
       const forType = byType[docType];
       const required = Array.isArray(forType) && forType.length > 0 ? forType : baseline;
@@ -464,25 +569,102 @@ export function ExtractionReview({
       {/* Per-document review sections */}
       {docSections.map((section, docIdx) => {
         const emptyCount = section.fields.filter((f) => f.isEmpty).length;
+        const renderFieldEntry = (field: FieldState, fieldIdx: number) => {
+          const isLongForm = shouldRenderAsTextarea(field.name, field.currentValue);
+          const wrapperClass = isLongForm
+            ? 'space-y-1 md:col-span-2'
+            : 'space-y-1';
+          const contentLineCount = (field.currentValue.match(/\n/g)?.length ?? 0) + 1;
+          const textareaRows = Math.min(Math.max(contentLineCount + 1, 4), 16);
+          return (
+            <div key={`${section.docKey}-${field.name}-${fieldIdx}`} className={wrapperClass}>
+              <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
+                {field.label}
+                {field.isEmpty && (
+                  <Badge variant="outline" className="text-amber-600 border-amber-500/40 text-[10px]">
+                    Missing
+                  </Badge>
+                )}
+                {!field.isEmpty && !field.isConfirmed && (
+                  <Badge variant="outline" className="text-slate-500 border-slate-300 text-[10px]">
+                    AI extracted
+                  </Badge>
+                )}
+                {field.isConfirmed && (
+                  <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">
+                    You edited
+                  </Badge>
+                )}
+              </Label>
+              {isLongForm ? (
+                <Textarea
+                  id={`${section.docKey}-${field.name}`}
+                  value={field.currentValue}
+                  onChange={handleFieldChange(docIdx, fieldIdx)}
+                  placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
+                  rows={textareaRows}
+                  className={
+                    (field.isEmpty ? 'border-amber-500/40 ' : '') +
+                    'font-mono text-sm leading-relaxed resize-y'
+                  }
+                />
+              ) : (
+                <Input
+                  id={`${section.docKey}-${field.name}`}
+                  value={field.currentValue}
+                  onChange={handleFieldChange(docIdx, fieldIdx)}
+                  placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
+                  className={field.isEmpty ? 'border-amber-500/40' : undefined}
+                />
+              )}
+            </div>
+          );
+        };
+
+        // LC card has a 2-section layout (required + optional) AND header
+        // badges; supporting docs render as a single flat grid.
+        const isLC = !!section.isLetterOfCredit;
+        const requiredFields = isLC && section.requiredCount != null
+          ? section.fields.slice(0, section.requiredCount)
+          : section.fields;
+        const optionalFields = isLC && section.requiredCount != null
+          ? section.fields.slice(section.requiredCount)
+          : [];
+        const requiredEmptyCount = requiredFields.filter((f) => f.isEmpty).length;
+
         return (
           <Card key={`${section.docKey}-${docIdx}`} className="shadow-soft border-0">
             <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <FileText className="w-4 h-4" />
                     {section.filename}
                   </CardTitle>
-                  <CardDescription>
-                    <Badge variant="secondary" className="mr-2">
+                  <CardDescription className="mt-1 flex items-center gap-2 flex-wrap">
+                    <Badge variant="secondary">
                       {humanizeDocType(section.documentType)}
                     </Badge>
-                    {section.fields.length} required field{section.fields.length === 1 ? '' : 's'}
-                    {emptyCount > 0 && (
-                      <span className="text-amber-600 ml-2">
-                        ({emptyCount} missing)
-                      </span>
-                    )}
+                    {/* LC-only header badges (40A form_of_documentary_credit etc.) */}
+                    {section.headerBadges?.map((b) => (
+                      <Badge
+                        key={b.label}
+                        variant="outline"
+                        className="border-blue-500/40 text-blue-700 dark:text-blue-300"
+                      >
+                        {b.value}
+                      </Badge>
+                    ))}
+                    <span className="text-xs text-muted-foreground">
+                      {isLC
+                        ? `${requiredFields.length} required field${requiredFields.length === 1 ? '' : 's'}`
+                        : `${section.fields.length} required field${section.fields.length === 1 ? '' : 's'}`}
+                      {(isLC ? requiredEmptyCount : emptyCount) > 0 && (
+                        <span className="text-amber-600 ml-1">
+                          ({(isLC ? requiredEmptyCount : emptyCount)} missing)
+                        </span>
+                      )}
+                    </span>
                   </CardDescription>
                 </div>
               </div>
@@ -492,63 +674,32 @@ export function ExtractionReview({
                 <p className="text-sm text-muted-foreground">
                   No required fields on this document.
                 </p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {section.fields.map((field, fieldIdx) => {
-                    const isLongForm = shouldRenderAsTextarea(field.name, field.currentValue);
-                    // Long fields span both columns so the textarea is wide
-                    // enough to actually read clauses/lists.
-                    const wrapperClass = isLongForm
-                      ? 'space-y-1 md:col-span-2'
-                      : 'space-y-1';
-                    // Roughly size the textarea to the content — clamped to
-                    // a sane min/max so it doesn't dwarf the page.
-                    const contentLineCount = (field.currentValue.match(/\n/g)?.length ?? 0) + 1;
-                    const textareaRows = Math.min(Math.max(contentLineCount + 1, 4), 16);
-                    return (
-                      <div key={`${section.docKey}-${field.name}-${fieldIdx}`} className={wrapperClass}>
-                        <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
-                          {field.label}
-                          {field.isEmpty && (
-                            <Badge variant="outline" className="text-amber-600 border-amber-500/40 text-[10px]">
-                              Missing
-                            </Badge>
-                          )}
-                          {!field.isEmpty && !field.isConfirmed && (
-                            <Badge variant="outline" className="text-slate-500 border-slate-300 text-[10px]">
-                              AI extracted
-                            </Badge>
-                          )}
-                          {field.isConfirmed && (
-                            <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">
-                              You edited
-                            </Badge>
-                          )}
-                        </Label>
-                        {isLongForm ? (
-                          <Textarea
-                            id={`${section.docKey}-${field.name}`}
-                            value={field.currentValue}
-                            onChange={handleFieldChange(docIdx, fieldIdx)}
-                            placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
-                            rows={textareaRows}
-                            className={
-                              (field.isEmpty ? 'border-amber-500/40 ' : '') +
-                              'font-mono text-sm leading-relaxed resize-y'
-                            }
-                          />
-                        ) : (
-                          <Input
-                            id={`${section.docKey}-${field.name}`}
-                            value={field.currentValue}
-                            onChange={handleFieldChange(docIdx, fieldIdx)}
-                            placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
-                            className={field.isEmpty ? 'border-amber-500/40' : undefined}
-                          />
+              ) : isLC ? (
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
+                      Required fields
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {requiredFields.map((field, fieldIdx) => renderFieldEntry(field, fieldIdx))}
+                    </div>
+                  </div>
+                  {optionalFields.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
+                        Additional details (optional, AI auto-extracted)
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {optionalFields.map((field, fieldIdx) =>
+                          renderFieldEntry(field, (section.requiredCount ?? 0) + fieldIdx),
                         )}
                       </div>
-                    );
-                  })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {section.fields.map((field, fieldIdx) => renderFieldEntry(field, fieldIdx))}
                 </div>
               )}
             </CardContent>

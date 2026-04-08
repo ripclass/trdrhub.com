@@ -173,6 +173,68 @@ def _looks_like_swift_mt700(text: Optional[str]) -> bool:
     return len(set(matches)) >= 2
 
 
+def _extract_pdf_text_fast(file_bytes: Optional[bytes]) -> str:
+    """Pull raw text out of a PDF using pdfminer.six (free, instant).
+
+    Returns "" on any failure (non-PDF input, parser error, encrypted file).
+    Used to give the vision LLM both the page images AND the actual text
+    content — character-perfect text is more reliable than reading text
+    out of a JPEG.
+    """
+    if not file_bytes:
+        return ""
+    try:
+        from io import BytesIO
+        from pdfminer.high_level import extract_text
+        text = extract_text(BytesIO(file_bytes)) or ""
+        return text.strip()
+    except Exception:
+        try:
+            # Fallback: PyPDF2 (less accurate but more permissive on weird PDFs).
+            from io import BytesIO
+            from PyPDF2 import PdfReader  # type: ignore
+            reader = PdfReader(BytesIO(file_bytes))
+            chunks = []
+            for page in reader.pages[:20]:
+                chunk = page.extract_text() or ""
+                if chunk.strip():
+                    chunks.append(chunk)
+            return "\n".join(chunks).strip()
+        except Exception:
+            return ""
+
+
+def _build_lc_cross_doc_context(lc_context: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Pull the LC fields a supporting-doc extractor would want to cross-reference.
+
+    Returned as a flat dict with canonical key names. Used as the
+    `cross_doc_context` arg to extract_document_multimodal_first when
+    extracting invoice / BL / packing / COO / etc.
+    """
+    if not isinstance(lc_context, dict) or not lc_context:
+        return None
+    out: Dict[str, Any] = {}
+    for key in (
+        "lc_number",
+        "amount",
+        "currency",
+        "applicant",
+        "beneficiary",
+        "port_of_loading",
+        "port_of_discharge",
+        "latest_shipment_date",
+        "expiry_date",
+        "buyer_purchase_order_number",
+        "exporter_bin",
+        "exporter_tin",
+        "goods_description",
+    ):
+        value = lc_context.get(key)
+        if value not in (None, ""):
+            out[key] = value
+    return out or None
+
+
 def _resolve_extraction_lane(*, extraction_method: Optional[str], support_only: bool = False) -> str:
     if support_only:
         return "support_only"
@@ -217,6 +279,7 @@ class LaunchExtractionPipeline:
         extraction_artifacts_v1: Optional[Dict[str, Any]] = None,
         file_bytes: Optional[bytes] = None,
         content_type: Optional[str] = None,
+        lc_context_for_cross_doc: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         extraction_artifacts_v1 = extraction_artifacts_v1 or {}
         normalized_doc_type = _canonicalize_launch_doc_type(str(document_type or "").strip().lower())
@@ -225,6 +288,26 @@ class LaunchExtractionPipeline:
             ocr_confidence=extraction_artifacts_v1.get("ocr_confidence"),
             metadata=extraction_artifacts_v1,
         )
+        # Build the LC cross-reference context once per document. The vision
+        # LLM uses this to resolve fields like lc_number / buyer_purchase_order_number
+        # that appear on every supporting doc. The LC itself never gets a
+        # cross_doc context (it IS the source of truth).
+        cross_doc_context = (
+            None
+            if normalized_doc_type in {
+                "letter_of_credit",
+                "swift_message",
+                "lc_application",
+                "bank_guarantee",
+                "standby_letter_of_credit",
+            }
+            else _build_lc_cross_doc_context(lc_context_for_cross_doc)
+        )
+        # Stash on the instance so the per-doc processors can read it
+        # without us threading the arg through every signature. Only valid
+        # for the duration of this single dispatch call.
+        self._current_cross_doc_context = cross_doc_context
+        self._current_pdf_text = _extract_pdf_text_fast(file_bytes)
 
         if normalized_doc_type in {
             "letter_of_credit",
@@ -397,14 +480,16 @@ class LaunchExtractionPipeline:
                     "post_validation_target": None,
                 }
 
-            # Vision LLM looks at raw PDF page images first (no OCR text input).
-            # The text-based AI extractor below is the fallback when vision fails.
+            # Pull raw PDF text via pdfminer so the vision LLM has BOTH the
+            # rendered page images AND the actual text characters. Empty
+            # string when extraction fails (image-only PDF, encrypted, etc.).
+            pdf_text_for_vision = _extract_pdf_text_fast(file_bytes) or extracted_text
             multimodal_struct = await extract_document_multimodal_first(
                 document_type=document_type,
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text="",
+                extracted_text=pdf_text_for_vision,
                 subtype_hint=lc_subtype,
             )
 
@@ -602,8 +687,9 @@ class LaunchExtractionPipeline:
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text="",
+                extracted_text=getattr(self, "_current_pdf_text", "") or extracted_text,
                 subtype_hint=invoice_subtype,
+                cross_doc_context=getattr(self, "_current_cross_doc_context", None),
             )
             invoice_struct = multimodal_struct or await extract_invoice_ai_first(extracted_text)
             extraction_status = invoice_struct.get("_status", "unknown")
@@ -782,8 +868,9 @@ class LaunchExtractionPipeline:
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text="",
+                extracted_text=getattr(self, "_current_pdf_text", "") or extracted_text,
                 subtype_hint=transport_subtype,
+                cross_doc_context=getattr(self, "_current_cross_doc_context", None),
             )
             bl_struct = multimodal_struct or await extract_bl_ai_first(extracted_text)
             extraction_status = bl_struct.get("_status", "unknown")
@@ -938,7 +1025,8 @@ class LaunchExtractionPipeline:
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text="",
+                extracted_text=getattr(self, "_current_pdf_text", "") or extracted_text,
+                cross_doc_context=getattr(self, "_current_cross_doc_context", None),
             )
             packing_struct = multimodal_struct or await extract_packing_list_ai_first(extracted_text)
             extraction_status = packing_struct.get("_status", "unknown")
@@ -1083,8 +1171,9 @@ class LaunchExtractionPipeline:
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text="",
+                extracted_text=getattr(self, "_current_pdf_text", "") or extracted_text,
                 subtype_hint=regulatory_subtype,
+                cross_doc_context=getattr(self, "_current_cross_doc_context", None),
             )
             coo_struct = multimodal_struct or await extract_coo_ai_first(extracted_text)
             extraction_status = coo_struct.get("_status", "unknown")
@@ -1251,8 +1340,9 @@ class LaunchExtractionPipeline:
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text="",
+                extracted_text=getattr(self, "_current_pdf_text", "") or extracted_text,
                 subtype_hint=insurance_subtype,
+                cross_doc_context=getattr(self, "_current_cross_doc_context", None),
             )
             insurance_struct = multimodal_struct or await extract_insurance_ai_first(extracted_text)
             extraction_status = insurance_struct.get("_status", "unknown")
@@ -1459,8 +1549,9 @@ class LaunchExtractionPipeline:
             filename=filename,
             file_bytes=file_bytes,
             content_type=content_type,
-            extracted_text="",
+            extracted_text=getattr(self, "_current_pdf_text", "") or extracted_text,
             subtype_hint=supporting_guess.get("subtype"),
+            cross_doc_context=getattr(self, "_current_cross_doc_context", None),
         )
         base_patch = {
             "ocr_quality": {
@@ -1568,8 +1659,9 @@ class LaunchExtractionPipeline:
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text="",
+                extracted_text=getattr(self, "_current_pdf_text", "") or extracted_text,
                 subtype_hint=inspection_subtype,
+                cross_doc_context=getattr(self, "_current_cross_doc_context", None),
             )
             inspection_struct = multimodal_struct or await extract_inspection_ai_first(extracted_text)
             extraction_status = inspection_struct.get("_status", "unknown")
