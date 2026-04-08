@@ -268,37 +268,39 @@ def _snapshot_setup_state(setup_state: dict) -> dict:
 
 
 def _build_required_field_map(setup_state: dict) -> dict:
-    """Derive the per-document required-field map from LC clauses.
+    """Derive the per-document required-field map from the parsed LC clauses.
 
-    This is a light first cut: pull `requirement_conditions` and
-    `unmapped_requirements` off the LC context if the session_setup
-    already computed them, otherwise fall back to a minimum set.
-    The extraction review screen will use this to decide which fields to
-    surface for confirmation.
+    Delegates to required_fields_derivation.derive_required_fields(), which
+    walks the LC context's already-extracted clause 46A documents-required
+    list and clause 47A additional-conditions list and emits a per-doc
+    required field map plus the MT700 mandatory list for the LC itself.
     """
+    from app.services.extraction.required_fields_derivation import derive_required_fields
+
     lc_context = setup_state.get("lc_context") or {}
     documents = (setup_state.get("extracted_context") or {}).get("documents") or []
 
-    # Per-doc baseline: LC references the following fields on almost every
-    # clause. We let the review screen drive additional fields by inspecting
-    # the LC clauses 46A / 47A text directly.
-    baseline_required = {
-        "lc_number",
-        "buyer_purchase_order_number",
-        "exporter_bin",
-        "exporter_tin",
-    }
-
-    required_by_doc: dict = {}
+    document_types_present: list = []
     for doc in documents:
         if not isinstance(doc, dict):
             continue
-        dtype = doc.get("document_type") or doc.get("documentType") or "unknown"
-        required_by_doc[str(dtype)] = sorted(baseline_required)
+        dtype = doc.get("document_type") or doc.get("documentType")
+        if dtype:
+            document_types_present.append(str(dtype))
 
+    derived = derive_required_fields(
+        lc_context=lc_context,
+        document_types_present=document_types_present,
+    )
+    # Keep the legacy `baseline_required` key (cross-doc requirements) for
+    # any existing consumers that grep for it.
     return {
-        "baseline_required": sorted(baseline_required),
-        "by_document_type": required_by_doc,
+        "baseline_required": derived.get("applies_to_all_supporting_docs") or [],
+        "lc_self_required": derived.get("lc_self_required") or [],
+        "lc_skeleton_required": derived.get("lc_skeleton_required") or [],
+        "by_document_type": derived.get("by_document_type") or {},
+        "applies_to_all_supporting_docs": derived.get("applies_to_all_supporting_docs") or [],
+        "evidence": derived.get("evidence") or [],
     }
 
 

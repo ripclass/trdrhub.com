@@ -95,19 +95,59 @@ INSPECTION_TYPES = {
 DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
     "letter_of_credit": {
         "family": "lc",
-        "title": "Letter of Credit / SWIFT documentary credit",
+        "title": "Letter of Credit / SWIFT documentary credit (MT700)",
+        # Field list aligned with the MT700 mandatory + important-optional spec.
+        # Anything tagged "MT700 Field <NN>" in the comments is the SWIFT field
+        # the vision LLM should be looking for on the LC pages.
         "fields": [
-            "lc_number", "lc_type", "amount", "currency", "applicant", "beneficiary",
-            "issuing_bank", "advising_bank", "confirming_bank", "port_of_loading",
-            "port_of_discharge", "expiry_date", "latest_shipment_date", "issue_date",
-            "incoterm", "ucp_reference", "partial_shipments", "transshipment",
-            "goods_description", "documents_required", "additional_conditions",
-            "payment_terms", "available_with",
+            # MT700 mandatory fields
+            "sequence_of_total",        # Field 27 — e.g. "1/1"; tells us if MT701 continuations exist
+            "form_of_documentary_credit",  # Field 40A — Irrevocable / Irrevocable Transferable / etc.
+            "lc_number",                # Field 20 — unique LC reference
+            "issue_date",               # Field 31C — date of issue
+            "expiry_date",              # Field 31D — hard deadline
+            "expiry_place",             # Field 31D place
+            "applicable_rules",         # Field 40E — UCP LATEST VERSION / EUCP LATEST VERSION
+            "applicant",                # Field 50 — buyer / importer
+            "beneficiary",              # Field 59 — seller / exporter
+            "amount",                   # Field 32B — credit amount
+            "currency",                 # Field 32B — currency code
+            "available_with",           # Field 41a — bank credit is available with
+            "available_by",             # Field 41a — payment / acceptance / negotiation / deferred
+            "port_of_loading",          # Field 44E — must match B/L
+            "port_of_discharge",        # Field 44F — must match B/L
+            "latest_shipment_date",     # Field 44C — B/L on-board date must not exceed
+            "goods_description",        # Field 45A — invoice goods must "correspond"
+            "documents_required",       # Field 46A — list of required docs (parser drives validation)
+            "additional_conditions",    # Field 47A — supplemental rules
+            "period_for_presentation",  # Field 48 — overrides 21-day default
+
+            # MT700 important-optional fields
+            "amount_tolerance",         # Field 39A — "ABOUT" / ±10%
+            "partial_shipments",        # Field 43P — ALLOWED / NOT ALLOWED / CONDITIONAL
+            "transshipment",            # Field 43T — ALLOWED / NOT ALLOWED / CONDITIONAL
+            "drafts_at",                # Field 42C — tenor (sight / 30 days / etc.)
+            "drawee",                   # Field 42a — who the draft is drawn on
+            "confirmation_instructions",# Field 49 — CONFIRM / MAY ADD / WITHOUT
+            "instructions_to_paying_bank", # Field 78 — bank-to-bank instructions
+            "charges",                  # Field 71D — who pays the bank charges
+
+            # Existing fields kept for backwards compat with structured_lc_builder etc.
+            "lc_type",
+            "issuing_bank",             # extracted from Field 52a (issuer of LC)
+            "advising_bank",            # extracted from Field 57a
+            "confirming_bank",          # may be inferred from Field 49 or banks list
+            "incoterm",
+            "ucp_reference",            # alias for applicable_rules (kept for compat)
+            "payment_terms",            # synthesized from 41a/42C/42a if structured fields not available
         ],
         "notes": [
-            "Treat the actual document pages as primary evidence.",
-            "Do not invent SWIFT fields that are not visible.",
-            "documents_required and additional_conditions should be arrays when present.",
+            "Treat the actual document pages as primary evidence — never invent SWIFT fields.",
+            "documents_required (Field 46A) and additional_conditions (Field 47A) MUST be arrays when present.",
+            "If you can read field 32B, ALWAYS split it into `amount` (number) and `currency` (3-letter code).",
+            "If field 31D shows '261015USA' style format, parse `expiry_date` as ISO (2026-10-15) and put 'USA' in `expiry_place`.",
+            "If field 27 is missing or shows anything other than '1/1', flag it — there may be MT701 continuation messages.",
+            "If field 40E says 'UCP LATEST VERSION', set applicable_rules to 'UCP600'. Same for EUCP / ISP / URDG variants.",
         ],
     },
     "commercial_invoice": {
@@ -290,10 +330,30 @@ def _resolve_vision_tier_config(tier: str) -> Tuple[str, str]:
 # Critical fields that must be present for an extraction to be considered
 # "strong enough" not to escalate. If the L1 result is missing all of these
 # for a doc type, escalate to L2.
+#
+# For LC-family documents we use the MT700 "skeleton" — the 5 absolute
+# minimums you cannot validate without: Field 20 (lc_number), Field 32B
+# (amount + currency), Field 45A (goods_description), Field 46A
+# (documents_required), Field 31D (expiry_date). If any of these are missing,
+# downstream validation has nothing to anchor on and we MUST escalate.
 _VISION_CRITICAL_FIELDS: Dict[str, Tuple[str, ...]] = {
-    "letter_of_credit": ("lc_number", "applicant", "beneficiary", "amount"),
-    "swift_message": ("lc_number", "applicant", "beneficiary"),
-    "lc_application": ("lc_number", "applicant", "beneficiary"),
+    "letter_of_credit": (
+        "lc_number",          # MT700 Field 20
+        "amount",             # MT700 Field 32B
+        "currency",           # MT700 Field 32B
+        "goods_description",  # MT700 Field 45A
+        "documents_required", # MT700 Field 46A
+        "expiry_date",        # MT700 Field 31D
+        "applicant",          # MT700 Field 50
+        "beneficiary",        # MT700 Field 59
+    ),
+    "swift_message": (
+        "lc_number", "amount", "currency", "applicant", "beneficiary",
+        "documents_required", "expiry_date",
+    ),
+    "lc_application": (
+        "lc_number", "amount", "currency", "applicant", "beneficiary",
+    ),
     "commercial_invoice": ("invoice_number", "amount", "seller", "buyer"),
     "proforma_invoice": ("invoice_number", "amount", "seller", "buyer"),
     "bill_of_lading": ("bl_number", "shipper", "consignee"),
