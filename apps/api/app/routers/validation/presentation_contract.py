@@ -915,6 +915,25 @@ def _apply_workflow_stage_contract_overrides(
             "validation_contract": validation_contract,
         }
 
+    # When the tiered AI validation pipeline is enabled, validation actually
+    # runs to completion even if the two-stage extractor flagged unresolved
+    # critical fields — the AI layers are the judge. In that case we do NOT
+    # apply the extraction_resolution override below (which locks out the
+    # results UI and flips the verdict to provisional). Unresolved-field hints
+    # remain on the workflow_stage payload as a soft note, but the findings
+    # the pipeline actually produced flow through to the user.
+    try:
+        from app.config import settings as _app_settings
+        _tiered_ai_enabled = bool(getattr(_app_settings, "VALIDATION_TIERED_AI_ENABLED", False))
+    except Exception:
+        _tiered_ai_enabled = False
+    if _tiered_ai_enabled:
+        return {
+            "bank_verdict": bank_verdict,
+            "submission_eligibility": submission_eligibility,
+            "validation_contract": validation_contract,
+        }
+
     summary = (
         str(workflow_stage.get("summary") or "").strip()
         or "Validation is still provisional until extracted fields are confirmed."
