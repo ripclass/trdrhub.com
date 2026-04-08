@@ -1,5 +1,4 @@
 // Exporter Dashboard Section Model
-// Mirrors importer architecture for consistency
 
 export type ExporterSection =
   | 'overview'
@@ -31,15 +30,15 @@ export const EXPORTER_SECTION_OPTIONS: ExporterSection[] = [
 export function parseExporterSection(raw?: string | null): ExporterSection {
   if (!raw) return 'overview';
   const v = raw.toLowerCase().trim();
-  
+
   // Handle legacy aliases
   if (v === 'discrepancies') return 'issues';
   if (v === 'dashboard') return 'overview';
-  
+
   if (EXPORTER_SECTION_OPTIONS.includes(v as ExporterSection)) {
     return v as ExporterSection;
   }
-  
+
   return 'overview';
 }
 
@@ -52,7 +51,6 @@ export function toExporterSectionParam(section: ExporterSection): string {
 
 /**
  * Map ExporterSection to the ResultsTab value expected by ExporterResults.
- * For non-review sections that show ExporterResults, this determines the initial tab.
  */
 export function sectionToResultsTab(section: ExporterSection): string {
   switch (section) {
@@ -92,38 +90,24 @@ export function resultsTabToSection(tab: string): ExporterSection {
     case 'history':
       return 'history';
     case 'analytics':
-      // Keep under 'reviews' so user stays on results page with inline Analytics tab
-      // Only the sidebar "Analytics" item should show ExporterAnalytics
       return 'reviews';
     case 'customs':
-      // Keep under 'reviews' so user stays on results page with inline Customs tab
       return 'reviews';
     default:
       return 'reviews';
   }
 }
 
-// Sidebar section type (matches ExporterSidebar props)
+// Sidebar section type — matches the 5-item ExporterSidebar
 export type SidebarSection =
   | 'dashboard'
-  | 'workspace'
-  | 'templates'
   | 'upload'
   | 'reviews'
-  | 'analytics'
-  | 'notifications'
   | 'billing'
-  | 'billing-usage'
-  | 'ai-assistance'
-  | 'content-library'
-  | 'shipment-timeline'
-  | 'settings'
-  | 'help';
+  | 'settings';
 
 /**
  * Map ExporterSection to the sidebar's section identifier.
- * Note: analytics and customs tabs WITHIN ExporterResults should stay under 'reviews'
- * Only the sidebar "Analytics" item should show ExporterAnalytics
  */
 export function sectionToSidebar(section: ExporterSection): SidebarSection {
   switch (section) {
@@ -136,8 +120,8 @@ export function sectionToSidebar(section: ExporterSection): SidebarSection {
     case 'issues':
     case 'extracted-data':
     case 'history':
-    case 'analytics':  // Keep analytics within reviews context
-    case 'customs':    // Keep customs within reviews context
+    case 'analytics':
+    case 'customs':
       return 'reviews';
     default:
       return 'dashboard';
@@ -145,9 +129,7 @@ export function sectionToSidebar(section: ExporterSection): SidebarSection {
 }
 
 /**
- * Map sidebar section to ExporterSection (for sidebar click handling).
- * Returns the sidebar section itself for non-ExporterSection items,
- * enabling direct routing to auxiliary views.
+ * Map sidebar section to ExporterSection.
  */
 export function sidebarToSection(sidebar: SidebarSection): ExporterSection | SidebarSection {
   switch (sidebar) {
@@ -157,23 +139,11 @@ export function sidebarToSection(sidebar: SidebarSection): ExporterSection | Sid
       return 'upload';
     case 'reviews':
       return 'reviews';
-    case 'workspace':
-      return 'workspace' as SidebarSection; // Routed directly, not to documents
-    case 'analytics':
-      return 'analytics';
-    // Non-ExporterSection sidebar items return themselves for direct routing
-    case 'templates':
-    case 'notifications':
+    // billing and settings are handled directly by the dashboard, not via ExporterSection
     case 'billing':
-    case 'billing-usage':
-    case 'ai-assistance':
-    case 'content-library':
-    case 'shipment-timeline':
     case 'settings':
-    case 'help':
       return sidebar;
     default:
       return 'overview';
   }
 }
-

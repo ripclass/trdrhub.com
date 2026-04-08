@@ -109,9 +109,18 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     return Boolean(user && status && !status.completed)
   }, [status, user])
 
+  // Detect stale onboarding status: when user changes (login/logout/switch),
+  // there's a render frame before the useEffect fires where user is set but
+  // status still belongs to the previous user. Without this, the route guard
+  // may redirect based on null/stale status instead of showing a loading state.
+  const statusMatchesUser =
+    !user ||
+    (status !== null && status.user_id === user.id)
+  const effectivelyLoading = isLoading || (!!user && !statusMatchesUser)
+
   const value: OnboardingContextType = {
     status,
-    isLoading,
+    isLoading: effectivelyLoading,
     needsOnboarding,
     updateProgress,
     refreshStatus,

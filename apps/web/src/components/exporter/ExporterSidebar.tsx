@@ -1,5 +1,5 @@
 // ExporterSidebar - Navigation component for Exporter Dashboard
-import { Upload, Clock, Bell, BarChart3, Settings, HelpCircle, Building2, FolderKanban, FileText, CreditCard, Sparkles, Library, Calendar, LogOut, ArrowLeft } from "lucide-react";
+import { Upload, Clock, BarChart3, Settings, Building2, CreditCard, LogOut, ArrowLeft } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 import {
   Sidebar,
@@ -16,48 +16,33 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 
-type ExporterSection =
+export type ExporterSidebarSection =
   | "dashboard"
-  | "workspace"
-  | "templates"
   | "upload"
   | "reviews"
-  | "analytics"
-  | "notifications"
   | "billing"
-  | "billing-usage"
-  | "ai-assistance"
-  | "content-library"
-  | "shipment-timeline"
-  | "settings"
-  | "help";
+  | "settings";
 
 interface ExporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
-  activeSection: ExporterSection;
-  onSectionChange: (section: ExporterSection) => void;
+  activeSection: ExporterSidebarSection;
+  onSectionChange: (section: ExporterSidebarSection) => void;
   user?: { name?: string; email?: string; id?: string; role?: string };
 }
 
 export function ExporterSidebar({ activeSection, onSectionChange, user: propUser, ...props }: ExporterSidebarProps) {
   const location = useLocation();
   const { user: authUser, logout } = useAuth();
-  
+
   const user = propUser || authUser;
   const displayName =
     propUser?.name ||
     authUser?.full_name ||
     authUser?.username ||
     user?.email;
-  
-  const isActive = (url: string) => {
-    if (url === "#") return false;
-    return location.pathname === url || location.pathname + location.search === url;
-  };
 
   const handleLogout = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     e?.stopPropagation();
-
     await logout();
   };
 
@@ -65,8 +50,8 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <div className="px-2 pt-2">
-          <Link 
-            to="/hub" 
+          <Link
+            to="/hub"
             className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
           >
             <ArrowLeft className="h-3 w-3" />
@@ -89,10 +74,10 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      
+
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Main Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>Main</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -106,70 +91,29 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={activeSection === "templates"}
-                  onClick={() => onSectionChange("templates")}
-                  tooltip="Templates"
-                >
-                  <FileText />
-                  <span>Templates</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
                   isActive={activeSection === "upload"}
                   onClick={() => onSectionChange("upload")}
-                  tooltip="Upload Documents"
+                  tooltip="New Validation"
                 >
                   <Upload />
-                  <span>Upload Documents</span>
+                  <span>New Validation</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={activeSection === "reviews"}
                   onClick={() => onSectionChange("reviews")}
-                  tooltip="Review Results"
+                  tooltip="Validations"
                 >
                   <Clock />
-                  <span>Review Results</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "workspace"}
-                  onClick={() => onSectionChange("workspace")}
-                  tooltip="LC Workspace"
-                >
-                  <FolderKanban />
-                  <span>LC Workspace</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "analytics"}
-                  onClick={() => onSectionChange("analytics")}
-                  tooltip="Analytics"
-                >
-                  <BarChart3 />
-                  <span>Analytics</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "notifications"}
-                  onClick={() => onSectionChange("notifications")}
-                  tooltip="Notifications"
-                >
-                  <Bell />
-                  <span>Notifications</span>
+                  <span>Validations</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        
-        <SidebarGroup>
-          <SidebarGroupLabel>Billing & Finance</SidebarGroupLabel>
+
+        <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -182,54 +126,9 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
                   <span>Billing</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        
-        <SidebarGroup>
-          <SidebarGroupLabel>AI & Tools</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={activeSection === "ai-assistance"}
-                  onClick={() => onSectionChange("ai-assistance")}
-                  tooltip="AI Assistance"
-                >
-                  <Sparkles />
-                  <span>AI Assistance</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "content-library"}
-                  onClick={() => onSectionChange("content-library")}
-                  tooltip="Content Library"
-                >
-                  <Library />
-                  <span>Content Library</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "shipment-timeline"}
-                  onClick={() => onSectionChange("shipment-timeline")}
-                  tooltip="Shipment Timeline"
-                >
-                  <Calendar />
-                  <span>Shipment Timeline</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "settings" || isActive("/lcopilot/exporter-dashboard?tab=settings")}
+                  isActive={activeSection === "settings"}
                   onClick={() => onSectionChange("settings")}
                   tooltip="Settings"
                 >
@@ -237,21 +136,11 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
                   <span>Settings</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "help"}
-                  onClick={() => onSectionChange("help")}
-                  tooltip="Help"
-                >
-                  <HelpCircle />
-                  <span>Help</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      
+
       <SidebarFooter>
         {user && (
           <SidebarMenu>

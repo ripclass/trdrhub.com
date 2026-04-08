@@ -143,6 +143,7 @@ import CombinedDashboard from './pages/CombinedDashboard'
 import EnterpriseDashboard from './pages/EnterpriseDashboard'
 import { BankAuthProvider } from './lib/bank/auth'
 import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
+import { RequireAuth } from './components/lcopilot/RequireAuth'
 import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
 import { 
   TrackingLayout, 
@@ -352,7 +353,7 @@ function App() {
         } />
         
         {/* Hub - Unified Dashboard with Sidebar */}
-        <Route path="/hub" element={<HubLayout />}>
+        <Route path="/hub" element={<RequireAuth><HubLayout /></RequireAuth>}>
           <Route index element={<HubHome />} />
           <Route path="home" element={<HubHome />} />
           <Route path="usage" element={<HubUsage />} />
@@ -360,27 +361,27 @@ function App() {
           <Route path="team" element={<HubTeam />} />
           <Route path="settings" element={<HubSettings />} />
         </Route>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/lcopilot/upload" element={<UploadPage />} />
-        <Route path="/lcopilot/review/:sessionId" element={<ReviewPage />} />
-        <Route path="/lcopilot/report/:sessionId" element={<ReportPage />} />
+        <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/lcopilot/upload" element={<RequireAuth><UploadPage /></RequireAuth>} />
+        <Route path="/lcopilot/review/:sessionId" element={<RequireAuth><ReviewPage /></RequireAuth>} />
+        <Route path="/lcopilot/report/:sessionId" element={<RequireAuth><ReportPage /></RequireAuth>} />
         <Route path="/lcopilot/demo" element={<DiscrepancyListDemo />} />
         <Route path="/lcopilot/dashboard" element={
           <LcopilotBetaRoute scope="router">
             <LcopilotRouter />
           </LcopilotBetaRoute>
         } />
-        <Route path="/lcopilot/upload-lc" element={<UploadLC />} />
+        <Route path="/lcopilot/upload-lc" element={<RequireAuth><UploadLC /></RequireAuth>} />
         <Route path="/lcopilot/results" element={<LegacyExporterResultsRedirect />} />
         <Route path="/lcopilot/results/:jobId" element={<LegacyExporterResultsRedirect />} />
         {/* V2 Results - Output-First SME-focused design */}
-        <Route path="/lcopilot/results-v2/:sessionId" element={<ExporterResultsV2 />} />
-        <Route path="/lcopilot/draft-corrections" element={<DraftLCCorrections />} />
-        <Route path="/lcopilot/draft-risk-results" element={<DraftLCRiskResults />} />
-        <Route path="/export-lc-upload" element={<ExportLCUpload />} />
-        <Route path="/lcopilot/import-upload" element={<ImportLCUpload />} />
-        <Route path="/import/results/:jobId" element={<ImportResults />} />
-        <Route path="/lcopilot/import-results/:jobId" element={<ImportResults />} />
+        <Route path="/lcopilot/results-v2/:sessionId" element={<RequireAuth><ExporterResultsV2 /></RequireAuth>} />
+        <Route path="/lcopilot/draft-corrections" element={<RequireAuth><DraftLCCorrections /></RequireAuth>} />
+        <Route path="/lcopilot/draft-risk-results" element={<RequireAuth><DraftLCRiskResults /></RequireAuth>} />
+        <Route path="/export-lc-upload" element={<RequireAuth><ExportLCUpload /></RequireAuth>} />
+        <Route path="/lcopilot/import-upload" element={<RequireAuth><ImportLCUpload /></RequireAuth>} />
+        <Route path="/import/results/:jobId" element={<RequireAuth><ImportResults /></RequireAuth>} />
+        <Route path="/lcopilot/import-results/:jobId" element={<RequireAuth><ImportResults /></RequireAuth>} />
         {/* Redirect old exporter login URL to main login */}
         <Route path="/lcopilot/exporter-dashboard/login" element={
           <Navigate to="/login?returnUrl=/lcopilot/exporter-dashboard" replace />
@@ -411,11 +412,11 @@ function App() {
           </LcopilotBetaRoute>
         } />
         <Route path="/lcopilot/exporter-results" element={<LegacyExporterResultsRedirect />} />
-        <Route path="/lcopilot/exporter-analytics" element={<ExporterAnalytics />} />
-        <Route path="/lcopilot/importer-analytics" element={<ImporterAnalytics />} />
-        <Route path="/lcopilot/analytics" element={<AnalyticsPage />} />
-        <Route path="/lcopilot/analytics/exporter" element={<ExporterAnalyticsPage />} />
-        <Route path="/lcopilot/analytics/bank" element={<BankAnalyticsPage />} />
+        <Route path="/lcopilot/exporter-analytics" element={<RequireAuth><ExporterAnalytics /></RequireAuth>} />
+        <Route path="/lcopilot/importer-analytics" element={<RequireAuth><ImporterAnalytics /></RequireAuth>} />
+        <Route path="/lcopilot/analytics" element={<RequireAuth><AnalyticsPage /></RequireAuth>} />
+        <Route path="/lcopilot/analytics/exporter" element={<RequireAuth><ExporterAnalyticsPage /></RequireAuth>} />
+        <Route path="/lcopilot/analytics/bank" element={<RequireAuth><BankAnalyticsPage /></RequireAuth>} />
         <Route path="/lcopilot/bank-dashboard/login" element={
           <BankAuthProvider>
             <BankLogin />
@@ -433,9 +434,9 @@ function App() {
           </BankAuthProvider>
         } />
         <Route path="/lcopilot/component-gallery" element={<ComponentGallery />} />
-        <Route path="/lcopilot/exporter-corrections" element={<ExporterDocumentCorrections />} />
-        <Route path="/lcopilot/supplier-corrections" element={<SupplierDocumentCorrections />} />
-        <Route path="/lcopilot/supplier-results" element={<SupplierDocumentResults />} />
+        <Route path="/lcopilot/exporter-corrections" element={<RequireAuth><ExporterDocumentCorrections /></RequireAuth>} />
+        <Route path="/lcopilot/supplier-corrections" element={<RequireAuth><SupplierDocumentCorrections /></RequireAuth>} />
+        <Route path="/lcopilot/supplier-results" element={<RequireAuth><SupplierDocumentResults /></RequireAuth>} />
         <Route path="/test-import" element={<ImportResultsSimple />} />
         <Route path="/lcopilot/support" element={<Support />} />
         <Route path="/auth/callback" element={<AuthCallback />} />

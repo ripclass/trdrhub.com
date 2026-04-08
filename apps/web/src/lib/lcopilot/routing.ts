@@ -86,7 +86,10 @@ export function resolveLcopilotRoute(params: {
     return { destination: '/onboarding', reason: 'onboarding_incomplete' }
   }
 
-  const role = normalizeText(onboardingStatus.role) || normalizeText(user.role)
+  // Prefer onboarding role (raw backend role), fall back to user.backendRole
+  // (also raw), then user.role (mapped). This ensures tenant_admin is preserved
+  // for enterprise detection even when onboarding status lacks the role field.
+  const role = normalizeText(onboardingStatus.role) || normalizeText(user.backendRole) || normalizeText(user.role)
   const details = onboardingStatus.details as Record<string, unknown> | undefined
   const company = (details?.company as Record<string, unknown> | undefined) ?? {}
   const companyType = normalizeText(company.type)

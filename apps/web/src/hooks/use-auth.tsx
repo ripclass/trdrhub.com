@@ -13,6 +13,8 @@ export interface User {
   full_name?: string
   username?: string
   role: Role
+  /** Raw role from the backend before frontend mapping (e.g. 'tenant_admin', 'bank_officer') */
+  backendRole?: string
   isActive: boolean
 }
 
@@ -134,6 +136,7 @@ function buildFallbackUserFromSupabaseSession(sessionUser?: any): User | null {
       (typeof metadata.name === 'string' && metadata.name.trim()) ||
       email,
     role: mapBackendRole(String(roleCandidate || 'exporter')),
+    backendRole: String(roleCandidate || 'exporter'),
     isActive: true,
   }
 }
@@ -320,6 +323,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         full_name: userData.full_name,
         username: userData.full_name,
         role: mapBackendRole(userData.role),
+        backendRole: userData.role,
         isActive: userData.is_active,
       }
       setUser(mapped)

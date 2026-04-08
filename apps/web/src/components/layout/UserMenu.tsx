@@ -15,8 +15,6 @@ import { Bell, CreditCard, LogOut, User as UserIcon } from "lucide-react"
 // Import contexts directly
 import { AdminAuthContext } from "@/lib/admin/auth"
 import { BankAuthContext } from "@/lib/bank/auth"
-import { ExporterAuthContext } from "@/lib/exporter/auth"
-import { ImporterAuthContext } from "@/lib/importer/auth"
 import { useAuth } from "@/hooks/use-auth"
 
 function getInitials(name?: string | null, email?: string | null) {
@@ -49,46 +47,27 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
   // Route flags to scope which auth context should drive the UI
   const isAdminRoute = location.pathname.startsWith("/admin")
   const isBankRoute = location.pathname.includes("/bank-dashboard")
-  const isExporterRoute = location.pathname.includes("/exporter-dashboard")
-  const isImporterRoute = location.pathname.includes("/importer-dashboard")
-  
-  // Get main auth first (Supabase-based)
+
+  // Supabase-backed primary auth
   const mainAuth = useAuth();
-  
-  // Call all contexts unconditionally (required by React)
+
+  // Specialized auth contexts (only rendered on their specific routes)
   const adminAuth = useSafeContext(AdminAuthContext);
   const bankAuth = useSafeContext(BankAuthContext);
-  const exporterAuth = useSafeContext(ExporterAuthContext);
-  const importerAuth = useSafeContext(ImporterAuthContext);
 
   // Determine which auth context to use based on current route
   const activeAuth = useMemo(() => {
-    // 1) Admin pages: use admin auth only (never Supabase user)
+    // Admin pages: use admin auth only
     if (isAdminRoute) {
       return adminAuth || null
     }
 
-    // 2) Bank dashboard: use bank auth only
+    // Bank dashboard: use bank auth only
     if (isBankRoute) {
       return bankAuth || null
     }
 
-    // 3) SME exporter/importer dashboards: Supabase is the source of truth
-    if (isExporterRoute || isImporterRoute) {
-      if (mainAuth?.user) {
-        return {
-          user: mainAuth.user,
-          logout: mainAuth.logout,
-          isLoading: mainAuth.isLoading,
-        }
-      }
-      // Fallback if any legacy context is still in use
-      if (isExporterRoute && exporterAuth?.user) return exporterAuth
-      if (isImporterRoute && importerAuth?.user) return importerAuth
-      return null
-    }
-
-    // 4) Default / other pages: prefer Supabase, else any available context
+    // All other routes (exporter, importer, hub, etc.): Supabase is the source of truth
     if (mainAuth?.user) {
       return {
         user: mainAuth.user,
@@ -97,22 +76,13 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
       }
     }
 
-    if (adminAuth?.user) return adminAuth
-    if (bankAuth?.user) return bankAuth
-    if (exporterAuth?.user) return exporterAuth
-    if (importerAuth?.user) return importerAuth
-
     return null
   }, [
     isAdminRoute,
     isBankRoute,
-    isExporterRoute,
-    isImporterRoute,
     mainAuth,
     adminAuth,
     bankAuth,
-    exporterAuth,
-    importerAuth,
   ]);
 
   const user = activeAuth?.user || null;
