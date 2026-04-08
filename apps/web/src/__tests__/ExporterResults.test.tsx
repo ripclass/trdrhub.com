@@ -156,31 +156,37 @@ describe('ExporterResults', () => {
   it('renders overview metrics from processing summary', async () => {
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
-    // Section nav buttons show document and issue counts (multiple matches expected)
-    expect(screen.getAllByText(/Documents/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Issues/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(`Documents \\(${totalDocuments}\\)`, 'i')),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(`Issues \\(${totalDiscrepancies}\\)`, 'i')),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/Validation Score/i).length).toBeGreaterThan(0);
   });
 
-  it('renders documents section with all trade documents', async () => {
+  it('renders documents tab with all trade documents', async () => {
+    const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
-    // All sections visible without tab clicks in scrollable report
+    await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
     for (const doc of mockValidationResults.documents) {
       expect(screen.getByText(doc.name)).toBeInTheDocument();
     }
   });
 
-  it('renders issues section with expected/found values', async () => {
+  it('renders issues tab with expected/found values', async () => {
+    const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
-    // Issues section is visible without tab clicks
+    await user.click(screen.getByRole('tab', { name: /Issues \(3\)/i }));
     const primaryIssue = screen.getByTestId('issue-card-issue-1');
     expect(within(primaryIssue).getByRole('heading', { name: /Amount mismatch/i })).toBeInTheDocument();
     expect(
@@ -241,9 +247,9 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
-    // Issues section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Issues/i }));
 
     expect(screen.getByRole('heading', { name: /^Provisional Findings$/i })).toBeInTheDocument();
     expect(
@@ -259,7 +265,7 @@ describe('ExporterResults', () => {
   it('renders merged analytics content in overview', async () => {
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
     expect(screen.getAllByText(`${mockValidationResults.analytics.compliance_score}%`).length).toBeGreaterThan(0);
   });
@@ -268,10 +274,10 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
     const structuredReadCards = mockValidationResults.documents.filter((doc) => doc.status === 'success');
     const warningCards = mockValidationResults.documents.filter((doc) => doc.status === 'warning');
     expect(
@@ -298,11 +304,10 @@ describe('ExporterResults', () => {
     await waitFor(() =>
       expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
     );
-    // Issues count visible in section nav
-    expect(screen.getAllByText(/Issues/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('tab', { name: /Issues \(3\)/i })).toBeInTheDocument();
 
     const user = userEvent.setup();
-    // Issues section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Issues \(3\)/i }));
     expect(screen.getAllByTestId(/issue-card-/)).toHaveLength(3);
     const noteCard = findCardByTitle(/Overall Validation Note/i);
     const totalFindingsLabel = within(noteCard).getByText(/Total findings/i);
@@ -316,8 +321,8 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
     );
 
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getByText(/Submission Readiness/i)).toBeInTheDocument();
     expect(
       within(customsPanel).getByText((_, node) => (node?.textContent ?? '').trim() === 'Hard Blockers'),
@@ -388,8 +393,8 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
     );
 
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getByText(/Submission Readiness/i)).toBeInTheDocument();
     expect(within(customsPanel).getByText(/Shared presentation truth/i)).toBeInTheDocument();
   });
@@ -459,20 +464,19 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
-    // Issues section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Issues \(1\)/i }));
     expect(screen.getByText(/No formal discrepancy cards were generated, but unresolved review findings still need operator attention/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^Review Findings$/i })).toBeInTheDocument();
-    // Review finding cards now render in both Operator Next Actions and Issues sections
-    expect(screen.getAllByText(/Current state/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Expected state/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Why it matters/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Evidence \/ basis/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/How to fix/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Current state/i)).toBeInTheDocument();
+    expect(screen.getByText(/Expected state/i)).toBeInTheDocument();
+    expect(screen.getByText(/Why it matters/i)).toBeInTheDocument();
+    expect(screen.getByText(/Evidence \/ basis/i)).toBeInTheDocument();
+    expect(screen.getByText(/How to fix/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Source packing list does not clearly show a document date\./i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Source basis: Source document content review/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Source basis: Source document content review/i)).toBeInTheDocument();
   });
 
   it('reuses structured review-finding content in overview and customs action surfaces', async () => {
@@ -544,8 +548,8 @@ describe('ExporterResults', () => {
     );
     expect(screen.queryByRole('heading', { name: /What To Do Next/i })).toBeNull();
 
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getByText(/Presentation Reviews/i)).toBeInTheDocument();
     expect(within(customsPanel).getByText(/Open review items that still need operator attention before clean presentation/i)).toBeInTheDocument();
   });
@@ -672,7 +676,7 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
     expect(screen.getByText(/85% workflow confidence/i)).toBeInTheDocument();
@@ -769,10 +773,10 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
     const lcCard = findCardByTitle(/^LC\.pdf$/i);
     await user.click(within(lcCard).getByRole('button', { name: /View Details/i }));
 
@@ -806,10 +810,10 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
     const lcCard = findCardByTitle(/^LC\.pdf$/i);
     expect(within(lcCard).getByText(/Key Dates/i)).toBeInTheDocument();
     expect(within(lcCard).getByText('2026-10-15')).toBeInTheDocument();
@@ -838,7 +842,7 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
     );
 
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
     expect(
       screen.getByText(/Field 47A references additional conditions, but no detailed clause text was extracted/i),
     ).toBeInTheDocument();
@@ -987,8 +991,7 @@ describe('ExporterResults', () => {
     expect(
       screen.getByText(/No blocking documentary issues\. 1 advisory alert remains visible separately\./i),
     ).toBeInTheDocument();
-    // Issues count appears in section nav (label + badge)
-    expect(screen.getAllByText(/Issues/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Issues \(1\)/i)).toBeInTheDocument();
   });
 
   it('uses LC-required statement wording in the overview action engine and bank verdict card', async () => {
@@ -1184,8 +1187,8 @@ describe('ExporterResults', () => {
       ).toBeInTheDocument(),
     );
 
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getByText(/Contract readiness evidence/i)).toBeInTheDocument();
     expect(within(customsPanel).getByText(/Clean presentation remains blocked by compiled LC requirements/i)).toBeInTheDocument();
     expect(within(customsPanel).getAllByText(/LC-required wording missing from Beneficiary Certificate/i).length).toBeGreaterThan(0);
@@ -1205,8 +1208,8 @@ describe('ExporterResults', () => {
     await waitFor(() =>
       expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
     );
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).queryByRole('button', { name: /Submit to Bank/i })).toBeNull();
   });
 
@@ -1248,8 +1251,8 @@ describe('ExporterResults', () => {
     await waitFor(() =>
       expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
     );
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getByText(/Generate the customs pack/i)).toBeInTheDocument();
     expect(within(customsPanel).getByRole('button', { name: /Generate Pack Now/i })).toBeInTheDocument();
     await waitFor(() =>
@@ -1432,8 +1435,8 @@ describe('ExporterResults', () => {
       screen.queryByText(/Clean presentation still needs review because checklist items are unresolved/i),
     ).toBeNull();
 
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     await waitFor(() =>
       expect(within(customsPanel).getByRole('button', { name: /Submit to Bank/i })).toBeInTheDocument(),
     );
@@ -1503,8 +1506,8 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
     );
 
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     let submitButton: HTMLElement | null = null;
     await waitFor(() =>
       expect(within(customsPanel).getAllByRole('button', { name: /Submit to Bank/i }).length).toBeGreaterThan(0),
@@ -1717,8 +1720,8 @@ describe('ExporterResults', () => {
       screen.queryByText(/Clean presentation still needs review because checklist items are unresolved/i),
     ).toBeNull();
 
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     expect(within(customsPanel).getByText(/Generate the customs pack/i)).toBeInTheDocument();
     expect(within(customsPanel).queryByText(/Checklist review is still open/i)).toBeNull();
     expect(within(customsPanel).queryByText(/^Review needed$/i)).toBeNull();
@@ -1782,8 +1785,8 @@ describe('ExporterResults', () => {
       expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
     );
 
-    // Customs section visible in scrollable report (no tab click needed)
-    const customsPanel = screen.getByTestId?.('section-customs') ?? document.getElementById('section-customs') ?? document.body;
+    await user.click(screen.getByRole('tab', { name: /Customs Pack/i }));
+    const customsPanel = screen.getByRole('tabpanel', { name: /customs/i });
     await waitFor(() =>
       expect(within(customsPanel).getByText(/Monitor bank review with HSBC Bank/i)).toBeInTheDocument(),
     );
@@ -1853,13 +1856,13 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getAllByText(/Review needed/i).length).toBeGreaterThan(0),
+      expect(screen.getByText(/Review needed/i)).toBeInTheDocument(),
     );
 
     expect(screen.queryByText(/READY TO SUBMIT/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Issues/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('tab', { name: /Issues \(1\)/i })).toBeInTheDocument();
 
-    // Issues section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Issues \(1\)/i }));
     expect(screen.getByText(/No formal discrepancy cards were generated, but unresolved review findings still need operator attention/i)).toBeInTheDocument();
     expect(screen.queryByText(/No documentary discrepancies, review findings, or compliance alerts are open for this run/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Complete review for Commercial Invoice/i).length).toBeGreaterThan(0);
@@ -1874,15 +1877,15 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
 
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
     expect(
       screen.getByText(structuredOnly.documents[0]?.name ?? 'Letter of Credit'),
     ).toBeInTheDocument();
 
-    // Issues section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Issues/i }));
     expect(screen.getAllByText(structuredOnly.issues[0]?.title ?? 'Review Required').length).toBeGreaterThan(0);
   });
 
@@ -1904,7 +1907,7 @@ describe('ExporterResults', () => {
 
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
-    // Issues section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Issues/i }));
     expect(screen.getByText(/No documentary discrepancies, review findings, or compliance alerts are open for this run/i)).toBeInTheDocument();
   });
 
@@ -1941,7 +1944,7 @@ describe('ExporterResults', () => {
 
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
 
     const insuranceCard = findCardByTitle(/Insurance\.pdf/i);
     expect(within(insuranceCard).getByText(/Extra upload/i)).toBeInTheDocument();
@@ -2011,7 +2014,7 @@ describe('ExporterResults', () => {
 
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
     expect(screen.getAllByText(/Source invoice does not show an invoice date/i).length).toBeGreaterThan(0);
@@ -2106,7 +2109,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
     expect(screen.getByRole('heading', { name: /Export LC Extraction Resolution/i })).toBeInTheDocument();
@@ -2125,7 +2128,7 @@ describe('ExporterResults', () => {
     expect(screen.getByText(/Opens later: Issues/i)).toBeInTheDocument();
     expect(screen.getByText(/Opens later: Customs Pack/i)).toBeInTheDocument();
 
-    // Scrollable report: all sections visible, no tab click needed
+    await user.click(screen.getByRole('tab', { name: /Overview/i }));
     expect(screen.getByRole('heading', { name: /Current Stage: Extraction Resolution/i })).toBeInTheDocument();
     expect(screen.getByText(/LC-required documents, uploaded files, and provisional requirement coverage/i)).toBeInTheDocument();
     expect(screen.getByText(/Checklist coverage is still provisional/i)).toBeInTheDocument();
@@ -2133,7 +2136,7 @@ describe('ExporterResults', () => {
       screen.getByText(/Use the Documents tab to review source evidence and confirm only the unresolved fields\./i),
     ).toBeInTheDocument();
 
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
 
     const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
     expect(within(invoiceCard).getAllByText(/Needs field confirmation/i).length).toBeGreaterThan(0);
@@ -2173,7 +2176,7 @@ describe('ExporterResults', () => {
     render(renderWithProviders(<ExporterResults initialTab="overview" />));
 
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Overview/i })).toHaveAttribute('aria-selected', 'true'),
     );
     expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument();
   });
@@ -2193,7 +2196,7 @@ describe('ExporterResults', () => {
     render(renderWithProviders(<ExporterResults initialTab="discrepancies" />));
 
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
     expect(screen.queryByRole('tab', { name: /Issues/i })).toBeNull();
     expect(screen.getByRole('heading', { name: /Validation Results Unlock After Extraction Resolution/i })).toBeInTheDocument();
@@ -2266,7 +2269,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults jobId="job-123" />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
     const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
@@ -2367,7 +2370,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults jobId="job-123" />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
     const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
@@ -2448,7 +2451,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults jobId="job-123" />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
     const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
@@ -2522,7 +2525,7 @@ describe('ExporterResults', () => {
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults jobId="job-123" />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByRole('tab', { name: /Documents/i })).toHaveAttribute('aria-selected', 'true'),
     );
 
     const invoiceCard = findCardByTitle(/^Invoice\.pdf$/i);
@@ -2598,7 +2601,7 @@ describe('ExporterResults', () => {
 
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
     expect(screen.getAllByText(/Extraction needs review/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/LC requirement match/i).length).toBeGreaterThan(0);
   });
@@ -2613,7 +2616,7 @@ describe('ExporterResults', () => {
 
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
 
     expect(screen.getAllByText(/What we read from this file/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/LC requirement match/i).length).toBeGreaterThan(0);
@@ -2639,7 +2642,7 @@ describe('ExporterResults', () => {
 
     const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents/i }));
     expect(screen.getAllByText(/Structured read complete/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Covers LC requirement/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/could not be fully parsed/i)).not.toBeInTheDocument();

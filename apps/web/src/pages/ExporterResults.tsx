@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { ExporterResultsReport } from "./exporter/results/ExporterResultsReport";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1092,6 +1092,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     await refreshResults('manual');
   }, [refreshResults, validationSessionId]);
 
+  const [activeTab, setActiveTab] = useState<ResultsTab>(initialTab ?? tabParam ?? DEFAULT_TAB);
   const [showBankSelector, setShowBankSelector] = useState(false);
   const [showManifestPreview, setShowManifestPreview] = useState(false);
   const [selectedBankId, setSelectedBankId] = useState<string>("");
@@ -1108,26 +1109,31 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const hasAutoDirectedExtractionStageRef = useRef(false);
   const submissionHistoryRef = useRef<HTMLDivElement | null>(null);
   
-  // Scroll to the relevant section on mount when initialTab or tabParam is provided
-  const scrollTargetRef = useRef(initialTab ?? tabParam ?? null);
   useEffect(() => {
-    const target = scrollTargetRef.current;
-    if (!target || target === 'overview') return;
-    const sectionMap: Record<string, string> = {
-      overview: 'section-checklist',
-      documents: 'section-documents',
-      discrepancies: 'section-issues',
-      customs: 'section-customs',
-    };
-    const sectionId = sectionMap[target];
-    if (sectionId) {
-      // Small delay to let the DOM render
-      const timer = setTimeout(() => {
-        document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 300);
-      return () => clearTimeout(timer);
+    if (!initialTab) {
+      return;
     }
-  }, []);
+    if (initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, activeTab]);
+
+  useEffect(() => {
+    if (embedded) return;
+    if (!initialTab && tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [embedded, initialTab, tabParam, activeTab]);
+
+  const handleActiveTabChange = (next: ResultsTab) => {
+    setActiveTab(next);
+    onTabChange?.(next);
+    if (!embedded) {
+      const params = new URLSearchParams(searchParams);
+      params.set("tab", next);
+      setSearchParams(params, { replace: true });
+    }
+  };
 
   // Feature flags
   const enableBankSubmission = isExporterFeatureEnabled("exporter_bank_submission");
@@ -1576,10 +1582,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     null;
   const workflowStage = resultData?.workflowStage ?? null;
   const isExtractionResolutionStage = workflowStage?.stage === 'extraction_resolution';
-  // scrollToSection helper for internal navigation (customs actions, etc.)
-  const scrollToSection = useCallback((sectionId: string) => {
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
+  const visibleActiveTab: ResultsTab =
+    isExtractionResolutionStage && (activeTab === 'discrepancies' || activeTab === 'customs')
+      ? 'documents'
+      : activeTab;
   const pageTitle = isExtractionResolutionStage
     ? 'Export LC Extraction Resolution'
     : 'Export LC Validation Results';
@@ -1590,13 +1596,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const extractionResolutionSummary = useMemo(() => {
     // Trust the backend workflow_stage as the single source of truth.
     // If the backend says we're past extraction_resolution, do NOT override
-    // that based on stale per-document required flags. The backend's
-    // unresolved_documents/unresolved_fields are authoritative.
+    // that based on stale per-document required flags.
     const backendStage = workflowStage?.stage;
     const isExtractionStage = backendStage === 'extraction_resolution';
 
     if (!isExtractionStage) {
-      // Backend says extraction is resolved → no banner, no count
       return {
         required: false,
         documents: [] as typeof documents,
@@ -1633,16 +1637,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     if (embedded || initialTab || tabParam || !isExtractionResolutionStage) {
       return;
     }
-    if (hasAutoDirectedExtractionStageRef.current) {
+    if (hasAutoDirectedExtractionStageRef.current || activeTab !== DEFAULT_TAB) {
       return;
     }
     hasAutoDirectedExtractionStageRef.current = true;
-    setTimeout(() => scrollToSection('section-documents'), 400);
+    handleActiveTabChange("documents");
   }, [
+    activeTab,
     embedded,
+    handleActiveTabChange,
     initialTab,
     isExtractionResolutionStage,
-    scrollToSection,
     tabParam,
   ]);
 
@@ -3757,11 +3762,66 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
         </div>
 
         {/* Detailed Results */}
-        <ExporterResultsReport
-          isExtractionResolutionStage={isExtractionResolutionStage}
-          totalDocuments={totalDocuments}
-          totalDiscrepancies={totalDiscrepancies}
-          checklistContent={<>
+        <Tabs
+          value={visibleActiveTab}
+          onValueChange={(value) => {
+            if (isResultsTab(value)) {
+              handleActiveTabChange(value);
+            }
+          }}
+          className="space-y-6"
+        >
+          <TabsList className={cn("grid w-full", isExtractionResolutionStage ? "grid-cols-2" : "grid-cols-4")}>
+            {isExtractionResolutionStage ? (
+              <>
+                <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+              </>
+            ) : (
+              <>
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
+                <TabsTrigger value="discrepancies" className="relative">
+                  Issues ({totalDiscrepancies})
+                  {totalDiscrepancies > 0 && (
+                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="customs">Customs Pack</TabsTrigger>
+              </>
+            )}
+          </TabsList>
+
+          {isExtractionResolutionStage && (
+            <Card className="border-amber-500/30 bg-amber-500/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">
+                  Validation Results Unlock After Extraction Resolution
+                </CardTitle>
+                <CardDescription>
+                  Focus on the Documents tab first. Final-validation workspaces stay closed until unresolved fields are confirmed from source evidence.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline" className="border-amber-500/30 text-amber-700 bg-amber-500/5">
+                    Active now: Documents
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
+                    Also available: Overview
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
+                    Opens later: Issues
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
+                    Opens later: Customs Pack
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <TabsContent value="overview" className="space-y-6">
             {/* Contract Validation Warnings (Output-First Layer) */}
             {hasContractWarnings && (
               <Alert variant={contractWarningsByLevel.errors.length > 0 ? "destructive" : "default"} className="border-amber-500/50 bg-amber-500/5">
@@ -4074,8 +4134,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </Card>
             </div>
 
-          </>}
-          customsContent={<>
+          </TabsContent>
+          <TabsContent value="customs" className="space-y-6">
             <Card
               className={cn(
                 "shadow-soft border",
@@ -4113,12 +4173,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {customsCurrentStep.action === 'documents' && (
-                    <Button variant="outline" onClick={() => scrollToSection('section-documents')}>
+                    <Button variant="outline" onClick={() => setActiveTab('documents')}>
                       Open Documents
                     </Button>
                   )}
                   {customsCurrentStep.action === 'overview' && (
-                    <Button variant="outline" onClick={() => scrollToSection('section-checklist')}>
+                    <Button variant="outline" onClick={() => setActiveTab('overview')}>
                       Review Checklist
                     </Button>
                   )}
@@ -4141,7 +4201,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     </Button>
                   )}
                   {customsCurrentStep.action === 'discrepancies' && (
-                    <Button variant="outline" onClick={() => scrollToSection('section-issues')}>
+                    <Button variant="outline" onClick={() => setActiveTab('discrepancies')}>
                       Review Open Items
                     </Button>
                   )}
@@ -4440,8 +4500,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 )}
               </CardContent>
             </Card>
-          </>}
-          documentsContent={<>
+          </TabsContent>
+
+          <TabsContent value="documents" className="space-y-4">
             {sortedDocuments.map((document) => {
               const fieldEntries = Object.entries(document.extractedFields || {});
               const hasFieldEntries = fieldEntries.length > 0;
@@ -4705,8 +4766,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </Card>
               );
             })}
-          </>}
-          issuesContent={
+          </TabsContent>
+
+          <TabsContent value="discrepancies" className="space-y-4">
             <IssuesTab
               hasIssueCards={hasIssueCards}
               issueCards={issueCards}
@@ -4724,8 +4786,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               onDraftEmail={handleDraftEmail}
               workflowStage={workflowStage}
             />
-          }
-        />
+          </TabsContent>
+        </Tabs>
         
         {/* Document Details Drawer */}
         <DocumentDetailsDrawer

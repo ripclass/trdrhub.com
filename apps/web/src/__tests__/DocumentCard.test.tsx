@@ -76,15 +76,16 @@ vi.mock('@/api/exporter', () => ({
 
 describe('Document cards', () => {
   it('renders per-document metadata and issue counts', async () => {
+    const user = userEvent.setup();
     render(renderWithProviders(<ExporterResults />));
     await waitFor(() =>
-      expect(screen.getByText(/Required Documents Checklist/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Validation Timeline/i)).toBeInTheDocument(),
     );
-    // Documents section visible in scrollable report (no tab click needed)
+    await user.click(screen.getByRole('tab', { name: /Documents \(6\)/i }));
 
     const invoiceCard = screen.getByText('Invoice.pdf');
     expect(invoiceCard).toBeInTheDocument();
-    expect(screen.getAllByText(/Commercial Invoice/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Commercial Invoice/i)).toBeInTheDocument();
     expect(screen.getAllByText(/LC requirement match/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Current review status/i).length).toBeGreaterThan(0);
   });
