@@ -157,14 +157,16 @@ class Settings(BaseSettings):
     # AI/LLM Configuration
     AI_ENRICHMENT: bool = False  # Enable AI enrichment in validation pipeline
     # Three-pass validation: tiered AI (L1→L2→L3) + deterministic rules + Opus veto.
-    # When False (default), validate_document_with_pipeline behaves like the
-    # legacy validate_document_async (deterministic-only). Turn ON to enable
-    # the AI pre-pass and Opus veto layer.
-    VALIDATION_TIERED_AI_ENABLED: bool = False
-    # Opus veto: when enabled, the final pass calls Claude Opus to review and
-    # potentially override AI + deterministic findings. Independently
-    # toggleable so the AI pre-pass can run without veto.
-    VALIDATION_OPUS_VETO_ENABLED: bool = False
+    # This is the active architecture — AI layers judge findings first, then
+    # deterministic rules run, then Opus (L3) has veto authority over the
+    # combined set. Turn OFF via env var to fall back to the legacy
+    # deterministic-only path (validate_document_async).
+    VALIDATION_TIERED_AI_ENABLED: bool = True
+    # Opus veto: final pass calls Claude Opus 4.6 to confirm, drop, modify,
+    # or add findings from the AI + deterministic passes. Independently
+    # toggleable so the AI pre-pass can run without veto if Opus cost is
+    # a concern.
+    VALIDATION_OPUS_VETO_ENABLED: bool = True
     # Hard timeout for the tiered AI validation pass (seconds).
     VALIDATION_AI_PASS_TIMEOUT_SECONDS: int = 60
     # Hard timeout for the Opus veto pass (seconds).

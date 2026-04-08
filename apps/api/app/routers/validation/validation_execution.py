@@ -578,10 +578,22 @@ def _should_defer_final_validation(documents: Any) -> Dict[str, Any]:
         documents if isinstance(documents, list) else [],
         validation_status="review",
     )
+    stage_is_extraction_resolution = (
+        str(workflow_stage.get("stage") or "").strip().lower() == "extraction_resolution"
+    )
+    # When the tiered AI pipeline is enabled, the AI layers are the judge of
+    # missing / invalid fields — do NOT skip validation just because the
+    # upstream preparser flagged unresolved critical fields. The workflow stage
+    # is still reported for UI purposes (presentation_contract.py), but the
+    # execution path runs to completion so tiered AI + deterministic + Opus
+    # veto all get a chance to produce findings.
+    from app.config import settings as _app_settings
+    bypass_gate = bool(getattr(_app_settings, "VALIDATION_TIERED_AI_ENABLED", False))
+    defer = stage_is_extraction_resolution and not bypass_gate
     return {
-        "defer": str(workflow_stage.get("stage") or "").strip().lower()
-        == "extraction_resolution",
+        "defer": defer,
         "workflow_stage": workflow_stage,
+        "bypass_reason": "tiered_ai_enabled" if (stage_is_extraction_resolution and bypass_gate) else None,
     }
 
 
@@ -981,6 +993,12 @@ async def execute_validation_pipeline(
             payload.get("documents") or extracted_context.get("documents") or []
         )
         defer_final_validation = bool(workflow_stage_hint.get("defer"))
+        bypass_reason = workflow_stage_hint.get("bypass_reason")
+        if bypass_reason:
+            logger.info(
+                "Extraction_resolution stage detected but bypassing defer gate (%s) — tiered AI pipeline will run and judge missing fields itself.",
+                bypass_reason,
+            )
         if defer_final_validation:
             db_rule_issues = []
             db_rules_debug = {
