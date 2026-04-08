@@ -112,11 +112,16 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   // Detect stale onboarding status: when user changes (login/logout/switch),
   // there's a render frame before the useEffect fires where user is set but
   // status still belongs to the previous user. Without this, the route guard
-  // may redirect based on null/stale status instead of showing a loading state.
-  const statusMatchesUser =
-    !user ||
-    (status !== null && status.user_id === user.id)
-  const effectivelyLoading = isLoading || (!!user && !statusMatchesUser)
+  // may redirect based on a stale status instead of showing a loading state.
+  //
+  // Important: only treat status as stale when a NON-NULL status exists for a
+  // different user. If status is null (e.g. because the onboarding API failed
+  // or timed out), we are done loading — route guards should fall through and
+  // let the user reach the page rather than block them on a loading screen
+  // forever.
+  const statusIsStaleForCurrentUser =
+    !!user && status !== null && status.user_id !== user.id
+  const effectivelyLoading = isLoading || statusIsStaleForCurrentUser
 
   const value: OnboardingContextType = {
     status,
