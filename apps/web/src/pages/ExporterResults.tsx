@@ -1368,7 +1368,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           description:
             verification === 'operator_rejected'
               ? `${humanizeLabel(payload.fieldName)} remains unresolved and will stay in extraction resolution until a source-backed value is confirmed.`
-              : `${humanizeLabel(payload.fieldName)} was saved as an operator-confirmed value.`,
+              : `${humanizeLabel(payload.fieldName)} was saved. Existing discrepancy findings are from the original validation run — re-validate to refresh them.`,
         });
       } catch (error: any) {
         toast({
@@ -1588,15 +1588,31 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     : 'Review the results of your latest document validation';
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
   const extractionResolutionSummary = useMemo(() => {
+    // Trust the backend workflow_stage as the single source of truth.
+    // If the backend says we're past extraction_resolution, do NOT override
+    // that based on stale per-document required flags. The backend's
+    // unresolved_documents/unresolved_fields are authoritative.
+    const backendStage = workflowStage?.stage;
+    const isExtractionStage = backendStage === 'extraction_resolution';
+
+    if (!isExtractionStage) {
+      // Backend says extraction is resolved → no banner, no count
+      return {
+        required: false,
+        documents: [] as typeof documents,
+        documentCount: 0,
+        unresolvedCount: 0,
+        summary: null as string | null,
+      };
+    }
+
     const docsNeedingResolution = documents.filter((doc) => doc.extractionResolution?.required);
-    const unresolvedCount = docsNeedingResolution.reduce(
+    const fallbackUnresolvedCount = docsNeedingResolution.reduce(
       (count, doc) => count + (doc.extractionResolution?.unresolvedCount ?? 0),
       0,
     );
     return {
-      required:
-        workflowStage?.stage === 'extraction_resolution' ||
-        docsNeedingResolution.length > 0,
+      required: true,
       documents: docsNeedingResolution,
       documentCount:
         typeof workflowStage?.unresolved_documents === 'number'
@@ -1605,7 +1621,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       unresolvedCount:
         typeof workflowStage?.unresolved_fields === 'number'
           ? workflowStage.unresolved_fields
-          : unresolvedCount,
+          : fallbackUnresolvedCount,
       summary:
         typeof backendWorkflowStage?.summary === 'string' && backendWorkflowStage.summary.trim().length > 0
           ? backendWorkflowStage.summary

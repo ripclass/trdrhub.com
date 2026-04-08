@@ -805,7 +805,10 @@ export function DocumentDetailsDrawer({
     isFactResolutionBackedDocument(resolvedDocument.documentType || resolvedDocument.typeKey || resolvedDocument.type) &&
     Array.isArray(resolvedDocument.resolutionItems);
   const resolvableFields = useMemo(() => {
-    if (hasQueueBackedResolution) {
+    // When the backend provides a non-empty fact-resolution queue, trust it
+    // as the authoritative list of fields to confirm. The backend is telling
+    // us exactly which fields need operator action — don't add extras.
+    if (hasQueueBackedResolution && (resolvedDocument.resolutionItems?.length ?? 0) > 0) {
       return (resolvedDocument.resolutionItems || []).map((item) => ({
         key: normalizeReviewFieldKey(item.fieldName),
         currentValue:
@@ -819,6 +822,10 @@ export function DocumentDetailsDrawer({
       }));
     }
 
+    // Otherwise (no queue, or queue is empty) fall through to the catch-all
+    // logic. An empty queue with still-model_suggested fields in field_details
+    // means the backend auto-resolved what it could confidently but left some
+    // fields as suggestions the user may want to confirm manually.
     const candidates = new Map<string, { key: string; currentValue: string; label: string; verification: string }>();
     const addCandidate = (fieldName: string, verification = "not_found") => {
       const normalized = resolvePreferredOverrideFieldKey(
@@ -828,6 +835,7 @@ export function DocumentDetailsDrawer({
         mergedFieldDetails,
       );
       if (!normalized) return;
+      if (candidates.has(normalized)) return;
       const detail = mergedFieldDetails?.[normalized];
       const currentValueRaw =
         detail?.value ??
@@ -852,6 +860,9 @@ export function DocumentDetailsDrawer({
         addCandidate(fieldName, String(state || "not_found"));
       }
     });
+    // Surface any field_details entry with verification other than
+    // "confirmed" or "operator_confirmed". This is the key fallback that
+    // exposes model-suggested fields when the backend queue is empty.
     Object.entries(mergedFieldDetails || {}).forEach(([fieldName, detail]) => {
       const verification = normalizeReviewFieldKey((detail as Record<string, any>)?.verification);
       if (verification && !["confirmed", "operator_confirmed"].includes(verification)) {
@@ -866,8 +877,12 @@ export function DocumentDetailsDrawer({
     hasQueueBackedResolution,
     mergedFieldDetails,
     reasonContext,
+    resolvedDocument.documentType,
+    resolvedDocument.extractionResolution,
     resolvedDocument.missingRequiredFields,
     resolvedDocument.resolutionItems,
+    resolvedDocument.type,
+    resolvedDocument.typeKey,
   ]);
 
   const activeResolutionField =
@@ -1136,6 +1151,7 @@ export function DocumentDetailsDrawer({
                 resolvedDocument.status === "error" &&
                   "bg-destructive/10 text-destructive border-destructive/20"
               )}
+              title="Status is from the original validation run. Field value updates save immediately but do not refresh this status until you re-validate."
             >
               {resolvedDocument.status === "success"
                 ? "Verified"
@@ -1144,8 +1160,12 @@ export function DocumentDetailsDrawer({
                 : "Issues"}
             </Badge>
             {resolvedDocument.issuesCount > 0 && (
-              <Badge variant="outline" className="border-warning/30 text-warning">
-                {resolvedDocument.issuesCount} issue{resolvedDocument.issuesCount > 1 ? "s" : ""}
+              <Badge
+                variant="outline"
+                className="border-warning/30 text-warning"
+                title="Discrepancy findings from the original validation run. Confirming field values does not refresh this count — re-validate to update."
+              >
+                {resolvedDocument.issuesCount} discrepancy finding{resolvedDocument.issuesCount > 1 ? "s" : ""}
               </Badge>
             )}
             {extractionModeLabel && (
