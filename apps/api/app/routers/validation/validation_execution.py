@@ -1285,9 +1285,14 @@ async def execute_validation_pipeline(
             except Exception as rule_watch_err:
                 rule_watch_debug = {"error": str(rule_watch_err)}
 
+            # Three-pass validation pipeline: tiered AI → deterministic rules → Opus veto.
+            # When VALIDATION_TIERED_AI_ENABLED and VALIDATION_OPUS_VETO_ENABLED are both
+            # off in settings, this delegates to the legacy validate_document_async
+            # (deterministic-only) so behavior is unchanged.
+            from app.services.validation.tiered_validation import validate_document_with_pipeline
             db_rule_issues, db_rules_timed_out = await _await_with_timeout(
                 "DB rules execution",
-                validate_document_async(
+                validate_document_with_pipeline(
                     document_data=db_rule_payload,
                     document_type=primary_doc_type,
                 ),

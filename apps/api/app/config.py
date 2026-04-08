@@ -156,6 +156,19 @@ class Settings(BaseSettings):
     
     # AI/LLM Configuration
     AI_ENRICHMENT: bool = False  # Enable AI enrichment in validation pipeline
+    # Three-pass validation: tiered AI (L1→L2→L3) + deterministic rules + Opus veto.
+    # When False (default), validate_document_with_pipeline behaves like the
+    # legacy validate_document_async (deterministic-only). Turn ON to enable
+    # the AI pre-pass and Opus veto layer.
+    VALIDATION_TIERED_AI_ENABLED: bool = False
+    # Opus veto: when enabled, the final pass calls Claude Opus to review and
+    # potentially override AI + deterministic findings. Independently
+    # toggleable so the AI pre-pass can run without veto.
+    VALIDATION_OPUS_VETO_ENABLED: bool = False
+    # Hard timeout for the tiered AI validation pass (seconds).
+    VALIDATION_AI_PASS_TIMEOUT_SECONDS: int = 60
+    # Hard timeout for the Opus veto pass (seconds).
+    VALIDATION_VETO_TIMEOUT_SECONDS: int = 90
     LLM_PROVIDER: str = "openrouter"  # openrouter|openai|anthropic|gemini
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
