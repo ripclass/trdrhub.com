@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -148,6 +149,71 @@ function readAliasedValue(extracted: Record<string, any>, fieldName: string): an
   return canonical;
 }
 
+// Field names whose values are typically long-form text (paragraphs, lists,
+// free-text rule descriptions). These render in a textarea instead of a
+// single-line input AND span both columns of the grid so the user can
+// actually read what was extracted.
+const LONG_FORM_FIELD_NAMES = new Set<string>([
+  'goods_description',
+  'description_of_goods',
+  'documents_required',
+  'additional_conditions',
+  'special_conditions',
+  'attestation_text',
+  'inspection_result',
+  'quality_finding',
+  'analysis_result',
+  'marks_and_numbers',
+  'payment_terms',
+  'instructions_to_paying_bank',
+  'risks_covered',
+  'voyage_details',
+  'transport_mode_chain',
+  'charges',
+]);
+
+// Heuristic: even if the field name isn't in the set above, if the AI
+// returned a value with a newline OR a length > 80 chars, render it as
+// a textarea so the user can actually read it.
+function shouldRenderAsTextarea(fieldName: string, value: string): boolean {
+  if (LONG_FORM_FIELD_NAMES.has(fieldName)) return true;
+  if (!value) return false;
+  if (value.length > 80) return true;
+  if (value.includes('\n')) return true;
+  return false;
+}
+
+// Pretty-format a value for display. Lists / objects come back from the
+// extractor as Python repr strings or JSON; turn them into one-per-line
+// human-readable text.
+function prettyFormatLongValue(value: string): string {
+  if (!value) return '';
+  // Python list repr: "['item one', 'item two']" -> "item one\nitem two"
+  if (value.startsWith("['") && value.endsWith("']")) {
+    try {
+      // Convert single-quoted Python list to JSON array
+      const jsonish = value
+        .replace(/^\['/, '["')
+        .replace(/'\]$/, '"]')
+        .replace(/', '/g, '", "');
+      const arr = JSON.parse(jsonish);
+      if (Array.isArray(arr)) return arr.map((s, i) => `${i + 1}. ${s}`).join('\n');
+    } catch {
+      /* fall through */
+    }
+  }
+  // JSON array
+  if (value.startsWith('[') && value.endsWith(']')) {
+    try {
+      const arr = JSON.parse(value);
+      if (Array.isArray(arr)) return arr.map((s, i) => `${i + 1}. ${s}`).join('\n');
+    } catch {
+      /* fall through */
+    }
+  }
+  return value;
+}
+
 function buildDocSectionState(
   doc: ExtractionReadyDocument,
   requiredFields: string[],
@@ -159,7 +225,13 @@ function buildDocSectionState(
 
   const fields: FieldState[] = requiredFields.map((fieldName) => {
     const rawValue = readAliasedValue(extracted, fieldName);
-    const currentValue = coerceToString(rawValue);
+    const stringified = coerceToString(rawValue);
+    // Long-form fields (goods_description, documents_required, etc.) come
+    // back as Python list reprs or paragraphs. Pretty-print them so the
+    // textarea is actually readable.
+    const currentValue = LONG_FORM_FIELD_NAMES.has(fieldName)
+      ? prettyFormatLongValue(stringified)
+      : stringified;
     return {
       name: fieldName,
       label: humanizeFieldName(fieldName),
@@ -229,7 +301,8 @@ export function ExtractionReview({
   const totalFilled = totalRequired - totalEmpty;
 
   const handleFieldChange =
-    (docIdx: number, fieldIdx: number) => (e: ChangeEvent<HTMLInputElement>) => {
+    (docIdx: number, fieldIdx: number) =>
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const nextValue = e.target.value;
       setDocSections((prev) => {
         const next = [...prev];
@@ -421,35 +494,61 @@ export function ExtractionReview({
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {section.fields.map((field, fieldIdx) => (
-                    <div key={`${section.docKey}-${field.name}-${fieldIdx}`} className="space-y-1">
-                      <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
-                        {field.label}
-                        {field.isEmpty && (
-                          <Badge variant="outline" className="text-amber-600 border-amber-500/40 text-[10px]">
-                            Missing
-                          </Badge>
+                  {section.fields.map((field, fieldIdx) => {
+                    const isLongForm = shouldRenderAsTextarea(field.name, field.currentValue);
+                    // Long fields span both columns so the textarea is wide
+                    // enough to actually read clauses/lists.
+                    const wrapperClass = isLongForm
+                      ? 'space-y-1 md:col-span-2'
+                      : 'space-y-1';
+                    // Roughly size the textarea to the content — clamped to
+                    // a sane min/max so it doesn't dwarf the page.
+                    const contentLineCount = (field.currentValue.match(/\n/g)?.length ?? 0) + 1;
+                    const textareaRows = Math.min(Math.max(contentLineCount + 1, 4), 16);
+                    return (
+                      <div key={`${section.docKey}-${field.name}-${fieldIdx}`} className={wrapperClass}>
+                        <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
+                          {field.label}
+                          {field.isEmpty && (
+                            <Badge variant="outline" className="text-amber-600 border-amber-500/40 text-[10px]">
+                              Missing
+                            </Badge>
+                          )}
+                          {!field.isEmpty && !field.isConfirmed && (
+                            <Badge variant="outline" className="text-slate-500 border-slate-300 text-[10px]">
+                              AI extracted
+                            </Badge>
+                          )}
+                          {field.isConfirmed && (
+                            <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">
+                              You edited
+                            </Badge>
+                          )}
+                        </Label>
+                        {isLongForm ? (
+                          <Textarea
+                            id={`${section.docKey}-${field.name}`}
+                            value={field.currentValue}
+                            onChange={handleFieldChange(docIdx, fieldIdx)}
+                            placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
+                            rows={textareaRows}
+                            className={
+                              (field.isEmpty ? 'border-amber-500/40 ' : '') +
+                              'font-mono text-sm leading-relaxed resize-y'
+                            }
+                          />
+                        ) : (
+                          <Input
+                            id={`${section.docKey}-${field.name}`}
+                            value={field.currentValue}
+                            onChange={handleFieldChange(docIdx, fieldIdx)}
+                            placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
+                            className={field.isEmpty ? 'border-amber-500/40' : undefined}
+                          />
                         )}
-                        {!field.isEmpty && !field.isConfirmed && (
-                          <Badge variant="outline" className="text-slate-500 border-slate-300 text-[10px]">
-                            AI extracted
-                          </Badge>
-                        )}
-                        {field.isConfirmed && (
-                          <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">
-                            You edited
-                          </Badge>
-                        )}
-                      </Label>
-                      <Input
-                        id={`${section.docKey}-${field.name}`}
-                        value={field.currentValue}
-                        onChange={handleFieldChange(docIdx, fieldIdx)}
-                        placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
-                        className={field.isEmpty ? 'border-amber-500/40' : undefined}
-                      />
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
