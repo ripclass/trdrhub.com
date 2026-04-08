@@ -27,6 +27,13 @@ export interface ValidationRequest {
   metadata?: Record<string, any>; // Additional metadata (e.g., clientName, dateReceived)
   lcTypeOverride?: 'auto' | 'export' | 'import';
   intakeOnly?: boolean;
+  /**
+   * When true, the backend runs extraction only and stops BEFORE validation.
+   * The response will have status="extraction_ready" and include extracted
+   * documents + required_fields map. Use `useResumeValidate` to run the
+   * validation pipeline against the user-confirmed field set.
+   */
+  extractOnly?: boolean;
   mode?: 'intake' | 'lc_intake';
   /**
    * Optional client-generated UUID for SSE progress streaming. When present,
@@ -38,14 +45,50 @@ export interface ValidationRequest {
   clientRequestId?: string;
 }
 
+export interface ExtractionReadyDocument {
+  id?: string;
+  document_id?: string;
+  document_type?: string;
+  documentType?: string;
+  filename?: string;
+  name?: string;
+  extracted_fields?: Record<string, any>;
+  extractedFields?: Record<string, any>;
+  _field_details?: Record<string, any>;
+  [key: string]: any;
+}
+
+export interface ExtractionReadyResponse {
+  status: 'extraction_ready';
+  job_id?: string;
+  jobId?: string;
+  documents: ExtractionReadyDocument[];
+  lc_context?: Record<string, any>;
+  lc_type?: string;
+  required_fields?: {
+    baseline_required?: string[];
+    by_document_type?: Record<string, string[]>;
+  };
+  message?: string;
+  telemetry?: Record<string, any>;
+}
+
 export interface ValidationResponse {
   jobId?: string;
   request_id?: string;
-  status: 'created' | 'uploading' | 'processing' | 'completed' | 'failed' | 'queued' | 'error' | 'blocked' | 'resolved' | 'invalid' | 'ambiguous';
+  status: 'created' | 'uploading' | 'processing' | 'completed' | 'failed' | 'queued' | 'error' | 'blocked' | 'resolved' | 'invalid' | 'ambiguous' | 'extraction_ready';
   job_id?: string; // temporary compatibility field
   block_reason?: string;
   error?: any;
   detected_documents?: Array<{ type: string; filename?: string; document_type_resolution?: string }>;
+  // extract_only response fields
+  documents?: ExtractionReadyDocument[];
+  lc_context?: Record<string, any>;
+  lc_type?: string;
+  required_fields?: {
+    baseline_required?: string[];
+    by_document_type?: Record<string, string[]>;
+  };
   lc_detection?: {
     lc_type?: string;
     confidence?: number;
@@ -305,6 +348,9 @@ export const useValidate = () => {
       if (request.intakeOnly) {
         formData.append('intake_only', 'true');
       }
+      if (request.extractOnly) {
+        formData.append('extract_only', 'true');
+      }
       if (request.mode) {
         formData.append('mode', request.mode);
       }
@@ -451,6 +497,69 @@ export const useValidate = () => {
 
   return {
     validate,
+    isLoading,
+    error,
+    clearError: () => setError(null),
+  };
+};
+
+// =============================================================================
+// useResumeValidate — runs validation against a previously-extracted session
+// =============================================================================
+//
+// After /api/validate?extract_only=true returns an extraction_ready job_id, the
+// user reviews / confirms fields on the extraction review screen, then this
+// hook POSTs /api/validate/resume/{jobId} with their corrections. The backend
+// merges the overrides into the extracted context and runs the full validation
+// pipeline (tiered AI + deterministic rules + Opus veto).
+export interface ResumeValidateRequest {
+  jobId: string;
+  /**
+   * Map of { doc_key: { field_name: value } }. doc_key matches by document id,
+   * document_id, or filename (first match wins on the backend).
+   */
+  fieldOverrides?: Record<string, Record<string, any>>;
+  /** Optional passthrough payload (metadata, doc_type, etc). */
+  payload?: Record<string, any>;
+}
+
+export const useResumeValidate = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<ValidationError | null>(null);
+
+  const resumeValidate = useCallback(
+    async (request: ResumeValidateRequest): Promise<any> => {
+      if (!request.jobId) {
+        throw new Error('resumeValidate requires a jobId');
+      }
+      setIsLoading(true);
+      setError(null);
+      try {
+        const body = {
+          field_overrides: request.fieldOverrides || {},
+          payload: request.payload || {},
+        };
+        const response = await api.post(`/api/validate/resume/${request.jobId}`, body, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        return response.data;
+      } catch (err: any) {
+        const validationError: ValidationError = {
+          type: 'server',
+          message: err?.response?.data?.detail || err?.message || 'Resume validation failed',
+          statusCode: err?.response?.status,
+        };
+        setError(validationError);
+        throw validationError;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [],
+  );
+
+  return {
+    resumeValidate,
     isLoading,
     error,
     clearError: () => setError(null),

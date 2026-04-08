@@ -3,6 +3,7 @@
 export type ExporterSection =
   | 'overview'
   | 'upload'
+  | 'extract-review'
   | 'reviews'
   | 'documents'
   | 'issues'
@@ -14,6 +15,7 @@ export type ExporterSection =
 export const EXPORTER_SECTION_OPTIONS: ExporterSection[] = [
   'overview',
   'upload',
+  'extract-review',
   'reviews',
   'documents',
   'issues',

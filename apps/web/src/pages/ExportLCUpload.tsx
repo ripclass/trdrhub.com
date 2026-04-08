@@ -461,6 +461,18 @@ type ExportLCUploadProps = {
   draftId?: string;
   templateId?: string;
   onComplete?: (payload: { jobId: string; lcNumber: string }) => void;
+  /**
+   * Called after the extract-only request returns. The upload button now
+   * triggers extraction only; validation runs on the extraction review
+   * screen after the user confirms fields. The parent dashboard uses this
+   * callback to navigate to the review section with the extraction payload
+   * in router state.
+   */
+  onExtractionComplete?: (payload: {
+    jobId: string;
+    lcNumber: string;
+    extraction: any;
+  }) => void;
 };
 
 export default function ExportLCUpload({
@@ -468,6 +480,7 @@ export default function ExportLCUpload({
   draftId,
   templateId,
   onComplete,
+  onExtractionComplete,
 }: ExportLCUploadProps = {}) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [lcIntake, setLcIntake] = useState<LCIntakeState>({ status: "idle", file: null });
@@ -1231,7 +1244,9 @@ export default function ExportLCUpload({
       console.log('⚙️  LC Type Override:', lcTypeOverride);
       console.log('🔗 Client Request ID:', requestId);
 
-      // Validate using V1 API
+      // Run extraction only — validation happens on the extraction review
+      // screen after the user confirms / corrects fields. This is the new
+      // LC → supporting docs → extract → user review → validate flow.
       const response = await validate({
         files,
         lcNumber: lcNumber.trim(),
@@ -1240,12 +1255,13 @@ export default function ExportLCUpload({
         userType: "exporter",
         workflowType: "export-lc-upload",
         lcTypeOverride,
+        extractOnly: true,
         clientRequestId: requestId,
       });
-      
+
       // Check for blocked response (wrong LC type, no LC found, etc.)
       if (response.status === "blocked") {
-        console.log('⚠️ Validation blocked:', response.block_reason);
+        console.log('⚠️ Extraction blocked:', response.block_reason);
         setBlockedModal({
           open: true,
           blockReason: response.block_reason,
@@ -1255,42 +1271,42 @@ export default function ExportLCUpload({
         });
         return;
       }
-      
+
       const jobId = response.jobId || response.job_id;
-      
-      console.log('✅ Validation started, jobId:', jobId);
+
+      console.log('✅ Extraction complete, jobId:', jobId, 'status:', response.status);
 
       toast({
-        title: "Validation Complete",
-        description: embedded
-          ? "Documents validated. Loading your compliance results..."
-          : "Documents validated. Redirecting to compliance results...",
+        title: "Extraction Complete",
+        description: "Review the extracted fields before running validation.",
       });
 
       // Remove draft from storage if we're working with a draft
       if (currentDraftId) {
         try {
           removeDraft(currentDraftId);
-          console.log('✅ Draft removed after submission:', currentDraftId);
+          console.log('✅ Draft removed after extraction:', currentDraftId);
         } catch (error) {
           console.error('Failed to remove draft:', error);
         }
       }
 
-      if (embedded && onComplete) {
-        setTimeout(() => {
-          onComplete({ jobId, lcNumber: lcNumber.trim() });
-        }, 800);
-      } else {
-        console.log('🚀 Navigating to results page with jobId:', jobId);
-        setTimeout(() => {
-          const params = new URLSearchParams({
-            section: "reviews",
-            jobId,
-            lc: lcNumber.trim(),
-          });
-          navigate(`/lcopilot/exporter-dashboard?${params.toString()}`);
-        }, 1500);
+      if (embedded && onExtractionComplete && jobId) {
+        onExtractionComplete({
+          jobId,
+          lcNumber: lcNumber.trim(),
+          extraction: response,
+        });
+      } else if (jobId) {
+        console.log('🚀 Navigating to extraction review with jobId:', jobId);
+        const params = new URLSearchParams({
+          section: "extract-review",
+          jobId,
+          lc: lcNumber.trim(),
+        });
+        navigate(`/lcopilot/exporter-dashboard?${params.toString()}`, {
+          state: { extraction: response },
+        });
       }
 
     } catch (error: any) {

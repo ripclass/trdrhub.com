@@ -1,0 +1,448 @@
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
+import { useResumeValidate, type ExtractionReadyDocument, type ExtractionReadyResponse } from '@/hooks/use-lcopilot';
+import { useToast } from '@/hooks/use-toast';
+
+interface ExtractionReviewProps {
+  jobId?: string;
+  extractionPayload?: ExtractionReadyResponse | null;
+  lcNumber?: string;
+  onStartValidation?: (payload: { jobId: string; lcNumber?: string }) => void;
+  onBackToUpload?: () => void;
+}
+
+interface DocSectionState {
+  docKey: string;
+  filename: string;
+  documentType: string;
+  fields: FieldState[];
+}
+
+interface FieldState {
+  name: string;
+  label: string;
+  currentValue: string;
+  aiGuess: string;
+  isEmpty: boolean;
+  isConfirmed: boolean;
+}
+
+const FRIENDLY_FIELD_LABELS: Record<string, string> = {
+  lc_number: 'LC Number',
+  buyer_purchase_order_number: 'Buyer Purchase Order #',
+  purchase_order_number: 'Purchase Order #',
+  po_number: 'Purchase Order #',
+  exporter_bin: 'Exporter BIN',
+  exporter_tin: 'Exporter TIN',
+  issue_date: 'Issue Date',
+  expiry_date: 'Expiry Date',
+  latest_shipment_date: 'Latest Shipment Date',
+  applicant: 'Applicant',
+  beneficiary: 'Beneficiary',
+  amount: 'Amount',
+  currency: 'Currency',
+  port_of_loading: 'Port of Loading',
+  port_of_discharge: 'Port of Discharge',
+  goods_description: 'Goods Description',
+  invoice_number: 'Invoice Number',
+  invoice_date: 'Invoice Date',
+  seller: 'Seller',
+  buyer: 'Buyer',
+  bl_number: 'BL Number',
+  shipper: 'Shipper',
+  consignee: 'Consignee',
+  vessel_name: 'Vessel Name',
+  voyage_number: 'Voyage Number',
+  gross_weight: 'Gross Weight',
+  net_weight: 'Net Weight',
+  total_packages: 'Total Packages',
+  country_of_origin: 'Country of Origin',
+  certificate_number: 'Certificate Number',
+};
+
+function humanizeFieldName(name: string): string {
+  if (FRIENDLY_FIELD_LABELS[name]) {
+    return FRIENDLY_FIELD_LABELS[name];
+  }
+  return name
+    .split('_')
+    .map((s) => (s.length ? s[0].toUpperCase() + s.slice(1) : s))
+    .join(' ');
+}
+
+function humanizeDocType(docType: string): string {
+  return docType
+    .split('_')
+    .map((s) => (s.length ? s[0].toUpperCase() + s.slice(1) : s))
+    .join(' ');
+}
+
+function coerceToString(value: any): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildDocSectionState(
+  doc: ExtractionReadyDocument,
+  requiredFields: string[],
+): DocSectionState {
+  const extracted = (doc.extracted_fields || doc.extractedFields || {}) as Record<string, any>;
+  const filename = (doc.filename || doc.name || 'document') as string;
+  const documentType = (doc.document_type || doc.documentType || 'unknown') as string;
+  const docKey = (doc.id || doc.document_id || filename) as string;
+
+  const fields: FieldState[] = requiredFields.map((fieldName) => {
+    const rawValue = extracted[fieldName];
+    const currentValue = coerceToString(rawValue);
+    return {
+      name: fieldName,
+      label: humanizeFieldName(fieldName),
+      currentValue,
+      aiGuess: currentValue,
+      isEmpty: !currentValue.trim(),
+      isConfirmed: false,
+    };
+  });
+
+  return { docKey, filename, documentType, fields };
+}
+
+export function ExtractionReview({
+  jobId: propJobId,
+  extractionPayload,
+  lcNumber,
+  onStartValidation,
+  onBackToUpload,
+}: ExtractionReviewProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { toast } = useToast();
+  const { resumeValidate, isLoading: isStartingValidation } = useResumeValidate();
+
+  // Read the extraction payload from props first, then from navigation state
+  // (upload page passes it via navigate(..., { state: { extraction: ... } })).
+  const stateExtraction = (location.state as any)?.extraction as ExtractionReadyResponse | undefined;
+  const payload = extractionPayload ?? stateExtraction ?? null;
+  const jobId = propJobId ?? payload?.jobId ?? payload?.job_id ?? null;
+
+  const [docSections, setDocSections] = useState<DocSectionState[]>([]);
+
+  useEffect(() => {
+    if (!payload) {
+      setDocSections([]);
+      return;
+    }
+    const byType = payload.required_fields?.by_document_type || {};
+    const baseline = payload.required_fields?.baseline_required || [];
+    const built = (payload.documents || []).map((doc) => {
+      const docType = String(doc.document_type || doc.documentType || '');
+      const forType = byType[docType];
+      const required = Array.isArray(forType) && forType.length > 0 ? forType : baseline;
+      return buildDocSectionState(doc, required);
+    });
+    setDocSections(built);
+  }, [payload]);
+
+  const totalRequired = useMemo(
+    () => docSections.reduce((n, s) => n + s.fields.length, 0),
+    [docSections],
+  );
+  const totalEmpty = useMemo(
+    () => docSections.reduce((n, s) => n + s.fields.filter((f) => f.isEmpty).length, 0),
+    [docSections],
+  );
+  const totalFilled = totalRequired - totalEmpty;
+
+  const handleFieldChange =
+    (docIdx: number, fieldIdx: number) => (e: ChangeEvent<HTMLInputElement>) => {
+      const nextValue = e.target.value;
+      setDocSections((prev) => {
+        const next = [...prev];
+        const section = { ...next[docIdx] };
+        const fields = [...section.fields];
+        fields[fieldIdx] = {
+          ...fields[fieldIdx],
+          currentValue: nextValue,
+          isEmpty: !nextValue.trim(),
+          isConfirmed: fields[fieldIdx].aiGuess === nextValue ? fields[fieldIdx].isConfirmed : true,
+        };
+        section.fields = fields;
+        next[docIdx] = section;
+        return next;
+      });
+    };
+
+  const buildFieldOverrides = (): Record<string, Record<string, any>> => {
+    const overrides: Record<string, Record<string, any>> = {};
+    for (const section of docSections) {
+      const changed: Record<string, any> = {};
+      for (const field of section.fields) {
+        if (field.currentValue !== field.aiGuess) {
+          changed[field.name] = field.currentValue;
+        }
+      }
+      if (Object.keys(changed).length > 0) {
+        overrides[section.docKey] = changed;
+      }
+    }
+    return overrides;
+  };
+
+  const handleStartValidation = async () => {
+    if (!jobId) {
+      toast({
+        title: 'Missing job',
+        description: 'Cannot start validation without a job id.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const fieldOverrides = buildFieldOverrides();
+      toast({
+        title: 'Starting validation',
+        description: 'Applying your confirmed fields and running the validation pipeline…',
+      });
+      await resumeValidate({ jobId, fieldOverrides });
+
+      if (onStartValidation) {
+        onStartValidation({ jobId, lcNumber });
+      } else {
+        const params = new URLSearchParams({ section: 'reviews', jobId });
+        if (lcNumber) params.set('lc', lcNumber);
+        navigate(`/lcopilot/exporter-dashboard?${params.toString()}`);
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Validation failed to start',
+        description: err?.message || 'Could not resume validation. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleBack = () => {
+    if (onBackToUpload) {
+      onBackToUpload();
+      return;
+    }
+    navigate('/lcopilot/exporter-dashboard?section=upload');
+  };
+
+  if (!payload) {
+    return (
+      <Card className="shadow-soft border-0">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-amber-500" />
+            Extraction review unavailable
+          </CardTitle>
+          <CardDescription>
+            We couldn't find an active extraction session. Please re-upload your documents.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={handleBack} variant="outline">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to upload
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <Card className="shadow-soft border-0">
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-blue-500" />
+                Review Extracted Fields
+              </CardTitle>
+              <CardDescription>
+                Confirm or correct the fields required by this LC before validation runs.
+                Only the fields the LC actually asks for are shown below.
+              </CardDescription>
+            </div>
+            <Button onClick={handleBack} variant="ghost" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to upload
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
+              <FileText className="w-5 h-5 text-slate-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Documents</p>
+                <p className="text-2xl font-semibold">{docSections.length}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">Fields Populated</p>
+                <p className="text-2xl font-semibold">
+                  {totalFilled} <span className="text-base text-muted-foreground">/ {totalRequired}</span>
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
+              <AlertCircle className={`w-5 h-5 ${totalEmpty > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
+              <div>
+                <p className="text-sm text-muted-foreground">Need Your Input</p>
+                <p className="text-2xl font-semibold">{totalEmpty}</p>
+              </div>
+            </div>
+          </div>
+          {totalEmpty > 0 && (
+            <Alert className="mt-4 border-amber-500/30 bg-amber-50 dark:bg-amber-950/20">
+              <AlertCircle className="w-4 h-4 text-amber-500" />
+              <AlertTitle>Please fill {totalEmpty} missing field{totalEmpty === 1 ? '' : 's'}</AlertTitle>
+              <AlertDescription>
+                The AI couldn't find the highlighted values in your uploaded files. Enter them
+                directly so validation has a reliable field set to check against.
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Per-document review sections */}
+      {docSections.map((section, docIdx) => {
+        const emptyCount = section.fields.filter((f) => f.isEmpty).length;
+        return (
+          <Card key={`${section.docKey}-${docIdx}`} className="shadow-soft border-0">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <FileText className="w-4 h-4" />
+                    {section.filename}
+                  </CardTitle>
+                  <CardDescription>
+                    <Badge variant="secondary" className="mr-2">
+                      {humanizeDocType(section.documentType)}
+                    </Badge>
+                    {section.fields.length} required field{section.fields.length === 1 ? '' : 's'}
+                    {emptyCount > 0 && (
+                      <span className="text-amber-600 ml-2">
+                        ({emptyCount} missing)
+                      </span>
+                    )}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {section.fields.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No required fields on this document.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {section.fields.map((field, fieldIdx) => (
+                    <div key={`${section.docKey}-${field.name}-${fieldIdx}`} className="space-y-1">
+                      <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
+                        {field.label}
+                        {field.isEmpty && (
+                          <Badge variant="outline" className="text-amber-600 border-amber-500/40 text-[10px]">
+                            Missing
+                          </Badge>
+                        )}
+                        {!field.isEmpty && !field.isConfirmed && (
+                          <Badge variant="outline" className="text-slate-500 border-slate-300 text-[10px]">
+                            AI extracted
+                          </Badge>
+                        )}
+                        {field.isConfirmed && (
+                          <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">
+                            You edited
+                          </Badge>
+                        )}
+                      </Label>
+                      <Input
+                        id={`${section.docKey}-${field.name}`}
+                        value={field.currentValue}
+                        onChange={handleFieldChange(docIdx, fieldIdx)}
+                        placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
+                        className={field.isEmpty ? 'border-amber-500/40' : undefined}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
+
+      <Separator />
+
+      {/* Start validation action bar */}
+      <Card className="shadow-soft border-0">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="w-6 h-6 text-blue-500" />
+              <div>
+                <p className="font-medium">Ready to validate?</p>
+                <p className="text-sm text-muted-foreground">
+                  {totalEmpty === 0
+                    ? 'All required fields are filled in. Validation will run on the confirmed set.'
+                    : `${totalEmpty} field${totalEmpty === 1 ? '' : 's'} still missing — validation runs on what you have.`}
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={handleStartValidation}
+              disabled={isStartingValidation || !jobId}
+              className="min-w-[180px]"
+            >
+              {isStartingValidation ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Starting…
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-4 h-4 mr-2" />
+                  Start Validation
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default ExtractionReview;
