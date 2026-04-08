@@ -104,6 +104,44 @@ function coerceToString(value: any): string {
   }
 }
 
+// Canonical field name -> list of legacy alias names the vision LLM (or
+// older regex parsers) sometimes return. When the canonical key is empty
+// on the extracted_fields dict, we fall back to the first populated alias.
+// The backend's _canonicalize_field_names() should handle this upstream, but
+// this mapping is the frontend's safety net in case the backend deploy lags
+// or an older extractor path is used.
+const FIELD_ALIAS_MAP: Record<string, string[]> = {
+  seller: ['seller_name', 'exporter', 'exporter_name', 'shipper'],
+  buyer: ['buyer_name', 'importer', 'importer_name', 'consignee', 'applicant'],
+  lc_number: ['lc_reference', 'documentary_credit_number', 'credit_number', 'number'],
+  buyer_purchase_order_number: ['buyer_po_number', 'po_number', 'purchase_order_number', 'buyer_po'],
+  exporter_bin: ['bin', 'bin_number', 'exporter_bin_number', 'seller_bin'],
+  exporter_tin: ['tin', 'tin_number', 'exporter_tin_number', 'seller_tin'],
+  exporter: ['exporter_name', 'seller', 'seller_name'],
+  issuing_authority: ['certifying_authority', 'authority', 'issuer'],
+  size_breakdown: ['packing_size_breakdown', 'sizes', 'size_distribution'],
+  total_packages: ['number_of_packages', 'total_cartons', 'carton_count', 'packages'],
+  applicant: ['buyer', 'buyer_name', 'importer'],
+  beneficiary: ['seller', 'seller_name', 'exporter', 'exporter_name', 'insured_party'],
+  country_of_origin: ['origin_country', 'country'],
+  bl_number: ['bill_of_lading_number'],
+  inspection_agency: ['inspector', 'inspection_company'],
+  issuer: ['insurance_company', 'issuing_bank'],
+};
+
+function readAliasedValue(extracted: Record<string, any>, fieldName: string): any {
+  // Canonical name wins if populated.
+  const canonical = extracted[fieldName];
+  if (canonical != null && canonical !== '' && canonical !== null) return canonical;
+  const aliases = FIELD_ALIAS_MAP[fieldName];
+  if (!aliases) return canonical; // null/empty fall-through
+  for (const alias of aliases) {
+    const v = extracted[alias];
+    if (v != null && v !== '') return v;
+  }
+  return canonical;
+}
+
 function buildDocSectionState(
   doc: ExtractionReadyDocument,
   requiredFields: string[],
@@ -114,7 +152,7 @@ function buildDocSectionState(
   const docKey = (doc.id || doc.document_id || filename) as string;
 
   const fields: FieldState[] = requiredFields.map((fieldName) => {
-    const rawValue = extracted[fieldName];
+    const rawValue = readAliasedValue(extracted, fieldName);
     const currentValue = coerceToString(rawValue);
     return {
       name: fieldName,
@@ -156,8 +194,17 @@ export function ExtractionReview({
     }
     const byType = payload.required_fields?.by_document_type || {};
     const baseline = payload.required_fields?.baseline_required || [];
+    const lcSelfRequired =
+      (payload.required_fields as any)?.lc_self_required || [];
     const built = (payload.documents || []).map((doc) => {
       const docType = String(doc.document_type || doc.documentType || '');
+      // LC uses the MT700 mandatory list, NOT the cross-doc applies_to_all
+      // set. The LC is the SOURCE of those cross-doc requirements, not a
+      // doc that must satisfy them.
+      const isLC = docType === 'letter_of_credit' || docType === 'swift_message' || docType === 'lc_application';
+      if (isLC && Array.isArray(lcSelfRequired) && lcSelfRequired.length > 0) {
+        return buildDocSectionState(doc, lcSelfRequired);
+      }
       const forType = byType[docType];
       const required = Array.isArray(forType) && forType.length > 0 ? forType : baseline;
       return buildDocSectionState(doc, required);

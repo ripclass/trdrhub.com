@@ -103,6 +103,31 @@ MT700_OPTIONAL_FIELDS: Tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 DOC_TYPE_BASELINE: Dict[str, Tuple[str, ...]] = {
+    # The LC itself — the full MT700 mandatory set. We list every mandatory
+    # field even if the LC clauses don't mention them, because the LC IS the
+    # source document that imposes those requirements on everything else.
+    "letter_of_credit": (
+        "sequence_of_total",
+        "form_of_documentary_credit",
+        "lc_number",
+        "issue_date",
+        "expiry_date",
+        "expiry_place",
+        "applicable_rules",
+        "applicant",
+        "beneficiary",
+        "amount",
+        "currency",
+        "available_with",
+        "available_by",
+        "port_of_loading",
+        "port_of_discharge",
+        "latest_shipment_date",
+        "goods_description",
+        "documents_required",
+        "additional_conditions",
+        "period_for_presentation",
+    ),
     "commercial_invoice": (
         "invoice_number",
         "invoice_date",
@@ -274,12 +299,27 @@ FIELD_KEYWORDS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bsgs|intertek|bureau\s+veritas\b", re.I), "inspection_agency"),
     (re.compile(r"\binspection\s+(?:no\.?|number|certificate)\b", re.I), "certificate_number"),
 
-    # Parties
+    # Parties — only match when the clause is referring to the party as a
+    # FIELD on a document, not as an incidental mention. Bare `\bapplicant\b`
+    # was catching "notify applicant" / "sent to applicant" / "by applicant"
+    # etc. which are unrelated instructions.
     (re.compile(r"\bshipper\b", re.I), "shipper"),
     (re.compile(r"\bconsignee\b", re.I), "consignee"),
-    (re.compile(r"\bnotify\s+party\b|\bnotify\b", re.I), "notify_party"),
-    (re.compile(r"\bbeneficiary\b", re.I), "beneficiary"),
-    (re.compile(r"\bapplicant\b", re.I), "applicant"),
+    (re.compile(r"\bnotify\s+party\b", re.I), "notify_party"),
+    (
+        re.compile(
+            r"\bbeneficiary(?:'s|s)?\s+(?:name|address|details)\b|\bname\s+of\s+(?:the\s+)?beneficiary\b",
+            re.I,
+        ),
+        "beneficiary",
+    ),
+    (
+        re.compile(
+            r"\bapplicant(?:'s|s)?\s+(?:name|address|details)\b|\bname\s+of\s+(?:the\s+)?applicant\b|\bmade\s+out\s+(?:in\s+)?(?:the\s+)?name\s+of\s+(?:the\s+)?applicant\b",
+            re.I,
+        ),
+        "applicant",
+    ),
     (re.compile(r"\bissuer\b", re.I), "issuer"),
 
     # Ports
@@ -298,6 +338,27 @@ APPLIES_TO_ALL_PATTERNS: List[re.Pattern] = [
     re.compile(r"\bdocuments\s+must\s+show\b", re.I),
     re.compile(r"\bdocuments\s+to\s+show\b", re.I),
 ]
+
+
+# Patterns that mean the clause is about physical carton/box markings, not
+# fields on any document. Clauses like "COUNTRY OF ORIGIN MUST BE PRINTED ON
+# ALL CARTONS IN INDELIBLE INK" or "MARKING: EXPORTER NAME" should NOT
+# produce field requirements — they're packaging instructions for the goods
+# themselves, not data fields the bank examiner checks on documents.
+CARTON_MARKING_PATTERNS: List[re.Pattern] = [
+    re.compile(r"\b(?:on|upon)\s+(?:all\s+)?(?:the\s+)?cartons?\b", re.I),
+    re.compile(r"\bprinted\s+on\b", re.I),
+    re.compile(r"\bmarking\s*:", re.I),
+    re.compile(r"\bshipping\s+marks?\b", re.I),
+    re.compile(r"\bin\s+indelible\s+ink\b", re.I),
+    re.compile(r"\bstenci[lr]led\b", re.I),
+]
+
+
+def _is_carton_marking_clause(clause_text: str) -> bool:
+    if not clause_text:
+        return False
+    return any(p.search(clause_text) for p in CARTON_MARKING_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +500,9 @@ def derive_required_fields(
 
     # 2. Walk clause 46A entries (each is a description of one required doc).
     for idx, clause in enumerate(documents_required, start=1):
+        if _is_carton_marking_clause(clause):
+            # Packaging instruction, not a data-field requirement.
+            continue
         doc_type = _detect_doc_type(clause)
         fields = _detect_fields_in_text(clause)
         if not fields:
@@ -468,6 +532,8 @@ def derive_required_fields(
 
     # 3. Walk clause 47A entries (each is a free-text additional condition).
     for idx, condition in enumerate(additional_conditions, start=1):
+        if _is_carton_marking_clause(condition):
+            continue
         fields = _detect_fields_in_text(condition)
         if not fields:
             continue
@@ -508,15 +574,22 @@ def derive_required_fields(
                 }
             )
 
-    # 4. Apply the cross-doc requirements to every per-doc list, and ALSO
-    #    return them as their own list so the UI can render them once at
-    #    the top of the page if it wants to.
+    # 4. Apply the cross-doc requirements to every SUPPORTING per-doc list.
+    # The LC itself does NOT get cross-doc requirements merged in — it's
+    # the SOURCE of those requirements, not a doc that must satisfy them.
     for doc_type in list(per_doc_required.keys()):
+        if doc_type == "letter_of_credit":
+            continue
         per_doc_required[doc_type].update(applies_to_all)
 
-    # Make sure every uploaded doc type has an entry, even if empty.
+    # Make sure every uploaded supporting doc type has an entry. The LC's
+    # entry was already seeded from DOC_TYPE_BASELINE in step 1 and should
+    # NOT be touched with cross-doc requirements here.
     for doc_type in document_types_present or []:
         canonical = DOC_TYPE_ALIASES.get(doc_type.lower(), doc_type.lower())
+        if canonical == "letter_of_credit":
+            per_doc_required.setdefault(canonical, set())  # ensure present
+            continue
         per_doc_required.setdefault(canonical, set()).update(applies_to_all)
 
     # 5. The LC's own required field list — MT700 mandatory + skeleton.

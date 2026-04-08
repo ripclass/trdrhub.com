@@ -68,14 +68,26 @@ REGULATORY_TYPES = {
 INSURANCE_TYPES = {
     "insurance_certificate",
     "insurance_policy",
+    "marine_insurance_policy",
+    "marine_insurance_certificate",
+}
+# Compliance attestation / beneficiary-statement family. These are NOT
+# insurance policies — they're free-text attestations the exporter signs
+# (goods are brand new, goods meet safety standards, etc.). They use the
+# attestation_document schema instead.
+ATTESTATION_TYPES = {
     "beneficiary_certificate",
     "beneficiary_statement",
+    "beneficiarys_certificate",
     "manufacturer_certificate",
+    "manufacturers_certificate",
     "conformity_certificate",
+    "certificate_of_conformity",
     "non_manipulation_certificate",
     "halal_certificate",
     "kosher_certificate",
     "organic_certificate",
+    "compliance_certificate",
 }
 INSPECTION_TYPES = {
     "inspection_certificate",
@@ -153,29 +165,52 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
     "commercial_invoice": {
         "family": "invoice",
         "title": "Commercial / Proforma Invoice",
+        # All field names are the CANONICAL MT700-aligned keys. Every
+        # supporting doc schema includes the LC cross-reference fields
+        # (lc_number, buyer_purchase_order_number, exporter_bin,
+        # exporter_tin) because every LC presentation doc must carry
+        # them — bank examiners look for them on every page.
         "fields": [
-            "invoice_number", "invoice_date", "amount", "currency", "seller", "buyer",
-            "applicant", "beneficiary", "consignee", "notify_party", "goods_description",
-            "hs_code", "incoterm", "country_of_origin", "port_of_loading",
-            "port_of_discharge", "gross_weight", "net_weight", "total_packages",
+            "invoice_number", "invoice_date", "amount", "currency",
+            "seller", "buyer", "applicant", "beneficiary",
+            "consignee", "notify_party",
+            "goods_description", "hs_code", "quantity", "unit_price",
+            "incoterm", "country_of_origin",
+            "port_of_loading", "port_of_discharge",
+            "gross_weight", "net_weight", "total_packages",
             "payment_terms",
+            # Cross-reference / LC presentation fields
+            "lc_number", "buyer_purchase_order_number",
+            "exporter_bin", "exporter_tin",
         ],
         "notes": [
+            "Return EXACTLY these key names. `seller` NOT `seller_name`, `buyer` NOT `buyer_name`, `lc_number` NOT `lc_reference`, `buyer_purchase_order_number` NOT `buyer_po_number`.",
             "Extract the invoice party names exactly as written.",
             "Do not guess HS codes or Incoterms.",
+            "quantity / unit_price / amount should be numbers when possible (multi-line-item invoices may return comma-separated strings).",
+            "lc_number is the LC that authorizes this invoice — look for 'LC No.' / 'LC Reference' / 'Credit Number'.",
+            "buyer_purchase_order_number — look for 'Buyer Purchase Order', 'PO No.', 'Order Ref'.",
+            "exporter_bin / exporter_tin — Bangladesh tax IDs, look for 'BIN', 'TIN'.",
         ],
     },
     "packing_list": {
         "family": "packing",
         "title": "Packing List",
         "fields": [
-            "packing_list_number", "packing_list_date", "seller", "buyer", "consignee",
-            "goods_description", "marks_and_numbers", "total_packages", "package_type",
-            "gross_weight", "net_weight", "measurement_value", "port_of_loading",
-            "port_of_discharge",
+            "packing_list_number", "packing_list_date",
+            "seller", "buyer", "shipper", "consignee",
+            "goods_description", "marks_and_numbers",
+            "total_packages", "package_type", "size_breakdown",
+            "gross_weight", "net_weight", "measurement_value",
+            "port_of_loading", "port_of_discharge",
+            "lc_number", "buyer_purchase_order_number",
+            "exporter_bin", "exporter_tin",
         ],
         "notes": [
+            "Return EXACTLY these key names. `size_breakdown` NOT `packing_size_breakdown`, `total_packages` NOT `number_of_packages`.",
             "Prioritize package counts, weights, dimensions, and marks/numbers.",
+            "size_breakdown should be a structured object when possible — e.g. {\"S\": 100, \"M\": 200, \"L\": 300}.",
+            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin are cross-reference fields — look for them on the packing list header.",
         ],
     },
     "transport_document": {
@@ -183,15 +218,25 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
         "title": "Transport document (B/L, AWB, waybill, multimodal, rail, road, forwarder receipt)",
         "fields": [
             "bl_number", "transport_reference_number", "airway_bill_number", "consignment_reference",
-            "shipper", "consignee", "notify_party", "port_of_loading", "port_of_discharge",
-            "airport_of_departure", "airport_of_destination", "vessel_name", "voyage_number",
-            "carriage_vessel_name", "carriage_voyage_number", "shipped_on_board_date",
-            "issue_date", "goods_description", "gross_weight", "net_weight", "marks_and_numbers",
-            "transport_mode_chain",
+            "shipper", "consignee", "notify_party", "applicant",
+            "port_of_loading", "port_of_discharge",
+            "airport_of_departure", "airport_of_destination",
+            "vessel_name", "voyage_number",
+            "carriage_vessel_name", "carriage_voyage_number",
+            "shipped_on_board_date", "issue_date",
+            "goods_description", "gross_weight", "net_weight",
+            "container_number", "seal_number",
+            "marks_and_numbers", "transport_mode_chain",
+            "freight_terms",
+            "lc_number", "buyer_purchase_order_number",
+            "exporter_bin", "exporter_tin",
         ],
         "notes": [
+            "Return EXACTLY these key names. `bl_number` NOT `bill_of_lading_number`, `buyer_purchase_order_number` NOT `buyer_po_number`.",
             "Use the correct field family for the visible transport mode.",
             "If it is AWB, prefer airway_bill_number / airport fields.",
+            "`applicant` is the same party as the LC's applicant (buyer) — often appears on the BL as the notify party. Copy the notify party's name into `applicant` when they match the LC applicant.",
+            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — look for these in the header, body, or 'Shipping Marks' section.",
         ],
     },
     "regulatory_document": {
@@ -199,35 +244,77 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
         "title": "Origin / customs / regulatory / sanitary certificate document",
         "fields": [
             "certificate_number", "license_number", "declaration_reference", "permit_number",
-            "country_of_origin", "origin_country", "issuing_authority", "certifying_authority",
-            "issue_date", "expiry_date", "goods_description", "exporter", "importer",
+            "country_of_origin", "issuing_authority",
+            "issue_date", "expiry_date",
+            "goods_description", "hs_code",
+            "exporter", "importer",
+            "lc_number", "buyer_purchase_order_number",
+            "exporter_bin", "exporter_tin",
         ],
         "notes": [
+            "Return EXACTLY these key names. `exporter` NOT `exporter_name`, `importer` NOT `importer_name`, `issuing_authority` NOT `certifying_authority`.",
             "Use certificate_number for most certificates, license_number for licenses, declaration_reference for customs declarations.",
+            "issuing_authority — for Bangladesh COOs this is usually 'EPB' / 'Export Promotion Bureau' or 'Chamber of Commerce'.",
+            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — cross-reference fields, look for them in the header.",
         ],
     },
     "insurance_document": {
         "family": "insurance",
-        "title": "Insurance / compliance / special certificate",
+        "title": "Insurance policy or certificate",
         "fields": [
-            "policy_number", "certificate_number", "insured_amount", "coverage_amount",
-            "currency", "issuer_name", "insurer", "issue_date", "expiry_date",
-            "goods_description", "risks_covered", "beneficiary", "applicant",
+            "policy_number", "certificate_number",
+            "insured_amount", "coverage_amount", "currency",
+            "issuer", "insurer",
+            "issue_date", "expiry_date",
+            "goods_description", "risks_covered",
+            "beneficiary", "applicant", "insured_party",
+            "vessel_name", "voyage_details",
+            "claims_payable_at", "survey_agent",
+            "lc_number", "buyer_purchase_order_number",
+            "exporter_bin", "exporter_tin",
         ],
         "notes": [
-            "Use policy_number or certificate_number exactly as visible.",
+            "Use policy_number for marine insurance policies, certificate_number for insurance certificates.",
+            "`issuer` is the underwriter / insurance company name.",
+            "insured_amount should be the full coverage value — typically 110% of the invoice value per UCP600 Art 28.",
+            "This schema is ONLY for real insurance documents. Beneficiary certificates, compliance attestations, manufacturer certs go through the attestation_document schema.",
+        ],
+    },
+    "attestation_document": {
+        "family": "attestation",
+        "title": "Beneficiary certificate, manufacturer certificate, or compliance attestation",
+        "fields": [
+            "certificate_number", "issuer", "issue_date",
+            "goods_description", "attestation_text",
+            "manufacture_year", "brand_new",
+            "lc_number", "buyer_purchase_order_number",
+            "exporter_bin", "exporter_tin",
+        ],
+        "notes": [
+            "This is NOT an insurance policy. Beneficiary certificates are compliance attestations where the exporter certifies something about the goods (e.g., 'goods are brand new and manufactured in 2026').",
+            "`issuer` is the exporter / beneficiary — the party signing the certificate.",
+            "`attestation_text` is the main statement the certificate is making (verbatim or a concise paraphrase).",
+            "Return EXACTLY these key names.",
         ],
     },
     "inspection_document": {
         "family": "inspection",
         "title": "Inspection / testing / quality / weight / measurement document",
         "fields": [
-            "certificate_number", "inspection_agency", "inspection_result", "quality_finding",
-            "analysis_result", "gross_weight", "net_weight", "measurement_value",
-            "issue_date", "goods_description",
+            "certificate_number", "inspection_agency",
+            "inspection_date", "issue_date",
+            "inspection_result", "quality_finding", "analysis_result",
+            "quantity", "gross_weight", "net_weight", "measurement_value",
+            "goods_description", "issuer",
+            "lc_number", "buyer_purchase_order_number",
+            "exporter_bin", "exporter_tin",
         ],
         "notes": [
+            "Return EXACTLY these key names. `certificate_number` NOT `inspection_number`, `inspection_agency` NOT `inspector`.",
+            "`inspection_agency` is SGS / Intertek / Bureau Veritas / etc.",
+            "`inspection_date` is when the inspection happened; `issue_date` is when the cert was issued.",
             "Use inspection_result / quality_finding / analysis_result based on the visible document type.",
+            "Always return lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin as cross-reference fields.",
         ],
     },
     "supporting_document": {
@@ -235,8 +322,10 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
         "title": "Supporting trade document",
         "fields": [
             "document_title", "document_reference", "issuing_authority", "issue_date",
-            "expiry_date", "goods_description", "shipper", "consignee", "origin_country",
+            "expiry_date", "goods_description", "shipper", "consignee", "country_of_origin",
             "summary",
+            "lc_number", "buyer_purchase_order_number",
+            "exporter_bin", "exporter_tin",
         ],
         "notes": [
             "If the subtype is unclear, extract a safe reference + summary and leave uncertain fields null.",
@@ -259,6 +348,8 @@ def _resolve_schema_key(document_type: str) -> str:
         return "regulatory_document"
     if doc_type in INSURANCE_TYPES:
         return "insurance_document"
+    if doc_type in ATTESTATION_TYPES:
+        return "attestation_document"
     if doc_type in INSPECTION_TYPES:
         return "inspection_document"
     return "supporting_document"

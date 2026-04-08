@@ -376,7 +376,9 @@ export const useValidate = () => {
       while (attempt < maxAttempts && !response) {
         attempt += 1;
         try {
-          response = await api.post('/api/validate', formData, {
+          // Trailing slash avoids the Render 307 redirect to /api/validate/
+          // which strips CORS headers and forces a retry.
+          response = await api.post('/api/validate/', formData, {
             headers: validateHeaders,
           });
         } catch (err: any) {

@@ -3268,8 +3268,70 @@ def _normalize_document_alias(value: Any) -> Any:
     return CANONICAL_DOCUMENT_ALIASES.get(snake, value.strip())
 
 
+# Legacy -> canonical field-name aliases. The vision LLM (and some regex
+# parsers) return these alternate names and the rest of the pipeline wants
+# the canonical form. Applied at the top of _apply_canonical_normalization
+# so every shape function benefits without individual patching.
+_FIELD_NAME_ALIASES: Dict[str, str] = {
+    # Invoice
+    "seller_name": "seller",
+    "buyer_name": "buyer",
+    "seller_address": "seller_address",
+    "buyer_address": "buyer_address",
+    "lc_reference": "lc_number",
+    "buyer_po_number": "buyer_purchase_order_number",
+    "purchase_order_number": "buyer_purchase_order_number",
+    "po_number": "buyer_purchase_order_number",
+    # Regulatory / COO
+    "exporter_name": "exporter",
+    "importer_name": "importer",
+    "certifying_authority": "issuing_authority",
+    "origin_country": "country_of_origin",
+    # Packing list
+    "packing_size_breakdown": "size_breakdown",
+    "number_of_packages": "total_packages",
+    # Transport / BL
+    "bl_date": "issue_date",
+    "bill_of_lading_number": "bl_number",
+    # Insurance & attestation
+    "insured_party": "beneficiary",
+    "insurance_company": "issuer",
+    # Inspection
+    "inspection_number": "certificate_number",
+    # BIN / TIN variants
+    "exporter_bin_number": "exporter_bin",
+    "exporter_tin_number": "exporter_tin",
+    "bin_number": "exporter_bin",
+    "tin_number": "exporter_tin",
+    "bin": "exporter_bin",
+    "tin": "exporter_tin",
+}
+
+
+def _canonicalize_field_names(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Rename legacy field-name aliases to canonical names in-place.
+
+    Preserves the original alias key too, so any downstream code that greps
+    for the old name still works. Only copies the value to the canonical key
+    when the canonical key isn't already populated with something non-empty.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    for alias, canonical in _FIELD_NAME_ALIASES.items():
+        if alias not in payload:
+            continue
+        alias_value = payload.get(alias)
+        if alias_value is None or alias_value == "":
+            continue
+        existing = payload.get(canonical)
+        # Only populate canonical when it's absent / empty.
+        if existing is None or existing == "":
+            payload[canonical] = alias_value
+    return payload
+
+
 def _apply_canonical_normalization(payload: Dict[str, Any]) -> Dict[str, Any]:
-    shaped = dict(payload or {})
+    shaped = _canonicalize_field_names(dict(payload or {}))
     normalization_meta = shaped.get("normalization") if isinstance(shaped.get("normalization"), dict) else {}
 
     for field in ("currency",):

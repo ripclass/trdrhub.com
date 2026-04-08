@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate, type ValidationError } from "@/hooks/use-lcopilot";
+import { ExtractionReview } from "@/pages/exporter/ExtractionReview";
 import { useValidationProgress, type UseValidationProgressState } from "@/hooks/useValidationProgress";
 import { cn } from "@/lib/utils";
 import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
@@ -460,19 +461,12 @@ type ExportLCUploadProps = {
   embedded?: boolean;
   draftId?: string;
   templateId?: string;
-  onComplete?: (payload: { jobId: string; lcNumber: string }) => void;
   /**
-   * Called after the extract-only request returns. The upload button now
-   * triggers extraction only; validation runs on the extraction review
-   * screen after the user confirms fields. The parent dashboard uses this
-   * callback to navigate to the review section with the extraction payload
-   * in router state.
+   * Called after the user clicks "Start Validation" on the inline
+   * extraction review and the resume-validate call completes. The parent
+   * dashboard routes into the reviews section from here.
    */
-  onExtractionComplete?: (payload: {
-    jobId: string;
-    lcNumber: string;
-    extraction: any;
-  }) => void;
+  onComplete?: (payload: { jobId: string; lcNumber: string }) => void;
 };
 
 export default function ExportLCUpload({
@@ -480,7 +474,6 @@ export default function ExportLCUpload({
   draftId,
   templateId,
   onComplete,
-  onExtractionComplete,
 }: ExportLCUploadProps = {}) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [lcIntake, setLcIntake] = useState<LCIntakeState>({ status: "idle", file: null });
@@ -545,10 +538,15 @@ export default function ExportLCUpload({
   const isLCResolved = lcIntake.status === "resolved" && !!lcIntake.continuationAllowed;
   const isLcResolving = lcIntake.status === "uploading";
 
+  // Extraction payload — set after the extract_only POST returns. The
+  // ExtractionReview component renders inline on this same page (instead
+  // of navigating to a separate section) so the user never leaves the
+  // upload flow until they explicitly hit "Start Validation".
+  const [extractionPayload, setExtractionPayload] = useState<any>(null);
   // Client-generated request id for SSE progress streaming. Set when the user
-  // clicks "Validate", cleared when the validation finishes. The same id is
-  // sent in the X-Client-Request-ID header on the POST and used as the SSE
-  // channel key.
+  // clicks "Extract & Review", cleared when the extract call finishes. The
+  // same id is sent in the X-Client-Request-ID header on the POST and used
+  // as the SSE channel key.
   const [clientRequestId, setClientRequestId] = useState<string | null>(null);
   const validationProgress = useValidationProgress({
     clientRequestId,
@@ -1291,22 +1289,21 @@ export default function ExportLCUpload({
         }
       }
 
-      if (embedded && onExtractionComplete && jobId) {
-        onExtractionComplete({
-          jobId,
-          lcNumber: lcNumber.trim(),
-          extraction: response,
-        });
-      } else if (jobId) {
-        console.log('🚀 Navigating to extraction review with jobId:', jobId);
-        const params = new URLSearchParams({
-          section: "extract-review",
-          jobId,
-          lc: lcNumber.trim(),
-        });
-        navigate(`/lcopilot/exporter-dashboard?${params.toString()}`, {
-          state: { extraction: response },
-        });
+      // Show the extraction review INLINE on this same page. The old flow
+      // navigated to a separate ?section=extract-review section, which
+      // fragmented the upload UX. Now the user stays on the upload page
+      // and sees the review appear below their uploads; validation still
+      // navigates away when they hit "Start Validation".
+      if (jobId) {
+        setExtractionPayload(response);
+        console.log('✅ Extraction complete, showing inline review. jobId:', jobId);
+        // Scroll the review into view once React renders it.
+        setTimeout(() => {
+          const reviewEl = document.getElementById('extraction-review-inline');
+          if (reviewEl) {
+            reviewEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 200);
       }
 
     } catch (error: any) {
@@ -2026,10 +2023,10 @@ export default function ExportLCUpload({
                       {isValidationProcessing ? (
                         <>
                           <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                          Validating...
+                          Extracting...
                         </>
                       ) : (
-                        "Validate Documents"
+                        "Extract & Review"
                       )}
                     </Button>
                   </div>
@@ -2059,9 +2056,42 @@ export default function ExportLCUpload({
             </div>
           </CardContent>
         </Card>
+
+        {/* Inline extraction review — appears below the upload card once
+            the extract_only call has returned. User stays on this page;
+            clicking Start Validation inside ExtractionReview navigates to
+            the results section via onStartValidation. */}
+        {extractionPayload && (
+          <div id="extraction-review-inline" className="mt-8">
+            <ExtractionReview
+              extractionPayload={extractionPayload}
+              jobId={extractionPayload?.jobId || extractionPayload?.job_id}
+              lcNumber={lcNumber.trim()}
+              onStartValidation={({ jobId }) => {
+                // After Start Validation completes the resume call, route
+                // the user into the reviews section of the dashboard.
+                if (embedded && onComplete) {
+                  onComplete({ jobId, lcNumber: lcNumber.trim() });
+                } else {
+                  const params = new URLSearchParams({
+                    section: 'reviews',
+                    jobId,
+                    lc: lcNumber.trim(),
+                  });
+                  navigate(`/lcopilot/exporter-dashboard?${params.toString()}`);
+                }
+              }}
+              onBackToUpload={() => {
+                setExtractionPayload(null);
+                const uploadEl = document.querySelector('h3');
+                if (uploadEl) uploadEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+            />
+          </div>
+        )}
         </div>
       )}
-      
+
       {/* Blocked Upload Modal - Shows when LC type mismatch or no LC found */}
       <BlockedUploadModal
         open={blockedModal.open}

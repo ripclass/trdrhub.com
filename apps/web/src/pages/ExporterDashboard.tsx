@@ -20,7 +20,6 @@ import {
 } from "@/api/sessions";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterResults from "./ExporterResults";
-import { ExtractionReview } from "./exporter/ExtractionReview";
 import { DataRetentionView } from "./settings/DataRetention";
 import { CompanyProfileView } from "./settings/CompanyProfile";
 import { BillingOverviewPage } from "./BillingOverviewPage";
@@ -94,11 +93,6 @@ function DashboardContent() {
   const { jobId: contextJobId, setJobId } = useResultsContext();
   const { user: authUser } = useAuth();
   const { toast } = useToast();
-  // Held in memory for the current dashboard session. When the upload flow
-  // completes extraction we stash the raw response here so ExtractionReview
-  // can render fields without a second fetch. If the user refreshes, this
-  // state is lost and ExtractionReview shows its "re-upload" fallback.
-  const [extractionPayload, setExtractionPayload] = useState<any>(null);
   const currentUser = authUser
     ? {
         id: authUser.id,
@@ -282,22 +276,11 @@ function DashboardContent() {
     [setJobId, handleSectionChange]
   );
 
-  /**
-   * Handle extraction completion - stash the raw extraction response in
-   * dashboard state and navigate to the extraction review screen so the
-   * user can confirm / correct fields before validation runs.
-   */
-  const handleExtractionComplete = useCallback(
-    (payload: { jobId: string; lcNumber: string; extraction: any }) => {
-      setJobId(payload.jobId);
-      setExtractionPayload(payload.extraction);
-      handleSectionChange("extract-review", {
-        jobId: payload.jobId,
-        lc: payload.lcNumber,
-      });
-    },
-    [setJobId, handleSectionChange],
-  );
+  // Extraction review now renders inline inside the upload page — no
+  // dashboard navigation needed. The ExportLCUpload component holds the
+  // extraction payload in its own state and shows the review below the
+  // uploads; clicking Start Validation there calls onComplete which routes
+  // to the reviews section.
 
   /**
    * Handle tab change within ExporterResults.
@@ -386,21 +369,9 @@ function DashboardContent() {
                 draftId={urlDraftId}
                 templateId={urlTemplateId}
                 onComplete={handleUploadComplete}
-                onExtractionComplete={handleExtractionComplete}
               />
             </CardContent>
           </Card>
-        )}
-
-        {/* Extraction Review Section */}
-        {activeSection === "extract-review" && (
-          <ExtractionReview
-            jobId={effectiveJobId ?? undefined}
-            lcNumber={urlLc ?? undefined}
-            extractionPayload={extractionPayload}
-            onStartValidation={handleUploadComplete}
-            onBackToUpload={() => handleSectionChange("upload")}
-          />
         )}
 
         {/* Results Sections (reviews, documents, issues, etc.) */}
