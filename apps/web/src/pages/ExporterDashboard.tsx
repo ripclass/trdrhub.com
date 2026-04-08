@@ -1,7 +1,6 @@
 // ExporterDashboard - Section-based dashboard with embedded workflows
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, Link, useLocation } from "react-router-dom";
-import * as React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -11,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { useDrafts, type DraftData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
@@ -22,23 +20,14 @@ import {
 } from "@/api/sessions";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterResults from "./ExporterResults";
-import ExporterAnalytics from "./ExporterAnalytics";
-import { LCWorkspaceView } from "./sme/LCWorkspace";
-import { TemplatesView } from "./sme/Templates";
 import { DataRetentionView } from "./settings/DataRetention";
 import { CompanyProfileView } from "./settings/CompanyProfile";
-import { AIAssistance } from "@/components/sme/AIAssistance";
-import { ContentLibrary } from "@/components/sme/ContentLibrary";
-import { ShipmentTimeline } from "@/components/sme/ShipmentTimeline";
 import { BillingOverviewPage } from "./BillingOverviewPage";
-import { BillingUsagePage } from "./BillingUsagePage";
 import { BillingInvoicesPage } from "./BillingInvoicesPage";
-import { NotificationList, type Notification } from "@/components/notifications/NotificationItem";
 import { ResultsProvider, useResultsContext } from "@/context/ResultsContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ExporterSidebar } from "@/components/exporter/ExporterSidebar";
 import { useAuth } from "@/hooks/use-auth";
-import { useLcopilotQuota } from "@/hooks/use-lcopilot-quota";
 import { getExporterSessionTruth } from "@/lib/exporter/dashboardTruth";
 import {
   type ExporterSection,
@@ -65,15 +54,12 @@ import {
   TrendingUp,
   Clock,
   Upload,
-  BarChart3,
   Bell,
-  Plus,
   Edit3,
   Trash2,
   ArrowRight,
   GitBranch,
   History,
-  Download,
 } from "lucide-react";
 
 const DASHBOARD_BASE = "/lcopilot/exporter-dashboard";
@@ -127,14 +113,10 @@ function DashboardContent() {
   // Active section - can be either ExporterSection or SidebarSection
   const [activeSection, setActiveSection] = useState<AnySection>(() => {
     if (!sectionParam) return "overview";
-    // Check if it's a valid ExporterSection first
     const parsed = parseExporterSection(sectionParam);
     if (parsed !== "overview" || sectionParam === "overview") return parsed;
-    // Check if it's a valid SidebarSection
     const sidebarSections: SidebarSection[] = [
-      "dashboard", "workspace", "templates", "upload", "reviews", "analytics",
-      "notifications", "billing", "billing-usage", "ai-assistance",
-      "content-library", "shipment-timeline", "settings", "help"
+      "dashboard", "upload", "reviews", "billing", "settings"
     ];
     if (sidebarSections.includes(sectionParam as SidebarSection)) {
       return sectionParam as SidebarSection;
@@ -176,11 +158,8 @@ function DashboardContent() {
       setActiveSection(parsed);
       return;
     }
-    // Check if it's a valid SidebarSection
     const sidebarSections: SidebarSection[] = [
-      "dashboard", "workspace", "templates", "upload", "reviews", "analytics",
-      "notifications", "billing", "billing-usage", "ai-assistance",
-      "content-library", "shipment-timeline", "settings", "help"
+      "dashboard", "upload", "reviews", "billing", "settings"
     ];
     if (sidebarSections.includes(sectionParam as SidebarSection)) {
       setActiveSection(sectionParam as SidebarSection);
@@ -275,15 +254,12 @@ function DashboardContent() {
    * Handle billing tab changes
    */
   const handleBillingTabChange = useCallback((tab: string) => {
-    if (tab === "usage") {
-      handleSectionChange("billing-usage");
-    } else if (tab === "invoices") {
+    if (tab === "invoices") {
       setBillingTab("invoices");
-      handleSectionChange("billing");
     } else {
       setBillingTab("overview");
-      handleSectionChange("billing");
     }
+    handleSectionChange("billing");
   }, [handleSectionChange]);
 
   /**
@@ -403,18 +379,6 @@ function DashboardContent() {
           />
         )}
 
-        {/* LC Workspace Section */}
-        {activeSection === "workspace" && <LCWorkspaceView embedded />}
-
-        {/* Templates Section */}
-        {activeSection === "templates" && <TemplatesView embedded />}
-
-        {/* Analytics Section (standalone, not results tab) */}
-        {activeSection === "analytics" && <ExporterAnalytics embedded />}
-
-        {/* Notifications Section */}
-        {activeSection === "notifications" && <NotificationsPanel />}
-
         {/* Billing Section */}
         {activeSection === "billing" && (
           billingTab === "invoices" ? (
@@ -424,25 +388,8 @@ function DashboardContent() {
           )
         )}
 
-        {/* Billing Usage Section */}
-        {activeSection === "billing-usage" && (
-          <BillingUsagePage onTabChange={handleBillingTabChange} />
-        )}
-
-        {/* AI Assistance Section */}
-        {activeSection === "ai-assistance" && <AIAssistance embedded role="exporter" />}
-
-        {/* Content Library Section */}
-        {activeSection === "content-library" && <ContentLibrary embedded />}
-
-        {/* Shipment Timeline Section */}
-        {activeSection === "shipment-timeline" && <ShipmentTimeline embedded />}
-
         {/* Settings Section */}
         {activeSection === "settings" && <SettingsPanel toast={toast} />}
-
-        {/* Help Section */}
-        {activeSection === "help" && <HelpPanel />}
       </div>
     </DashboardLayout>
   );
@@ -725,7 +672,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
 
               <TabsContent value="drafts" className="mt-6">
                 <div className="mb-4 rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
-                  These drafts are saved in this browser only during beta. Shared account-backed draft tracking lives under LC Workspace.
+                  Drafts are saved locally in this browser. Resume any draft to continue where you left off.
                 </div>
                 {isLoadingDrafts ? (
                   <div className="flex items-center justify-center py-8">
@@ -748,7 +695,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                               {draft.lcNumber || 'Untitled Draft'}
                             </h4>
                             <Badge variant="outline" className="text-xs">
-                              Browser-local beta
+                              Browser-local
                             </Badge>
                           </div>
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -781,7 +728,7 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
 
               <TabsContent value="amendments" className="mt-6">
                 <div className="mb-4 rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
-                  Amendment counts are live. Use LC Workspace for deeper follow-up while dashboard version-history routing is still being connected.
+                  LCs with multiple validation versions are tracked here automatically.
                 </div>
                 {isLoadingAmendments ? (
                   <div className="flex items-center justify-center py-8">
@@ -820,10 +767,10 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => onNavigate("workspace")}
+                            onClick={() => onNavigate("reviews")}
                           >
                             <History className="w-4 h-4 mr-2" />
-                            Open Workspace
+                            View History
                           </Button>
                         </div>
                       </div>
@@ -1037,215 +984,6 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
   );
 }
 
-// ---------- Notifications Card ----------
-
-function NotificationsCard({ notifications }: { notifications: Notification[] }) {
-  const [localNotifications, setLocalNotifications] = React.useState(notifications);
-
-  useEffect(() => {
-    setLocalNotifications(notifications);
-  }, [notifications]);
-
-  const handleMarkAsRead = (id: string | number) => {
-    setLocalNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-  };
-
-  const handleDismiss = (id: string | number) => {
-    setLocalNotifications((prev) => prev.filter((n) => n.id !== id));
-  };
-
-  const handleMarkAllAsRead = () => {
-    setLocalNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  };
-
-  return (
-    <Card className="shadow-soft border-0">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bell className="w-5 h-5" />
-          Notifications
-        </CardTitle>
-        <CardDescription>Updates and alerts for your export workflow</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <NotificationList
-          notifications={localNotifications}
-          onMarkAsRead={handleMarkAsRead}
-          onDismiss={handleDismiss}
-          onMarkAllAsRead={handleMarkAllAsRead}
-          showHeader={false}
-        />
-      </CardContent>
-    </Card>
-  );
-}
-
-function NotificationsPanel() {
-  const { user: authUser, isLoading: isLoadingAuth } = useAuth();
-  const { getAllAmendedLCs } = useVersions();
-  const quotaState = useLcopilotQuota();
-  const [sessions, setSessions] = useState<ValidationSession[]>([]);
-  const [amendedLCs, setAmendedLCs] = useState<Array<{ lc_number: string; versions: number; latest_version: string; last_updated: string }>>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-
-    if (isLoadingAuth) {
-      return () => {
-        active = false;
-      };
-    }
-
-    if (!authUser) {
-      setSessions([]);
-      setAmendedLCs([]);
-      setIsLoading(false);
-      return () => {
-        active = false;
-      };
-    }
-
-    const loadSignals = async () => {
-      setIsLoading(true);
-      try {
-        const [sessionData, amendmentData] = await Promise.all([
-          getUserSessions().catch(() => []),
-          getAllAmendedLCs().catch(() => []),
-        ]);
-
-        if (!active) {
-          return;
-        }
-
-        const hydratedSessions = await hydrateSessionsWithStructuredResults(sessionData || [], 8);
-        if (!active) {
-          return;
-        }
-
-        setSessions(hydratedSessions);
-        setAmendedLCs(amendmentData || []);
-      } finally {
-        if (active) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadSignals();
-
-    return () => {
-      active = false;
-    };
-  }, [authUser?.id, getAllAmendedLCs, isLoadingAuth]);
-
-  const notifications = useMemo<Notification[]>(() => {
-    const items: Notification[] = [];
-
-    if (quotaState.status === "ready" && quotaState.quota) {
-      if (quotaState.isExhausted) {
-        items.push({
-          id: "quota-exhausted",
-          title: quotaState.headline,
-          message: quotaState.detail,
-          type: "error",
-          timestamp: "Current billing cycle",
-          link: "/lcopilot/exporter-dashboard?section=billing",
-          badge: "Quota",
-        });
-      } else if (
-        quotaState.quota.remaining !== null &&
-        quotaState.quota.remaining <= 2
-      ) {
-        items.push({
-          id: "quota-low",
-          title: "Validation allowance running low",
-          message: quotaState.detail,
-          type: "warning",
-          timestamp: "Current billing cycle",
-          link: "/lcopilot/exporter-dashboard?section=billing-usage",
-          badge: `${quotaState.quota.remaining} left`,
-        });
-      }
-    }
-
-    const recentSessions = [...sessions]
-      .filter((session) => session.status === "completed")
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 5);
-
-    recentSessions.forEach((session) => {
-      const truth = getExporterSessionTruth(session);
-      const lcLabel = `LC-${truth.lcNumber}`;
-      const type =
-        truth.overallStatus === "error"
-          ? "error"
-          : truth.overallStatus === "warning"
-          ? "warning"
-          : "success";
-      const title =
-        truth.state === "blocked"
-          ? `${lcLabel} blocked`
-          : truth.statusLabel === "Ready with cautions"
-          ? `${lcLabel} ready with cautions`
-          : truth.statusLabel === "Completed"
-          ? `${lcLabel} completed`
-          : truth.canSubmit
-          ? `${lcLabel} ready for submission`
-          : `${lcLabel} needs review`;
-      const message =
-        truth.issueCount > 0
-          ? `${truth.issueCount} issue${truth.issueCount === 1 ? "" : "s"} recorded in the latest validation.`
-          : "Latest validation completed without recorded issues.";
-
-      items.push({
-        id: session.id,
-        title,
-        message,
-        type,
-        timestamp: formatTimeAgo(session.created_at),
-        link: `/lcopilot/exporter-dashboard?section=reviews&jobId=${session.id}`,
-        badge: truth.statusLabel,
-      });
-    });
-
-    amendedLCs.slice(0, 2).forEach((amendment) => {
-      items.push({
-        id: `amendment-${amendment.lc_number}`,
-        title: `LC-${amendment.lc_number} has version history`,
-        message: `${amendment.versions} versions recorded. Continue follow-up from LC Workspace.`,
-        type: "info",
-        timestamp: formatTimeAgo(amendment.last_updated),
-        link: "/lcopilot/exporter-dashboard?section=workspace",
-        badge: `${amendment.versions} versions`,
-      });
-    });
-
-    return items.slice(0, 8);
-  }, [amendedLCs, quotaState, sessions]);
-
-  return (
-    <Card className="shadow-soft border-0">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bell className="w-5 h-5" />
-          Notifications
-        </CardTitle>
-        <CardDescription>Live validation, amendment, and quota signals for your exporter workflow.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full mr-3"></div>
-            <span className="text-muted-foreground">Loading notifications...</span>
-          </div>
-        ) : (
-          <NotificationList notifications={notifications} showHeader={false} />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
 // ---------- Settings Panel ----------
 
@@ -1393,7 +1131,7 @@ function SettingsPanel({ toast }: SettingsPanelProps) {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Beta note: this tab stores browser preferences only. It does not yet control live email delivery or account-wide automation.
+              Preferences are stored locally in this browser.
             </p>
           </TabsContent>
           <TabsContent value="company-profile" className="mt-6">
@@ -1408,65 +1146,3 @@ function SettingsPanel({ toast }: SettingsPanelProps) {
   );
 }
 
-// ---------- Help Panel ----------
-
-function HelpPanel() {
-  return (
-    <Card className="shadow-soft border-0">
-      <CardHeader>
-        <CardTitle>Need Help?</CardTitle>
-        <CardDescription>Browse exporter resources, walkthroughs, and contact options.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6 text-sm text-muted-foreground">
-        <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={() => window.open("/lcopilot/support", "_blank")}>
-            Support Center
-          </Button>
-          <Button variant="outline" onClick={() => window.open("/lcopilot/support", "_blank")}>
-            Exporter Help
-          </Button>
-          <Button variant="outline" onClick={() => window.open("mailto:support@trdrhub.com")}>Email Support</Button>
-        </div>
-
-        <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="faq-1">
-            <AccordionTrigger>How do I validate a new LC package?</AccordionTrigger>
-            <AccordionContent>
-              Choose <span className="font-medium">Upload Documents</span>, attach your LC and supporting files, then run
-              validation. Results appear under <span className="font-medium">Review Results</span> with compliance checks and
-              customs readiness assessment.
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="faq-2">
-            <AccordionTrigger>How do I generate a customs pack?</AccordionTrigger>
-            <AccordionContent>
-              After validation, navigate to the <span className="font-medium">Customs Pack</span> tab in Review Results.
-              Your customs documentation will be automatically generated based on the validated LC data.
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="faq-3">
-            <AccordionTrigger>Where can I monitor validation trends?</AccordionTrigger>
-            <AccordionContent>
-              Use the <span className="font-medium">Analytics</span> view to track compliance rates, processing times, and
-              document quality trends across your export operations.
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-
-        <div className="rounded-lg border border-gray-200/60 bg-secondary/20 p-4">
-          <p className="text-xs">
-            Need a guided walkthrough? Schedule a 30-minute onboarding session with our success team and we&apos;ll review
-            your exporter workflow end-to-end.
-          </p>
-          <Button
-            size="sm"
-            className="mt-3"
-            onClick={() => window.open("https://cal.com/trdrhub/exporter-onboarding", "_blank")}
-          >
-            Book onboarding session
-          </Button>
-        </div>
-    </CardContent>
-  </Card>
-);
-}
