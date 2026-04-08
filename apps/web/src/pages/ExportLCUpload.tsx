@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate, type ValidationError } from "@/hooks/use-lcopilot";
+import { useValidationProgress, type UseValidationProgressState } from "@/hooks/useValidationProgress";
 import { cn } from "@/lib/utils";
 import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
 import { useVersions } from "@/hooks/use-versions";
@@ -353,9 +354,12 @@ const formatEstimatedDuration = (seconds: number): string => {
 function ValidationProgressIndicator({
   fileCount,
   mode = "validation",
+  realProgress,
 }: {
   fileCount: number;
   mode?: ProgressMode;
+  /** When provided and connected, real backend progress overrides the fake timer */
+  realProgress?: UseValidationProgressState | null;
 }) {
   const copy =
     mode === "lc" ? buildLcResolveProgressCopy() : buildValidationProgressCopy(fileCount);
@@ -388,8 +392,17 @@ function ValidationProgressIndicator({
 
   const currentPhase = phases[currentPhaseIndex];
   const CurrentIcon = currentPhase.icon;
-  const overallProgress = Math.min(95, (elapsedSeconds / totalEstimated) * 100);
+  const fakeProgress = Math.min(95, (elapsedSeconds / totalEstimated) * 100);
   const remainingSeconds = Math.max(0, totalEstimated - elapsedSeconds);
+
+  // Prefer real backend progress when the SSE stream is connected and has
+  // delivered at least one stage event. Falls back to fake timer otherwise.
+  const useReal = Boolean(
+    realProgress?.isConnected && realProgress.progress != null && realProgress.progress > 0,
+  );
+  const overallProgress = useReal ? Math.max(5, realProgress!.progress!) : fakeProgress;
+  const stageMessage = useReal && realProgress?.message ? realProgress.message : currentPhase.label;
+  const badgeLabel = useReal ? "Live progress" : "Estimated progress";
 
   return (
     <div className="bg-exporter/5 border border-exporter/20 rounded-lg p-4 space-y-4">
@@ -404,12 +417,12 @@ function ValidationProgressIndicator({
             <p className="text-xs text-muted-foreground">{copy.subheading}</p>
           </div>
         </div>
-        <Badge variant="outline">Estimated progress</Badge>
+        <Badge variant="outline">{badgeLabel}</Badge>
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span>{currentPhase.label}</span>
-          <span>{formatEstimatedDuration(remainingSeconds)}</span>
+          <span>{stageMessage}</span>
+          {!useReal && <span>{formatEstimatedDuration(remainingSeconds)}</span>}
         </div>
         <Progress value={overallProgress} className="h-2" />
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -518,10 +531,20 @@ export default function ExportLCUpload({
   const quotaState = useLcopilotQuota();
   const isLCResolved = lcIntake.status === "resolved" && !!lcIntake.continuationAllowed;
   const isLcResolving = lcIntake.status === "uploading";
-  
+
+  // Client-generated request id for SSE progress streaming. Set when the user
+  // clicks "Validate", cleared when the validation finishes. The same id is
+  // sent in the X-Client-Request-ID header on the POST and used as the SSE
+  // channel key.
+  const [clientRequestId, setClientRequestId] = useState<string | null>(null);
+  const validationProgress = useValidationProgress({
+    clientRequestId,
+    enabled: clientRequestId !== null,
+  });
+
   const { saveDraft, loadDraft, removeDraft } = useDrafts();
   const { checkLCExists } = useVersions();
-  
+
   // Loading state
   const isProcessing = isValidating;
   const isValidationProcessing = isValidating && !isLcResolving;
@@ -1172,6 +1195,17 @@ export default function ExportLCUpload({
         description: "Uploading documents and checking compliance...",
       });
 
+      // Generate a client request id for SSE progress streaming. The
+      // useValidationProgress hook (already initialized above) will pick this
+      // up and open the EventSource connection BEFORE the POST is sent.
+      // The same id flows to the backend as X-Client-Request-ID so the
+      // pipeline publishes checkpoint events to the matching channel.
+      const requestId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setClientRequestId(requestId);
+
       // Log validation params
       console.log('📁 Files to validate:', files.map(f => f.name));
       console.log('🏷️  LC Number:', lcNumber.trim());
@@ -1184,6 +1218,7 @@ export default function ExportLCUpload({
         finalTag: documentTags[file.name],
       })));
       console.log('⚙️  LC Type Override:', lcTypeOverride);
+      console.log('🔗 Client Request ID:', requestId);
 
       // Validate using V1 API
       const response = await validate({
@@ -1194,6 +1229,7 @@ export default function ExportLCUpload({
         userType: "exporter",
         workflowType: "export-lc-upload",
         lcTypeOverride,
+        clientRequestId: requestId,
       });
       
       // Check for blocked response (wrong LC type, no LC found, etc.)
@@ -1268,7 +1304,7 @@ export default function ExportLCUpload({
         setShowRateLimit(true);
       } else {
         // Include error code in the message if available for debugging
-        const description = errorCode !== 'unknown' 
+        const description = errorCode !== 'unknown'
           ? `${error.message || 'Validation failed'} (${errorCode})`
           : error.message || "Something went wrong. Please try again.";
         toast({
@@ -1277,6 +1313,9 @@ export default function ExportLCUpload({
           variant: "destructive",
         });
       }
+    } finally {
+      // Close the SSE progress stream once validation is done (success or fail)
+      setClientRequestId(null);
     }
   };
 
@@ -1971,7 +2010,10 @@ export default function ExportLCUpload({
               </div>
 
               {isValidationProcessing && (
-                <ValidationProgressIndicator fileCount={completedFiles.length} />
+                <ValidationProgressIndicator
+                  fileCount={completedFiles.length}
+                  realProgress={validationProgress}
+                />
               )}
 
               <LcopilotQuotaBanner quotaState={quotaState} variant="exporter" />

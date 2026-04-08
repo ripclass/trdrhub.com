@@ -4,9 +4,9 @@ This file points at where active work was left off. Read it first if you're pick
 
 ## Active work — 2026-04-08
 
-**LCopilot Results Page Redesign**
-- **Phase 1: COMPLETE and committed.** Replaced 4-tab `ExporterResults` layout with single scrollable presentation readiness report. New files: `apps/web/src/components/lcopilot/SectionNav.tsx`, `apps/web/src/pages/exporter/results/ExporterResultsReport.tsx`. Modified: `apps/web/src/pages/ExporterResults.tsx`.
-- **Phase 2: PENDING.** SSE-based real-time pipeline progress streaming. Make `POST /api/validate` return early, run pipeline as `BackgroundTask`, publish `checkpoint()` events to Redis pub/sub, frontend connects via SSE.
+**LCopilot Results Page Redesign — both phases complete**
+- **Phase 1: COMPLETE and committed.** Replaced 4-tab `ExporterResults` layout with single scrollable presentation readiness report. New files: `apps/web/src/components/lcopilot/SectionNav.tsx`, `apps/web/src/pages/exporter/results/ExporterResultsReport.tsx`.
+- **Phase 2: COMPLETE and committed.** Real-time SSE-based pipeline progress streaming. Used **client-generated request ID** approach (safer than original "POST returns early" plan). Frontend generates UUID, opens SSE BEFORE submitting POST, backend's `checkpoint()` publishes events to Redis pub/sub. POST stays synchronous — zero API contract change. New files: `apps/api/app/utils/validation_progress.py`, `apps/api/app/routers/validate_stream.py`, `apps/web/src/hooks/useValidationProgress.ts`.
 
 ## Read these to resume
 

@@ -3477,7 +3477,9 @@ def _set_nested_value(container: Dict[str, Any], path: Tuple[str, ...], value: A
 from app.routers.validate_run import build_router as _build_validate_run_router
 from app.routers.validate_customs import build_router as _build_validate_customs_router
 from app.routers.validate_results import build_router as _build_validate_results_router
+from app.routers.validate_stream import build_router as _build_validate_stream_router
 
 router.include_router(_build_validate_run_router(globals()))
 router.include_router(_build_validate_customs_router(globals()))
 router.include_router(_build_validate_results_router(globals()))
+router.include_router(_build_validate_stream_router(globals()))

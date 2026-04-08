@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict
 
 from fastapi import APIRouter
@@ -10,6 +11,7 @@ from app.routers.validation.pipeline_runner import bind_shared as bind_pipeline_
 from app.routers.validation.pipeline_runner import run_validate_pipeline
 from app.routers.validation.request_parsing import bind_shared as bind_request_parsing_shared
 from app.routers.validation.request_parsing import parse_validate_request
+from app.utils.validation_progress import publish_completion, publish_progress
 
 
 _SHARED_NAMES = [
@@ -84,15 +86,36 @@ def build_router(shared: Any) -> APIRouter:
 
         timings: Dict[str, float] = {}
 
+        # Client-supplied request id lets the frontend subscribe to the SSE
+        # progress stream BEFORE the backend has created a session row. This
+        # avoids the chicken-and-egg problem of needing job_id to subscribe.
+        client_request_id = request.headers.get("X-Client-Request-ID") or None
+
+        runtime_context: Dict[str, Any] = {"validation_session": None}
+        runtime_context["client_request_id"] = client_request_id
+
         def checkpoint(name: str) -> None:
             timings[name] = round(time.time() - start_time, 3)
+            # Best-effort progress publish — never blocks or fails the pipeline
+            job_id = runtime_context.get("job_id")
+            if job_id or client_request_id:
+                try:
+                    asyncio.create_task(
+                        publish_progress(
+                            checkpoint_name=name,
+                            job_id=str(job_id) if job_id else None,
+                            client_request_id=client_request_id,
+                        )
+                    )
+                except RuntimeError:
+                    # No running event loop; skip silently
+                    pass
 
         checkpoint("request_received")
 
         audit_service = AuditService(db)
         audit_context = create_audit_context(request)
         payload: Dict[str, Any] = {}
-        runtime_context: Dict[str, Any] = {"validation_session": None}
         if hasattr(request, "state"):
             request.state.validation_runtime_context = runtime_context
 
@@ -100,7 +123,7 @@ def build_router(shared: Any) -> APIRouter:
             parsed_request = await parse_validate_request(request)
             payload = parsed_request.payload
             checkpoint("form_parsed")
-            return await run_validate_pipeline(
+            result = await run_validate_pipeline(
                 request=request,
                 current_user=current_user,
                 db=db,
@@ -115,6 +138,19 @@ def build_router(shared: Any) -> APIRouter:
                 audit_context=audit_context,
                 runtime_context=runtime_context,
             )
+            # Publish terminal completion event for SSE consumers
+            try:
+                final_job_id = runtime_context.get("job_id")
+                asyncio.create_task(
+                    publish_completion(
+                        job_id=str(final_job_id) if final_job_id else None,
+                        client_request_id=client_request_id,
+                        success=True,
+                    )
+                )
+            except RuntimeError:
+                pass
+            return result
         except HTTPException as exc:
             failure_stage = (
                 getattr(exc, "_validation_pipeline_stage", None)
@@ -158,6 +194,19 @@ def build_router(shared: Any) -> APIRouter:
                 or runtime_context.get("pipeline_stage")
             )
             checkpoint_trace = list(timings.keys())
+            # Notify SSE consumers that the pipeline failed
+            try:
+                final_job_id = runtime_context.get("job_id")
+                asyncio.create_task(
+                    publish_completion(
+                        job_id=str(final_job_id) if final_job_id else None,
+                        client_request_id=client_request_id,
+                        success=False,
+                        error_message=f"Validation failed during {failure_stage}" if failure_stage else "Validation failed",
+                    )
+                )
+            except RuntimeError:
+                pass
             logger.error(
                 f"Validation endpoint exception: {type(e).__name__}: {str(e)}",
                 extra={

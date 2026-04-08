@@ -28,6 +28,14 @@ export interface ValidationRequest {
   lcTypeOverride?: 'auto' | 'export' | 'import';
   intakeOnly?: boolean;
   mode?: 'intake' | 'lc_intake';
+  /**
+   * Optional client-generated UUID for SSE progress streaming. When present,
+   * sent as the X-Client-Request-ID header so the backend can publish pipeline
+   * checkpoint events to a Redis pub/sub channel keyed by this id. The frontend
+   * can subscribe to that channel via useValidationProgress BEFORE submitting
+   * this request.
+   */
+  clientRequestId?: string;
 }
 
 export interface ValidationResponse {
@@ -312,13 +320,18 @@ export const useValidate = () => {
       let attempt = 0;
       let lastError: any = null;
 
+      const validateHeaders: Record<string, string> = {
+        'Content-Type': 'multipart/form-data',
+      };
+      if (request.clientRequestId) {
+        validateHeaders['X-Client-Request-ID'] = request.clientRequestId;
+      }
+
       while (attempt < maxAttempts && !response) {
         attempt += 1;
         try {
           response = await api.post('/api/validate', formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
+            headers: validateHeaders,
           });
         } catch (err: any) {
           lastError = err;

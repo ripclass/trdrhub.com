@@ -16,6 +16,18 @@ vi.mock("@/hooks/use-lcopilot", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useValidationProgress", () => ({
+  useValidationProgress: () => ({
+    isConnected: false,
+    stage: null,
+    progress: null,
+    message: null,
+    isComplete: false,
+    isFailed: false,
+    error: null,
+  }),
+}));
+
 vi.mock("@/hooks/use-lcopilot-quota", () => ({
   useLcopilotQuota: () => ({
     status: "ready",
