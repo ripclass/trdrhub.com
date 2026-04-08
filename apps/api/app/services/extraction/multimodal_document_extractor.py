@@ -225,6 +225,9 @@ def _resolve_schema_key(document_type: str) -> str:
 
 
 def _resolve_multimodal_config() -> Tuple[str, str, int]:
+    """Legacy single-provider config — kept for backwards compat. The tiered
+    resolver below (`_resolve_vision_tier_config`) is the preferred path.
+    """
     provider = (
         os.getenv("EXTRACTION_MULTIMODAL_PROVIDER")
         or os.getenv("EXTRACTION_PRIMARY_PROVIDER")
@@ -243,6 +246,101 @@ def _resolve_multimodal_config() -> Tuple[str, str, int]:
     return provider, model, max(1, max_pages)
 
 
+# Vision-tier escalation configuration. L1 is the cheap default, L2 is the
+# mid-tier escalation when L1 returns nothing or misses critical fields, L3 is
+# the top-tier model used only in extreme cases. Each tier has its own provider
+# and model env vars; if a tier-specific env var is unset it falls back to the
+# legacy EXTRACTION_MULTIMODAL_* vars (L1) or to a sensible default.
+_VISION_TIER_DEFAULTS: Dict[str, Tuple[str, str]] = {
+    "L1": (LLMProvider.OPENAI.value, "gpt-4.1"),
+    "L2": (LLMProvider.ANTHROPIC.value, "claude-sonnet-4-6"),
+    "L3": (LLMProvider.ANTHROPIC.value, "claude-opus-4-6"),
+}
+
+
+def _resolve_vision_tier_config(tier: str) -> Tuple[str, str]:
+    """Return (provider, model) for a vision tier (L1/L2/L3).
+
+    Resolution order for each tier:
+    1. EXTRACTION_VISION_{tier}_PROVIDER + EXTRACTION_VISION_{tier}_MODEL
+    2. AI_ROUTER_{tier}_PRIMARY_MODEL (split into provider/model if it contains "/")
+    3. For L1 only: legacy EXTRACTION_MULTIMODAL_PROVIDER/MODEL env vars
+    4. Hardcoded default in _VISION_TIER_DEFAULTS
+    """
+    tier_upper = tier.upper()
+    provider_env = os.getenv(f"EXTRACTION_VISION_{tier_upper}_PROVIDER")
+    model_env = os.getenv(f"EXTRACTION_VISION_{tier_upper}_MODEL")
+    if provider_env and model_env:
+        return provider_env, model_env
+
+    router_model = os.getenv(f"AI_ROUTER_{tier_upper}_PRIMARY_MODEL")
+    if router_model and "/" in router_model:
+        provider_part, _, model_part = router_model.partition("/")
+        return provider_part, model_part
+
+    if tier_upper == "L1":
+        legacy_provider = os.getenv("EXTRACTION_MULTIMODAL_PROVIDER") or os.getenv("EXTRACTION_PRIMARY_PROVIDER")
+        legacy_model = os.getenv("EXTRACTION_MULTIMODAL_MODEL") or os.getenv("EXTRACTION_PRIMARY_MODEL")
+        if legacy_provider and legacy_model:
+            return legacy_provider, legacy_model
+
+    return _VISION_TIER_DEFAULTS.get(tier_upper, _VISION_TIER_DEFAULTS["L1"])
+
+
+# Critical fields that must be present for an extraction to be considered
+# "strong enough" not to escalate. If the L1 result is missing all of these
+# for a doc type, escalate to L2.
+_VISION_CRITICAL_FIELDS: Dict[str, Tuple[str, ...]] = {
+    "letter_of_credit": ("lc_number", "applicant", "beneficiary", "amount"),
+    "swift_message": ("lc_number", "applicant", "beneficiary"),
+    "lc_application": ("lc_number", "applicant", "beneficiary"),
+    "commercial_invoice": ("invoice_number", "amount", "seller", "buyer"),
+    "proforma_invoice": ("invoice_number", "amount", "seller", "buyer"),
+    "bill_of_lading": ("bl_number", "shipper", "consignee"),
+    "ocean_bill_of_lading": ("bl_number", "shipper", "consignee"),
+    "air_waybill": ("awb_number", "shipper", "consignee"),
+    "packing_list": ("packing_list_number", "shipper", "consignee"),
+    "certificate_of_origin": ("certificate_number", "exporter", "country_of_origin"),
+    "insurance_certificate": ("insurance_number", "insured_amount"),
+    "inspection_certificate": ("inspection_number", "inspection_date"),
+}
+
+
+def _vision_result_is_strong(
+    result: Optional[Dict[str, Any]],
+    document_type: str,
+) -> bool:
+    """Check if a vision extraction result is strong enough to skip escalation.
+
+    A result is strong when:
+    - It is non-None
+    - Its `_status` is not "failed" / "error"
+    - At least HALF of the critical fields for this doc type are non-empty
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("_status") in ("failed", "error"):
+        return False
+
+    critical = _VISION_CRITICAL_FIELDS.get(document_type)
+    if not critical:
+        # Unknown doc type — accept anything that returned without error
+        return True
+
+    present = 0
+    for field_name in critical:
+        value = result.get(field_name)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            continue
+        present += 1
+
+    return present >= max(1, len(critical) // 2)
+
+
 def _is_supported_content_type(content_type: Optional[str], filename: Optional[str]) -> bool:
     ctype = (content_type or "").lower()
     if ctype.startswith("image/") or ctype == "application/pdf":
@@ -251,32 +349,18 @@ def _is_supported_content_type(content_type: Optional[str], filename: Optional[s
     return lower_name.endswith((".pdf", ".png", ".jpg", ".jpeg", ".webp"))
 
 
-async def extract_document_multimodal_first(
+async def _attempt_vision_tier(
     *,
+    tier: str,
     document_type: str,
     filename: str,
-    file_bytes: Optional[bytes],
-    content_type: Optional[str],
-    extracted_text: str = "",
-    subtype_hint: Optional[str] = None,
+    image_parts: Sequence[Dict[str, str]],
+    source_mode: str,
+    subtype_hint: Optional[str],
+    extracted_text: str,
 ) -> Optional[Dict[str, Any]]:
-    if not file_bytes or not _is_supported_content_type(content_type, filename):
-        return None
-
-    provider, model, max_pages = _resolve_multimodal_config()
-    try:
-        image_parts, source_mode = await _build_visual_parts(
-            file_bytes=file_bytes,
-            content_type=content_type,
-            filename=filename,
-            max_pages=max_pages,
-        )
-    except Exception as exc:
-        logger.warning("Multimodal visual preparation failed for %s: %s", filename, exc)
-        return None
-
-    if not image_parts:
-        return None
+    """Run a single vision extraction attempt at a given tier (L1/L2/L3)."""
+    provider, model = _resolve_vision_tier_config(tier)
 
     schema_key = _resolve_schema_key(document_type)
     schema = DOC_TYPE_SCHEMAS[schema_key]
@@ -301,7 +385,10 @@ async def extract_document_multimodal_first(
             image_parts=image_parts,
         )
     except Exception as exc:
-        logger.warning("Multimodal extraction call failed for %s via %s/%s: %s", filename, provider, model, exc)
+        logger.warning(
+            "Multimodal extraction call failed for %s via tier=%s %s/%s: %s",
+            filename, tier, provider, model, exc,
+        )
         return None
 
     if not response_text:
@@ -315,7 +402,7 @@ async def extract_document_multimodal_first(
 
     parsed = await _parse_llm_json_with_repair(repair_provider, response_text)
     if not parsed:
-        logger.warning("Multimodal extraction JSON parse failed for %s", filename)
+        logger.warning("Multimodal extraction JSON parse failed for %s tier=%s", filename, tier)
         return None
 
     wrapped = _wrap_ai_result_with_default_confidence(parsed, default_confidence=0.82)
@@ -328,6 +415,7 @@ async def extract_document_multimodal_first(
     wrapped["_source_mode"] = source_mode
     wrapped["_llm_provider"] = provider_used
     wrapped["_llm_model"] = model
+    wrapped["_llm_tier"] = tier
     wrapped["_multimodal_pages_used"] = len(image_parts)
     wrapped["_field_details"] = field_details
     wrapped["_status_counts"] = _summarize_field_detail_statuses(field_details)
@@ -335,15 +423,83 @@ async def extract_document_multimodal_first(
     if subtype_hint:
         wrapped["_multimodal_subtype_hint"] = subtype_hint
     logger.info(
-        "validate.extraction.multimodal file=%s doc_type=%s provider=%s model=%s pages=%s source_mode=%s",
+        "validate.extraction.multimodal file=%s doc_type=%s tier=%s provider=%s model=%s pages=%s source_mode=%s",
         filename,
         document_type,
+        tier,
         provider_used,
         model,
         len(image_parts),
         source_mode,
     )
     return wrapped
+
+
+async def extract_document_multimodal_first(
+    *,
+    document_type: str,
+    filename: str,
+    file_bytes: Optional[bytes],
+    content_type: Optional[str],
+    extracted_text: str = "",
+    subtype_hint: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Vision LLM extraction with L1 → L2 → L3 tier escalation.
+
+    L1 (default GPT-4.1) handles most cases. If L1 returns None or misses
+    most critical fields for the document type, escalate to L2 (default
+    Claude Sonnet). If L2 still falls short, escalate to L3 (default
+    Claude Opus). Each tier sees the same raw PDF page images.
+    """
+    if not file_bytes or not _is_supported_content_type(content_type, filename):
+        return None
+
+    _, _, max_pages = _resolve_multimodal_config()
+    try:
+        image_parts, source_mode = await _build_visual_parts(
+            file_bytes=file_bytes,
+            content_type=content_type,
+            filename=filename,
+            max_pages=max_pages,
+        )
+    except Exception as exc:
+        logger.warning("Multimodal visual preparation failed for %s: %s", filename, exc)
+        return None
+
+    if not image_parts:
+        return None
+
+    # Tier escalation: L1 first, escalate only if the result is weak. The
+    # `_vision_result_is_strong` check uses critical-field presence per doc
+    # type — half of the critical fields must be non-empty to count as strong.
+    last_result: Optional[Dict[str, Any]] = None
+    for tier in ("L1", "L2", "L3"):
+        result = await _attempt_vision_tier(
+            tier=tier,
+            document_type=document_type,
+            filename=filename,
+            image_parts=image_parts,
+            source_mode=source_mode,
+            subtype_hint=subtype_hint,
+            extracted_text=extracted_text,
+        )
+        if _vision_result_is_strong(result, document_type):
+            return result
+        last_result = result or last_result
+        if result is None:
+            logger.info(
+                "Vision tier=%s returned no result for %s — escalating",
+                tier, filename,
+            )
+        else:
+            logger.info(
+                "Vision tier=%s result missing critical fields for %s (doc_type=%s) — escalating",
+                tier, filename, document_type,
+            )
+
+    # All three tiers were tried — return whatever the last attempt produced
+    # (which may be a weak result with some fields populated, or None).
+    return last_result
 
 
 def _build_multimodal_prompt(*, document_type: str, schema: Dict[str, Any], subtype_hint: Optional[str], extracted_text: str) -> str:

@@ -2086,7 +2086,8 @@ async def _try_ocr_providers(file_bytes: bytes, filename: str, content_type: str
         "gdocai": "google_documentai",
         "textract": "aws_textract",
     }
-    provider_order = settings.OCR_PROVIDER_ORDER or ["gdocai", "textract"]
+    # Google DocAI is suspended; default fallback is Textract only.
+    provider_order = settings.OCR_PROVIDER_ORDER or ["textract"]
     attempts: List[Dict[str, Any]] = []
     record_runtime_failure = None
     record_runtime_success = None

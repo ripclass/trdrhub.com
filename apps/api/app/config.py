@@ -51,7 +51,9 @@ class Settings(BaseSettings):
     
     # OCR Configuration
     OCR_ENABLED: bool = True  # Enable OCR fallback when pdfminer/PyPDF2 return empty
-    OCR_PROVIDER_ORDER: List[str] = ["gdocai", "textract"]  # Order to try providers
+    # Google DocAI is suspended — Textract is the primary external OCR provider.
+    # Set OCR_PROVIDER_ORDER env var to override (e.g., to re-enable gdocai).
+    OCR_PROVIDER_ORDER: List[str] = ["textract"]
     OCR_MAX_PAGES: int = 50  # Maximum pages for OCR processing
     OCR_TIMEOUT_SEC: int = 120  # Timeout for OCR operations (increased for 30+ page docs)
     OCR_MAX_BYTES: int = 50 * 1024 * 1024  # 50MB max file size for OCR

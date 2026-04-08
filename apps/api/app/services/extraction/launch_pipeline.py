@@ -382,12 +382,14 @@ class LaunchExtractionPipeline:
                     "post_validation_target": None,
                 }
 
+            # Vision LLM looks at raw PDF page images first (no OCR text input).
+            # The text-based AI extractor below is the fallback when vision fails.
             multimodal_struct = await extract_document_multimodal_first(
                 document_type=document_type,
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text=extracted_text,
+                extracted_text="",
                 subtype_hint=lc_subtype,
             )
             lc_struct = multimodal_struct or await extract_lc_ai_first(extracted_text)
@@ -532,12 +534,14 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
+            # Vision LLM looks at raw PDF page images first (no OCR text input).
+            # The text-based AI extractor below is the fallback when vision fails.
             multimodal_struct = await extract_document_multimodal_first(
                 document_type=document_type,
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text=extracted_text,
+                extracted_text="",
                 subtype_hint=invoice_subtype,
             )
             invoice_struct = multimodal_struct or await extract_invoice_ai_first(extracted_text)
@@ -710,12 +714,14 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
+            # Vision LLM looks at raw PDF page images first (no OCR text input).
+            # The text-based AI extractor below is the fallback when vision fails.
             multimodal_struct = await extract_document_multimodal_first(
                 document_type=document_type,
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text=extracted_text,
+                extracted_text="",
                 subtype_hint=transport_subtype,
             )
             bl_struct = multimodal_struct or await extract_bl_ai_first(extracted_text)
@@ -864,12 +870,14 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
+            # Vision LLM looks at raw PDF page images first (no OCR text input).
+            # The text-based AI extractor below is the fallback when vision fails.
             multimodal_struct = await extract_document_multimodal_first(
                 document_type=document_type,
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text=extracted_text,
+                extracted_text="",
             )
             packing_struct = multimodal_struct or await extract_packing_list_ai_first(extracted_text)
             extraction_status = packing_struct.get("_status", "unknown")
@@ -1007,12 +1015,14 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
+            # Vision LLM looks at raw PDF page images first (no OCR text input).
+            # The text-based AI extractor below is the fallback when vision fails.
             multimodal_struct = await extract_document_multimodal_first(
                 document_type=document_type,
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text=extracted_text,
+                extracted_text="",
                 subtype_hint=regulatory_subtype,
             )
             coo_struct = multimodal_struct or await extract_coo_ai_first(extracted_text)
@@ -1173,12 +1183,14 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
+            # Vision LLM looks at raw PDF page images first (no OCR text input).
+            # The text-based AI extractor below is the fallback when vision fails.
             multimodal_struct = await extract_document_multimodal_first(
                 document_type=document_type,
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text=extracted_text,
+                extracted_text="",
                 subtype_hint=insurance_subtype,
             )
             insurance_struct = multimodal_struct or await extract_insurance_ai_first(extracted_text)
@@ -1380,12 +1392,13 @@ class LaunchExtractionPipeline:
 
     async def _process_supporting_document(self, *, extracted_text: str, filename: str, quality_assessment: Any, document_type: str, file_bytes: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
         supporting_guess = _guess_supporting_document_subtype(filename=filename, extracted_text=extracted_text)
+        # Vision LLM looks at raw PDF page images first (no OCR text input).
         multimodal_struct = await extract_document_multimodal_first(
             document_type=document_type,
             filename=filename,
             file_bytes=file_bytes,
             content_type=content_type,
-            extracted_text=extracted_text,
+            extracted_text="",
             subtype_hint=supporting_guess.get("subtype"),
         )
         base_patch = {
@@ -1487,12 +1500,14 @@ class LaunchExtractionPipeline:
             "review_reasons": list(quality_assessment.warnings or []),
         }
         try:
+            # Vision LLM looks at raw PDF page images first (no OCR text input).
+            # The text-based AI extractor below is the fallback when vision fails.
             multimodal_struct = await extract_document_multimodal_first(
                 document_type=document_type,
                 filename=filename,
                 file_bytes=file_bytes,
                 content_type=content_type,
-                extracted_text=extracted_text,
+                extracted_text="",
                 subtype_hint=inspection_subtype,
             )
             inspection_struct = multimodal_struct or await extract_inspection_ai_first(extracted_text)
