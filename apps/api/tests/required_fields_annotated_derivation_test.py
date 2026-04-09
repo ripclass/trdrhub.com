@@ -265,6 +265,139 @@ def test_merge_upgrades_doc_standard_when_clause_later_demands_it() -> None:
     assert "46A-1" in inv_num["source_refs"]
 
 
+# ---------------------------------------------------------------------------
+# Concatenated-clause recovery — the splitter in _coerce_string_list
+# ---------------------------------------------------------------------------
+
+
+def test_concatenated_documents_required_is_split_into_separate_clauses() -> None:
+    """When the vision LLM collapses a 46A array into a single
+    comma-joined string with inlined ``1)`` / ``2)`` markers, the
+    derivation must re-split it back into separate clauses so field
+    citations point at the correct clause index (46A-2, 46A-4, ...) and
+    not all at 46A-1.
+
+    This was the live regression spotted on 2026-04-09 where every
+    clause-cited red badge was labeled ``Missing — 46A-1`` and the
+    tooltip showed all 7 clauses concatenated together.
+    """
+    concatenated_46a = (
+        "1) SIGNED COMMERCIAL INVOICE IN 6 COPIES INDICATING HS CODE, "
+        "QTY, UNIT PRICE AND TOTAL., "
+        "2) FULL SET OF CLEAN ON-BOARD BILL OF LADING MADE OUT TO ORDER "
+        "OF ISSUING BANK, MARKED FREIGHT COLLECT, NOTIFY APPLICANT. BL "
+        "TO SHOW VESSEL NAME, VOYAGE NO., CONTAINER NO., SEAL NO., "
+        "GROSS AND NET WEIGHT., "
+        "3) DETAILED PACKING LIST IN 6 COPIES SHOWING CARTON-WISE "
+        "BREAKDOWN, G.W., N.W., SIZES., "
+        "4) CERTIFICATE OF ORIGIN ISSUED BY EPB/CHAMBER OF COMMERCE, "
+        "INDICATING COUNTRY OF ORIGIN: BANGLADESH., "
+        "5) SGS/INTERTEK INSPECTION CERTIFICATE CONFIRMING QUALITY, "
+        "QUANTITY & PACKING., "
+        "6) BENEFICIARY CERTIFICATE CONFIRMING GOODS ARE BRAND NEW AND "
+        "MANUFACTURED IN 2026., "
+        "7) NON-NEGOTIABLE DOCUMENTS TO BE SENT TO APPLICANT WITHIN 5 "
+        "DAYS OF SHIPMENT."
+    )
+    result = derive_required_fields(
+        lc_context={
+            "documents_required": concatenated_46a,
+            "additional_conditions": [],
+        },
+        document_types_present=[
+            "commercial_invoice",
+            "bill_of_lading",
+            "packing_list",
+            "certificate_of_origin",
+            "inspection_certificate",
+        ],
+    )
+
+    # The splitter should have produced clauses 46A-1 through 46A-5 at
+    # minimum (the first 5 clauses each demand a different doc type).
+    # Each doc type's fields should cite the correct clause index.
+    invoice_records = result["by_document_type_annotated"]["commercial_invoice"]
+    invoice_hs = _find_record(invoice_records, "hs_code")
+    assert invoice_hs["source_type"] == "46a"
+    assert "46A-1" in invoice_hs["source_refs"], (
+        f"hs_code should cite 46A-1 (the invoice clause), got {invoice_hs['source_refs']}"
+    )
+    # Clause text on 46A-1 should be the INVOICE clause alone, not the
+    # whole 7-clause blob.
+    assert all(
+        "SIGNED COMMERCIAL INVOICE" in t
+        and "FULL SET OF CLEAN ON-BOARD" not in t
+        for t in invoice_hs["clause_texts"]
+    ), (
+        "46A-1 clause text should contain only the invoice clause, not "
+        "the merged blob"
+    )
+
+    bl_records = result["by_document_type_annotated"]["bill_of_lading"]
+    bl_vessel = _find_record(bl_records, "vessel_name")
+    assert bl_vessel["source_type"] == "46a"
+    assert "46A-2" in bl_vessel["source_refs"], (
+        f"vessel_name should cite 46A-2 (the BL clause), got {bl_vessel['source_refs']}"
+    )
+    # BL clause text should be the BL clause, NOT the invoice clause.
+    assert all(
+        "FULL SET OF CLEAN ON-BOARD" in t for t in bl_vessel["clause_texts"]
+    )
+
+    coo_records = result["by_document_type_annotated"]["certificate_of_origin"]
+    coo_country = _find_record(coo_records, "country_of_origin")
+    assert coo_country["source_type"] == "46a"
+    assert "46A-4" in coo_country["source_refs"], (
+        f"country_of_origin should cite 46A-4 (the CoO clause), got {coo_country['source_refs']}"
+    )
+
+
+def test_proper_clause_list_passes_through_unchanged() -> None:
+    """If the vision LLM does return a proper list of 7 clauses, the
+    splitter should NOT fragment legitimate single-clause strings."""
+    proper_list = [
+        "SIGNED COMMERCIAL INVOICE SHOWING HS CODE AND UNIT PRICE",
+        "FULL SET OF CLEAN ON-BOARD BILL OF LADING SHOWING VESSEL NAME",
+        "DETAILED PACKING LIST SHOWING GROSS AND NET WEIGHT",
+    ]
+    result = derive_required_fields(
+        lc_context={
+            "documents_required": proper_list,
+            "additional_conditions": [],
+        },
+        document_types_present=["commercial_invoice", "bill_of_lading", "packing_list"],
+    )
+    # Each clause has its own keyword hits, so the evidence list should
+    # contain 46A-1, 46A-2, 46A-3 — one per clause, not merged.
+    evidence_sources = {e["source"] for e in result["evidence"]}
+    assert "46A-1" in evidence_sources
+    assert "46A-2" in evidence_sources
+    assert "46A-3" in evidence_sources
+    # And the per-doc record for the BL should cite 46A-2, not 46A-1.
+    bl_records = result["by_document_type_annotated"]["bill_of_lading"]
+    vessel = _find_record(bl_records, "vessel_name")
+    assert "46A-2" in vessel["source_refs"]
+
+
+def test_single_legitimate_clause_with_one_number_marker_not_split() -> None:
+    """A single clause that legitimately contains ONE numbered reference
+    (e.g. 'INVOICE SHOWING AT LEAST 1) HS CODE 2) QUANTITY') — wait,
+    this IS actually split.  The rule is: strings with 2+ numbered
+    markers get split.  This test verifies the EXACT boundary case."""
+    # Legitimately a single clause — only one number, no split
+    single = "DOCUMENTS DATED AFTER 2026-01-01 MUST BE REJECTED"
+    result = derive_required_fields(
+        lc_context={
+            "documents_required": [single],
+            "additional_conditions": [],
+        },
+        document_types_present=["commercial_invoice"],
+    )
+    # No 46A-2 should appear because there's only 1 clause
+    evidence_sources = {e["source"] for e in result["evidence"]}
+    assert "46A-2" not in evidence_sources
+
+
 def test_carton_marking_clauses_do_not_create_requirements() -> None:
     """47A #4 ('COUNTRY OF ORIGIN MUST BE PRINTED ON ALL CARTONS IN
     INDELIBLE INK') is a packaging instruction, not a data-field

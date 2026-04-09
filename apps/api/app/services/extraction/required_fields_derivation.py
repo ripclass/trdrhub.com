@@ -471,18 +471,82 @@ def _applies_to_all(clause_text: str) -> bool:
     return any(p.search(clause_text) for p in APPLIES_TO_ALL_PATTERNS)
 
 
+# Pattern that finds inlined numbered list markers inside an LC clause
+# string that was accidentally concatenated instead of being emitted as
+# multiple list entries.  Matches:
+#   "1) SIGNED COMMERCIAL INVOICE..."
+#   "2. FULL SET OF CLEAN ON-BOARD..."
+#   "(3) DETAILED PACKING LIST..."
+# The split happens on the marker boundary, discarding the marker itself
+# but keeping the clause text that follows.  ``_NUMBERED_MARKER_SPLIT_RE``
+# is the splitter (look-ahead so the marker stays attached to the clause
+# that follows it) and ``_NUMBERED_MARKER_STRIP_RE`` strips the leading
+# number + delimiter from each resulting fragment.
+_NUMBERED_MARKER_SPLIT_RE = re.compile(r"(?:^|[\n;\.,\s])(?=\(?\d{1,2}[\)\.]\s+)")
+_NUMBERED_MARKER_STRIP_RE = re.compile(r"^\s*\(?(\d{1,2})[\)\.]\s*")
+
+
+def _split_concatenated_clauses(text: str) -> List[str]:
+    """Re-split a string that got concatenated out of several numbered
+    clauses.
+
+    The vision LLM schema asks for ``documents_required`` as an array of
+    strings (one per 46A line), but on some LCs the LLM collapses the
+    array into a single comma-joined string like
+
+        "1) SIGNED COMMERCIAL INVOICE ..., 2) FULL SET OF CLEAN ON-BOARD
+         BILL OF LADING ..., 3) DETAILED PACKING LIST ..."
+
+    When the derivation then iterates this as a 1-element list every
+    field keyword gets tagged with ``46A-1`` and the tooltip shows the
+    whole blob.  This helper detects the concatenation by scanning for
+    inlined ``N)`` / ``N.`` numbered markers and splits the text back
+    into separate clauses, stripping the leading number from each.
+
+    Falls back to returning ``[text]`` unchanged when fewer than two
+    numbered markers are present — we don't want to fragment legitimate
+    single-clause strings that happen to contain a number.
+    """
+    if not text or not text.strip():
+        return []
+    stripped = text.strip()
+    # Count inlined markers before splitting so we can bail early on
+    # legitimate single-clause strings (fewer than 2 markers = not a
+    # concatenation).
+    marker_count = len(re.findall(r"(?:^|[\n;\.,\s])\(?\d{1,2}[\)\.]\s+", stripped))
+    if marker_count < 2:
+        return [stripped]
+    raw_parts = _NUMBERED_MARKER_SPLIT_RE.split(stripped)
+    out: List[str] = []
+    for part in raw_parts:
+        cleaned = _NUMBERED_MARKER_STRIP_RE.sub("", part).strip()
+        # Trim a trailing comma / semicolon the concatenation left behind.
+        cleaned = cleaned.rstrip(",;. ").strip()
+        if cleaned:
+            out.append(cleaned)
+    return out or [stripped]
+
+
 def _coerce_string_list(value: Any) -> List[str]:
-    """Accept a list/tuple/string and return a flat list of trimmed strings."""
+    """Accept a list/tuple/string and return a flat list of trimmed strings.
+
+    Also runs ``_split_concatenated_clauses`` on each emitted string so a
+    single entry that was collapsed out of multiple numbered clauses gets
+    re-split back into individual clauses.  This makes the derivation
+    robust to vision-LLM outputs that string-joined a list that was
+    supposed to be an array.
+    """
     if value is None:
         return []
     if isinstance(value, str):
-        return [value.strip()] if value.strip() else []
+        return _split_concatenated_clauses(value)
     if isinstance(value, (list, tuple, set)):
         out: List[str] = []
         for item in value:
             if isinstance(item, str):
-                if item.strip():
-                    out.append(item.strip())
+                for part in _split_concatenated_clauses(item):
+                    if part:
+                        out.append(part)
             elif isinstance(item, dict):
                 # documents_required entries are sometimes dicts with
                 # raw_text / text / display_name fields. Pull the most
@@ -496,7 +560,9 @@ def _coerce_string_list(value: Any) -> List[str]:
                     or ""
                 )
                 if isinstance(text, str) and text.strip():
-                    out.append(text.strip())
+                    for part in _split_concatenated_clauses(text):
+                        if part:
+                            out.append(part)
         return out
     return []
 
