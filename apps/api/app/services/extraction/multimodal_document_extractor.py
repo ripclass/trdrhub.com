@@ -604,19 +604,16 @@ _LC_DOCUMENT_TYPES = {
 def _tier_chain_for_document(document_type: str) -> Tuple[str, ...]:
     """Pick the tier escalation order based on document type.
 
-    The LC is the source of truth for the entire validation. We skip the
-    cheap L1 (GPT-4.1) for LCs and start at L2 (Sonnet 4.6) directly,
-    escalating to L3 (Opus 4.6) if needed. The cheap L1 was returning
-    inconsistent field names and dropping fields like sequence_of_total
-    and applicable_rules even when they were plainly on the page.
+    ALL documents now start at L2 (Sonnet 4.6). The cheap L1 (GPT-4.1)
+    was consistently dropping non-critical fields (lc_number, hs_code,
+    inspection_date, invoice_date) on supporting docs while passing the
+    escalation check because 2-3 critical fields were enough. The cost
+    delta is ~$0.02-0.05 per validation — not worth the quality loss.
 
-    Supporting docs continue to start at L1 — they're simpler and many
-    of them, so cost matters more there.
+    Escalation to L3 (Opus 4.6) still only fires when L2 misses critical
+    fields.
     """
-    doc_type = (document_type or "").strip().lower()
-    if doc_type in _LC_DOCUMENT_TYPES:
-        return ("L2", "L3")
-    return ("L1", "L2", "L3")
+    return ("L2", "L3")
 
 
 async def extract_document_multimodal_first(

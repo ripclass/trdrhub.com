@@ -1459,6 +1459,86 @@ def _maybe_promote_document_type_from_content(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Cross-doc backfill: copy verified LC cross-reference fields into supporting
+# docs when the extractor missed them.  These are fields that UCP600 requires
+# on every document in an LC presentation (lc_number, buyer PO, BIN/TIN).
+# This is NOT the AI fabricating data — it's a deterministic merge from the
+# canonical source (the LC) into supporting docs that are contractually
+# required to carry the same values.
+# ---------------------------------------------------------------------------
+_CROSS_DOC_BACKFILL_FIELDS = (
+    "lc_number",
+    "buyer_purchase_order_number",
+    "exporter_bin",
+    "exporter_tin",
+    "currency",
+)
+
+_LC_DOCUMENT_TYPES_SET = {
+    "letter_of_credit", "swift_message", "lc_application",
+    "standby_letter_of_credit", "bank_guarantee",
+}
+
+
+def _backfill_cross_doc_fields(
+    document_details: List[Dict[str, Any]],
+    lc_context: Dict[str, Any],
+) -> None:
+    """Fill missing cross-reference fields on supporting docs from the LC.
+
+    Mutates ``extracted_fields`` in-place.  Only touches fields that are
+    (a) null / empty-string / absent on the supporting doc AND (b) have
+    a non-empty value on the LC.  Tags each backfilled field so the
+    review screen can show "LC cross-ref" instead of "AI extracted".
+    """
+    if not lc_context or not document_details:
+        return
+
+    # Build the source map from the LC context
+    source: Dict[str, str] = {}
+    for field in _CROSS_DOC_BACKFILL_FIELDS:
+        value = lc_context.get(field)
+        if isinstance(value, str) and value.strip():
+            source[field] = value.strip()
+        elif value is not None and not isinstance(value, str):
+            source[field] = str(value)
+
+    if not source:
+        return
+
+    backfill_count = 0
+    for doc in document_details:
+        if not isinstance(doc, dict):
+            continue
+        doc_type = (doc.get("document_type") or "").strip().lower()
+        if doc_type in _LC_DOCUMENT_TYPES_SET:
+            continue  # don't backfill the LC itself
+
+        fields = doc.get("extracted_fields")
+        if not isinstance(fields, dict):
+            fields = {}
+            doc["extracted_fields"] = fields
+
+        for field, lc_value in source.items():
+            existing = fields.get(field)
+            if existing is not None and (not isinstance(existing, str) or existing.strip()):
+                continue  # already populated — don't overwrite
+            fields[field] = lc_value
+            backfill_count += 1
+            # Tag for the review screen
+            details = doc.get("field_details")
+            if isinstance(details, dict):
+                detail_entry = details.get(field)
+                if isinstance(detail_entry, dict):
+                    detail_entry["source"] = "lc_cross_ref"
+                else:
+                    details[field] = {"value": lc_value, "source": "lc_cross_ref", "status": "populated"}
+
+    if backfill_count:
+        logger.info("Cross-doc backfill: filled %d fields across supporting docs from LC context", backfill_count)
+
+
 async def _build_document_context(
     files_list: List[Any],
     document_tags: Optional[Dict[str, Any]] = None,
@@ -2036,6 +2116,7 @@ async def _build_document_context(
         if isinstance(extraction_core_bundle, dict):
             context["_extraction_core_v1"] = extraction_core_bundle
         context["documents"] = document_details
+        _backfill_cross_doc_fields(document_details, context.get("lc") or {})
 
     context["documents_presence"] = documents_presence
     context["documents_summary"] = documents_presence
