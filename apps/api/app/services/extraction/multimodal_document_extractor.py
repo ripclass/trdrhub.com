@@ -414,14 +414,18 @@ def _resolve_vision_tier_config(tier: str) -> Tuple[str, str]:
 
     Resolution order for each tier:
     1. EXTRACTION_VISION_{tier}_PROVIDER + EXTRACTION_VISION_{tier}_MODEL
-    2. AI_ROUTER_{tier}_PRIMARY_MODEL (split into provider/model if it contains "/")
+       (explicit vision-tier override — highest priority)
+    2. AI_ROUTER_{tier}_PRIMARY_MODEL
+       - If OPENROUTER_API_KEY is set: treat the whole slash-delimited
+         value as an OpenRouter model slug (e.g. "anthropic/claude-sonnet-4.6"
+         IS the OpenRouter model ID, not a provider/model split).  This is
+         the common case for operators running on OpenRouter.
+       - Otherwise: legacy behavior — split on "/" so "anthropic/claude-..."
+         routes to the direct Anthropic SDK.
     3. Legacy EXTRACTION_MULTIMODAL_PROVIDER/MODEL and EXTRACTION_PRIMARY_PROVIDER/MODEL
-       env vars.  Previously only L1 honored these, but the tier chain now skips
-       L1 entirely for all doc types — so anyone who set "Sonnet as the
-       extraction fallback" via the legacy vars would see their override
-       silently ignored.  Honor them for L2 as well so "set sonnet as the
-       primary/fallback" works as operators expect.
-    4. Hardcoded default in _VISION_TIER_DEFAULTS
+       env vars.  Honored for L1/L2 so "set sonnet as the primary/fallback"
+       via the text-extractor vars works for vision too.
+    4. Hardcoded default in _VISION_TIER_DEFAULTS.
     """
     tier_upper = tier.upper()
     provider_env = os.getenv(f"EXTRACTION_VISION_{tier_upper}_PROVIDER")
@@ -431,6 +435,15 @@ def _resolve_vision_tier_config(tier: str) -> Tuple[str, str]:
 
     router_model = os.getenv(f"AI_ROUTER_{tier_upper}_PRIMARY_MODEL")
     if router_model and "/" in router_model:
+        # OpenRouter gateway mode: slash-delimited slugs are OpenRouter
+        # model IDs, NOT direct-provider overrides.  When the operator has
+        # OPENROUTER_API_KEY set we pass the whole slug through.
+        if os.getenv("OPENROUTER_API_KEY"):
+            return LLMProvider.OPENROUTER.value, router_model
+        # Legacy path: split on "/" for direct-SDK routing.  Kept for
+        # operators who actually have ANTHROPIC_API_KEY / OPENAI_API_KEY
+        # set and want the resolver to dispatch to the provider-specific
+        # SDK instead of OpenRouter.
         provider_part, _, model_part = router_model.partition("/")
         return provider_part, model_part
 
@@ -952,6 +965,39 @@ async def _render_pdf_to_images(file_bytes: bytes, *, max_pages: int) -> Tuple[L
 
 async def _generate_multimodal(*, provider: str, model: str, prompt: str, system_prompt: str, image_parts: Sequence[Dict[str, str]]) -> Tuple[str, str]:
     provider_name = (provider or "").lower()
+
+    # OpenRouter gateway mode: when OPENROUTER_API_KEY is configured and the
+    # direct-provider key is NOT, route the call through OpenRouter using
+    # the "<provider>/<model>" model ID format that OpenRouter expects.
+    #
+    # This is the path for operators who set
+    #   AI_ROUTER_L2_PRIMARY_MODEL=anthropic/claude-sonnet-4-6
+    # and only have OPENROUTER_API_KEY in their env.  Previously the
+    # resolver would split that into (anthropic, claude-sonnet-4-6) and
+    # route to the direct Anthropic SDK, which fails with "ANTHROPIC_API_KEY
+    # not configured" — a silent failure that fell through to the
+    # text-based extractor (GPT-4o-mini) without surfacing any error.
+    has_openrouter_key = bool(os.getenv("OPENROUTER_API_KEY"))
+    if has_openrouter_key:
+        if provider_name == LLMProvider.ANTHROPIC.value and not os.getenv("ANTHROPIC_API_KEY"):
+            openrouter_model = model if "/" in model else f"anthropic/{model}"
+            return await _generate_openai_compatible(
+                provider=LLMProvider.OPENROUTER.value,
+                model=openrouter_model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                image_parts=image_parts,
+            )
+        if provider_name == LLMProvider.OPENAI.value and not os.getenv("OPENAI_API_KEY"):
+            openrouter_model = model if "/" in model else f"openai/{model}"
+            return await _generate_openai_compatible(
+                provider=LLMProvider.OPENROUTER.value,
+                model=openrouter_model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                image_parts=image_parts,
+            )
+
     if provider_name in {LLMProvider.OPENAI.value, LLMProvider.OPENROUTER.value}:
         return await _generate_openai_compatible(
             provider=provider_name,
