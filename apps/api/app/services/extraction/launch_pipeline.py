@@ -2650,13 +2650,31 @@ def _strip_field_label_prefix(field_name: str, value: Any) -> Any:
     return value
 
 
+# Alias keys that hold the same value under a different name.  Downstream
+# consumers (build_lc_intake_summary, _build_lc_user_facing_extracted_fields)
+# sometimes read the alias first, so we have to clean them with the same
+# label list as the canonical field.
+_LC_FIELD_KEY_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "lc_number": ("number", "reference", "credit_number", "lc_reference"),
+    "applicant": ("applicant_name",),
+    "beneficiary": ("beneficiary_name",),
+    "issue_date": ("date_of_issue",),
+    "expiry_date": ("date_of_expiry",),
+    "latest_shipment_date": ("latest_shipment",),
+}
+
+
 def _apply_lc_label_prefix_cleanup(shaped: Dict[str, Any]) -> None:
     """Walk the shaped LC payload and strip English field-label prefixes from
-    the string values we know about.  Mutates in place.
+    the string values we know about.  Mutates in place.  Also cleans any
+    alternate-name aliases that hold the same value.
     """
     for field_name in _LC_FIELD_LABEL_PREFIXES:
         if field_name in shaped:
             shaped[field_name] = _strip_field_label_prefix(field_name, shaped.get(field_name))
+        for alias in _LC_FIELD_KEY_ALIASES.get(field_name, ()):
+            if alias in shaped:
+                shaped[alias] = _strip_field_label_prefix(field_name, shaped.get(alias))
     # Ports / dates dicts may also carry prefixed values
     ports = shaped.get("ports") if isinstance(shaped.get("ports"), dict) else None
     if ports:
