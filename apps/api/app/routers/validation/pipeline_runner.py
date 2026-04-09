@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from enum import Enum
 from typing import Any
 
 from app.routers.validation.result_finalization import bind_shared as bind_result_finalization_shared
@@ -234,11 +237,65 @@ _SETUP_SNAPSHOT_KEY = "_setup_snapshot"
 
 
 def _jsonable(value: Any) -> Any:
-    """Coerce a value to something JSON-serializable; drop anything we can't."""
+    """Coerce a value to something JSON-serializable, preserving meaningful types.
+
+    This is the serializer that writes ``_setup_snapshot`` into
+    ``validation_session.extracted_data`` during extract_only, and whose output
+    is read back verbatim by ``_reconstruct_setup_state`` on resume.  Any lossy
+    coercion here becomes a latent landmine in the resume path — e.g. if a
+    ``Decimal`` becomes the literal string ``"Decimal('12345.67')"`` then
+    ``LCDocument.to_pair()`` crashes when it tries ``float(self.value)`` after
+    resume.  Prefer structured, reversible forms over ``str(value)``:
+
+    * ``Decimal``  → ``float`` (JSON-native, downstream already does ``float(...)``)
+    * ``datetime`` → ``str`` ISO 8601
+    * ``date``     → ``str`` ISO 8601 (``YYYY-MM-DD``)
+    * Pydantic v2 models → ``model.model_dump(mode="json")``
+    * Pydantic v1 models → ``model.dict()``
+    * ``Enum``     → its ``.value``
+    * Everything else that defines ``__dict__`` → best-effort ``vars(obj)`` walk
+    * Final fallback (genuinely unknown types) → ``str(value)`` as a last resort
+
+    ``str(value)`` as the fallback is the historical behaviour — do NOT remove
+    it without being sure no code path produces an exotic object that reaches
+    the snapshot.
+    """
     if value is None:
         return None
     if isinstance(value, (bool, int, float, str)):
         return value
+    # Decimal first — isinstance(Decimal, (int, float)) is False but it has
+    # arithmetic protocol and we want to route it through the float path.
+    if isinstance(value, Decimal):
+        try:
+            return float(value)
+        except (InvalidOperation, ValueError, TypeError):
+            return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return _jsonable(value.value)
+    # Pydantic v2 support — ``model_dump(mode="json")`` emits a JSON-ready dict
+    # (ISO strings for dates, float for Decimal) and handles nested models.
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return _jsonable(model_dump(mode="json"))
+        except TypeError:
+            # Some Pydantic models don't accept ``mode="json"`` kwarg (v1) —
+            # fall through to ``.dict()``.
+            pass
+        except Exception:
+            pass
+    # Pydantic v1 support
+    v1_dict = getattr(value, "dict", None)
+    if callable(v1_dict) and not isinstance(value, dict):
+        try:
+            return _jsonable(v1_dict())
+        except Exception:
+            pass
     if isinstance(value, dict):
         out: dict = {}
         for k, v in value.items():
@@ -248,8 +305,24 @@ def _jsonable(value: Any) -> Any:
                 except Exception:
                     continue
         return out
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, (list, tuple, set, frozenset)):
         return [_jsonable(v) for v in value]
+    # bytes / bytearray — don't silently str() these, they'd become the
+    # unreadable Python repr with a b'...' prefix.
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return value.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+    # Last resort — walk ``__dict__`` if present.  This catches plain
+    # dataclasses and random custom objects without losing their field
+    # structure.
+    obj_dict = getattr(value, "__dict__", None)
+    if isinstance(obj_dict, dict) and obj_dict:
+        return _jsonable({k: v for k, v in obj_dict.items() if not k.startswith("_")})
+    # Genuine fallback — keep ``str(value)`` for truly unknown types so we
+    # don't swallow data, but anything reaching here should probably have a
+    # dedicated branch above.
     try:
         return str(value)
     except Exception:
