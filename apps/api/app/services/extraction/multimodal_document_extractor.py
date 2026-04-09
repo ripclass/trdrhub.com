@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -21,6 +22,25 @@ from app.services.extraction.ai_first_extractor import (
 from app.services.llm_provider import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+
+# Per-request diagnostic channel for vision tier attempts.  Populated by
+# extract_document_multimodal_first on every call — including when all tiers
+# fail and the function returns None.  Callers that need to surface "which
+# tier ran and why did it fail" to the user can read this after the call
+# even when multimodal produced nothing.
+_last_tier_attempts: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
+    "_last_tier_attempts", default=None
+)
+
+
+def get_last_tier_attempts() -> List[Dict[str, Any]]:
+    """Return the list of tier attempts from the most recent call to
+    ``extract_document_multimodal_first`` in the current async context.
+    Returns an empty list if no call has been made yet.
+    """
+    value = _last_tier_attempts.get()
+    return list(value or [])
 
 
 @dataclass
@@ -680,6 +700,9 @@ async def extract_document_multimodal_first(
     tier_chain = _tier_chain_for_document(document_type)
     last_result: Optional[Dict[str, Any]] = None
     tier_attempts: List[Dict[str, Any]] = []
+    # Reset the per-request diagnostic channel so stale attempts from a
+    # previous call don't leak into this one.
+    _last_tier_attempts.set(tier_attempts)
     for tier in tier_chain:
         provider, model = _resolve_vision_tier_config(tier)
         attempt_record: Dict[str, Any] = {

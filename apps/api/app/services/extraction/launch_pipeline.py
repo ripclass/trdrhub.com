@@ -24,7 +24,10 @@ from app.services.extraction.iso20022_lc_extractor import (
     extract_iso20022_with_ai_fallback,
 )
 from app.services.extraction.lc_taxonomy import build_lc_classification
-from app.services.extraction.multimodal_document_extractor import extract_document_multimodal_first
+from app.services.extraction.multimodal_document_extractor import (
+    extract_document_multimodal_first,
+    get_last_tier_attempts,
+)
 from app.services.facts import (
     build_bl_fact_set,
     build_coo_fact_set,
@@ -596,7 +599,12 @@ class LaunchExtractionPipeline:
                         "required_fields_found": lc_review.get("required_found"),
                         "required_fields_total": lc_review.get("required_total"),
                         "review_reasons": list(base_patch.get("review_reasons") or []) + list(lc_review.get("review_reasons") or []),
-                        "tier_attempts": lc_struct.get("_tier_attempts") or [],
+                        # Tier attempts come from the per-request ContextVar so
+                        # they're populated even when multimodal returned None
+                        # entirely and we fell back to swift_mt700_full or
+                        # text-AI.  This is the only way to surface "Sonnet
+                        # was attempted but failed because X" to the frontend.
+                        "tier_attempts": lc_struct.get("_tier_attempts") or get_last_tier_attempts(),
                         **({"fact_graph_v1": fact_graph_v1} if isinstance(fact_graph_v1, dict) else {}),
                     },
                     "has_structured_data": True,
