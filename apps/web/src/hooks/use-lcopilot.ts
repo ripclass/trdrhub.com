@@ -65,32 +65,6 @@ export interface ExtractionReadyMissingDocument {
   reason_code?: string;
 }
 
-/** Per-field annotated record produced by `required_fields_derivation`.
- *
- * The `source_type` tells the Extract & Review screen where the requirement
- * came from so it can render the missing-field badge with the right
- * severity and a proper clause citation. See
- * `apps/api/app/services/extraction/required_fields_derivation.py` for the
- * full provenance semantics.
- *
- * - `"46a"`              — clause 46A (LC documents required). Red badge.
- * - `"47a"`              — clause 47A (additional conditions). Red badge.
- * - `"mt700_mandatory"`  — MT700 mandatory field for the LC itself. Red badge.
- * - `"doc_standard"`     — conventional field for this doc type, NOT demanded
- *                          by any LC clause. Amber/advisory badge — missing
- *                          it is NOT an LC compliance breach, just a missing
- *                          doc-type convention.
- */
-export type RequiredFieldSourceType = '46a' | '47a' | 'mt700_mandatory' | 'doc_standard';
-
-export interface RequiredFieldRecord {
-  field: string;
-  source_type: RequiredFieldSourceType;
-  source_refs: string[];
-  clause_texts: string[];
-  severity: 'required' | 'conventional';
-}
-
 export interface ExtractionReadyResponse {
   status: 'extraction_ready';
   job_id?: string;
@@ -98,25 +72,15 @@ export interface ExtractionReadyResponse {
   documents: ExtractionReadyDocument[];
   lc_context?: Record<string, any>;
   lc_type?: string;
+  /** Per-doc-type canonical field SLOT list — which fields the review form
+   *  should render for each document type.  This is NOT a "required by LC"
+   *  statement — it's just the schema's canonical field ordering for the
+   *  review UI.  Whether any given slot is filled is a question the UI
+   *  answers by reading the actual extracted values on each document.
+   *  Validation (Part 2) is the layer that decides whether a missing slot
+   *  constitutes a discrepancy against the LC's 46A/47A demands. */
   required_fields?: {
-    /** @deprecated — use `by_document_type_annotated`. Flat field-name lists,
-     *  kept for backward compat. */
-    baseline_required?: string[];
-    /** @deprecated — use `by_document_type_annotated`. */
-    by_document_type?: Record<string, string[]>;
-    /** @deprecated — use `lc_self_required_annotated`. */
-    lc_self_required?: string[];
-    /** LC-self annotated records (MT700 mandatory fields with Field-number refs). */
-    lc_self_required_annotated?: RequiredFieldRecord[];
-    /** Per-doc-type annotated records carrying source_type + clause citations. */
-    by_document_type_annotated?: Record<string, RequiredFieldRecord[]>;
-    applies_to_all_supporting_docs?: string[];
-    evidence?: Array<{
-      source: string;
-      scope: string;
-      fields: string[];
-      text: string;
-    }>;
+    schema_fields_by_doc_type?: Record<string, string[]>;
   };
   missing_required_documents?: ExtractionReadyMissingDocument[];
   message?: string;

@@ -1682,11 +1682,11 @@ export default function ExportLCUpload({
         {/* Step 1.5: Requirement summary / live checklist */}
         <Card className="mb-6 shadow-soft border-0">
           <CardHeader>
-            <CardTitle>Required Documents</CardTitle>
+            <CardTitle>Documents the LC asks for</CardTitle>
             <CardDescription>
               {isLCResolved
-                ? "These requirements were detected from the LC. Upload the remaining documents below in any order, any filename."
-                : "Required documents will appear here after the LC is resolved."}
+                ? "The document types the LC mentions. Upload one file per type — any filename, any order."
+                : "This list appears after the LC is resolved."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1697,79 +1697,44 @@ export default function ExportLCUpload({
               </div>
             ) : (
               <div className="space-y-4">
-                {requirementUploadStatus.missing.length > 0 && (
-                  <div className="rounded-lg border border-amber-400/40 bg-amber-50/50 p-4">
-                    <div className="flex items-start justify-between gap-4 flex-wrap">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">
-                          Still missing LC-required uploads ({requirementUploadStatus.missing.length})
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          You can validate a partial set, but these missing uploads will keep the case in review until they are provided.
-                        </p>
-                      </div>
-                      <Badge variant="outline">Missing uploads</Badge>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {requirementUploadStatus.missing.map((requirement) => (
-                        <Badge
-                          key={`missing-upload-${requirement.key}`}
-                          variant="outline"
-                          className="border-amber-500/40 text-amber-700 bg-amber-500/5"
-                        >
-                          {requirement.label}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 {requirementUploadStatus.missing.length === 0 && uploadRequirements.documentRequirements.length > 0 && (
                   <div className="rounded-lg border border-success/30 bg-success/5 p-4">
-                    <p className="text-sm font-semibold text-foreground">All LC-required document types are uploaded</p>
+                    <p className="text-sm font-semibold text-foreground">All document types the LC mentions are uploaded</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Continue with validation to confirm field coverage, review requirements, and presentation readiness.
+                      Click Extract &amp; Review below to pull field values from each document. Validation will run afterwards and flag any discrepancies against the LC.
                     </p>
                   </div>
                 )}
-                <div className="space-y-2">
-                  {uploadRequirements.documentRequirements.length > 0 || uploadRequirements.additionalRequirements.length > 0 ? (
-                    <>
-                      {uploadRequirements.documentRequirements.map((requirement) => {
-                        const normalizedType = normalizeDocumentType(requirement.type);
-                        const isFound = completedFiles.some((file) => normalizeDocumentType(file.documentType) === normalizedType || normalizeDocumentType(file.detectedType) === normalizedType);
-                        return (
-                          <div key={requirement.key} className="rounded-lg border border-gray-200/70 bg-background p-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant={isFound ? "default" : "outline"}>
-                                {requirement.label} - {isFound ? "Found" : "Missing"}
-                              </Badge>
-                            </div>
-                            {requirement.exactRequirement && requirement.exactRequirement.toLowerCase() !== requirement.label.toLowerCase() && (
-                              <p className="mt-2 text-xs text-muted-foreground">{requirement.exactRequirement}</p>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {uploadRequirements.additionalRequirements.map((requirement) => (
-                        <div key={requirement.key} className="rounded-lg border border-amber-300/60 bg-amber-50/40 p-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline">{requirement.label} - Required</Badge>
-                            <Badge variant="secondary">
-                              {requirement.category === "identifier"
-                                ? "LC condition"
-                                : requirement.category === "unmapped_requirement"
-                                ? "Manual review"
-                                : "LC condition"}
-                            </Badge>
-                          </div>
-                          <p className="mt-2 text-xs text-muted-foreground">{requirement.detail}</p>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No explicit supporting-document requirements were extracted yet.</p>
-                  )}
-                </div>
+                {/* Doc-type chip list.  One chip per doc type the LC
+                 *  mentions, coloured by whether the user has uploaded a
+                 *  matching file yet.  We deliberately do NOT render the
+                 *  clause text under each chip — that was producing walls
+                 *  of text because the LLM returns 46A as a single
+                 *  concatenated string on some LCs.  The full LC clauses
+                 *  are still available to validation downstream. */}
+                {uploadRequirements.documentRequirements.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {uploadRequirements.documentRequirements.map((requirement) => {
+                      const normalizedType = normalizeDocumentType(requirement.type);
+                      const isFound = completedFiles.some((file) =>
+                        normalizeDocumentType(file.documentType) === normalizedType
+                        || normalizeDocumentType(file.detectedType) === normalizedType,
+                      );
+                      return (
+                        <Badge
+                          key={requirement.key}
+                          variant={isFound ? "default" : "outline"}
+                          className={isFound ? "" : "border-amber-500/40 text-amber-700 bg-amber-500/5"}
+                        >
+                          {isFound ? "\u2713 " : ""}
+                          {requirement.label}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">The LC didn't mention specific document types.</p>
+                )}
                 {(specialConditionSummary.items.length > 0 || specialConditionSummary.placeholderOnly) && (
                   <div className="rounded-lg border border-gray-200 p-4 bg-secondary/10">
                     <p className="text-sm font-medium text-foreground mb-2">Special Conditions</p>
