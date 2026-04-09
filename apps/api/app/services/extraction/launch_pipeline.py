@@ -596,6 +596,7 @@ class LaunchExtractionPipeline:
                         "required_fields_found": lc_review.get("required_found"),
                         "required_fields_total": lc_review.get("required_total"),
                         "review_reasons": list(base_patch.get("review_reasons") or []) + list(lc_review.get("review_reasons") or []),
+                        "tier_attempts": lc_struct.get("_tier_attempts") or [],
                         **({"fact_graph_v1": fact_graph_v1} if isinstance(fact_graph_v1, dict) else {}),
                     },
                     "has_structured_data": True,
@@ -2660,9 +2661,24 @@ _LC_FIELD_LABEL_PREFIXES: Dict[str, Tuple[str, ...]] = {
 
 def _strip_field_label_prefix(field_name: str, value: Any) -> Any:
     """Strip an English SWIFT field label from the start of ``value`` when we
-    recognize the field.  Non-string values (numbers, lists, dicts) pass through
-    untouched.  When the value IS exactly the label (some LCs have empty
-    fields that still render the label text), returns an empty string so the
+    recognize the field.
+
+    Only strips when the matched prefix in the ORIGINAL value is entirely
+    upper-case.  This prevents over-stripping in two directions:
+
+    1.  Idempotence — once ``"APPLICANT Kiam Metal Industries"`` has been
+        stripped to ``"Kiam Metal Industries"``, a second call on the
+        already-stripped value would see ``"Kiam"`` in the prefix position
+        and leave it alone (mixed case).
+
+    2.  Placeholder names — LC fixtures sometimes contain literal placeholder
+        company names like ``:50: APPLICANT Applicant Co.``.  The first word
+        ``Applicant`` is a real part of the company name, not a field label
+        repeat.  A naive case-insensitive strip would leave ``"Co."`` — which
+        is worse than the original.  The all-caps requirement prevents that.
+
+    Non-string values (numbers, lists, dicts) pass through untouched.  When
+    the value IS exactly the all-caps label, returns an empty string so the
     field is filtered out of the user-facing review.
     """
     if not isinstance(value, str):
@@ -2674,21 +2690,32 @@ def _strip_field_label_prefix(field_name: str, value: Any) -> Any:
     if not prefixes:
         return value
     upper = stripped.upper()
-    # Sort longest-first so the most specific label wins before a shorter
-    # substring strips part of the real content.
+    # Sort longest-first so the most specific label wins.
     for prefix in sorted(prefixes, key=len, reverse=True):
         if not prefix:
             continue
         prefix_up = prefix.upper()
+        if not upper.startswith(prefix_up):
+            continue
+        # Exact label match — field was 100% label, always strip to empty.
+        # This runs BEFORE the all-caps guard so a value like
+        # "DESCRIPTION OF GOODS and/or Services" (which is itself a SWIFT
+        # label phrase with mixed case "and/or") still gets zeroed out.
         if upper == prefix_up:
-            # The value is 100% label — field was never populated in the LC.
             return ""
-        if upper.startswith(prefix_up):
-            remainder = stripped[len(prefix):].lstrip(" \t:-,")
-            if remainder:
-                return remainder
-            # Remainder was just punctuation — treat as empty field.
-            return ""
+        # All-caps guard: when there's remainder content, require the prefix
+        # slice in the ORIGINAL value to be entirely upper-case.  A mixed-case
+        # prefix like "Applicant " is almost certainly part of a company name,
+        # not a label repeat — this prevents "APPLICANT Applicant Co." from
+        # being over-stripped to "Co." on a second cleanup pass.
+        original_prefix_slice = stripped[: len(prefix)]
+        if original_prefix_slice != original_prefix_slice.upper():
+            return value
+        remainder = stripped[len(prefix):].lstrip(" \t:-,")
+        if remainder:
+            return remainder
+        # Remainder was just punctuation — treat as empty field.
+        return ""
     return value
 
 

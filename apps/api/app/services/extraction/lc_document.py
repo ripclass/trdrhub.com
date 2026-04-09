@@ -859,6 +859,51 @@ def _coerce_int(value: Any) -> Optional[int]:
     return None
 
 
+def _normalize_number_string(raw: str) -> str:
+    """Normalize a number string that might be in US or European format.
+
+    Critical: a naive ``.replace(",", "")`` converts European ``36450,00``
+    (thirty-six thousand four hundred fifty) into ``3645000`` (three million
+    six hundred forty-five thousand) — a 100x error on LC amounts that
+    silently poisons every downstream tolerance/limit check.
+
+    Heuristic:
+    - If the string contains both ``.`` and ``,``, whichever character comes
+      LAST is the decimal separator.
+    - If only ``,``, treat the last comma as decimal iff exactly 1-2 digits
+      follow it (European).  Otherwise treat all commas as thousands.
+    - If only ``.``, treat the last dot as decimal iff 1-2 digits follow
+      it.  Otherwise (European "1.500.000") treat all dots as thousands.
+    - Otherwise return as-is.
+    """
+    if not raw:
+        return raw
+    s = raw.strip().replace("%", "")
+    if not s:
+        return s
+    has_comma = "," in s
+    has_dot = "." in s
+    if has_comma and has_dot:
+        if s.rfind(",") > s.rfind("."):
+            return s.replace(".", "").replace(",", ".")
+        return s.replace(",", "")
+    if has_comma:
+        last_comma = s.rfind(",")
+        after = s[last_comma + 1:]
+        if after.isdigit() and 1 <= len(after) <= 2:
+            before = s[:last_comma].replace(",", "")
+            return f"{before}.{after}"
+        return s.replace(",", "")
+    if has_dot:
+        last_dot = s.rfind(".")
+        after = s[last_dot + 1:]
+        if after.isdigit() and 1 <= len(after) <= 2:
+            before = s[:last_dot].replace(".", "")
+            return f"{before}.{after}"
+        return s.replace(".", "")
+    return s
+
+
 def _coerce_float(value: Any) -> Optional[float]:
     value = _unwrap_single(value)
     if value is None:
@@ -867,7 +912,7 @@ def _coerce_float(value: Any) -> Optional[float]:
         return float(value)
     if isinstance(value, str):
         try:
-            return float(value.strip().replace(",", ""))
+            return float(_normalize_number_string(value))
         except ValueError:
             return None
     return None
@@ -885,7 +930,7 @@ def _coerce_decimal(value: Any) -> Optional[Decimal]:
         except InvalidOperation:
             return None
     if isinstance(value, str):
-        s = value.strip().replace(",", "").replace("%", "")
+        s = _normalize_number_string(value)
         if not s:
             return None
         try:

@@ -395,7 +395,12 @@ def _resolve_vision_tier_config(tier: str) -> Tuple[str, str]:
     Resolution order for each tier:
     1. EXTRACTION_VISION_{tier}_PROVIDER + EXTRACTION_VISION_{tier}_MODEL
     2. AI_ROUTER_{tier}_PRIMARY_MODEL (split into provider/model if it contains "/")
-    3. For L1 only: legacy EXTRACTION_MULTIMODAL_PROVIDER/MODEL env vars
+    3. Legacy EXTRACTION_MULTIMODAL_PROVIDER/MODEL and EXTRACTION_PRIMARY_PROVIDER/MODEL
+       env vars.  Previously only L1 honored these, but the tier chain now skips
+       L1 entirely for all doc types — so anyone who set "Sonnet as the
+       extraction fallback" via the legacy vars would see their override
+       silently ignored.  Honor them for L2 as well so "set sonnet as the
+       primary/fallback" works as operators expect.
     4. Hardcoded default in _VISION_TIER_DEFAULTS
     """
     tier_upper = tier.upper()
@@ -409,7 +414,7 @@ def _resolve_vision_tier_config(tier: str) -> Tuple[str, str]:
         provider_part, _, model_part = router_model.partition("/")
         return provider_part, model_part
 
-    if tier_upper == "L1":
+    if tier_upper in ("L1", "L2"):
         legacy_provider = os.getenv("EXTRACTION_MULTIMODAL_PROVIDER") or os.getenv("EXTRACTION_PRIMARY_PROVIDER")
         legacy_model = os.getenv("EXTRACTION_MULTIMODAL_MODEL") or os.getenv("EXTRACTION_PRIMARY_MODEL")
         if legacy_provider and legacy_model:
@@ -510,8 +515,14 @@ async def _attempt_vision_tier(
     subtype_hint: Optional[str],
     extracted_text: str,
     cross_doc_context: Optional[Dict[str, Any]] = None,
+    attempt_record: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Run a single vision extraction attempt at a given tier (L1/L2/L3)."""
+    """Run a single vision extraction attempt at a given tier (L1/L2/L3).
+
+    When ``attempt_record`` is provided, the function will populate it with
+    ``error`` / ``error_type`` keys on failure so callers can surface the
+    actual failure reason instead of a silent None.
+    """
     provider, model = _resolve_vision_tier_config(tier)
 
     schema_key = _resolve_schema_key(document_type)
@@ -546,9 +557,15 @@ async def _attempt_vision_tier(
             "Multimodal extraction call failed for %s via tier=%s %s/%s: %s",
             filename, tier, provider, model, exc,
         )
+        if attempt_record is not None:
+            attempt_record["error"] = str(exc)[:300]
+            attempt_record["error_type"] = type(exc).__name__
         return None
 
     if not response_text:
+        if attempt_record is not None:
+            attempt_record["error"] = "empty_response"
+            attempt_record["error_type"] = "EmptyResponse"
         return None
 
     try:
@@ -662,7 +679,14 @@ async def extract_document_multimodal_first(
 
     tier_chain = _tier_chain_for_document(document_type)
     last_result: Optional[Dict[str, Any]] = None
+    tier_attempts: List[Dict[str, Any]] = []
     for tier in tier_chain:
+        provider, model = _resolve_vision_tier_config(tier)
+        attempt_record: Dict[str, Any] = {
+            "tier": tier,
+            "provider": provider,
+            "model": model,
+        }
         result = await _attempt_vision_tier(
             tier=tier,
             document_type=document_type,
@@ -672,23 +696,39 @@ async def extract_document_multimodal_first(
             subtype_hint=subtype_hint,
             extracted_text=extracted_text,
             cross_doc_context=cross_doc_context,
+            attempt_record=attempt_record,
         )
+        if result is None:
+            attempt_record.setdefault("outcome", "no_result")
+        elif _vision_result_is_strong(result, document_type):
+            attempt_record["outcome"] = "strong"
+        else:
+            attempt_record["outcome"] = "weak_missing_critical"
+        tier_attempts.append(attempt_record)
+
         if _vision_result_is_strong(result, document_type):
+            # Attach the full attempt trace so downstream consumers can see
+            # which tier(s) ran and what provider/model each used.
+            if isinstance(result, dict):
+                result["_tier_attempts"] = tier_attempts
             return result
         last_result = result or last_result
         if result is None:
             logger.info(
-                "Vision tier=%s returned no result for %s — escalating",
-                tier, filename,
+                "Vision tier=%s returned no result for %s (provider=%s model=%s) — escalating",
+                tier, filename, provider, model,
             )
         else:
             logger.info(
-                "Vision tier=%s result missing critical fields for %s (doc_type=%s) — escalating",
-                tier, filename, document_type,
+                "Vision tier=%s result missing critical fields for %s (doc_type=%s provider=%s model=%s) — escalating",
+                tier, filename, document_type, provider, model,
             )
 
     # All tiers were tried — return whatever the last attempt produced
     # (which may be a weak result with some fields populated, or None).
+    # Attach the full attempt trace either way so diagnostics survive.
+    if isinstance(last_result, dict):
+        last_result["_tier_attempts"] = tier_attempts
     return last_result
 
 

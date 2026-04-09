@@ -38,13 +38,73 @@ def _iso_date_yyMMdd(s: str) -> Optional[str]:
     return f"{yyyy:04d}-{int(mm):02d}-{int(dd):02d}"
 
 
+def _normalize_amount_string(raw: str) -> str:
+    """Normalize a number string that might be in US or European format.
+
+    US:         1,500,000.25   -> 1500000.25
+    European:   1.500.000,25   -> 1500000.25
+    European:   36450,00        -> 36450.00   (this is the critical case — a
+                                              naive .replace(",", "") turns
+                                              36450,00 into 3645000, a 100x
+                                              error on LC amounts)
+    Integer:    36450           -> 36450
+
+    Heuristic:
+    - If the string contains both ``.`` and ``,``, whichever character comes
+      LAST is the decimal separator.
+    - If it contains only ``,``, treat the last comma as decimal iff exactly
+      1-2 digits follow it; otherwise treat all commas as thousands separators.
+    - If it contains only ``.``, treat the last dot as decimal iff 1-2 digits
+      follow it; otherwise (e.g. "1.500.000") treat all dots as thousands
+      separators.
+    - If neither, return as-is.
+    """
+    if not raw:
+        return raw
+    s = raw.strip()
+    if not s:
+        return s
+    has_comma = "," in s
+    has_dot = "." in s
+
+    if has_comma and has_dot:
+        last_comma = s.rfind(",")
+        last_dot = s.rfind(".")
+        if last_comma > last_dot:
+            # European: comma is decimal, dot is thousands.
+            return s.replace(".", "").replace(",", ".")
+        # US: dot is decimal, comma is thousands.
+        return s.replace(",", "")
+
+    if has_comma:
+        last_comma = s.rfind(",")
+        after = s[last_comma + 1:]
+        # Last comma is decimal iff 1-2 digits follow it.
+        if after.isdigit() and 1 <= len(after) <= 2:
+            # Strip any OTHER commas (thousands) before replacing the last one.
+            before = s[:last_comma].replace(",", "")
+            return f"{before}.{after}"
+        return s.replace(",", "")
+
+    if has_dot:
+        last_dot = s.rfind(".")
+        after = s[last_dot + 1:]
+        if after.isdigit() and 1 <= len(after) <= 2:
+            # Decimal dot. Strip any other dots (European thousands e.g. "1.500.000.25" is weird, but harmless).
+            before = s[:last_dot].replace(".", "")
+            return f"{before}.{after}"
+        return s.replace(".", "")
+
+    return s
+
+
 def _parse_currency_amount(val: str) -> Dict[str, Any]:
     m = _CUR_AMT.match(val.replace(" ", ""))
     if not m:
         return {"currency": None, "amount": None, "raw": val.strip()}
-    amt = m.group("amt").replace(",", "")
+    normalized = _normalize_amount_string(m.group("amt"))
     try:
-        amount = float(amt)
+        amount = float(normalized)
     except Exception:
         amount = None
     return {"currency": m.group("cur"), "amount": amount, "raw": val.strip()}
