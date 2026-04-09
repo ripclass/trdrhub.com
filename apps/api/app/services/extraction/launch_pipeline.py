@@ -2502,6 +2502,181 @@ def _extract_mt700_timeline_fields(raw_text: str) -> Dict[str, Any]:
     return timeline
 
 
+# ---------------------------------------------------------------------------
+# SWIFT field-label prefix cleanup.  Some LC PDFs export with the English
+# label inlined into the value ("APPLICANT KIAM METAL INDUSTRIES LIMITED,"
+# or "PORT OF LOADING Chattogram Port") instead of the canonical
+# ":50:KIAM METAL INDUSTRIES LIMITED,".  Both vision LLMs and the MT700
+# regex parser extract the WHOLE line as the value, which poisons every
+# downstream consumer (detect_lc_type, country mapping, rules engine).
+# This map lets us deterministically strip the label once we know which
+# canonical field we're looking at.
+# ---------------------------------------------------------------------------
+_LC_FIELD_LABEL_PREFIXES: Dict[str, Tuple[str, ...]] = {
+    "lc_number": (
+        "DOCUMENTARY CREDIT NUMBER",
+        "CREDIT NUMBER",
+        "LC NUMBER",
+        "LC NO.",
+        "LC NO:",
+        "LC NO",
+        "REFERENCE NUMBER",
+    ),
+    "applicant": (
+        "APPLICANT",
+        "APPLICANT NAME",
+        "BUYER",
+        "IMPORTER",
+    ),
+    "beneficiary": (
+        "BENEFICIARY",
+        "BENEFICIARY NAME",
+        "SELLER",
+        "EXPORTER",
+    ),
+    "port_of_loading": (
+        "PORT OF LOADING/AIRPORT OF DEPARTURE",
+        "PORT OF LOADING",
+        "PLACE OF LOADING",
+        "LOADING PORT",
+        "AIRPORT OF DEPARTURE",
+    ),
+    "port_of_discharge": (
+        "PORT OF DISCHARGE/AIRPORT OF DESTINATION",
+        "PORT OF DISCHARGE",
+        "PLACE OF DISCHARGE",
+        "DISCHARGE PORT",
+        "AIRPORT OF DESTINATION",
+    ),
+    "place_of_expiry": (
+        "DATE AND PLACE OF EXPIRY",
+        "PLACE OF EXPIRY",
+        "EXPIRY PLACE",
+    ),
+    "issue_date": (
+        "DATE OF ISSUE",
+        "ISSUE DATE",
+    ),
+    "expiry_date": (
+        "DATE OF EXPIRY",
+        "EXPIRY DATE",
+    ),
+    "latest_shipment_date": (
+        "LATEST DATE OF SHIPMENT",
+        "LATEST SHIPMENT DATE",
+        "LATEST SHIPMENT",
+    ),
+    "goods_description": (
+        "DESCRIPTION OF GOODS AND/OR SERVICES",
+        "DESCRIPTION OF GOODS and/or SERVICES",
+        "DESCRIPTION OF GOODS",
+        "GOODS AND/OR SERVICES",
+        "GOODS DESCRIPTION",
+    ),
+    "partial_shipments": (
+        "PARTIAL SHIPMENTS",
+        "PARTIAL SHIPMENT",
+    ),
+    "transshipment": (
+        "TRANSSHIPMENT",
+        "TRANS SHIPMENT",
+    ),
+    "available_with": (
+        "AVAILABLE WITH",
+    ),
+    "available_by": (
+        "AVAILABLE BY",
+    ),
+    "period_for_presentation": (
+        "PERIOD FOR PRESENTATION",
+        "PRESENTATION PERIOD",
+    ),
+    "confirmation_instructions": (
+        "CONFIRMATION INSTRUCTIONS",
+        "CONFIRMATION",
+    ),
+    "charges": (
+        "CHARGES",
+        "DETAILS OF CHARGES",
+    ),
+    "amount_tolerance": (
+        "TOLERANCE",
+        "PERCENTAGE CREDIT AMOUNT TOLERANCE",
+    ),
+    "form_of_documentary_credit": (
+        "FORM OF DOCUMENTARY CREDIT",
+        "FORM OF LC",
+    ),
+    "applicable_rules": (
+        "APPLICABLE RULES",
+    ),
+    "sequence_of_total": (
+        "SEQUENCE OF TOTAL",
+    ),
+}
+
+
+def _strip_field_label_prefix(field_name: str, value: Any) -> Any:
+    """Strip an English SWIFT field label from the start of ``value`` when we
+    recognize the field.  Non-string values (numbers, lists, dicts) pass through
+    untouched.  When the value IS exactly the label (some LCs have empty
+    fields that still render the label text), returns an empty string so the
+    field is filtered out of the user-facing review.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return value
+    prefixes = _LC_FIELD_LABEL_PREFIXES.get(field_name)
+    if not prefixes:
+        return value
+    upper = stripped.upper()
+    # Sort longest-first so the most specific label wins before a shorter
+    # substring strips part of the real content.
+    for prefix in sorted(prefixes, key=len, reverse=True):
+        if not prefix:
+            continue
+        prefix_up = prefix.upper()
+        if upper == prefix_up:
+            # The value is 100% label — field was never populated in the LC.
+            return ""
+        if upper.startswith(prefix_up):
+            remainder = stripped[len(prefix):].lstrip(" \t:-,")
+            if remainder:
+                return remainder
+            # Remainder was just punctuation — treat as empty field.
+            return ""
+    return value
+
+
+def _apply_lc_label_prefix_cleanup(shaped: Dict[str, Any]) -> None:
+    """Walk the shaped LC payload and strip English field-label prefixes from
+    the string values we know about.  Mutates in place.
+    """
+    for field_name in _LC_FIELD_LABEL_PREFIXES:
+        if field_name in shaped:
+            shaped[field_name] = _strip_field_label_prefix(field_name, shaped.get(field_name))
+    # Ports / dates dicts may also carry prefixed values
+    ports = shaped.get("ports") if isinstance(shaped.get("ports"), dict) else None
+    if ports:
+        for k in ("port_of_loading", "loading", "port_of_discharge", "discharge"):
+            if k in ports:
+                field_name = "port_of_loading" if "load" in k else "port_of_discharge"
+                ports[k] = _strip_field_label_prefix(field_name, ports.get(k))
+    dates = shaped.get("dates") if isinstance(shaped.get("dates"), dict) else None
+    if dates:
+        for k in ("issue_date", "issue"):
+            if k in dates:
+                dates[k] = _strip_field_label_prefix("issue_date", dates.get(k))
+        for k in ("expiry_date", "expiry"):
+            if k in dates:
+                dates[k] = _strip_field_label_prefix("expiry_date", dates.get(k))
+        for k in ("latest_shipment_date", "latest_shipment"):
+            if k in dates:
+                dates[k] = _strip_field_label_prefix("latest_shipment_date", dates.get(k))
+
+
 def _shape_lc_financial_payload(
     payload: Dict[str, Any],
     *,
@@ -2512,6 +2687,9 @@ def _shape_lc_financial_payload(
     allow_text_backfill: bool = True,
 ) -> Dict[str, Any]:
     shaped = dict(payload or {})
+    # Run BEFORE the nested dict flattening below so the un-flattened
+    # "applicant" / "beneficiary" / "ports" values get cleaned as well.
+    _apply_lc_label_prefix_cleanup(shaped)
     shaped["raw_text"] = raw_text
     shaped["source_type"] = source_type
     shaped["format"] = lc_format
@@ -2645,6 +2823,9 @@ def _shape_lc_financial_payload(
         if dates:
             shaped["dates"] = dates
 
+    # Safety-net second pass: any of the nested-flattening or text-backfill
+    # branches above may have reintroduced label-prefixed values.
+    _apply_lc_label_prefix_cleanup(shaped)
     return _apply_canonical_normalization(shaped)
 
 
