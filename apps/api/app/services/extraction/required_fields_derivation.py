@@ -38,12 +38,18 @@ Design notes
 - Doc-type detection looks for explicit keywords ("BILL OF LADING",
   "COMMERCIAL INVOICE", etc.) at the start of each 46A line, then in the
   body of each 47A condition.
+- The "applies to all" fields detected from 47A conditions are filtered
+  through each destination doc's schema before being merged into that
+  doc's required list.  This prevents a clause like "DOCUMENTS PRESENTED
+  LATER THAN 21 DAYS AFTER SHIPMENT DATE" (which trips the 'shipment date'
+  keyword) from adding `shipped_on_board_date` as a phantom field on
+  Invoice / COO / Packing List where it doesn't belong.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +465,102 @@ def _extract_clauses_from_lc(lc_context: Dict[str, Any]) -> Tuple[List[str], Lis
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Per-doc schema field lookup.  We defer the import of DOC_TYPE_SCHEMAS to
+# function-call time to avoid a circular import at module load, and cache the
+# resolved sets so repeated derivations are cheap.
+# ---------------------------------------------------------------------------
+
+_DOC_TYPE_TO_SCHEMA_KEY: Dict[str, str] = {
+    # LC family
+    "letter_of_credit": "letter_of_credit",
+    "swift_message": "letter_of_credit",
+    "lc_application": "letter_of_credit",
+    "standby_letter_of_credit": "letter_of_credit",
+    "bank_guarantee": "letter_of_credit",
+    # Invoice family
+    "commercial_invoice": "commercial_invoice",
+    "proforma_invoice": "commercial_invoice",
+    # Packing family
+    "packing_list": "packing_list",
+    # Transport family (all go through transport_document schema)
+    "bill_of_lading": "transport_document",
+    "ocean_bill_of_lading": "transport_document",
+    "house_bill_of_lading": "transport_document",
+    "master_bill_of_lading": "transport_document",
+    "air_waybill": "transport_document",
+    "sea_waybill": "transport_document",
+    "road_transport_document": "transport_document",
+    "railway_consignment_note": "transport_document",
+    "forwarder_certificate_of_receipt": "transport_document",
+    "forwarders_certificate_of_receipt": "transport_document",
+    "multimodal_transport_document": "transport_document",
+    # Regulatory family
+    "certificate_of_origin": "regulatory_document",
+    "gsp_form_a": "regulatory_document",
+    "eur1_movement_certificate": "regulatory_document",
+    "customs_declaration": "regulatory_document",
+    "export_license": "regulatory_document",
+    "import_license": "regulatory_document",
+    "phytosanitary_certificate": "regulatory_document",
+    # Insurance family
+    "insurance_certificate": "insurance_document",
+    "insurance_policy": "insurance_document",
+    "marine_insurance_policy": "insurance_document",
+    "marine_insurance_certificate": "insurance_document",
+    # Attestation family
+    "beneficiary_certificate": "attestation_document",
+    "manufacturer_certificate": "attestation_document",
+    "conformity_certificate": "attestation_document",
+    "non_manipulation_certificate": "attestation_document",
+    "halal_certificate": "attestation_document",
+    "kosher_certificate": "attestation_document",
+    "organic_certificate": "attestation_document",
+    # Inspection family
+    "inspection_certificate": "inspection_document",
+    "pre_shipment_inspection": "inspection_document",
+    "quality_certificate": "inspection_document",
+    "weight_certificate": "inspection_document",
+    "weight_list": "inspection_document",
+    "measurement_certificate": "inspection_document",
+    "analysis_certificate": "inspection_document",
+    "lab_test_report": "inspection_document",
+    "sgs_certificate": "inspection_document",
+    "bureau_veritas_certificate": "inspection_document",
+    "intertek_certificate": "inspection_document",
+}
+
+_SCHEMA_FIELD_CACHE: Dict[str, FrozenSet[str]] = {}
+
+
+def _schema_fields_for_doc_type(doc_type: str) -> FrozenSet[str]:
+    """Return the set of canonical field names declared by the extraction
+    schema for ``doc_type``.  Returns an empty frozenset when the doc type
+    isn't mapped or the schemas module can't be imported (the caller then
+    skips the filter and falls back to the unfiltered behavior).
+    """
+    if not doc_type:
+        return frozenset()
+    schema_key = _DOC_TYPE_TO_SCHEMA_KEY.get(doc_type.lower())
+    if not schema_key:
+        return frozenset()
+    cached = _SCHEMA_FIELD_CACHE.get(schema_key)
+    if cached is not None:
+        return cached
+    try:
+        from app.services.extraction.multimodal_document_extractor import (
+            DOC_TYPE_SCHEMAS,
+        )
+    except ImportError:
+        _SCHEMA_FIELD_CACHE[schema_key] = frozenset()
+        return frozenset()
+    schema = DOC_TYPE_SCHEMAS.get(schema_key) or {}
+    fields = schema.get("fields") or []
+    resolved = frozenset(str(f) for f in fields if isinstance(f, str))
+    _SCHEMA_FIELD_CACHE[schema_key] = resolved
+    return resolved
+
+
 def derive_required_fields(
     *,
     lc_context: Optional[Dict[str, Any]],
@@ -574,13 +676,36 @@ def derive_required_fields(
                 }
             )
 
-    # 4. Apply the cross-doc requirements to every SUPPORTING per-doc list.
+    # 4. Apply the cross-doc requirements to every SUPPORTING per-doc list,
+    # FILTERED through the destination doc's own extraction schema.
+    #
+    # Without this filter, a 47A condition like "DOCUMENTS PRESENTED LATER
+    # THAN 21 DAYS AFTER SHIPMENT DATE ARE NOT ACCEPTABLE" (which trips the
+    # 'shipment date' keyword because of clause D on a typical MT700) would
+    # dump `shipped_on_board_date` into applies_to_all and then spray it
+    # onto Invoice / COO / Packing List, turning them into phantom-field
+    # factories on the Extract & Review screen.
+    #
+    # The filter keeps the fields that are genuinely universal (lc_number,
+    # buyer_purchase_order_number, exporter_bin, exporter_tin, currency,
+    # port_of_loading, port_of_discharge) because those appear in every
+    # supporting schema, and drops fields that only belong to a specific
+    # family (bl_number only lives in transport_document, policy_number
+    # only in insurance_document, etc.).
+    def _filter_applies_to_all_for(doc_type: str) -> Set[str]:
+        schema_fields = _schema_fields_for_doc_type(doc_type)
+        if not schema_fields:
+            # Unknown doc type / schemas import failed — fall back to
+            # unfiltered behavior rather than dropping everything.
+            return set(applies_to_all)
+        return {f for f in applies_to_all if f in schema_fields}
+
     # The LC itself does NOT get cross-doc requirements merged in — it's
     # the SOURCE of those requirements, not a doc that must satisfy them.
     for doc_type in list(per_doc_required.keys()):
         if doc_type == "letter_of_credit":
             continue
-        per_doc_required[doc_type].update(applies_to_all)
+        per_doc_required[doc_type].update(_filter_applies_to_all_for(doc_type))
 
     # Make sure every uploaded supporting doc type has an entry. The LC's
     # entry was already seeded from DOC_TYPE_BASELINE in step 1 and should
@@ -590,7 +715,9 @@ def derive_required_fields(
         if canonical == "letter_of_credit":
             per_doc_required.setdefault(canonical, set())  # ensure present
             continue
-        per_doc_required.setdefault(canonical, set()).update(applies_to_all)
+        per_doc_required.setdefault(canonical, set()).update(
+            _filter_applies_to_all_for(canonical)
+        )
 
     # 5. The LC's own required field list — MT700 mandatory + skeleton.
     lc_self_required = list(MT700_MANDATORY_FIELDS)

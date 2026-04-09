@@ -342,6 +342,25 @@ def _build_missing_required_documents(
         return []
 
     # Collect the canonical doc_type of every actually-uploaded doc.
+    # Doc types within the same family are treated as equivalent for the
+    # purposes of satisfying an LC's document requirement — e.g. uploading
+    # a bill_of_lading satisfies an ocean_bill_of_lading requirement, and
+    # uploading an insurance_certificate satisfies an insurance_policy
+    # requirement.  (The LC text "INSURANCE POLICY/CERTIFICATE COVERING..."
+    # explicitly accepts either.)
+    _TRANSPORT_FAMILY = {
+        "bill_of_lading", "ocean_bill_of_lading", "house_bill_of_lading",
+        "master_bill_of_lading", "air_waybill", "sea_waybill",
+        "road_transport_document", "railway_consignment_note",
+        "multimodal_transport_document", "forwarder_certificate_of_receipt",
+        "forwarders_certificate_of_receipt",
+    }
+    _INSURANCE_FAMILY = {
+        "insurance_certificate", "insurance_policy",
+        "marine_insurance_policy", "marine_insurance_certificate",
+        "cargo_insurance", "cargo_insurance_certificate",
+    }
+
     uploaded_types: set = set()
     for doc in documents or []:
         if not isinstance(doc, dict):
@@ -350,15 +369,10 @@ def _build_missing_required_documents(
         if not doc_type:
             continue
         uploaded_types.add(doc_type)
-        # Also mark equivalent transport family matches as satisfied
-        _transport_family = {
-            "bill_of_lading", "ocean_bill_of_lading", "house_bill_of_lading",
-            "master_bill_of_lading", "air_waybill", "sea_waybill",
-            "road_transport_document", "railway_consignment_note",
-            "multimodal_transport_document",
-        }
-        if doc_type in _transport_family:
-            uploaded_types.update(_transport_family)
+        if doc_type in _TRANSPORT_FAMILY:
+            uploaded_types.update(_TRANSPORT_FAMILY)
+        if doc_type in _INSURANCE_FAMILY:
+            uploaded_types.update(_INSURANCE_FAMILY)
 
     # Build the missing list — prefer detailed entries (they carry the raw LC
     # clause text); fall back to plain types when detailed is empty.
