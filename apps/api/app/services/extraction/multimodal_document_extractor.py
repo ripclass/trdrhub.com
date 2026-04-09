@@ -839,6 +839,12 @@ You should return EXACTLY:
 Notice: dates parsed to ISO format, amount as a number (not a string), 41D split
 into available_with + available_by, 31D split into expiry_date + expiry_place,
 documents_required and additional_conditions as ARRAYS not strings.
+
+Notice also: this example LC has every field populated, so every canonical
+key appears in the output.  On a real LC, if a field is NOT present
+(e.g. the LC doesn't mention transshipment at all) then OMIT that key
+entirely.  Don't return `transshipment: null`.  Don't invent a value.
+Only include keys for fields that are actually on the document.
 """
 
 
@@ -897,15 +903,39 @@ def _build_multimodal_prompt(
                 "labels them differently."
             )
 
-    # The "see everything" instruction.
+    # The "see everything" instruction.  Three-case rule for whether a
+    # key should appear in the output JSON:
+    #
+    #   1. Field is on the document AND you can read the value →
+    #      include the key with the value.
+    #   2. Field label is on the document but the value is blank,
+    #      smudged, or unclear → include the key with an empty
+    #      string ``""``.  The reviewer can type it in.
+    #   3. Field is NOT on the document at all → OMIT the key
+    #      entirely from your output.  Do NOT return ``null``.
+    #
+    # This lets the reviewer distinguish "the extractor saw a label but
+    # couldn't read the value" (fillable empty slot) from "this field
+    # was never on the document" (no slot at all — the document simply
+    # doesn't have that field).
     instruction = (
         "\n\nYour task: read the page images and the raw text, find every "
-        "field that is visible, and return a JSON object with the canonical "
-        "key names listed below. If a field is not on the document, OMIT it "
-        "(don't return null) — except for the schema's required keys where "
-        "null is OK. Be liberal: if you see a value that obviously belongs "
-        "to one of these fields under a different label, MAP IT.\n\n"
-        "Canonical keys you should look for:\n"
+        "field that is visible on the document, and return a JSON object "
+        "with canonical key names.  Use the canonical keys listed below "
+        "whenever you can map a value to one.  Be liberal: if you see a "
+        "value under a different label, MAP IT to the canonical key.\n\n"
+        "CRITICAL — what to include in the JSON output:\n"
+        "  1. If a field is on the document AND you can read the value: "
+        "include the key with the value.\n"
+        "  2. If the field label is on the document but the value is "
+        "blank, smudged, or unclear: include the key with an empty "
+        "string \"\".  The reviewer will type the value in.\n"
+        "  3. If the field is NOT on the document at all: OMIT the key "
+        "entirely from your output.  Do NOT include it with null.  Do "
+        "NOT invent placeholder values.  If it isn't there, it simply "
+        "does not appear in the output JSON.\n\n"
+        "Canonical keys you should look for (include them only if they "
+        "are actually on the document per the rule above):\n"
         + "\n".join(f"  - {field}" for field in fields)
     )
 

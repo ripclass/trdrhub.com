@@ -306,22 +306,44 @@ function buildDocSectionState(
   const documentType = (doc.document_type || doc.documentType || 'unknown') as string;
   const docKey = (doc.id || doc.document_id || filename) as string;
 
-  // Render all canonical schema field SLOTS for this doc type, in schema
-  // order.  A slot is either populated (AI extracted) or blank (the
-  // extractor didn't find it on the PDF).  We do NOT make any "required
-  // by LC" judgment here — that's validation's job.  Any extra keys the
-  // extractor returned that aren't in the schema are appended at the end
-  // so the user still sees them and can correct them.
+  // STRICT RULE: render ONLY fields the extractor actually returned.
+  // The backend prompt tells the LLM to OMIT keys for fields that
+  // aren't on the document, so if a key is present in ``extracted``
+  // (even with an empty string value) the field label was visible on
+  // the document and the user may want to type the value in.  If a key
+  // is absent from ``extracted`` entirely, the field was not on the
+  // document at all — we do not render a slot for it.
+  //
+  // ``null`` values are treated as "not on the document" (safer default
+  // for older-backend responses that still emit null for absent fields
+  // until the prompt rollout lands everywhere).
+  //
+  // Order: schema-declared keys first (in schema order, so cards render
+  // consistently across docs of the same type), then any extra keys
+  // the LLM returned that aren't in the schema.
   const schemaSet = new Set(schemaFieldNames);
-  const fields: FieldState[] = schemaFieldNames.map((fieldName) =>
-    buildFieldState(fieldName, extracted),
-  );
+  const fields: FieldState[] = [];
+  const renderedKeys = new Set<string>();
+
+  const shouldRenderKey = (key: string): boolean => {
+    if (!key || key.startsWith('_')) return false;
+    if (key.endsWith('__items')) return false;  // structural flattener sidecars
+    if (!(key in extracted)) return false;  // key not in dict → field wasn't on the doc
+    const raw = extracted[key];
+    if (raw === null || raw === undefined) return false;  // null → treat as absent
+    return true;
+  };
+
+  for (const fieldName of schemaFieldNames) {
+    if (!shouldRenderKey(fieldName)) continue;
+    fields.push(buildFieldState(fieldName, extracted));
+    renderedKeys.add(fieldName);
+  }
   for (const key of Object.keys(extracted)) {
-    if (!key || key.startsWith('_') || schemaSet.has(key)) continue;
-    // Skip breakdown sidecars produced by the structural flattener — the
-    // primary scalar key is already rendered above.
-    if (key.endsWith('__items')) continue;
+    if (renderedKeys.has(key)) continue;
+    if (!shouldRenderKey(key)) continue;
     fields.push(buildFieldState(key, extracted));
+    renderedKeys.add(key);
   }
 
   return { docKey, filename, documentType, fields };
@@ -351,17 +373,36 @@ function buildLCDocSectionState(doc: ExtractionReadyDocument): DocSectionState {
     }
   }
 
-  // Required section (always shown)
-  const requiredFields: FieldState[] = LC_REQUIRED_FIELDS.map((fieldName) =>
-    buildFieldState(fieldName, extracted),
-  );
+  // STRICT RULE for the LC card: same as supporting docs — only render
+  // fields the extractor actually returned.  The MT700
+  // required/optional/hidden split is still meaningful (it tells us
+  // which group each field belongs to, so the card renders with two
+  // clean sections) but a field that wasn't on the LC at all does NOT
+  // get a slot on the review screen.  Validation will surface the
+  // absence as a discrepancy against the MT700 spec if it matters.
+  const hiddenSet = new Set(LC_HIDDEN_FIELDS);
+  const headerSet = new Set(LC_HEADER_FIELDS);
 
-  // Optional section — only show fields the AI actually populated. The
-  // user shouldn't be confronted with empty inputs for fields that don't
-  // typically appear or aren't relevant to validation.
+  const hasExtractedValue = (fieldName: string): boolean => {
+    if (hiddenSet.has(fieldName)) return false;
+    if (headerSet.has(fieldName)) return false;  // shown as badge, not as field
+    // readAliasedValue walks the canonical key + legacy aliases; if any
+    // of them resolved to a non-null value on the extractor output, the
+    // label was on the LC.
+    const value = readAliasedValue(extracted, fieldName);
+    return value !== null && value !== undefined;
+  };
+
+  // Required section — MT700 skeleton fields, filtered to only those
+  // the extractor actually returned.
+  const requiredFields: FieldState[] = LC_REQUIRED_FIELDS
+    .filter(hasExtractedValue)
+    .map((fieldName) => buildFieldState(fieldName, extracted));
+
+  // Optional section — same filter.
   const optionalFields: FieldState[] = LC_OPTIONAL_FIELDS
-    .map((fieldName) => buildFieldState(fieldName, extracted))
-    .filter((f) => !f.isEmpty);
+    .filter(hasExtractedValue)
+    .map((fieldName) => buildFieldState(fieldName, extracted));
 
   return {
     docKey,
@@ -653,17 +694,17 @@ export function ExtractionReview({
 
       {/* Per-document review sections */}
       {docSections.map((section, docIdx) => {
-        const emptyCount = section.fields.filter((f) => f.isEmpty).length;
         const isLCSection = !!section.isLetterOfCredit;
 
-        // The review screen is a pure transcription-review surface.  We
-        // don't make any "required by LC" judgment here — validation is
-        // the layer that decides whether a missing field constitutes a
-        // discrepancy against the LC's 46A/47A demands.  Blank inputs
-        // just get a neutral placeholder telling the user to fill it in
-        // if the value is actually on the document.
+        // Every field in ``section.fields`` is a field the extractor
+        // actually saw on the document.  Fields not on the doc were
+        // filtered out at ``buildDocSectionState`` / ``buildLCDocSectionState``
+        // and never reach this render loop.  So we never need to
+        // distinguish "not on doc" from "on doc but blank" here —
+        // empty values mean "label was visible but the value was
+        // blank/unclear; type it in if you can read it".
         const emptyPlaceholder =
-          "If this field is on the document, type its value here. Otherwise leave blank.";
+          "Label was on the document but the value was blank or unclear. Type it in if you can read it.";
 
         const renderFieldEntry = (field: FieldState, fieldIdx: number) => {
           const isLongForm = shouldRenderAsTextarea(field.name, field.currentValue);
@@ -681,14 +722,9 @@ export function ExtractionReview({
                     AI extracted
                   </Badge>
                 )}
-                {!field.isEmpty && field.isConfirmed && (
+                {field.isConfirmed && (
                   <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">
                     You edited
-                  </Badge>
-                )}
-                {field.isEmpty && (
-                  <Badge variant="outline" className="text-slate-500 border-slate-600/40 text-[10px]">
-                    Not found
                   </Badge>
                 )}
               </Label>
