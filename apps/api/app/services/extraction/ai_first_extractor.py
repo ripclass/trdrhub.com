@@ -1109,6 +1109,7 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
                 return None, "parse_error"
 
             result = _wrap_ai_result_with_default_confidence(result)
+            _unwrap_confidence_scalars_in_place(result)
             result["_llm_provider"] = llm_trace["provider"]
             result["_llm_model"] = llm_trace["model"]
             result["_llm_router_layer"] = llm_trace["router_layer"]
@@ -1337,6 +1338,7 @@ class BLAIFirstExtractor(AIFirstExtractor):
                 return None, "parse_error"
 
             result = _wrap_ai_result_with_default_confidence(result)
+            _unwrap_confidence_scalars_in_place(result)
             result["_llm_provider"] = llm_trace["provider"]
             result["_llm_model"] = llm_trace["model"]
             result["_llm_router_layer"] = llm_trace["router_layer"]
@@ -2078,6 +2080,43 @@ def _wrap_ai_result_with_default_confidence(
     return wrapped
 
 
+def _unwrap_confidence_scalars_in_place(result: Dict[str, Any]) -> None:
+    """Flatten ``{"value": X, "confidence": Y}`` wrappers back to scalar X.
+
+    ``_wrap_ai_result_with_default_confidence`` above is used to feed
+    ``_build_default_field_details_from_wrapped_result`` which reads
+    ``.value``/``.confidence`` off every field to build the ``_field_details``
+    sidecar. Once that sidecar has been built, the main payload should carry
+    scalars again — downstream shaping code (``_shape_lc_financial_payload``,
+    ``build_lc_intake_summary``, the intake card on the upload page, the
+    Extract & Review screen) expects plain strings/numbers and will render
+    a ``{value, confidence}`` dict as its literal Python repr. Until this
+    helper was added, fields like ``lc_number`` and
+    ``form_of_documentary_credit`` were leaking into the UI as
+    ``{'value': 'EXP2026BD001', 'confidence': 0.82}``.
+
+    Only unwraps dicts that look exactly like a confidence wrapper — a
+    ``value`` key plus at most a ``confidence`` key. Structural dicts like
+    ``applicant = {name, address, country}`` or ``amount = {value, currency}``
+    are left alone because those are consumed by field-specific unwrap
+    branches in ``_shape_lc_financial_payload``.
+    """
+    if not isinstance(result, dict):
+        return
+    for key in list(result.keys()):
+        if not isinstance(key, str) or key.startswith("_"):
+            continue
+        value = result[key]
+        if not isinstance(value, dict) or "value" not in value:
+            continue
+        extra_keys = set(value.keys()) - {"value", "confidence"}
+        if extra_keys:
+            # Structural field payload (applicant, amount with currency, etc.) —
+            # leave it for the field-specific unwrap branches downstream.
+            continue
+        result[key] = value.get("value")
+
+
 async def _repair_json_once(
     provider: Any,
     response_text: str,
@@ -2163,6 +2202,7 @@ async def _run_ai_extraction_generic(
             return None, "parse_error"
 
         result = _wrap_ai_result_with_default_confidence(result)
+        _unwrap_confidence_scalars_in_place(result)
         result["_llm_provider"] = llm_trace["provider"]
         result["_llm_model"] = llm_trace["model"]
         result["_llm_router_layer"] = llm_trace["router_layer"]

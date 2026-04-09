@@ -17,6 +17,7 @@ from app.services.extraction.ai_first_extractor import (
     _derive_overall_status_from_field_details,
     _parse_llm_json_with_repair,
     _summarize_field_detail_statuses,
+    _unwrap_confidence_scalars_in_place,
     _wrap_ai_result_with_default_confidence,
 )
 from app.services.llm_provider import LLMProvider
@@ -618,6 +619,11 @@ async def _attempt_vision_tier(
         source=f"multimodal:{source_mode}",
         raw_text=extracted_text,
     )
+    # The sidecar field_details dict now carries confidence metadata.  Unwrap
+    # the main payload so downstream shaping code (_shape_lc_financial_payload,
+    # build_lc_intake_summary, the Extract & Review screen) sees scalar values
+    # instead of {value, confidence} dicts leaking into the UI as jsonish strings.
+    _unwrap_confidence_scalars_in_place(wrapped)
     wrapped["_extraction_method"] = "multimodal_ai_first"
     wrapped["_source_mode"] = source_mode
     wrapped["_llm_provider"] = provider_used
