@@ -1110,6 +1110,7 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
 
             result = _wrap_ai_result_with_default_confidence(result)
             _unwrap_confidence_scalars_in_place(result)
+            _flatten_structural_field_values_in_place(result)
             result["_llm_provider"] = llm_trace["provider"]
             result["_llm_model"] = llm_trace["model"]
             result["_llm_router_layer"] = llm_trace["router_layer"]
@@ -1339,6 +1340,7 @@ class BLAIFirstExtractor(AIFirstExtractor):
 
             result = _wrap_ai_result_with_default_confidence(result)
             _unwrap_confidence_scalars_in_place(result)
+            _flatten_structural_field_values_in_place(result)
             result["_llm_provider"] = llm_trace["provider"]
             result["_llm_model"] = llm_trace["model"]
             result["_llm_router_layer"] = llm_trace["router_layer"]
@@ -2117,6 +2119,219 @@ def _unwrap_confidence_scalars_in_place(result: Dict[str, Any]) -> None:
         result[key] = value.get("value")
 
 
+# Field-name heuristics for the structural-field flattener below.  A field
+# whose name matches any of these suggests a legitimately-plural shape and
+# should NOT be collapsed to a scalar.  The check is on the canonical key
+# name, so `line_items`, `goods_items` stay as lists when the LLM returns
+# them that way, while `hs_code`, `quantity`, `size_breakdown` get flattened
+# because the review form expects scalars.
+_PLURAL_FIELD_NAME_FRAGMENTS: Tuple[str, ...] = (
+    "_items",
+    "_list",
+    "_lines",
+    "_entries",
+    "_rows",
+    "line_items",
+    "goods_items",
+)
+
+# Suffix used for the structured-data sidecar written when we flatten a
+# multi-item field.  Keys ending in this suffix are considered already-
+# sidecar and are skipped on subsequent flatten passes (idempotency).
+_STRUCTURAL_SIDECAR_SUFFIX = "__items"
+
+# Keys we recognize as structural party/amount sub-objects.  A dict that
+# carries any of these keys is assumed to be a structured record (applicant
+# with {name, address, country}, amount with {value, currency}, etc.) and is
+# left alone so the per-field unwrap branches in ``_shape_lc_financial_payload``
+# / ``_shape_invoice_financial_payload`` continue to work.
+_STRUCTURAL_DICT_KEYS: frozenset = frozenset({
+    "name",
+    "address",
+    "country",
+    "country_name",
+    "country_code",
+    "bic",
+    "swift_code",
+    "value",
+    "amount",
+    "currency",
+    "code",
+    "number",
+    "iso",
+    "postal_code",
+})
+
+# Numeric sub-field names we can sum across a list of line-item dicts.
+# Matched case-insensitively against the dict keys.
+_LINE_ITEM_NUMERIC_KEYS: frozenset = frozenset({
+    "quantity",
+    "qty",
+    "amount",
+    "value",
+    "total",
+    "weight",
+    "gross_weight",
+    "net_weight",
+    "count",
+    "packages",
+    "cartons",
+})
+
+
+def _looks_like_plural_field(key: str) -> bool:
+    if not isinstance(key, str):
+        return False
+    k = key.lower()
+    return any(frag in k for frag in _PLURAL_FIELD_NAME_FRAGMENTS)
+
+
+def _looks_like_structural_dict(value: Dict[str, Any]) -> bool:
+    """Return True if the dict looks like a structured party / amount payload
+    rather than a flat key -> number rollup map."""
+    if not isinstance(value, dict) or not value:
+        return False
+    return any(k in _STRUCTURAL_DICT_KEYS for k in value.keys() if isinstance(k, str))
+
+
+def _flatten_structural_field_values_in_place(result: Dict[str, Any]) -> None:
+    """Collapse list-of-dict / dict-of-scalar values to scalar + breakdown sidecar.
+
+    The vision LLM legitimately returns multi-item structured data when a
+    document has several line items:
+
+    * an invoice for 3 SKUs can return
+      ``quantity = [{"item": "...", "quantity": 30000}, ...]``
+    * a packing list can return
+      ``size_breakdown = {"Small": 1000, "Medium": 500}``
+    * an invoice with 3 HS codes can return
+      ``hs_code = ["61091000", "62034200", "61044200"]``
+
+    The structured shape is semantically correct — the document really has
+    multiple items — but the Extract & Review form widgets and downstream
+    scalar-comparing rules (amount tolerance, HS-code lookup, etc.) expect
+    one value per field.  Left alone, the frontend's ``coerceToString``
+    ``JSON.stringify`` fallback would render those values as jsonish
+    strings in the review inputs.
+
+    This helper collapses each structured value into a scalar representation
+    suitable for the review form and preserves the original structured data
+    in a sibling key ``<field>_breakdown`` so validators, the customs pack,
+    and any downstream consumer that cares about line items can still reach
+    the full data.
+
+    Rules (in priority order):
+
+    1. Skip private keys (``_extraction_method`` etc.) and plural field
+       names (``line_items`` / ``goods_items`` / ``...{_items,_list,_lines}``)
+       — those are intentionally list-shaped and should not be flattened.
+    2. Skip dicts that carry structural party/amount keys
+       (``name``/``address``/``currency``/...).  Those are handled by the
+       per-field unwrap branches in ``_shape_X_financial_payload``.
+    3. ``List[Dict]`` with a shared numeric sub-key (``quantity``/``qty``/
+       ``amount``/``weight``/...) → sum the numeric sub-key, store total as
+       the scalar value, keep the list in ``<field>_breakdown``.
+    4. ``List[Dict]`` without a summable numeric sub-key → join the item
+       description/name fields with ``"; "``, keep the list as sidecar.
+    5. ``List[scalar]`` → join with ``", "``, keep the list as sidecar.
+    6. ``Dict[str, scalar]`` that is not a structural dict → render as
+       ``"k: v, k2: v2"``, keep the dict as sidecar.
+    7. Everything else passes through untouched.
+
+    The helper mutates ``result`` in place and is idempotent: running it
+    twice is a no-op because the second pass sees scalars.
+    """
+    if not isinstance(result, dict):
+        return
+
+    for key in list(result.keys()):
+        if not isinstance(key, str) or key.startswith("_"):
+            continue
+        if _looks_like_plural_field(key):
+            continue
+        # Already-sidecar keys from a previous flatten pass — leave them
+        # alone so a second call on the same dict is a no-op.
+        if key.endswith(_STRUCTURAL_SIDECAR_SUFFIX):
+            continue
+
+        value = result[key]
+        sidecar_key = f"{key}{_STRUCTURAL_SIDECAR_SUFFIX}"
+
+        # List[Dict] — line items
+        if (
+            isinstance(value, list)
+            and value
+            and all(isinstance(item, dict) for item in value)
+        ):
+            # Find a numeric sub-key shared by every item in the list.
+            numeric_sub_key: Optional[str] = None
+            for candidate in _LINE_ITEM_NUMERIC_KEYS:
+                if all(
+                    isinstance(item.get(candidate), (int, float))
+                    for item in value
+                    if isinstance(item, dict)
+                ):
+                    numeric_sub_key = candidate
+                    break
+            if numeric_sub_key:
+                try:
+                    total = sum(
+                        float(item[numeric_sub_key])
+                        for item in value
+                        if isinstance(item, dict)
+                    )
+                    result[key] = int(total) if total.is_integer() else total
+                except (TypeError, ValueError):
+                    result[key] = None
+            else:
+                # No numeric rollup — join human-readable descriptions.
+                parts: List[str] = []
+                for item in value:
+                    if not isinstance(item, dict):
+                        continue
+                    desc = (
+                        item.get("description")
+                        or item.get("item")
+                        or item.get("name")
+                        or item.get("title")
+                        or item.get("label")
+                    )
+                    if desc is None:
+                        desc = ", ".join(f"{k}: {v}" for k, v in item.items())
+                    parts.append(str(desc))
+                result[key] = "; ".join(parts) if parts else None
+            # Preserve the structured data so validators and the customs
+            # pack can still get at the line items.
+            result.setdefault(sidecar_key, value)
+            continue
+
+        # List[scalar] — join with commas
+        if (
+            isinstance(value, list)
+            and value
+            and all(isinstance(item, (str, int, float, bool)) for item in value)
+        ):
+            result[key] = ", ".join(str(item) for item in value)
+            result.setdefault(sidecar_key, list(value))
+            continue
+
+        # Dict[str, scalar] — map of label -> number, render "k: v, k2: v2"
+        if (
+            isinstance(value, dict)
+            and value
+            and all(
+                isinstance(v, (str, int, float, bool))
+                for v in value.values()
+            )
+            and not _looks_like_structural_dict(value)
+        ):
+            result[key] = ", ".join(
+                f"{k}: {v}" for k, v in value.items() if k is not None
+            )
+            result.setdefault(sidecar_key, dict(value))
+            continue
+
+
 async def _repair_json_once(
     provider: Any,
     response_text: str,
@@ -2203,6 +2418,7 @@ async def _run_ai_extraction_generic(
 
         result = _wrap_ai_result_with_default_confidence(result)
         _unwrap_confidence_scalars_in_place(result)
+        _flatten_structural_field_values_in_place(result)
         result["_llm_provider"] = llm_trace["provider"]
         result["_llm_model"] = llm_trace["model"]
         result["_llm_router_layer"] = llm_trace["router_layer"]

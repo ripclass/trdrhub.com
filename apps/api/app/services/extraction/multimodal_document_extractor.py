@@ -15,6 +15,7 @@ from PIL import Image
 from app.services.extraction.ai_first_extractor import (
     _build_default_field_details_from_wrapped_result,
     _derive_overall_status_from_field_details,
+    _flatten_structural_field_values_in_place,
     _parse_llm_json_with_repair,
     _summarize_field_detail_statuses,
     _unwrap_confidence_scalars_in_place,
@@ -624,6 +625,11 @@ async def _attempt_vision_tier(
     # build_lc_intake_summary, the Extract & Review screen) sees scalar values
     # instead of {value, confidence} dicts leaking into the UI as jsonish strings.
     _unwrap_confidence_scalars_in_place(wrapped)
+    # Collapse legitimately-multi-item structured values (list-of-dict line
+    # items, dict-of-number breakdowns, list-of-scalar HS-code arrays) into
+    # scalar + _breakdown sidecar.  The LLM returns these for real multi-SKU
+    # invoices / multi-size packing lists; the review form expects scalars.
+    _flatten_structural_field_values_in_place(wrapped)
     wrapped["_extraction_method"] = "multimodal_ai_first"
     wrapped["_source_mode"] = source_mode
     wrapped["_llm_provider"] = provider_used
