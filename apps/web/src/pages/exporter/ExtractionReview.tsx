@@ -626,6 +626,23 @@ export function ExtractionReview({
       {/* Per-document review sections */}
       {docSections.map((section, docIdx) => {
         const emptyCount = section.fields.filter((f) => f.isEmpty).length;
+        const isLCSection = !!section.isLetterOfCredit;
+
+        // Wording differs based on whether this is the LC (the source of
+        // truth) or a supporting doc (which must satisfy what the LC
+        // demands). For the LC itself, "the LC requires this" is
+        // circular — the reference is SWIFT MT700 spec / UCP600. For
+        // supporting docs the LC IS the authority.
+        const missingBadgeLabel = isLCSection
+          ? 'Missing — required by SWIFT MT700'
+          : 'Missing — required by LC';
+        const missingBadgeTitle = isLCSection
+          ? "This is a mandatory MT700 field that wasn't found on your LC. If the LC your bank issued is actually missing this field, the LC itself needs amendment — this system can't validate reliably without it. If the value is there but the extractor missed it, type it in."
+          : "Not found on this supporting document. The LC requires this field to appear on every document in the presentation (UCP600). If the value is on the PDF but the extractor missed it, type it in; otherwise leave blank and validation will flag it as a discrepancy.";
+        const emptyPlaceholder = isLCSection
+          ? 'Type the value from your LC if visible — or leave blank if your LC really is missing this field.'
+          : 'Type the value if it exists on this document — otherwise leave blank and validation will flag it.';
+
         const renderFieldEntry = (field: FieldState, fieldIdx: number) => {
           const isLongForm = shouldRenderAsTextarea(field.name, field.currentValue);
           const wrapperClass = isLongForm
@@ -641,9 +658,9 @@ export function ExtractionReview({
                   <Badge
                     variant="outline"
                     className="text-amber-600 border-amber-500/40 text-[10px]"
-                    title="Not found on your document. The LC requires this field — if you continue without filling it, the bank will flag this as a discrepancy on the results page."
+                    title={missingBadgeTitle}
                   >
-                    Not on document — LC requires this
+                    {missingBadgeLabel}
                   </Badge>
                 )}
                 {!field.isEmpty && !field.isConfirmed && (
@@ -662,7 +679,7 @@ export function ExtractionReview({
                   id={`${section.docKey}-${field.name}`}
                   value={field.currentValue}
                   onChange={handleFieldChange(docIdx, fieldIdx)}
-                  placeholder={field.isEmpty ? 'Type the value if it exists on your document — otherwise leave blank and validation will flag it.' : undefined}
+                  placeholder={field.isEmpty ? emptyPlaceholder : undefined}
                   rows={textareaRows}
                   className={
                     (field.isEmpty ? 'border-amber-500/40 ' : '') +
@@ -674,7 +691,7 @@ export function ExtractionReview({
                   id={`${section.docKey}-${field.name}`}
                   value={field.currentValue}
                   onChange={handleFieldChange(docIdx, fieldIdx)}
-                  placeholder={field.isEmpty ? 'Type the value if it exists on your document — otherwise leave blank and validation will flag it.' : undefined}
+                  placeholder={field.isEmpty ? emptyPlaceholder : undefined}
                   className={field.isEmpty ? 'border-amber-500/40' : undefined}
                 />
               )}
@@ -684,7 +701,7 @@ export function ExtractionReview({
 
         // LC card has a 2-section layout (required + optional) AND header
         // badges; supporting docs render as a single flat grid.
-        const isLC = !!section.isLetterOfCredit;
+        const isLC = isLCSection;
         const requiredFields = isLC && section.requiredCount != null
           ? section.fields.slice(0, section.requiredCount)
           : section.fields;
