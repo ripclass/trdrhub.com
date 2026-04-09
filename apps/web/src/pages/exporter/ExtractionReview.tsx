@@ -181,7 +181,7 @@ const LC_HEADER_FIELDS = new Set<string>([
   'form_of_documentary_credit',
 ]);
 
-// REQUIRED: the 8 skeleton fields a bank examiner needs to validate.
+// REQUIRED: the 9 skeleton fields a bank examiner needs to validate.
 // Without these the system cannot run validation at all.
 const LC_REQUIRED_FIELDS = [
   'lc_number',
@@ -194,6 +194,68 @@ const LC_REQUIRED_FIELDS = [
   'expiry_date',
   'latest_shipment_date',
 ];
+
+// SWIFT MT700 field reference per canonical field.  Used by the
+// "LC is missing mandatory MT700 fields" pre-validation warning banner
+// so the user sees exactly WHICH SWIFT tag and WHICH UCP600 article
+// requires each missing field — instead of the vague "LC requires this"
+// wording that's circular on the LC's own review section.
+const LC_MANDATORY_FIELD_REFERENCE: Record<string, { label: string; swiftTag: string; ucpReference: string; why: string }> = {
+  lc_number: {
+    label: 'LC Number',
+    swiftTag: '20',
+    ucpReference: 'UCP600 Art 4(a)',
+    why: 'Cross-reference key on every presentation document',
+  },
+  amount: {
+    label: 'Amount',
+    swiftTag: '32B',
+    ucpReference: 'UCP600 Art 18(b), Art 30',
+    why: 'Invoice amount tolerance check needs this',
+  },
+  currency: {
+    label: 'Currency',
+    swiftTag: '32B',
+    ucpReference: 'UCP600 Art 18(b)',
+    why: 'Must match invoice and insurance certificate currency',
+  },
+  applicant: {
+    label: 'Applicant',
+    swiftTag: '50',
+    ucpReference: 'UCP600 Art 18(a)(ii)',
+    why: 'Must match invoice consignee/buyer',
+  },
+  beneficiary: {
+    label: 'Beneficiary',
+    swiftTag: '59',
+    ucpReference: 'UCP600 Art 18(a)(i)',
+    why: 'Must match invoice issuer/seller',
+  },
+  goods_description: {
+    label: 'Goods Description',
+    swiftTag: '45A',
+    ucpReference: 'UCP600 Art 18(c)',
+    why: 'Invoice goods must correspond with this description',
+  },
+  documents_required: {
+    label: 'Documents Required',
+    swiftTag: '46A',
+    ucpReference: 'UCP600 Art 14',
+    why: 'Defines which documents the validator will check for',
+  },
+  expiry_date: {
+    label: 'Expiry Date',
+    swiftTag: '31D',
+    ucpReference: 'UCP600 Art 6(d)(i)',
+    why: 'Drop-dead presentation deadline — LC is invalid without it',
+  },
+  latest_shipment_date: {
+    label: 'Latest Shipment Date',
+    swiftTag: '44C',
+    ucpReference: 'UCP600 Art 29, 31',
+    why: 'Bill of lading on-board date must not exceed this',
+  },
+};
 
 // OPTIONAL: useful but not deal-breakers. Shown in a separate section.
 const LC_OPTIONAL_FIELDS = [
@@ -754,6 +816,50 @@ export function ExtractionReview({
                 </p>
               ) : isLC ? (
                 <div className="space-y-6">
+                  {/* Pre-validation warning: which MT700 mandatory fields
+                      are missing from the LC itself (not from supporting
+                      docs — this is about the LC being malformed). */}
+                  {(() => {
+                    const missingMandatory = requiredFields.filter(
+                      (f) => f.isEmpty && LC_MANDATORY_FIELD_REFERENCE[f.name],
+                    );
+                    if (missingMandatory.length === 0) return null;
+                    return (
+                      <Alert className="border-red-500/40 bg-red-50 dark:bg-red-950/20">
+                        <AlertCircle className="w-4 h-4 text-red-600" />
+                        <AlertTitle>
+                          Your LC is missing {missingMandatory.length} mandatory SWIFT MT700 field
+                          {missingMandatory.length === 1 ? '' : 's'}
+                        </AlertTitle>
+                        <AlertDescription className="space-y-3">
+                          <p className="text-sm">
+                            The LC is the source of truth for the entire presentation.
+                            If these fields really aren't on your LC, the LC itself needs
+                            amendment — validation can't run reliably without them.
+                          </p>
+                          <ul className="list-disc pl-5 space-y-2 text-sm">
+                            {missingMandatory.map((f) => {
+                              const ref = LC_MANDATORY_FIELD_REFERENCE[f.name];
+                              return (
+                                <li key={f.name}>
+                                  <span className="font-semibold">{ref.label}</span>
+                                  <span className="text-muted-foreground"> — Field <code className="text-xs bg-red-100 dark:bg-red-900/40 px-1 rounded">:{ref.swiftTag}:</code>, {ref.ucpReference}</span>
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {ref.why}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                          <p className="text-xs text-muted-foreground">
+                            If the value is actually on your LC and the extractor missed
+                            it, type it into the field below. Otherwise you may need to
+                            request an amendment from your issuing bank.
+                          </p>
+                        </AlertDescription>
+                      </Alert>
+                    );
+                  })()}
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
                       Required fields
