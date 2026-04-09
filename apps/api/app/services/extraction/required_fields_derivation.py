@@ -4,17 +4,48 @@ The MT700 LC's clauses 45A (goods description), 46A (documents required),
 and 47A (additional conditions) are the SOURCE OF TRUTH for what must be
 extracted from each supporting document. This module reads the
 already-parsed LC context (no LLM calls — pure keyword scanning) and
-produces a map of:
+produces both a flat per-doc field-name map (legacy, for consumers that
+only need "is this field required"), AND a per-doc annotated record map
+that explains **WHY** each field is required so the Extract & Review UI
+can cite the specific clause:
 
     {
-        "lc_self_required": [...],            # MT700 mandatory + skeleton fields
-        "by_document_type": {
-            "commercial_invoice": [...],
-            "bill_of_lading": [...],
-            "packing_list": [...],
+        "lc_self_required": [...],             # MT700 mandatory field names (flat)
+        "lc_self_required_annotated": [        # same, with provenance per field
+            {
+                "field": "lc_number",
+                "source_type": "mt700_mandatory",
+                "source_refs": ["MT700 Field 20"],
+                "clause_texts": [],
+                "severity": "required",
+            },
+            ...
+        ],
+        "by_document_type": {                  # flat field-name lists (legacy)
+            "commercial_invoice": ["amount", "buyer", ...],
             ...
         },
-        "applies_to_all_supporting_docs": [...],  # rules that apply to every doc
+        "by_document_type_annotated": {        # annotated records per doc type
+            "commercial_invoice": [
+                {
+                    "field": "lc_number",
+                    "source_type": "47a",
+                    "source_refs": ["47A-6"],
+                    "clause_texts": ["EXPORTER BIN: ... MUST APPEAR ON ALL DOCUMENTS"],
+                    "severity": "required",
+                },
+                {
+                    "field": "invoice_number",
+                    "source_type": "doc_standard",
+                    "source_refs": [],
+                    "clause_texts": [],
+                    "severity": "conventional",
+                },
+                ...
+            ],
+            ...
+        },
+        "applies_to_all_supporting_docs": [...],  # flat cross-doc field names
         "evidence": [
             {
                 "source": "47A-6",
@@ -26,14 +57,35 @@ produces a map of:
         ],
     }
 
-This is the input the Extraction Review screen uses to decide which fields
-to surface for user confirmation per document.
+## Provenance semantics
 
-Design notes
-------------
-- No regexes spanning multiple lines if we can avoid it. Each clause text is
-  treated as a self-contained sentence.
-- Field name normalization is centralized in `FIELD_KEYWORDS` so adding
+Each annotated record has one of four ``source_type`` values, which maps
+1:1 to how the frontend renders the missing-field badge:
+
+- ``"46a"`` — field was found keyword-matched inside a clause 46A entry
+  (the LC's documents-required list).  Red badge, high severity.
+- ``"47a"`` — field was found inside a clause 47A condition.  Red badge.
+- ``"mt700_mandatory"`` — the LC itself must carry this field per SWIFT
+  MT700 spec.  Only applies to the ``letter_of_credit`` doc type and is
+  independent of whether the clause mentions the field.  Red badge.
+- ``"doc_standard"`` — the field comes from ``DOC_TYPE_BASELINE`` below.
+  These are conventional fields a bank examiner expects on a given doc
+  type (e.g. every B/L has a BL Number, every CoO has a Certificate
+  Number) but are NOT explicitly demanded by this particular LC.  Amber
+  badge, lower severity — not a UCP600/LC breach, just a convention.
+
+A field can have MULTIPLE sources (e.g. ``lc_number`` on an invoice may
+be demanded by 47A condition #6 AND by 46A clause #1 that says "INVOICE
+INDICATING LC NO.").  When that happens we keep ``source_type`` at the
+highest-severity entry and accumulate all source refs and clause texts.
+The severity order (highest first) is:
+``46a > 47a > mt700_mandatory > doc_standard``.
+
+## Design notes
+
+- No regexes spanning multiple lines if we can avoid it. Each clause text
+  is treated as a self-contained sentence.
+- Field name normalization is centralized in ``FIELD_KEYWORDS`` so adding
   new keywords is a one-line change.
 - Doc-type detection looks for explicit keywords ("BILL OF LADING",
   "COMMERCIAL INVOICE", etc.) at the start of each 46A line, then in the
@@ -42,8 +94,13 @@ Design notes
   through each destination doc's schema before being merged into that
   doc's required list.  This prevents a clause like "DOCUMENTS PRESENTED
   LATER THAN 21 DAYS AFTER SHIPMENT DATE" (which trips the 'shipment date'
-  keyword) from adding `shipped_on_board_date` as a phantom field on
+  keyword) from adding ``shipped_on_board_date`` as a phantom field on
   Invoice / COO / Packing List where it doesn't belong.
+- The baseline list (``DOC_TYPE_BASELINE``) is NOT dropped when a clause
+  doesn't mention a field — we still emit it with ``source_type="doc_standard"``
+  so the frontend can render it with amber-advisory severity.  Dropping it
+  would hide conventional fields from the review screen entirely, which
+  makes it harder for the user to spot a genuinely missing BL Number.
 """
 
 from __future__ import annotations
@@ -303,7 +360,15 @@ FIELD_KEYWORDS: List[Tuple[re.Pattern, str]] = [
 
     # Inspection
     (re.compile(r"\bsgs|intertek|bureau\s+veritas\b", re.I), "inspection_agency"),
-    (re.compile(r"\binspection\s+(?:no\.?|number|certificate)\b", re.I), "certificate_number"),
+    # NOTE: the old pattern here also matched "inspection certificate" as a
+    # keyword for certificate_number, but "INSPECTION CERTIFICATE" in a
+    # 46A clause is the NAME of the required document, not a field label
+    # — it erroneously upgraded certificate_number from doc_standard to
+    # 46a-required on every inspection-cert bearing LC.  We now only
+    # match "inspection no." / "inspection number".  The generic
+    # ``certificate number`` pattern above still catches legitimate
+    # "inspection certificate number" phrasings.
+    (re.compile(r"\binspection\s+(?:no\.?|number)\b", re.I), "certificate_number"),
 
     # Parties — only match when the clause is referring to the party as a
     # FIELD on a document, not as an incidental mention. Bare `\bapplicant\b`
@@ -533,6 +598,113 @@ _DOC_TYPE_TO_SCHEMA_KEY: Dict[str, str] = {
 _SCHEMA_FIELD_CACHE: Dict[str, FrozenSet[str]] = {}
 
 
+# ---------------------------------------------------------------------------
+# Annotated required-field records — the source-cited provenance shape the
+# Extract & Review screen reads to decide how to render each missing-field
+# badge (red "46A clause #2" vs amber "doc-standard").
+# ---------------------------------------------------------------------------
+
+# Severity ordering — used when the same field has multiple sources and we
+# need to pick the "primary" source_type for UI rendering.  Higher rank =
+# stronger requirement = red-blocking badge.
+_SOURCE_TYPE_RANK: Dict[str, int] = {
+    "doc_standard": 1,
+    "mt700_mandatory": 2,
+    "47a": 3,
+    "46a": 4,
+}
+
+
+def _severity_for_source_type(source_type: str) -> str:
+    """Return the UI severity label for a provenance source type."""
+    if source_type == "doc_standard":
+        return "conventional"
+    return "required"
+
+
+def _merge_field_record(
+    records: Dict[str, Dict[str, Any]],
+    *,
+    field: str,
+    source_type: str,
+    source_ref: Optional[str] = None,
+    clause_text: Optional[str] = None,
+) -> None:
+    """Add or upgrade a required-field record in-place.
+
+    If the field is already recorded at a lower severity, the existing
+    record is upgraded to the new source_type (its source_refs and
+    clause_texts are preserved and the new provenance is appended).  If
+    the field is already recorded at the SAME source_type, the new
+    source_ref and clause_text are appended to the existing lists so the
+    UI can cite multiple supporting clauses.  If the existing record
+    already dominates, the new source is still appended (so the frontend
+    can show a full audit trail) but the primary source_type stays put.
+    """
+    existing = records.get(field)
+    new_rank = _SOURCE_TYPE_RANK.get(source_type, 0)
+    if existing is None:
+        record: Dict[str, Any] = {
+            "field": field,
+            "source_type": source_type,
+            "source_refs": [source_ref] if source_ref else [],
+            "clause_texts": [clause_text] if clause_text else [],
+            "severity": _severity_for_source_type(source_type),
+        }
+        records[field] = record
+        return
+
+    existing_rank = _SOURCE_TYPE_RANK.get(existing.get("source_type") or "", 0)
+    if new_rank > existing_rank:
+        existing["source_type"] = source_type
+        existing["severity"] = _severity_for_source_type(source_type)
+    if source_ref and source_ref not in existing["source_refs"]:
+        existing["source_refs"].append(source_ref)
+    if clause_text and clause_text not in existing["clause_texts"]:
+        existing["clause_texts"].append(clause_text)
+
+
+def _build_lc_self_annotated_records() -> List[Dict[str, Any]]:
+    """Build annotated records for the LC's own MT700 mandatory fields.
+
+    These are required by the SWIFT MT700 spec regardless of whether the
+    LC's own clauses reference them — see the ``lc_self_required`` list
+    in the return value of ``derive_required_fields``.
+    """
+    records: Dict[str, Dict[str, Any]] = {}
+    field_to_tag = {
+        "sequence_of_total": "Field 27",
+        "form_of_documentary_credit": "Field 40A",
+        "lc_number": "Field 20",
+        "issue_date": "Field 31C",
+        "expiry_date": "Field 31D",
+        "expiry_place": "Field 31D",
+        "applicable_rules": "Field 40E",
+        "applicant": "Field 50",
+        "beneficiary": "Field 59",
+        "amount": "Field 32B",
+        "currency": "Field 32B",
+        "available_with": "Field 41a",
+        "available_by": "Field 41a",
+        "port_of_loading": "Field 44E",
+        "port_of_discharge": "Field 44F",
+        "latest_shipment_date": "Field 44C",
+        "goods_description": "Field 45A",
+        "documents_required": "Field 46A",
+        "additional_conditions": "Field 47A",
+        "period_for_presentation": "Field 48",
+    }
+    for field_name in MT700_MANDATORY_FIELDS:
+        tag = field_to_tag.get(field_name) or field_name
+        _merge_field_record(
+            records,
+            field=field_name,
+            source_type="mt700_mandatory",
+            source_ref=f"MT700 {tag}",
+        )
+    return list(records.values())
+
+
 def _schema_fields_for_doc_type(doc_type: str) -> FrozenSet[str]:
     """Return the set of canonical field names declared by the extraction
     schema for ``doc_type``.  Returns an empty frozenset when the doc type
@@ -588,17 +760,45 @@ def derive_required_fields(
     """
     documents_required, additional_conditions = _extract_clauses_from_lc(lc_context or {})
 
-    # 1. Per-doc requirements collected as sets so we don't duplicate fields.
-    per_doc_required: Dict[str, Set[str]] = {}
-    applies_to_all: Set[str] = set()
+    # 1. Per-doc annotated records and cross-doc applies-to-all records.
+    #
+    # ``per_doc_annotated`` maps doc_type -> field_name -> annotated record.
+    # ``applies_to_all_annotated`` maps field_name -> annotated record.
+    # The flat ``per_doc_required`` (field-name sets) is derived from
+    # ``per_doc_annotated`` at emission time — we don't maintain two
+    # parallel data structures during the walk.
+    per_doc_annotated: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    applies_to_all_annotated: Dict[str, Dict[str, Any]] = {}
     evidence: List[Dict[str, Any]] = []
 
-    # Apply baselines for every doc type the user uploaded.
+    # Apply baselines for every doc type the user uploaded.  Baseline
+    # fields are recorded with ``source_type="doc_standard"`` so the UI
+    # can render them as conventional / amber severity.  If a later
+    # clause also demands the field, the record is upgraded to the
+    # stronger source_type via ``_merge_field_record``.
     for doc_type in document_types_present or []:
         canonical = DOC_TYPE_ALIASES.get(doc_type.lower(), doc_type.lower())
         baseline = DOC_TYPE_BASELINE.get(canonical, ())
-        if baseline:
-            per_doc_required.setdefault(canonical, set()).update(baseline)
+        if canonical == "letter_of_credit":
+            # LC self-fields are recorded as mt700_mandatory, not doc_standard.
+            bucket = per_doc_annotated.setdefault(canonical, {})
+            for field_name in MT700_MANDATORY_FIELDS:
+                _merge_field_record(
+                    bucket,
+                    field=field_name,
+                    source_type="mt700_mandatory",
+                    source_ref=f"MT700 Field ({field_name})",
+                )
+            continue
+        if not baseline:
+            continue
+        bucket = per_doc_annotated.setdefault(canonical, {})
+        for field_name in baseline:
+            _merge_field_record(
+                bucket,
+                field=field_name,
+                source_type="doc_standard",
+            )
 
     # 2. Walk clause 46A entries (each is a description of one required doc).
     for idx, clause in enumerate(documents_required, start=1):
@@ -609,26 +809,43 @@ def derive_required_fields(
         fields = _detect_fields_in_text(clause)
         if not fields:
             continue
+        source_ref = f"46A-{idx}"
+        clause_text = clause[:300]
         if doc_type:
-            per_doc_required.setdefault(doc_type, set()).update(fields)
+            bucket = per_doc_annotated.setdefault(doc_type, {})
+            for field_name in fields:
+                _merge_field_record(
+                    bucket,
+                    field=field_name,
+                    source_type="46a",
+                    source_ref=source_ref,
+                    clause_text=clause_text,
+                )
             evidence.append(
                 {
-                    "source": f"46A-{idx}",
+                    "source": source_ref,
                     "scope": doc_type,
                     "fields": fields,
-                    "text": clause[:300],
+                    "text": clause_text,
                 }
             )
         else:
             # Could not pin down a doc type — treat as a soft hint shared
-            # across all uploaded docs (still better than dropping the info).
-            applies_to_all.update(fields)
+            # across all uploaded docs.
+            for field_name in fields:
+                _merge_field_record(
+                    applies_to_all_annotated,
+                    field=field_name,
+                    source_type="46a",
+                    source_ref=source_ref,
+                    clause_text=clause_text,
+                )
             evidence.append(
                 {
-                    "source": f"46A-{idx}",
+                    "source": source_ref,
                     "scope": "all",
                     "fields": fields,
-                    "text": clause[:300],
+                    "text": clause_text,
                 }
             )
 
@@ -639,44 +856,68 @@ def derive_required_fields(
         fields = _detect_fields_in_text(condition)
         if not fields:
             continue
+        source_ref = f"47A-{idx}"
+        clause_text = condition[:300]
         if _applies_to_all(condition):
-            applies_to_all.update(fields)
+            for field_name in fields:
+                _merge_field_record(
+                    applies_to_all_annotated,
+                    field=field_name,
+                    source_type="47a",
+                    source_ref=source_ref,
+                    clause_text=clause_text,
+                )
             evidence.append(
                 {
-                    "source": f"47A-{idx}",
+                    "source": source_ref,
                     "scope": "all",
                     "fields": fields,
-                    "text": condition[:300],
+                    "text": clause_text,
                 }
             )
             continue
         # Otherwise: try to detect a doc-type scope inline.
         doc_type = _detect_doc_type(condition)
         if doc_type:
-            per_doc_required.setdefault(doc_type, set()).update(fields)
+            bucket = per_doc_annotated.setdefault(doc_type, {})
+            for field_name in fields:
+                _merge_field_record(
+                    bucket,
+                    field=field_name,
+                    source_type="47a",
+                    source_ref=source_ref,
+                    clause_text=clause_text,
+                )
             evidence.append(
                 {
-                    "source": f"47A-{idx}",
+                    "source": source_ref,
                     "scope": doc_type,
                     "fields": fields,
-                    "text": condition[:300],
+                    "text": clause_text,
                 }
             )
         else:
             # No scope detected — fall back to "applies to all". This keeps
             # the requirement visible to the user rather than silently
             # dropping it.
-            applies_to_all.update(fields)
+            for field_name in fields:
+                _merge_field_record(
+                    applies_to_all_annotated,
+                    field=field_name,
+                    source_type="47a",
+                    source_ref=source_ref,
+                    clause_text=clause_text,
+                )
             evidence.append(
                 {
-                    "source": f"47A-{idx}",
+                    "source": source_ref,
                     "scope": "all",
                     "fields": fields,
-                    "text": condition[:300],
+                    "text": clause_text,
                 }
             )
 
-    # 4. Apply the cross-doc requirements to every SUPPORTING per-doc list,
+    # 4. Merge cross-doc applies-to-all records into every SUPPORTING doc,
     # FILTERED through the destination doc's own extraction schema.
     #
     # Without this filter, a 47A condition like "DOCUMENTS PRESENTED LATER
@@ -685,54 +926,62 @@ def derive_required_fields(
     # dump `shipped_on_board_date` into applies_to_all and then spray it
     # onto Invoice / COO / Packing List, turning them into phantom-field
     # factories on the Extract & Review screen.
-    #
-    # The filter keeps the fields that are genuinely universal (lc_number,
-    # buyer_purchase_order_number, exporter_bin, exporter_tin, currency,
-    # port_of_loading, port_of_discharge) because those appear in every
-    # supporting schema, and drops fields that only belong to a specific
-    # family (bl_number only lives in transport_document, policy_number
-    # only in insurance_document, etc.).
     def _filter_applies_to_all_for(doc_type: str) -> Set[str]:
         schema_fields = _schema_fields_for_doc_type(doc_type)
         if not schema_fields:
-            # Unknown doc type / schemas import failed — fall back to
-            # unfiltered behavior rather than dropping everything.
-            return set(applies_to_all)
-        return {f for f in applies_to_all if f in schema_fields}
+            return set(applies_to_all_annotated.keys())
+        return {f for f in applies_to_all_annotated.keys() if f in schema_fields}
+
+    def _merge_applies_to_all_into(doc_type: str) -> None:
+        bucket = per_doc_annotated.setdefault(doc_type, {})
+        for field_name in _filter_applies_to_all_for(doc_type):
+            cross_record = applies_to_all_annotated[field_name]
+            for source_ref in cross_record.get("source_refs") or []:
+                _merge_field_record(
+                    bucket,
+                    field=field_name,
+                    source_type=cross_record.get("source_type") or "47a",
+                    source_ref=source_ref,
+                    clause_text=(cross_record.get("clause_texts") or [None])[0],
+                )
 
     # The LC itself does NOT get cross-doc requirements merged in — it's
     # the SOURCE of those requirements, not a doc that must satisfy them.
-    for doc_type in list(per_doc_required.keys()):
+    for doc_type in list(per_doc_annotated.keys()):
         if doc_type == "letter_of_credit":
             continue
-        per_doc_required[doc_type].update(_filter_applies_to_all_for(doc_type))
+        _merge_applies_to_all_into(doc_type)
 
-    # Make sure every uploaded supporting doc type has an entry. The LC's
-    # entry was already seeded from DOC_TYPE_BASELINE in step 1 and should
-    # NOT be touched with cross-doc requirements here.
+    # Make sure every uploaded supporting doc type has an entry.
     for doc_type in document_types_present or []:
         canonical = DOC_TYPE_ALIASES.get(doc_type.lower(), doc_type.lower())
         if canonical == "letter_of_credit":
-            per_doc_required.setdefault(canonical, set())  # ensure present
+            per_doc_annotated.setdefault(canonical, {})
             continue
-        per_doc_required.setdefault(canonical, set()).update(
-            _filter_applies_to_all_for(canonical)
-        )
+        per_doc_annotated.setdefault(canonical, {})
+        _merge_applies_to_all_into(canonical)
 
-    # 5. The LC's own required field list — MT700 mandatory + skeleton.
+    # 5. The LC's own required field list — MT700 mandatory (flat) + annotated.
     lc_self_required = list(MT700_MANDATORY_FIELDS)
+    lc_self_required_annotated = _build_lc_self_annotated_records()
 
-    # 6. Sort and emit.
-    by_document_type_sorted: Dict[str, List[str]] = {
-        doc_type: sorted(fields)
-        for doc_type, fields in per_doc_required.items()
-    }
+    # 6. Emit both the flat and annotated per-doc maps.
+    by_document_type_sorted: Dict[str, List[str]] = {}
+    by_document_type_annotated: Dict[str, List[Dict[str, Any]]] = {}
+    for doc_type, records in per_doc_annotated.items():
+        sorted_field_names = sorted(records.keys())
+        by_document_type_sorted[doc_type] = sorted_field_names
+        by_document_type_annotated[doc_type] = [
+            records[name] for name in sorted_field_names
+        ]
 
     return {
         "lc_self_required": lc_self_required,
+        "lc_self_required_annotated": lc_self_required_annotated,
         "lc_skeleton_required": list(MT700_SKELETON_FIELDS),
         "by_document_type": by_document_type_sorted,
-        "applies_to_all_supporting_docs": sorted(applies_to_all),
+        "by_document_type_annotated": by_document_type_annotated,
+        "applies_to_all_supporting_docs": sorted(applies_to_all_annotated.keys()),
         "evidence": evidence,
     }
 

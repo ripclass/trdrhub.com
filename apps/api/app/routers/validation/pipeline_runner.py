@@ -365,13 +365,19 @@ def _build_required_field_map(setup_state: dict) -> dict:
         lc_context=lc_context,
         document_types_present=document_types_present,
     )
-    # Keep the legacy `baseline_required` key (cross-doc requirements) for
-    # any existing consumers that grep for it.
+    # Pass through BOTH the legacy flat field-name maps and the new
+    # annotated per-field records (carrying clause source_refs / clause
+    # texts / severity).  The frontend Extract & Review screen reads the
+    # annotated version to render per-source missing-field badges (red
+    # "46A #2" vs amber "standard field"); older clients keep reading
+    # ``baseline_required`` / ``by_document_type`` unchanged.
     return {
         "baseline_required": derived.get("applies_to_all_supporting_docs") or [],
         "lc_self_required": derived.get("lc_self_required") or [],
+        "lc_self_required_annotated": derived.get("lc_self_required_annotated") or [],
         "lc_skeleton_required": derived.get("lc_skeleton_required") or [],
         "by_document_type": derived.get("by_document_type") or {},
+        "by_document_type_annotated": derived.get("by_document_type_annotated") or {},
         "applies_to_all_supporting_docs": derived.get("applies_to_all_supporting_docs") or [],
         "evidence": derived.get("evidence") or [],
     }
