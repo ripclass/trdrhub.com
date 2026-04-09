@@ -17,7 +17,13 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
-import { useResumeValidate, type ExtractionReadyDocument, type ExtractionReadyResponse } from '@/hooks/use-lcopilot';
+import {
+  useResumeValidate,
+  type ExtractionReadyDocument,
+  type ExtractionReadyResponse,
+  type RequiredFieldRecord,
+  type RequiredFieldSourceType,
+} from '@/hooks/use-lcopilot';
 import { useToast } from '@/hooks/use-toast';
 
 interface ExtractionReviewProps {
@@ -49,6 +55,110 @@ interface FieldState {
   aiGuess: string;
   isEmpty: boolean;
   isConfirmed: boolean;
+  /** Per-field provenance — where the "required" signal came from.  Drives
+   *  the severity + clause citation on the missing-field badge.  When
+   *  undefined the field is treated as a simple LC-required field (red
+   *  badge, no clause citation) for backward compat with the older flat
+   *  `required_fields.by_document_type` shape. */
+  source?: RequiredFieldRecord;
+}
+
+/** Pretty label for a per-field source_type — the short text shown on the
+ *  missing-field badge in the review screen. */
+const SOURCE_TYPE_LABELS: Record<RequiredFieldSourceType, string> = {
+  '46a': '46A',
+  '47a': '47A',
+  mt700_mandatory: 'MT700',
+  doc_standard: 'standard field',
+};
+
+/** Human-readable document type name — used in the amber "standard X field"
+ *  badge so "standard field for commercial_invoice" becomes "standard
+ *  Commercial Invoice field". */
+const DOC_TYPE_HUMAN_LABELS: Record<string, string> = {
+  letter_of_credit: 'LC',
+  swift_message: 'LC',
+  lc_application: 'LC',
+  commercial_invoice: 'Commercial Invoice',
+  proforma_invoice: 'Proforma Invoice',
+  bill_of_lading: 'Bill of Lading',
+  ocean_bill_of_lading: 'Ocean B/L',
+  house_bill_of_lading: 'House B/L',
+  master_bill_of_lading: 'Master B/L',
+  air_waybill: 'Air Waybill',
+  packing_list: 'Packing List',
+  certificate_of_origin: 'Certificate of Origin',
+  insurance_certificate: 'Insurance Certificate',
+  insurance_policy: 'Insurance Policy',
+  inspection_certificate: 'Inspection Certificate',
+  beneficiary_certificate: 'Beneficiary Certificate',
+};
+
+/** Compute the missing-field badge text and tooltip for a given field.
+ *
+ * Returns a `{ label, title, tone }` triple describing how the badge should
+ * render.  `tone` is `"red"` for clause-derived (46A / 47A / MT700) and
+ * conventional LC-required fallback cases, `"amber"` for doc-standard
+ * fields that aren't actually demanded by the LC.
+ */
+function buildMissingFieldBadge(
+  field: FieldState,
+  documentType: string,
+  isLCSection: boolean,
+): { label: string; title: string; tone: 'red' | 'amber' } {
+  const src = field.source;
+  const docHuman = DOC_TYPE_HUMAN_LABELS[documentType] || documentType;
+
+  // No per-field provenance — fall back to the pre-Part-A messaging so an
+  // older backend that doesn't emit annotated records still renders sanely.
+  if (!src) {
+    if (isLCSection) {
+      return {
+        label: 'Missing — required by SWIFT MT700',
+        title:
+          "This is a mandatory MT700 field that wasn't found on your LC. If the LC your bank issued is actually missing this field, the LC itself needs amendment. If the value is there but the extractor missed it, type it in.",
+        tone: 'red',
+      };
+    }
+    return {
+      label: 'Missing — required by LC',
+      title:
+        'Not found on this supporting document. The LC requires this field to appear on every document in the presentation. Type the value if it exists, otherwise leave blank and validation will flag it.',
+      tone: 'red',
+    };
+  }
+
+  // Conventional doc-standard field — not required by any LC clause.
+  // Render amber with an advisory tooltip so the user knows it's a
+  // convention, not an LC compliance breach.
+  if (src.source_type === 'doc_standard') {
+    return {
+      label: `Missing — standard ${docHuman} field`,
+      title: `This is a conventional field that bank examiners typically expect on a ${docHuman}. The LC your bank issued does NOT explicitly demand it — missing it is an advisory flag, not an LC compliance breach. Type the value if it's on the document, otherwise leave blank.`,
+      tone: 'amber',
+    };
+  }
+
+  // MT700 mandatory — only for the LC itself.  Cite the MT700 field tag.
+  if (src.source_type === 'mt700_mandatory') {
+    const ref = src.source_refs[0] || 'MT700';
+    return {
+      label: `Missing — ${ref}`,
+      title: `This is a mandatory SWIFT MT700 field (${ref}) that wasn't found on your LC. The LC itself needs amendment from the issuing bank, or the extractor missed the value — type it in if it's on the PDF.`,
+      tone: 'red',
+    };
+  }
+
+  // 46A / 47A clause-cited required field.  Show the clause ref as the
+  // badge label and the clause text as the hover tooltip so the user can
+  // see exactly why this field is required.
+  const ref = src.source_refs[0] || SOURCE_TYPE_LABELS[src.source_type];
+  const clauseText = src.clause_texts[0] || '';
+  const badgeLabel = `Missing — ${ref}`;
+  const title = clauseText
+    ? `LC clause ${ref}: "${clauseText}"\n\nThis supporting document must carry the field named above to comply with the clause. Type the value if it's on the PDF; otherwise leave blank and validation will flag it as a discrepancy.`
+    : `Required by LC clause ${ref}. Type the value if it's on the PDF; otherwise leave blank and validation will flag it as a discrepancy.`;
+  return { label: badgeLabel, title, tone: 'red' };
 }
 
 const FRIENDLY_FIELD_LABELS: Record<string, string> = {
@@ -352,14 +462,23 @@ function buildFieldState(fieldName: string, extracted: Record<string, any>): Fie
 
 function buildDocSectionState(
   doc: ExtractionReadyDocument,
-  requiredFields: string[],
+  requirements: Array<string | RequiredFieldRecord>,
 ): DocSectionState {
   const extracted = (doc.extracted_fields || doc.extractedFields || {}) as Record<string, any>;
   const filename = (doc.filename || doc.name || 'document') as string;
   const documentType = (doc.document_type || doc.documentType || 'unknown') as string;
   const docKey = (doc.id || doc.document_id || filename) as string;
 
-  const fields: FieldState[] = requiredFields.map((fieldName) => buildFieldState(fieldName, extracted));
+  const fields: FieldState[] = requirements.map((req) => {
+    // Backward-compat: if the backend only sent a flat field name string
+    // (no annotation), build a FieldState with no source provenance and
+    // the frontend will fall back to the pre-Part-A badge wording.
+    if (typeof req === 'string') {
+      return buildFieldState(req, extracted);
+    }
+    const base = buildFieldState(req.field, extracted);
+    return { ...base, source: req };
+  });
 
   return { docKey, filename, documentType, fields };
 }
@@ -443,10 +562,14 @@ export function ExtractionReview({
       setDocSections([]);
       return;
     }
+    // Prefer the new annotated per-doc records (with per-field provenance)
+    // over the legacy flat field-name lists.  See
+    // `required_fields_derivation.py` for the full shape.  We fall back to
+    // the flat shape for older backends / extract-only responses that
+    // haven't picked up the annotated output yet.
+    const byTypeAnnotated = payload.required_fields?.by_document_type_annotated || {};
     const byType = payload.required_fields?.by_document_type || {};
     const baseline = payload.required_fields?.baseline_required || [];
-    const lcSelfRequired =
-      (payload.required_fields as any)?.lc_self_required || [];
     const built = (payload.documents || []).map((doc) => {
       const docType = String(doc.document_type || doc.documentType || '');
       // LC uses a dedicated builder that splits fields into header
@@ -457,9 +580,14 @@ export function ExtractionReview({
       if (isLC) {
         return buildLCDocSectionState(doc);
       }
-      const forType = byType[docType];
-      const required = Array.isArray(forType) && forType.length > 0 ? forType : baseline;
-      return buildDocSectionState(doc, required);
+      const annotatedForType = byTypeAnnotated[docType];
+      if (Array.isArray(annotatedForType) && annotatedForType.length > 0) {
+        return buildDocSectionState(doc, annotatedForType);
+      }
+      const flatForType = byType[docType];
+      const fallbackRequired =
+        Array.isArray(flatForType) && flatForType.length > 0 ? flatForType : baseline;
+      return buildDocSectionState(doc, fallbackRequired);
     });
     setDocSections(built);
   }, [payload]);
@@ -690,17 +818,9 @@ export function ExtractionReview({
         const emptyCount = section.fields.filter((f) => f.isEmpty).length;
         const isLCSection = !!section.isLetterOfCredit;
 
-        // Wording differs based on whether this is the LC (the source of
-        // truth) or a supporting doc (which must satisfy what the LC
-        // demands). For the LC itself, "the LC requires this" is
-        // circular — the reference is SWIFT MT700 spec / UCP600. For
-        // supporting docs the LC IS the authority.
-        const missingBadgeLabel = isLCSection
-          ? 'Missing — required by SWIFT MT700'
-          : 'Missing — required by LC';
-        const missingBadgeTitle = isLCSection
-          ? "This is a mandatory MT700 field that wasn't found on your LC. If the LC your bank issued is actually missing this field, the LC itself needs amendment — this system can't validate reliably without it. If the value is there but the extractor missed it, type it in."
-          : "Not found on this supporting document. The LC requires this field to appear on every document in the presentation (UCP600). If the value is on the PDF but the extractor missed it, type it in; otherwise leave blank and validation will flag it as a discrepancy.";
+        // Empty-field input placeholder (the in-input hint text) still
+        // differs per section because its wording is about where the
+        // VALUE would come from, not where the REQUIREMENT comes from.
         const emptyPlaceholder = isLCSection
           ? 'Type the value from your LC if visible — or leave blank if your LC really is missing this field.'
           : 'Type the value if it exists on this document — otherwise leave blank and validation will flag it.';
@@ -712,6 +832,16 @@ export function ExtractionReview({
             : 'space-y-1';
           const contentLineCount = (field.currentValue.match(/\n/g)?.length ?? 0) + 1;
           const textareaRows = Math.min(Math.max(contentLineCount + 1, 4), 16);
+          // Per-field source-aware badge — amber for doc_standard
+          // conventions, red for 46A / 47A / MT700 clause-cited
+          // requirements.  Tooltip carries the clause text when
+          // available so the user can click and see exactly why the
+          // field is flagged.
+          const missingBadge = buildMissingFieldBadge(field, section.documentType, isLCSection);
+          const missingBadgeClass =
+            missingBadge.tone === 'amber'
+              ? 'text-amber-600 border-amber-500/40 text-[10px]'
+              : 'text-rose-600 border-rose-500/40 text-[10px]';
           return (
             <div key={`${section.docKey}-${field.name}-${fieldIdx}`} className={wrapperClass}>
               <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
@@ -719,10 +849,10 @@ export function ExtractionReview({
                 {field.isEmpty && (
                   <Badge
                     variant="outline"
-                    className="text-amber-600 border-amber-500/40 text-[10px]"
-                    title={missingBadgeTitle}
+                    className={missingBadgeClass}
+                    title={missingBadge.title}
                   >
-                    {missingBadgeLabel}
+                    {missingBadge.label}
                   </Badge>
                 )}
                 {!field.isEmpty && !field.isConfirmed && (
