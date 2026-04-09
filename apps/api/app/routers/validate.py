@@ -1866,8 +1866,25 @@ async def _build_document_context(
                     context_payload["raw_text"] = context_payload.get("raw_text") or extracted_text
                     context_payload["extraction_artifacts_v1"] = extraction_artifacts_v1
                     _apply_direct_token_recovery(context_payload, extraction_artifacts_v1)
-                    if isinstance(context_payload.get("extracted_fields"), dict):
-                        doc_info["extracted_fields"] = context_payload.get("extracted_fields")
+                    # Prefer whichever extracted_fields dict has more populated
+                    # entries. launch_pipeline already set a curated version on
+                    # doc_info (e.g. _build_lc_user_facing_extracted_fields for
+                    # LCs); the context_payload version is the raw extractor
+                    # sub-dict which is often sparser or mis-keyed. Taking
+                    # whichever is richer prevents the curated LC fields from
+                    # being clobbered by a 2-field sub-dict on LCs while still
+                    # populating supporting docs where launch_pipeline didn't
+                    # pre-build a user_facing dict.
+                    ctx_fields = context_payload.get("extracted_fields")
+                    if isinstance(ctx_fields, dict) and ctx_fields:
+                        existing_fields = doc_info.get("extracted_fields") if isinstance(doc_info.get("extracted_fields"), dict) else {}
+                        def _populated_count(d: Dict[str, Any]) -> int:
+                            return sum(
+                                1 for v in d.values()
+                                if v not in (None, "", [], {})
+                            )
+                        if _populated_count(ctx_fields) >= _populated_count(existing_fields):
+                            doc_info["extracted_fields"] = ctx_fields
                     if isinstance(context_payload.get("_field_details"), dict):
                         doc_info["field_details"] = context_payload.get("_field_details")
                     if isinstance(context_payload.get("fact_graph_v1"), dict):
