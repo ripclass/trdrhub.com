@@ -341,25 +341,37 @@ def _build_missing_required_documents(
     if not required_types and not required_detailed:
         return []
 
-    # Collect the canonical doc_type of every actually-uploaded doc.
-    # Doc types within the same family are treated as equivalent for the
-    # purposes of satisfying an LC's document requirement — e.g. uploading
-    # a bill_of_lading satisfies an ocean_bill_of_lading requirement, and
-    # uploading an insurance_certificate satisfies an insurance_policy
-    # requirement.  (The LC text "INSURANCE POLICY/CERTIFICATE COVERING..."
-    # explicitly accepts either.)
-    _TRANSPORT_FAMILY = {
-        "bill_of_lading", "ocean_bill_of_lading", "house_bill_of_lading",
-        "master_bill_of_lading", "air_waybill", "sea_waybill",
-        "road_transport_document", "railway_consignment_note",
-        "multimodal_transport_document", "forwarder_certificate_of_receipt",
-        "forwarders_certificate_of_receipt",
+    # Doc-type equivalence for the missing-docs check.
+    #
+    # Two different rules are in play:
+    #
+    # 1. Specialization -> parent (one-way).  A specialized transport doc
+    #    like ocean_bill_of_lading satisfies a generic bill_of_lading
+    #    requirement, but uploading a generic bill_of_lading does NOT
+    #    satisfy an ocean_bill_of_lading requirement — the LC specifically
+    #    asked for ocean and the user might have uploaded a short-form or
+    #    non-marine BL.
+    #
+    # 2. Sibling equivalence (bidirectional).  UCP600 Art 28(d) explicitly
+    #    treats an insurance policy and an insurance certificate as
+    #    interchangeable presentation documents, and LC clauses commonly
+    #    use "INSURANCE POLICY/CERTIFICATE" wording.  So uploading either
+    #    satisfies a requirement for the other.
+    _TRANSPORT_PARENTS: Dict[str, Tuple[str, ...]] = {
+        "ocean_bill_of_lading": ("bill_of_lading",),
+        "house_bill_of_lading": ("bill_of_lading",),
+        "master_bill_of_lading": ("bill_of_lading",),
+        "multimodal_transport_document": ("bill_of_lading",),
+        "sea_waybill": ("bill_of_lading",),
     }
-    _INSURANCE_FAMILY = {
-        "insurance_certificate", "insurance_policy",
-        "marine_insurance_policy", "marine_insurance_certificate",
-        "cargo_insurance", "cargo_insurance_certificate",
-    }
+    _INSURANCE_SIBLINGS: Tuple[str, ...] = (
+        "insurance_certificate",
+        "insurance_policy",
+        "marine_insurance_certificate",
+        "marine_insurance_policy",
+        "cargo_insurance",
+        "cargo_insurance_certificate",
+    )
 
     uploaded_types: set = set()
     for doc in documents or []:
@@ -369,10 +381,12 @@ def _build_missing_required_documents(
         if not doc_type:
             continue
         uploaded_types.add(doc_type)
-        if doc_type in _TRANSPORT_FAMILY:
-            uploaded_types.update(_TRANSPORT_FAMILY)
-        if doc_type in _INSURANCE_FAMILY:
-            uploaded_types.update(_INSURANCE_FAMILY)
+        # Specialization -> parent propagation
+        for parent in _TRANSPORT_PARENTS.get(doc_type, ()):
+            uploaded_types.add(parent)
+        # Insurance siblings propagate both ways
+        if doc_type in _INSURANCE_SIBLINGS:
+            uploaded_types.update(_INSURANCE_SIBLINGS)
 
     # Build the missing list — prefer detailed entries (they carry the raw LC
     # clause text); fall back to plain types when detailed is empty.

@@ -545,3 +545,206 @@ def _normalize_country(value: Any) -> Optional[str]:
         return None
     return normalized
 
+
+# ---------------------------------------------------------------------------
+# LC subtype classification (Sight / Usance / Transferable / Standby / etc.)
+#
+# detect_lc_type() above decides import vs export.  This helper runs a
+# second-level classifier on the MT700 fields to emit more specific labels
+# the UI can render as chips:
+#
+#     "Sight Export LC"
+#     "30 Day Usance Import LC"
+#     "Transferable Sight LC"
+#     "Irrevocable Confirmed Export LC"
+#     "Standby LC (ISP98)"
+#
+# This is deterministic — no LLM calls — based on :40A: / :42C: / :49: /
+# :40E: fields that are already on lc_context after extraction.
+# ---------------------------------------------------------------------------
+
+_USANCE_DAYS_PATTERN = re.compile(
+    r"\b(\d{1,3})\s*(?:DAYS?|D)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_text(value: Any, *needles: str) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple)):
+        hay = " ".join(str(v) for v in value)
+    elif isinstance(value, dict):
+        hay = " ".join(str(v) for v in value.values())
+    else:
+        hay = str(value)
+    hay = hay.upper()
+    return any(needle.upper() in hay for needle in needles)
+
+
+def _extract_usance_days(drafts_at: Any) -> Optional[int]:
+    if drafts_at is None:
+        return None
+    text = str(drafts_at).upper()
+    match = _USANCE_DAYS_PATTERN.search(text)
+    if not match:
+        return None
+    try:
+        days = int(match.group(1))
+    except ValueError:
+        return None
+    if 1 <= days <= 360:
+        return days
+    return None
+
+
+def detect_lc_subtypes(
+    lc_context: Optional[Dict[str, Any]],
+    *,
+    base_lc_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Emit a set of secondary labels describing the LC's specific character.
+
+    Returns a dict like::
+
+        {
+            "primary_label": "Sight Export LC",
+            "labels": ["Sight", "Irrevocable", "Export"],
+            "payment_mode": "sight",          # sight | usance | deferred | mixed | unknown
+            "usance_days": None,              # int when usance, else None
+            "form": "irrevocable",            # irrevocable | transferable | revolving | standby | unknown
+            "confirmed": False,               # True when :49: says CONFIRM
+            "rule_set": "UCP600",             # UCP600 | ISP98 | URDG758 | EUCP | URC522 | unknown
+            "standby": False,
+            "transferable": False,
+            "revolving": False,
+        }
+
+    Every field has a safe default so callers can use it without None checks.
+    """
+    ctx = lc_context or {}
+
+    form_raw = ctx.get("form_of_documentary_credit") or ctx.get("form_of_doc_credit") or ""
+    drafts_at = ctx.get("drafts_at") or (ctx.get("shipment") or {}).get("drafts_at")
+    mixed_payment = ctx.get("mixed_payment_details") or ctx.get("mixed_payment")
+    deferred_payment = ctx.get("deferred_payment_details") or ctx.get("deferred_payment")
+    confirmation = ctx.get("confirmation_instructions") or ""
+    applicable_rules = ctx.get("applicable_rules") or ctx.get("ucp_reference") or ""
+    additional_conditions = ctx.get("additional_conditions") or []
+
+    # ---- Form (40A) ----
+    transferable = _has_text(form_raw, "TRANSFERABLE") or _has_text(additional_conditions, "TRANSFERABLE")
+    revolving = _has_text(form_raw, "REVOLVING", "REVOLV") or _has_text(additional_conditions, "REVOLVING")
+    standby = (
+        _has_text(form_raw, "STANDBY")
+        or _has_text(applicable_rules, "ISP98")
+        or _has_text(additional_conditions, "STANDBY")
+    )
+    irrevocable = _has_text(form_raw, "IRREVOCABLE") or not _has_text(form_raw, "REVOCABLE") and bool(form_raw)
+
+    if standby:
+        form = "standby"
+    elif transferable:
+        form = "transferable"
+    elif revolving:
+        form = "revolving"
+    elif irrevocable:
+        form = "irrevocable"
+    else:
+        form = "unknown"
+
+    # ---- Payment mode (42C / 42M / 42P) ----
+    drafts_text = str(drafts_at or "").upper()
+    mixed_text = str(mixed_payment or "").upper()
+    deferred_text = str(deferred_payment or "").upper()
+
+    usance_days = _extract_usance_days(drafts_at) or _extract_usance_days(mixed_payment)
+    is_sight = "SIGHT" in drafts_text or "AT SIGHT" in mixed_text or "AT SIGHT" in drafts_text
+    is_deferred = bool(deferred_text) or "DEFERRED" in drafts_text
+    is_mixed = bool(mixed_text) and not is_sight
+
+    if is_sight and not usance_days:
+        payment_mode = "sight"
+    elif usance_days is not None:
+        payment_mode = "usance"
+    elif is_deferred:
+        payment_mode = "deferred"
+    elif is_mixed:
+        payment_mode = "mixed"
+    else:
+        payment_mode = "unknown"
+
+    # ---- Confirmation (49) ----
+    confirmed = _has_text(confirmation, "CONFIRM") and not _has_text(confirmation, "WITHOUT")
+
+    # ---- Applicable rules (40E) ----
+    rules_up = str(applicable_rules or "").upper()
+    if "ISP98" in rules_up or "ISP 98" in rules_up:
+        rule_set = "ISP98"
+    elif "URDG758" in rules_up or "URDG 758" in rules_up:
+        rule_set = "URDG758"
+    elif "EUCP" in rules_up:
+        rule_set = "eUCP"
+    elif "URC522" in rules_up or "URC 522" in rules_up:
+        rule_set = "URC522"
+    elif "UCP" in rules_up:
+        rule_set = "UCP600"
+    else:
+        rule_set = "unknown"
+
+    # ---- Assemble labels ----
+    labels: list = []
+
+    # Payment mode label
+    if payment_mode == "sight":
+        labels.append("Sight")
+    elif payment_mode == "usance":
+        labels.append(f"{usance_days} Day Usance" if usance_days else "Usance")
+    elif payment_mode == "deferred":
+        labels.append("Deferred Payment")
+    elif payment_mode == "mixed":
+        labels.append("Mixed Payment")
+
+    # Form label (append AFTER payment mode so "Sight Transferable" reads naturally)
+    if form == "transferable":
+        labels.append("Transferable")
+    elif form == "revolving":
+        labels.append("Revolving")
+    elif form == "standby":
+        labels.append("Standby")
+    elif form == "irrevocable" and not standby and not transferable and not revolving:
+        labels.append("Irrevocable")
+
+    if confirmed:
+        labels.append("Confirmed")
+
+    # Direction label comes last
+    direction_label = None
+    if base_lc_type == LCType.EXPORT.value:
+        direction_label = "Export"
+    elif base_lc_type == LCType.IMPORT.value:
+        direction_label = "Import"
+    if direction_label:
+        labels.append(direction_label)
+
+    # Primary chip text — a single short string for the UI to render
+    if standby:
+        primary_label = f"Standby LC ({rule_set})" if rule_set != "unknown" else "Standby LC"
+    elif labels:
+        primary_label = " ".join(labels) + " LC"
+    else:
+        primary_label = "LC"
+
+    return {
+        "primary_label": primary_label,
+        "labels": labels,
+        "payment_mode": payment_mode,
+        "usance_days": usance_days,
+        "form": form,
+        "confirmed": confirmed,
+        "rule_set": rule_set,
+        "standby": standby,
+        "transferable": transferable,
+        "revolving": revolving,
+    }
+

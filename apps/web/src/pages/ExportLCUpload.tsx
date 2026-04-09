@@ -32,6 +32,7 @@ import { getUploadRequirementsModel } from "@/lib/exporter/uploadRequirements";
 import {
   formatWorkflowConfidenceBadgeLabel,
   getWorkflowDetectionStatusBadge,
+  getWorkflowPrimaryLabel,
   type WorkflowDetectionSummary,
 } from "@/lib/exporter/workflowDetection";
 import type { LcClassificationRequiredDocument } from "@/types/lcopilot";
@@ -1625,7 +1626,19 @@ export default function ExportLCUpload({
 
                 {lcIntake.lcDetection && (
                   <div className="flex flex-wrap gap-2 text-xs">
-                    <Badge variant="outline">{formatWorkflowBadgeLabel(lcIntake.lcDetection.lc_type)}</Badge>
+                    <Badge variant="default" className="font-semibold">
+                      {getWorkflowPrimaryLabel(lcIntake.lcDetection as WorkflowDetectionSummary)}
+                    </Badge>
+                    {(() => {
+                      const primary = getWorkflowPrimaryLabel(lcIntake.lcDetection as WorkflowDetectionSummary);
+                      const fallback = formatWorkflowBadgeLabel(lcIntake.lcDetection.lc_type);
+                      // Only show the generic "Export Workflow" badge if the
+                      // subtype classifier couldn't produce a more specific label.
+                      if (primary === "LC" || primary === "Export LC" || primary === "Import LC") {
+                        return <Badge variant="outline">{fallback}</Badge>;
+                      }
+                      return null;
+                    })()}
                     {getWorkflowDetectionStatusBadge(lcIntake.lcDetection as WorkflowDetectionSummary) && (
                       <Badge variant="outline">
                         {getWorkflowDetectionStatusBadge(lcIntake.lcDetection as WorkflowDetectionSummary)}

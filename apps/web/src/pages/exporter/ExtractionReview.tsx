@@ -638,8 +638,12 @@ export function ExtractionReview({
               <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
                 {field.label}
                 {field.isEmpty && (
-                  <Badge variant="outline" className="text-amber-600 border-amber-500/40 text-[10px]">
-                    Missing
+                  <Badge
+                    variant="outline"
+                    className="text-amber-600 border-amber-500/40 text-[10px]"
+                    title="Not found on your document. The LC requires this field — if you continue without filling it, the bank will flag this as a discrepancy on the results page."
+                  >
+                    Not on document — LC requires this
                   </Badge>
                 )}
                 {!field.isEmpty && !field.isConfirmed && (
@@ -658,7 +662,7 @@ export function ExtractionReview({
                   id={`${section.docKey}-${field.name}`}
                   value={field.currentValue}
                   onChange={handleFieldChange(docIdx, fieldIdx)}
-                  placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
+                  placeholder={field.isEmpty ? 'Type the value if it exists on your document — otherwise leave blank and validation will flag it.' : undefined}
                   rows={textareaRows}
                   className={
                     (field.isEmpty ? 'border-amber-500/40 ' : '') +
@@ -670,7 +674,7 @@ export function ExtractionReview({
                   id={`${section.docKey}-${field.name}`}
                   value={field.currentValue}
                   onChange={handleFieldChange(docIdx, fieldIdx)}
-                  placeholder={field.isEmpty ? 'Enter value from document…' : undefined}
+                  placeholder={field.isEmpty ? 'Type the value if it exists on your document — otherwise leave blank and validation will flag it.' : undefined}
                   className={field.isEmpty ? 'border-amber-500/40' : undefined}
                 />
               )}

@@ -295,16 +295,33 @@ async def prepare_validation_session(
     if override_lc_type:
         lc_type = override_lc_type
         lc_type_source = "override"
+
+    # Second-level classifier: Sight / Usance / Transferable / Standby /
+    # Confirmed flags based on MT700 fields 40A / 42C / 49 / 40E.
+    # Deterministic, no LLM call.
+    lc_subtype_info: Dict[str, Any] = {}
+    try:
+        from app.services.lc_classifier import detect_lc_subtypes
+        lc_subtype_info = detect_lc_subtypes(lc_context, base_lc_type=lc_type)
+    except Exception as _lc_subtype_exc:
+        logger.warning(
+            "detect_lc_subtypes failed: %s — falling back to generic label",
+            _lc_subtype_exc,
+        )
+        lc_subtype_info = {}
+
     payload["lc_type"] = lc_type
     payload["lc_type_reason"] = lc_type_reason
     payload["lc_type_confidence"] = lc_type_confidence
     payload["lc_type_source"] = lc_type_source
+    payload["lc_subtype"] = lc_subtype_info
     payload["lc_detection"] = {
         "auto": lc_type_guess,
         "lc_type": lc_type,
         "source": lc_type_source,
         "confidence_mode": lc_type_guess.get("confidence_mode"),
         "detection_basis": lc_type_guess.get("detection_basis"),
+        "subtype": lc_subtype_info,
     }
     logger.info(
         "LC type detection: auto=%s override=%s final=%s confidence=%.2f reason=%s",
@@ -412,6 +429,7 @@ async def prepare_validation_session(
                 "source": lc_type_source,
                 "confidence_mode": lc_type_guess.get("confidence_mode"),
                 "detection_basis": lc_type_guess.get("detection_basis"),
+                "subtype": lc_subtype_info,
             },
             "lc_summary": lc_summary,
             "required_document_types": required_document_types,

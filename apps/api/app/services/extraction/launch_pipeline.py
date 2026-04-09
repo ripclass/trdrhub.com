@@ -1036,6 +1036,18 @@ class LaunchExtractionPipeline:
                     if isinstance(packing_struct.get("extracted_fields"), dict)
                     else packing_struct
                 )
+                # Heuristic: infer total_packages from "CARTON 1-100" range
+                # notation when the extractor didn't populate it directly.
+                if isinstance(extracted_fields, dict):
+                    if _apply_packing_list_total_packages_heuristic(extracted_fields, extracted_text or ""):
+                        logger.info(
+                            "launch_pipeline.packing_list.total_packages_heuristic file=%s inferred=%s",
+                            filename, extracted_fields.get("total_packages"),
+                        )
+                        # Also propagate to the top-level packing_struct for
+                        # downstream consumers that read it without the nested key.
+                        if packing_struct is not extracted_fields:
+                            packing_struct["total_packages"] = extracted_fields["total_packages"]
                 extraction_lane = _resolve_extraction_lane(
                     extraction_method=packing_struct.get("_extraction_method", "unknown"),
                 )
@@ -2692,6 +2704,94 @@ _LC_FIELD_KEY_ALIASES: Dict[str, Tuple[str, ...]] = {
     "expiry_date": ("date_of_expiry",),
     "latest_shipment_date": ("latest_shipment",),
 }
+
+
+# ---------------------------------------------------------------------------
+# Packing-list total_packages heuristic.
+#
+# Packing lists commonly report carton counts as a RANGE in a free-text
+# marking line ("CARTON 1-100", "CTN NOS. 1 TO 50", "CARTON NO. 001-250")
+# instead of a direct "Total Cartons: 100" statement.  Vision LLMs tend to
+# drop this because the value isn't labeled with a canonical key.  This
+# post-extraction scan catches the common patterns and computes
+# total_packages = (end - start) + 1 when we can find a range.
+# ---------------------------------------------------------------------------
+# Noun list kept in one place so all patterns stay consistent.
+_PACKAGE_NOUN = r"(?:cartons?|ctns?|packages?|pkgs?|box(?:es)?)"
+
+_CARTON_RANGE_PATTERNS: List[re.Pattern] = [
+    # "CARTON 1-100", "CARTON NO 1-100", "CARTON NOS. 1-100", "CTN 1-100"
+    re.compile(
+        rf"\b{_PACKAGE_NOUN}\s*(?:no\.?s?\.?|#)?\s*(\d+)\s*[\-\u2013\u2014]\s*(\d+)",
+        re.IGNORECASE,
+    ),
+    # "CARTON 1 TO 100", "CTN NOS 1 TO 100", "BOXES 1 TO 200"
+    re.compile(
+        rf"\b{_PACKAGE_NOUN}\s*(?:no\.?s?\.?|#)?\s*(\d+)\s+to\s+(\d+)\b",
+        re.IGNORECASE,
+    ),
+]
+# Direct "Total Cartons: 100" — the "total" prefix is REQUIRED so we don't
+# accidentally match "CARTON 1" and capture the 1.
+_TOTAL_CARTONS_PATTERN = re.compile(
+    rf"\btotal\s+{_PACKAGE_NOUN}\s*(?:count|qty|quantity)?\s*[:=]?\s*(\d[\d,]*)",
+    re.IGNORECASE,
+)
+
+
+def _infer_total_packages_from_text(raw_text: Optional[str]) -> Optional[int]:
+    """Scan the raw PL text for carton-range or direct total-cartons notation
+    and return the implied total count.  Returns None when no pattern matches
+    or the numbers don't make sense.
+
+    Range patterns are tried FIRST so "CARTON 1-100" correctly returns 100
+    instead of partially matching as "CARTON 1".
+    """
+    if not raw_text:
+        return None
+    text = str(raw_text)
+    # Range patterns first (most specific).
+    for pattern in _CARTON_RANGE_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        try:
+            start = int(match.group(1))
+            end = int(match.group(2))
+        except ValueError:
+            continue
+        if end >= start and 1 <= (end - start + 1) <= 1_000_000:
+            return end - start + 1
+    # Fall back to direct "Total Cartons: N" form.
+    direct = _TOTAL_CARTONS_PATTERN.search(text)
+    if direct:
+        try:
+            raw_num = direct.group(1).replace(",", "")
+            value = int(raw_num)
+            if 1 <= value <= 1_000_000:
+                return value
+        except ValueError:
+            pass
+    return None
+
+
+def _apply_packing_list_total_packages_heuristic(
+    extracted_fields: Dict[str, Any],
+    raw_text: str,
+) -> bool:
+    """If total_packages is missing from the extracted fields and we can
+    infer it from the raw text, populate it in-place.  Returns True when
+    a value was added."""
+    if not isinstance(extracted_fields, dict):
+        return False
+    current = extracted_fields.get("total_packages")
+    if current not in (None, "", 0, "0"):
+        return False
+    inferred = _infer_total_packages_from_text(raw_text)
+    if inferred is None:
+        return False
+    extracted_fields["total_packages"] = inferred
+    return True
 
 
 def _apply_lc_label_prefix_cleanup(shaped: Dict[str, Any]) -> None:
