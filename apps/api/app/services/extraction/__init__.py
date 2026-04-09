@@ -23,7 +23,6 @@ Clause + field parsers:
 - hs_code_extractor: HS code extraction
 - ebl_parser: Electronic Bill of Lading format detection and parsing
 - iso20022_parser: ISO 20022 trad.001/002 low-level parser
-- required_fields_derivation: Derives per-doc required field map from LC 46A/47A clauses
 """
 
 from .lc_extractor import (

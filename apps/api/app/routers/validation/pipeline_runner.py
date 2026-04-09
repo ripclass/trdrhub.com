@@ -341,45 +341,94 @@ def _snapshot_setup_state(setup_state: dict) -> dict:
 
 
 def _build_required_field_map(setup_state: dict) -> dict:
-    """Derive the per-document required-field map from the parsed LC clauses.
+    """Return the per-document canonical field-name list from extraction schemas.
 
-    Delegates to required_fields_derivation.derive_required_fields(), which
-    walks the LC context's already-extracted clause 46A documents-required
-    list and clause 47A additional-conditions list and emits a per-doc
-    required field map plus the MT700 mandatory list for the LC itself.
+    This used to derive a "required fields" map by walking the LC's 46A/47A
+    clauses and keyword-matching doc-type fields — ~750 lines of logic that
+    tried to answer "what fields must this supporting doc carry to satisfy
+    the LC" at the extraction stage.
+
+    That was the wrong layer to ask that question.  Extraction's job is to
+    transcribe whatever is on the document; the LC-demands-vs-extracted-data
+    comparison is what Part 2 validation does.  Folding the two concerns
+    together was producing false positives (fields marked "required by LC"
+    that the LC didn't actually demand) and cross-contamination between
+    doc types on the Extract & Review screen.
+
+    The simpler contract: the frontend just needs to know which canonical
+    field SLOTS to render on each doc-type's review card.  Those slots come
+    from the extraction schemas in ``multimodal_document_extractor``.
+    Whether a given slot was populated by the extractor is a separate
+    question the UI answers by looking at the actual extracted values.
     """
-    from app.services.extraction.required_fields_derivation import derive_required_fields
+    try:
+        from app.services.extraction.multimodal_document_extractor import (
+            DOC_TYPE_SCHEMAS,
+        )
+    except ImportError:
+        DOC_TYPE_SCHEMAS = {}
 
-    lc_context = setup_state.get("lc_context") or {}
+    # Map from specific document types (bill_of_lading, ocean_bill_of_lading,
+    # air_waybill, ...) to the schema family key (transport_document) whose
+    # ``fields`` list we render on that card.
+    family_map: Dict[str, str] = {
+        "letter_of_credit": "letter_of_credit",
+        "swift_message": "letter_of_credit",
+        "lc_application": "letter_of_credit",
+        "commercial_invoice": "commercial_invoice",
+        "proforma_invoice": "commercial_invoice",
+        "packing_list": "packing_list",
+        "bill_of_lading": "transport_document",
+        "ocean_bill_of_lading": "transport_document",
+        "house_bill_of_lading": "transport_document",
+        "master_bill_of_lading": "transport_document",
+        "air_waybill": "transport_document",
+        "sea_waybill": "transport_document",
+        "road_transport_document": "transport_document",
+        "railway_consignment_note": "transport_document",
+        "multimodal_transport_document": "transport_document",
+        "certificate_of_origin": "regulatory_document",
+        "gsp_form_a": "regulatory_document",
+        "phytosanitary_certificate": "regulatory_document",
+        "insurance_certificate": "insurance_document",
+        "insurance_policy": "insurance_document",
+        "marine_insurance_certificate": "insurance_document",
+        "marine_insurance_policy": "insurance_document",
+        "inspection_certificate": "inspection_document",
+        "pre_shipment_inspection": "inspection_document",
+        "weight_certificate": "inspection_document",
+        "quality_certificate": "inspection_document",
+        "beneficiary_certificate": "attestation_document",
+        "manufacturer_certificate": "attestation_document",
+    }
+
     documents = (setup_state.get("extracted_context") or {}).get("documents") or []
-
-    document_types_present: list = []
+    present_types: List[str] = []
     for doc in documents:
         if not isinstance(doc, dict):
             continue
         dtype = doc.get("document_type") or doc.get("documentType")
         if dtype:
-            document_types_present.append(str(dtype))
+            present_types.append(str(dtype))
 
-    derived = derive_required_fields(
-        lc_context=lc_context,
-        document_types_present=document_types_present,
-    )
-    # Pass through BOTH the legacy flat field-name maps and the new
-    # annotated per-field records (carrying clause source_refs / clause
-    # texts / severity).  The frontend Extract & Review screen reads the
-    # annotated version to render per-source missing-field badges (red
-    # "46A #2" vs amber "standard field"); older clients keep reading
-    # ``baseline_required`` / ``by_document_type`` unchanged.
+    schema_fields_by_doc_type: Dict[str, List[str]] = {}
+    for dtype in set(present_types):
+        family = family_map.get(dtype.lower())
+        if not family:
+            continue
+        schema = DOC_TYPE_SCHEMAS.get(family) or {}
+        fields = schema.get("fields") or []
+        schema_fields_by_doc_type[dtype] = [str(f) for f in fields if isinstance(f, str)]
+
     return {
-        "baseline_required": derived.get("applies_to_all_supporting_docs") or [],
-        "lc_self_required": derived.get("lc_self_required") or [],
-        "lc_self_required_annotated": derived.get("lc_self_required_annotated") or [],
-        "lc_skeleton_required": derived.get("lc_skeleton_required") or [],
-        "by_document_type": derived.get("by_document_type") or {},
-        "by_document_type_annotated": derived.get("by_document_type_annotated") or {},
-        "applies_to_all_supporting_docs": derived.get("applies_to_all_supporting_docs") or [],
-        "evidence": derived.get("evidence") or [],
+        # ``schema_fields_by_doc_type`` replaces the legacy
+        # ``by_document_type`` / ``by_document_type_annotated`` /
+        # ``baseline_required`` / ``lc_self_required`` keys.  It's a pure
+        # per-doc-type canonical field slot list — NOT a "required by LC"
+        # statement.  The frontend uses it to render the review form's
+        # field slots per doc type.  Validation (Part 2) is the layer
+        # that decides whether missing slots constitute a discrepancy.
+        "schema_fields_by_doc_type": schema_fields_by_doc_type,
     }
 
 
