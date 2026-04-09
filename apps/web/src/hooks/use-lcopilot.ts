@@ -58,6 +58,13 @@ export interface ExtractionReadyDocument {
   [key: string]: any;
 }
 
+export interface ExtractionReadyMissingDocument {
+  type: string;
+  display_name?: string;
+  raw_text?: string;
+  reason_code?: string;
+}
+
 export interface ExtractionReadyResponse {
   status: 'extraction_ready';
   job_id?: string;
@@ -69,6 +76,7 @@ export interface ExtractionReadyResponse {
     baseline_required?: string[];
     by_document_type?: Record<string, string[]>;
   };
+  missing_required_documents?: ExtractionReadyMissingDocument[];
   message?: string;
   telemetry?: Record<string, any>;
 }

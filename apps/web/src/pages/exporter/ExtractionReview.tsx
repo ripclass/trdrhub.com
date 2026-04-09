@@ -368,6 +368,13 @@ export function ExtractionReview({
   const jobId = propJobId ?? payload?.jobId ?? payload?.job_id ?? null;
 
   const [docSections, setDocSections] = useState<DocSectionState[]>([]);
+  const [missingDocsAcknowledged, setMissingDocsAcknowledged] = useState<boolean>(false);
+
+  // Reset the acknowledgement whenever the set of missing docs changes so the
+  // user sees the warning again if they come back after uploading more files.
+  useEffect(() => {
+    setMissingDocsAcknowledged(false);
+  }, [payload?.missing_required_documents?.map((m) => m.type).join(',')]);
 
   useEffect(() => {
     if (!payload) {
@@ -404,6 +411,11 @@ export function ExtractionReview({
     [docSections],
   );
   const totalFilled = totalRequired - totalEmpty;
+
+  const hasUnacknowledgedMissingDocs =
+    Array.isArray(payload?.missing_required_documents) &&
+    payload!.missing_required_documents!.length > 0 &&
+    !missingDocsAcknowledged;
 
   const handleFieldChange =
     (docIdx: number, fieldIdx: number) =>
@@ -563,6 +575,51 @@ export function ExtractionReview({
               </AlertDescription>
             </Alert>
           )}
+          {Array.isArray(payload.missing_required_documents) &&
+            payload.missing_required_documents.length > 0 &&
+            !missingDocsAcknowledged && (
+              <Alert className="mt-4 border-red-500/40 bg-red-50 dark:bg-red-950/20">
+                <AlertCircle className="w-4 h-4 text-red-600" />
+                <AlertTitle>
+                  Your LC requires {payload.missing_required_documents.length}{' '}
+                  document{payload.missing_required_documents.length === 1 ? '' : 's'} you haven't uploaded
+                </AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <ul className="list-disc pl-5 text-sm space-y-1 mt-2">
+                    {payload.missing_required_documents.map((m, i) => (
+                      <li key={`${m.type}-${i}`}>
+                        <span className="font-medium">{m.display_name || m.type}</span>
+                        {m.raw_text ? (
+                          <span className="text-muted-foreground"> — {m.raw_text}</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-sm">
+                    You can validate without these, but the engine will flag them as missing on
+                    the results page. If you have them, go back and upload; otherwise acknowledge
+                    below to continue.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleBack}
+                    >
+                      <ArrowLeft className="w-4 h-4 mr-2" />
+                      Upload missing documents
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setMissingDocsAcknowledged(true)}
+                    >
+                      Continue without them
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
         </CardContent>
       </Card>
 
@@ -718,7 +775,9 @@ export function ExtractionReview({
               <div>
                 <p className="font-medium">Ready to validate?</p>
                 <p className="text-sm text-muted-foreground">
-                  {totalEmpty === 0
+                  {hasUnacknowledgedMissingDocs
+                    ? `${payload?.missing_required_documents?.length ?? 0} required document${(payload?.missing_required_documents?.length ?? 0) === 1 ? '' : 's'} missing — acknowledge the warning above to continue.`
+                    : totalEmpty === 0
                     ? 'All required fields are filled in. Validation will run on the confirmed set.'
                     : `${totalEmpty} field${totalEmpty === 1 ? '' : 's'} still missing — validation runs on what you have.`}
                 </p>
@@ -726,7 +785,7 @@ export function ExtractionReview({
             </div>
             <Button
               onClick={handleStartValidation}
-              disabled={isStartingValidation || !jobId}
+              disabled={isStartingValidation || !jobId || hasUnacknowledgedMissingDocs}
               className="min-w-[180px]"
             >
               {isStartingValidation ? (
