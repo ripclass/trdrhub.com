@@ -2446,7 +2446,37 @@ def _coerce_mt700_date_iso(value: Any) -> Optional[str]:
     if not raw_value:
         return None
 
-    match = re.search(r"(\d{6}|\d{8})", raw_value)
+    # Try ISO-style YYYY-MM-DD or YYYY/MM/DD first (pilot-5 realistic
+    # PDFs emit ":31C: DATE OF ISSUE 2026-03-08" where the dashes prevent
+    # the 6/8-digit run-length regex below from matching).
+    iso_match = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", raw_value)
+    if iso_match:
+        try:
+            return date(
+                int(iso_match.group(1)),
+                int(iso_match.group(2)),
+                int(iso_match.group(3)),
+            ).isoformat()
+        except ValueError:
+            pass
+
+    # Try YY-MM-DD or YY/MM/DD (SWIFT legacy with separators).
+    short_match = re.search(r"(?<!\d)(\d{2})[-/](\d{1,2})[-/](\d{1,2})(?!\d)", raw_value)
+    if short_match:
+        try:
+            yy = int(short_match.group(1))
+            full_year = 2000 + yy if yy < 80 else 1900 + yy
+            return date(
+                full_year,
+                int(short_match.group(2)),
+                int(short_match.group(3)),
+            ).isoformat()
+        except ValueError:
+            pass
+
+    # Fall back to a run of 6 or 8 consecutive digits (canonical MT700
+    # :31C:260308 or :31C:20260308).
+    match = re.search(r"(\d{8}|\d{6})", raw_value)
     if not match:
         return None
 
@@ -2962,6 +2992,22 @@ def _build_lc_user_facing_extracted_fields(payload: Optional[Dict[str, Any]]) ->
         "requirement_conditions": requirement_conditions,
         "unmapped_requirements": unmapped_requirements,
         "additional_conditions": _normalize_text_list(shaped.get("additional_conditions")),
+        # MT700 optional fields (shown in the review's optional section when populated)
+        "partial_shipments": shaped.get("partial_shipments"),
+        "transshipment": shaped.get("transshipment") or shaped.get("transhipment"),
+        "charges": shaped.get("charges"),
+        # Alias for the frontend's LC_OPTIONAL_FIELDS list which uses
+        # "expiry_place" while the backend has historically used "place_of_expiry"
+        "expiry_place": _first(
+            mt700_timeline.get("place_of_expiry"),
+            shaped.get("place_of_expiry"),
+            shaped.get("expiry_place"),
+        ),
+        # Header badge on the LC review card (form 40A IRREVOCABLE / TRANSFERABLE)
+        "form_of_documentary_credit": _first(
+            shaped.get("form_of_documentary_credit"),
+            shaped.get("form_of_doc_credit"),
+        ),
     }
 
     return {

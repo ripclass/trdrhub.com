@@ -304,6 +304,102 @@ def _build_required_field_map(setup_state: dict) -> dict:
     }
 
 
+def _build_missing_required_documents(
+    lc_context: dict,
+    documents: list,
+) -> list:
+    """Compare LC-required document types against what was actually uploaded.
+
+    Returns a list of missing docs in the shape the frontend expects:
+        [{"type": <canonical_doc_type>, "display_name": <human>, "raw_text": <LC clause>, "reason_code": <code>}]
+
+    Never errors — if we can't figure it out we just return [].
+    """
+    if not isinstance(lc_context, dict):
+        return []
+
+    try:
+        from app.services.extraction.lc_taxonomy import normalize_required_documents
+        from app.routers.validation.lc_intake import (
+            infer_required_document_types_from_lc,
+        )
+    except ImportError:
+        return []
+
+    required_types = []
+    try:
+        required_types = infer_required_document_types_from_lc(lc_context) or []
+    except Exception:
+        required_types = []
+
+    required_detailed = []
+    try:
+        required_detailed = normalize_required_documents(lc_context) or []
+    except Exception:
+        required_detailed = []
+
+    if not required_types and not required_detailed:
+        return []
+
+    # Collect the canonical doc_type of every actually-uploaded doc.
+    uploaded_types: set = set()
+    for doc in documents or []:
+        if not isinstance(doc, dict):
+            continue
+        doc_type = str(doc.get("document_type") or doc.get("documentType") or "").strip().lower()
+        if not doc_type:
+            continue
+        uploaded_types.add(doc_type)
+        # Also mark equivalent transport family matches as satisfied
+        _transport_family = {
+            "bill_of_lading", "ocean_bill_of_lading", "house_bill_of_lading",
+            "master_bill_of_lading", "air_waybill", "sea_waybill",
+            "road_transport_document", "railway_consignment_note",
+            "multimodal_transport_document",
+        }
+        if doc_type in _transport_family:
+            uploaded_types.update(_transport_family)
+
+    # Build the missing list — prefer detailed entries (they carry the raw LC
+    # clause text); fall back to plain types when detailed is empty.
+    missing: list = []
+    seen_types: set = set()
+
+    if required_detailed:
+        for entry in required_detailed:
+            if not isinstance(entry, dict):
+                continue
+            type_ = str(entry.get("type") or entry.get("code") or "").strip().lower()
+            if not type_ or type_ in seen_types:
+                continue
+            if type_ in uploaded_types:
+                continue
+            seen_types.add(type_)
+            missing.append({
+                "type": type_,
+                "display_name": entry.get("display_name") or entry.get("label") or type_.replace("_", " ").title(),
+                "raw_text": entry.get("raw_text") or entry.get("text") or "",
+                "reason_code": "lc_required_missing_upload",
+            })
+
+    # Catch anything in required_types that wasn't in required_detailed
+    for type_ in required_types:
+        type_norm = str(type_ or "").strip().lower()
+        if not type_norm or type_norm in seen_types:
+            continue
+        if type_norm in uploaded_types:
+            continue
+        seen_types.add(type_norm)
+        missing.append({
+            "type": type_norm,
+            "display_name": type_norm.replace("_", " ").title(),
+            "raw_text": "",
+            "reason_code": "lc_required_missing_upload",
+        })
+
+    return missing
+
+
 def _build_extraction_only_response(*, setup_state: dict, payload: dict, db: Any) -> dict:
     """Persist the setup snapshot on the DB session and build the extract-only response."""
     validation_session = setup_state.get("validation_session")
@@ -327,14 +423,18 @@ def _build_extraction_only_response(*, setup_state: dict, payload: dict, db: Any
             raise
 
     documents = (setup_state.get("extracted_context") or {}).get("documents") or []
+    lc_context = setup_state.get("lc_context") or {}
+    missing_required_documents = _build_missing_required_documents(lc_context, documents)
+
     return {
         "status": "extraction_ready",
         "job_id": str(job_id) if job_id else None,
         "jobId": str(job_id) if job_id else None,
         "documents": documents,
-        "lc_context": setup_state.get("lc_context") or {},
+        "lc_context": lc_context,
         "lc_type": setup_state.get("lc_type"),
         "required_fields": required_fields,
+        "missing_required_documents": missing_required_documents,
         "message": "Extraction complete. Review unresolved fields, then call /api/validate/resume/{job_id} to validate.",
     }
 

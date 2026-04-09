@@ -1460,83 +1460,276 @@ def _maybe_promote_document_type_from_content(
 
 
 # ---------------------------------------------------------------------------
-# Cross-doc backfill: copy verified LC cross-reference fields into supporting
-# docs when the extractor missed them.  These are fields that UCP600 requires
-# on every document in an LC presentation (lc_number, buyer PO, BIN/TIN).
-# This is NOT the AI fabricating data — it's a deterministic merge from the
-# canonical source (the LC) into supporting docs that are contractually
-# required to carry the same values.
+# Generic doc <-> doc cross-reference backfill.
+#
+# Philosophy: any field that appears in 2+ schemas under
+# `DOC_TYPE_SCHEMAS` is, by definition, the same concept on multiple
+# document types (lc_number, buyer_purchase_order_number, vessel_name,
+# port_of_loading, etc.).  UCP600 requires these cross-reference fields
+# to match across the presentation — so if ONE document's extractor found
+# a value and another document's extractor missed it, we can safely copy
+# because they should be identical.
+#
+# This is NOT the AI inventing data: it's a deterministic merge from the
+# most-authoritative source (LC first, then the schema owner for the
+# field, then any doc that happens to have it) into any doc that came
+# back sparse.
+#
+# Shareable fields + per-field "native owner" are derived automatically
+# from DOC_TYPE_SCHEMAS at import time, so any new doc type added to the
+# schemas file participates in the mesh without changes here.
 # ---------------------------------------------------------------------------
-_CROSS_DOC_BACKFILL_FIELDS = (
-    "lc_number",
-    "buyer_purchase_order_number",
-    "exporter_bin",
-    "exporter_tin",
-    "currency",
-)
-
 _LC_DOCUMENT_TYPES_SET = {
     "letter_of_credit", "swift_message", "lc_application",
     "standby_letter_of_credit", "bank_guarantee",
 }
 
 
+def _compute_shareable_field_registry() -> Tuple[frozenset, Dict[str, Tuple[str, ...]]]:
+    """Walk DOC_TYPE_SCHEMAS and return:
+
+    * the set of field names that appear in >=2 schemas (the "shareable" set)
+    * a map of field_name -> tuple of schema keys that declare the field (the
+      natural "owners" — used as a fallback source priority)
+
+    Done once per process at module load.
+    """
+    try:
+        from app.services.extraction.multimodal_document_extractor import (
+            DOC_TYPE_SCHEMAS,
+        )
+    except ImportError:
+        return frozenset(), {}
+
+    field_counts: Dict[str, int] = {}
+    field_owners: Dict[str, List[str]] = {}
+    for schema_key, schema in DOC_TYPE_SCHEMAS.items():
+        if not isinstance(schema, dict):
+            continue
+        for field_name in schema.get("fields", []) or []:
+            if not isinstance(field_name, str):
+                continue
+            field_counts[field_name] = field_counts.get(field_name, 0) + 1
+            field_owners.setdefault(field_name, []).append(schema_key)
+
+    shareable = frozenset(
+        field for field, count in field_counts.items() if count >= 2
+    )
+    owners_map: Dict[str, Tuple[str, ...]] = {
+        field: tuple(owners) for field, owners in field_owners.items() if field in shareable
+    }
+    return shareable, owners_map
+
+
+_SHAREABLE_FIELDS, _FIELD_SCHEMA_OWNERS = _compute_shareable_field_registry()
+
+# Map from concrete document_type -> the DOC_TYPE_SCHEMAS *schema key* that
+# owns it.  Only used to identify a doc's "natural owner" role so fields the
+# schema declares as its own win during source resolution.
+_DOC_TYPE_TO_SCHEMA_KEY = {
+    # LC family
+    "letter_of_credit": "letter_of_credit",
+    "swift_message": "letter_of_credit",
+    "lc_application": "letter_of_credit",
+    "standby_letter_of_credit": "letter_of_credit",
+    "bank_guarantee": "letter_of_credit",
+    # Invoice family
+    "commercial_invoice": "commercial_invoice",
+    "proforma_invoice": "commercial_invoice",
+    # Packing family
+    "packing_list": "packing_list",
+    # Transport family (all go through transport_document schema)
+    "bill_of_lading": "transport_document",
+    "ocean_bill_of_lading": "transport_document",
+    "house_bill_of_lading": "transport_document",
+    "master_bill_of_lading": "transport_document",
+    "air_waybill": "transport_document",
+    "sea_waybill": "transport_document",
+    "road_transport_document": "transport_document",
+    "railway_consignment_note": "transport_document",
+    "forwarder_certificate_of_receipt": "transport_document",
+    "forwarders_certificate_of_receipt": "transport_document",
+    "multimodal_transport_document": "transport_document",
+    # Regulatory family
+    "certificate_of_origin": "regulatory_document",
+    "gsp_form_a": "regulatory_document",
+    "eur1_movement_certificate": "regulatory_document",
+    "customs_declaration": "regulatory_document",
+    "export_license": "regulatory_document",
+    "import_license": "regulatory_document",
+    "phytosanitary_certificate": "regulatory_document",
+    # Insurance family
+    "insurance_certificate": "insurance_document",
+    "insurance_policy": "insurance_document",
+    # Attestation family
+    "beneficiary_certificate": "attestation_document",
+    "manufacturer_certificate": "attestation_document",
+    "conformity_certificate": "attestation_document",
+    "non_manipulation_certificate": "attestation_document",
+    "halal_certificate": "attestation_document",
+    "kosher_certificate": "attestation_document",
+    "organic_certificate": "attestation_document",
+    # Inspection family
+    "inspection_certificate": "inspection_document",
+    "pre_shipment_inspection": "inspection_document",
+    "quality_certificate": "inspection_document",
+    "weight_certificate": "inspection_document",
+    "weight_list": "inspection_document",
+    "measurement_certificate": "inspection_document",
+    "analysis_certificate": "inspection_document",
+    "lab_test_report": "inspection_document",
+    "sgs_certificate": "inspection_document",
+    "bureau_veritas_certificate": "inspection_document",
+    "intertek_certificate": "inspection_document",
+}
+
+
+def _coerce_string_value(value: Any) -> Optional[str]:
+    """Return a trimmed string if the value is non-empty, else None."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        trimmed = value.strip()
+        return trimmed or None
+    if isinstance(value, (list, dict)):
+        return None  # structured values don't cross-ref as strings
+    return str(value)
+
+
 def _backfill_cross_doc_fields(
     document_details: List[Dict[str, Any]],
     lc_context: Dict[str, Any],
 ) -> None:
-    """Fill missing cross-reference fields on supporting docs from the LC.
+    """Generic cross-doc field backfill.
 
-    Mutates ``extracted_fields`` in-place.  Only touches fields that are
-    (a) null / empty-string / absent on the supporting doc AND (b) have
-    a non-empty value on the LC.  Tags each backfilled field so the
-    review screen can show "LC cross-ref" instead of "AI extracted".
+    For every field that appears in 2+ DOC_TYPE_SCHEMAS, scan all documents
+    (and the LC context), pick the most-authoritative value using the
+    source-priority rules below, and backfill into any document whose
+    schema also expects the field but came back with it empty.
+
+    Source priority per field:
+        1. LC context (for LC cross-reference fields — lc_number, applicant,
+           beneficiary, buyer_purchase_order_number, exporter_bin/tin,
+           currency, amount, ports, etc.)
+        2. A document whose schema *declares the field as its own* — i.e.,
+           the "natural owner" (Invoice owns invoice_number/invoice_date/
+           hs_code, BL owns bl_number/vessel_name/shipped_on_board_date,
+           CO owns country_of_origin, etc.)
+        3. Any other doc that happens to have a non-empty value
+           (first-seen wins as a last-resort fallback).
+
+    We never overwrite a populated target value; the backfill only fills
+    in blanks.
     """
-    if not lc_context or not document_details:
+    if not document_details or not _SHAREABLE_FIELDS:
         return
 
-    # Build the source map from the LC context
-    source: Dict[str, str] = {}
-    for field in _CROSS_DOC_BACKFILL_FIELDS:
-        value = lc_context.get(field)
-        if isinstance(value, str) and value.strip():
-            source[field] = value.strip()
-        elif value is not None and not isinstance(value, str):
-            source[field] = str(value)
+    # -----------------------------------------------------------------
+    # Step 1: Build a {field_name: (value, source_label)} source map.
+    # Iteration order enforces priority 1 -> 2 -> 3.  We use dict
+    # setdefault so the first writer wins.
+    # -----------------------------------------------------------------
+    source_map: Dict[str, Tuple[str, str]] = {}
 
-    if not source:
+    # Priority 1: LC context (top-level keys on the shaped LC payload)
+    if isinstance(lc_context, dict):
+        for field in _SHAREABLE_FIELDS:
+            coerced = _coerce_string_value(lc_context.get(field))
+            if coerced is not None:
+                source_map.setdefault(field, (coerced, "lc_context"))
+
+    # Priority 2: Each doc contributes the fields its own schema owns
+    for doc in document_details:
+        if not isinstance(doc, dict):
+            continue
+        doc_type = (doc.get("document_type") or "").strip().lower()
+        schema_key = _DOC_TYPE_TO_SCHEMA_KEY.get(doc_type)
+        if not schema_key:
+            continue
+        fields = doc.get("extracted_fields") if isinstance(doc.get("extracted_fields"), dict) else {}
+        for field in _SHAREABLE_FIELDS:
+            # Only this doc's OWN-schema fields count as priority 2
+            owners = _FIELD_SCHEMA_OWNERS.get(field) or ()
+            if schema_key not in owners:
+                continue
+            coerced = _coerce_string_value(fields.get(field))
+            if coerced is not None:
+                source_map.setdefault(field, (coerced, f"owner:{doc_type}"))
+
+    # Priority 3: Any doc that has the field, as a last-resort fallback
+    for doc in document_details:
+        if not isinstance(doc, dict):
+            continue
+        doc_type = (doc.get("document_type") or "").strip().lower()
+        fields = doc.get("extracted_fields") if isinstance(doc.get("extracted_fields"), dict) else {}
+        for field in _SHAREABLE_FIELDS:
+            if field in source_map:
+                continue
+            coerced = _coerce_string_value(fields.get(field))
+            if coerced is not None:
+                source_map.setdefault(field, (coerced, f"other:{doc_type}"))
+
+    if not source_map:
         return
 
+    # -----------------------------------------------------------------
+    # Step 2: Walk every document and fill blanks where the schema
+    # expects the field.  LC documents also participate as destinations
+    # so their review shows cross-ref values if the LC extraction itself
+    # missed them.
+    # -----------------------------------------------------------------
     backfill_count = 0
     for doc in document_details:
         if not isinstance(doc, dict):
             continue
         doc_type = (doc.get("document_type") or "").strip().lower()
-        if doc_type in _LC_DOCUMENT_TYPES_SET:
-            continue  # don't backfill the LC itself
+        schema_key = _DOC_TYPE_TO_SCHEMA_KEY.get(doc_type)
 
         fields = doc.get("extracted_fields")
         if not isinstance(fields, dict):
             fields = {}
             doc["extracted_fields"] = fields
 
-        for field, lc_value in source.items():
+        for field, (value, source_label) in source_map.items():
+            # Only backfill fields the doc's own schema actually expects
+            # (unless we have no schema mapping — then trust shareable set).
+            if schema_key:
+                owners = _FIELD_SCHEMA_OWNERS.get(field) or ()
+                if schema_key not in owners:
+                    continue
+
             existing = fields.get(field)
-            if existing is not None and (not isinstance(existing, str) or existing.strip()):
-                continue  # already populated — don't overwrite
-            fields[field] = lc_value
+            if isinstance(existing, str) and existing.strip():
+                continue
+            if existing not in (None, "", []):
+                continue
+            # Never backfill a field from itself (a doc can't be its own source)
+            if source_label.endswith(f":{doc_type}"):
+                continue
+
+            fields[field] = value
             backfill_count += 1
-            # Tag for the review screen
+
             details = doc.get("field_details")
+            tag = f"cross_doc_backfill:{source_label}"
             if isinstance(details, dict):
                 detail_entry = details.get(field)
                 if isinstance(detail_entry, dict):
-                    detail_entry["source"] = "lc_cross_ref"
+                    detail_entry["source"] = tag
                 else:
-                    details[field] = {"value": lc_value, "source": "lc_cross_ref", "status": "populated"}
+                    details[field] = {
+                        "value": value,
+                        "source": tag,
+                        "status": "populated",
+                    }
 
     if backfill_count:
-        logger.info("Cross-doc backfill: filled %d fields across supporting docs from LC context", backfill_count)
+        logger.info(
+            "Cross-doc backfill mesh: filled %d fields across %d documents (shareable_field_count=%d)",
+            backfill_count,
+            len(document_details),
+            len(_SHAREABLE_FIELDS),
+        )
 
 
 async def _build_document_context(

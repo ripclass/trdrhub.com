@@ -524,7 +524,7 @@ class LCDocument(BaseModel):
             partial_shipments=_str_or_none(shipment.get("partial_shipments")),
             transshipment=_str_or_none(shipment.get("transshipment")),
             drafts=drafts,
-            confirmation_instructions=None,  # swift_mt700_full doesn't parse Field 49
+            confirmation_instructions=_str_or_none(fields.get("confirmation_instructions")),
             instructions_to_paying_bank=_str_or_none(
                 fields.get("instructions_to_paying_accepting_negotiating_bank")
             ),

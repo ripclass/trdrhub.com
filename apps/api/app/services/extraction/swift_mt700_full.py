@@ -154,6 +154,11 @@ def parse_mt700_full(text: str) -> Dict[str, Any]:
         "partial_shipments": raw.get("43P") if "43P" in raw else None,
         "transshipment": raw.get("43T") if "43T" in raw else None,
     }
+    # Top-level aliases so downstream consumers that read F["partial_shipments"]
+    # directly (instead of walking F["shipment"]) pick them up too.
+    F["partial_shipments"] = raw.get("43P") if "43P" in raw else None
+    F["transshipment"] = raw.get("43T") if "43T" in raw else None
+    F["confirmation_instructions"] = raw.get("49") if "49" in raw else None
     
     # Period for presentation / mixed / deferred
     F["period_for_presentation"] = raw.get("48")
