@@ -3692,10 +3692,25 @@ _FIELD_NAME_ALIASES: Dict[str, str] = {
     "buyer_name": "buyer",
     "seller_address": "seller_address",
     "buyer_address": "buyer_address",
+    # Cross-transaction reference aliases. Supporting-doc schemas no
+    # longer declare lc_number / buyer_purchase_order_number as canonical
+    # fields — extraction is a blind transcriber. When the LLM sees these
+    # values printed on a supporting doc it will pick its own key name
+    # from the printed label, and this map normalizes the common variants
+    # so validation downstream can find them under consistent keys.
+    "lc_no": "lc_number",
     "lc_reference": "lc_number",
+    "lc_ref": "lc_number",
+    "credit_number": "lc_number",
+    "letter_of_credit_number": "lc_number",
+    "reference_lc_no": "lc_number",
     "buyer_po_number": "buyer_purchase_order_number",
     "purchase_order_number": "buyer_purchase_order_number",
     "po_number": "buyer_purchase_order_number",
+    "po_no": "buyer_purchase_order_number",
+    "order_reference": "buyer_purchase_order_number",
+    "order_ref": "buyer_purchase_order_number",
+    "buyer_purchase_order_no": "buyer_purchase_order_number",
     # Regulatory / COO
     "exporter_name": "exporter",
     "importer_name": "importer",
@@ -3719,6 +3734,8 @@ _FIELD_NAME_ALIASES: Dict[str, str] = {
     "tin_number": "exporter_tin",
     "bin": "exporter_bin",
     "tin": "exporter_tin",
+    "bin_no": "exporter_bin",
+    "tin_no": "exporter_tin",
     # LC MT700 field aliases — the vision LLM keeps returning these legacy
     # names even though the new schemas ask for the canonical ones.
     "lc_type": "form_of_documentary_credit",

@@ -187,12 +187,13 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
     "commercial_invoice": {
         "family": "invoice",
         "title": "Commercial / Proforma Invoice",
-        # All field names are the CANONICAL MT700-aligned keys. The schema
-        # lists lc_number / buyer_purchase_order_number / exporter_bin /
-        # exporter_tin as canonical slots the LLM should look for ON the
-        # document — they are NOT populated from the LC context. Under
-        # the three-case rule, if a field isn't physically on the doc,
-        # the key is OMITTED from the extraction output.
+        # Schema lists ONLY fields intrinsic to a commercial invoice —
+        # i.e., what defines an invoice regardless of any specific trade
+        # context.  Cross-transaction artifacts (LC number, buyer PO,
+        # exporter tax IDs) are NOT in this list.  If they happen to be
+        # printed on the doc, the "transcribe any other printed field"
+        # instruction in the prompt captures them under whatever key the
+        # LLM picks.  Validation decides whether they "should" be there.
         "fields": [
             "invoice_number", "invoice_date", "amount", "currency",
             "seller", "buyer", "applicant", "beneficiary",
@@ -202,18 +203,12 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "port_of_loading", "port_of_discharge",
             "gross_weight", "net_weight", "total_packages",
             "payment_terms",
-            # Cross-reference / LC presentation fields
-            "lc_number", "buyer_purchase_order_number",
-            "exporter_bin", "exporter_tin",
         ],
         "notes": [
-            "Return EXACTLY these key names. `seller` NOT `seller_name`, `buyer` NOT `buyer_name`, `lc_number` NOT `lc_reference`, `buyer_purchase_order_number` NOT `buyer_po_number`.",
+            "Return EXACTLY these key names. `seller` NOT `seller_name`, `buyer` NOT `buyer_name`.",
             "Extract the invoice party names exactly as written.",
             "Do not guess HS codes or Incoterms.",
             "quantity / unit_price / amount should be numbers when possible (multi-line-item invoices may return comma-separated strings).",
-            "lc_number — include ONLY if the invoice itself prints an LC reference labeled 'LC No.' / 'LC Reference' / 'Credit Number'. If not printed on the invoice, OMIT the key per the three-case rule.",
-            "buyer_purchase_order_number — include ONLY if the invoice prints it under 'Buyer Purchase Order', 'PO No.', or 'Order Ref'. Do NOT invent it. Omit if absent.",
-            "exporter_bin / exporter_tin — Bangladesh tax IDs labeled 'BIN' / 'TIN'. Include ONLY if printed on the invoice; omit if absent.",
         ],
     },
     "packing_list": {
@@ -226,14 +221,11 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "total_packages", "package_type", "size_breakdown",
             "gross_weight", "net_weight", "measurement_value",
             "port_of_loading", "port_of_discharge",
-            "lc_number", "buyer_purchase_order_number",
-            "exporter_bin", "exporter_tin",
         ],
         "notes": [
             "Return EXACTLY these key names. `size_breakdown` NOT `packing_size_breakdown`, `total_packages` NOT `number_of_packages`.",
             "Prioritize package counts, weights, dimensions, and marks/numbers.",
             "size_breakdown should be a structured object when possible — e.g. {\"S\": 100, \"M\": 200, \"L\": 300}.",
-            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — include these ONLY if they are physically printed on the packing list (usually in the header). If they are not on the document, OMIT the keys per the three-case rule.",
         ],
     },
     "transport_document": {
@@ -251,15 +243,12 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "container_number", "seal_number",
             "marks_and_numbers", "transport_mode_chain",
             "freight_terms",
-            "lc_number", "buyer_purchase_order_number",
-            "exporter_bin", "exporter_tin",
         ],
         "notes": [
-            "Return EXACTLY these key names. `bl_number` NOT `bill_of_lading_number`, `buyer_purchase_order_number` NOT `buyer_po_number`.",
+            "Return EXACTLY these key names. `bl_number` NOT `bill_of_lading_number`.",
             "Use the correct field family for the visible transport mode.",
             "If it is AWB, prefer airway_bill_number / airport fields.",
             "`applicant` — include ONLY if the document itself has a field labeled Applicant / Buyer / Importer with a value. Do NOT copy the notify party into applicant. Do NOT invent this field from other information.",
-            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — include these ONLY if they are physically printed on the document (header, body, or 'Shipping Marks' section). If they are not on the document, OMIT the keys per the three-case rule.",
         ],
     },
     "regulatory_document": {
@@ -271,14 +260,11 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "issue_date", "expiry_date",
             "goods_description", "hs_code",
             "exporter", "importer",
-            "lc_number", "buyer_purchase_order_number",
-            "exporter_bin", "exporter_tin",
         ],
         "notes": [
             "Return EXACTLY these key names. `exporter` NOT `exporter_name`, `importer` NOT `importer_name`, `issuing_authority` NOT `certifying_authority`.",
             "Use certificate_number for most certificates, license_number for licenses, declaration_reference for customs declarations.",
             "issuing_authority — for Bangladesh COOs this is usually 'EPB' / 'Export Promotion Bureau' or 'Chamber of Commerce'.",
-            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — include these ONLY if they are physically printed in the certificate header. If they are not on the document, OMIT the keys per the three-case rule.",
         ],
     },
     "insurance_document": {
@@ -293,8 +279,6 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "beneficiary", "applicant", "insured_party",
             "vessel_name", "voyage_details",
             "claims_payable_at", "survey_agent",
-            "lc_number", "buyer_purchase_order_number",
-            "exporter_bin", "exporter_tin",
         ],
         "notes": [
             "Use policy_number for marine insurance policies, certificate_number for insurance certificates.",
@@ -310,8 +294,6 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "certificate_number", "issuer", "issue_date",
             "goods_description", "attestation_text",
             "manufacture_year", "brand_new",
-            "lc_number", "buyer_purchase_order_number",
-            "exporter_bin", "exporter_tin",
         ],
         "notes": [
             "This is NOT an insurance policy. Beneficiary certificates are compliance attestations where the exporter certifies something about the goods (e.g., 'goods are brand new and manufactured in 2026').",
@@ -329,15 +311,12 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "inspection_result", "quality_finding", "analysis_result",
             "quantity", "gross_weight", "net_weight", "measurement_value",
             "goods_description", "issuer",
-            "lc_number", "buyer_purchase_order_number",
-            "exporter_bin", "exporter_tin",
         ],
         "notes": [
             "Return EXACTLY these key names. `certificate_number` NOT `inspection_number`, `inspection_agency` NOT `inspector`.",
             "`inspection_agency` is SGS / Intertek / Bureau Veritas / etc.",
             "`inspection_date` is when the inspection happened; `issue_date` is when the cert was issued.",
             "Use inspection_result / quality_finding / analysis_result based on the visible document type.",
-            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — include these ONLY if they are physically printed on the inspection certificate. If they are not on the document, OMIT the keys per the three-case rule.",
         ],
     },
     "supporting_document": {
@@ -347,8 +326,6 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "document_title", "document_reference", "issuing_authority", "issue_date",
             "expiry_date", "goods_description", "shipper", "consignee", "country_of_origin",
             "summary",
-            "lc_number", "buyer_purchase_order_number",
-            "exporter_bin", "exporter_tin",
         ],
         "notes": [
             "If the subtype is unclear, extract a safe reference + summary and leave uncertain fields null.",
@@ -880,11 +857,12 @@ def _build_multimodal_prompt(
     # was never on the document" (no slot at all — the document simply
     # doesn't have that field).
     instruction = (
-        "\n\nYour task: read the page images and the raw text, find every "
-        "field that is visible on the document, and return a JSON object "
-        "with canonical key names.  Use the canonical keys listed below "
-        "whenever you can map a value to one.  Be liberal: if you see a "
-        "value under a different label, MAP IT to the canonical key.\n\n"
+        "\n\nYour task: read the page images and the raw text, transcribe "
+        "EVERY printed labeled field you see on the document, and return a "
+        "JSON object.  You are a BLIND TRANSCRIBER — you do not know what "
+        "the LC, customs, or any other external rule demands.  You do not "
+        "care whether a field 'should' be there.  You only care about what "
+        "is PHYSICALLY PRINTED on this one document right now.\n\n"
         "CRITICAL — what to include in the JSON output:\n"
         "  1. If a field is on the document AND you can read the value: "
         "include the key with the value.\n"
@@ -893,10 +871,26 @@ def _build_multimodal_prompt(
         "string \"\".  The reviewer will type the value in.\n"
         "  3. If the field is NOT on the document at all: OMIT the key "
         "entirely from your output.  Do NOT include it with null.  Do "
-        "NOT invent placeholder values.  If it isn't there, it simply "
-        "does not appear in the output JSON.\n\n"
-        "Canonical keys you should look for (include them only if they "
-        "are actually on the document per the rule above):\n"
+        "NOT invent placeholder values.  Do NOT 'remember' values from "
+        "other documents in the presentation.  If it isn't there, it "
+        "simply does not appear in the output JSON.\n\n"
+        "The canonical key list below is a NAMING CONVENTION for the "
+        "common fields intrinsic to this document type.  It is NOT an "
+        "exhaustive list of what the document should carry.\n\n"
+        "  - If a canonical field is printed: return it under the "
+        "canonical key name (map synonyms — e.g., 'Shipper Name' → "
+        "'shipper').\n"
+        "  - If a canonical field is NOT printed: OMIT that key entirely "
+        "(rule 3 above).\n"
+        "  - If ANY OTHER printed labeled field is on the document that "
+        "is not in the canonical list (e.g., 'LC No: ABC123', 'Order "
+        "Ref: PO-9001', 'Exporter BIN: 1234-5678', 'Tax ID', 'Incoterms', "
+        "'Bank Reference', etc.): STILL INCLUDE IT.  Use a sensible "
+        "snake_case key name derived from the printed label.  Do not "
+        "skip printed fields just because they are not in the canonical "
+        "list.\n\n"
+        "Canonical keys intrinsic to this document type "
+        "(use these names when you find the values, per rule above):\n"
         + "\n".join(f"  - {field}" for field in fields)
     )
 
