@@ -678,6 +678,22 @@ async def run_resume_pipeline(
         if dt and dt not in resume_payload:
             resume_payload[dt] = doc.get("extracted_fields") or {}
 
+    # Ensure extracted_context["lc"] carries the full lc_context so that
+    # apply_lc_fact_graph_to_validation_inputs can read amount/currency/etc.
+    # Without this, the fact graph finds an empty base_lc_context and the
+    # validation gate reports amount + currency as missing.
+    lc_context_snapshot = setup_state.get("lc_context")
+    if isinstance(lc_context_snapshot, dict) and not isinstance(extracted_context.get("lc"), dict):
+        extracted_context["lc"] = lc_context_snapshot
+    elif isinstance(lc_context_snapshot, dict) and isinstance(extracted_context.get("lc"), dict):
+        # Merge — snapshot lc_context has shaped fields the raw extracted_context["lc"] may lack
+        for k, v in lc_context_snapshot.items():
+            if k not in extracted_context["lc"] or extracted_context["lc"][k] in (None, "", {}, []):
+                extracted_context["lc"][k] = v
+    # Also populate payload["lc"] so fact graph reads from there too
+    if isinstance(lc_context_snapshot, dict) and not isinstance(resume_payload.get("lc"), dict):
+        resume_payload["lc"] = lc_context_snapshot
+
     _set_pipeline_stage(runtime_context, "validation_execution", timings)
     try:
         execution_state = await execute_validation_pipeline(
