@@ -3904,7 +3904,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   </CardContent>
                 </Card>
               )}
-              {hasTimeline && (
+              {isExtractionResolutionStage && hasTimeline && (
                 <Card className="shadow-soft border border-border/60">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-lg font-semibold flex items-center gap-2">
@@ -4022,8 +4022,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </Card>
             </div>
             
-            {/* Required-doc checklist */}
-            <div className="space-y-6">
+            {/* Required-doc checklist — legacy, only for extraction-resolution stage */}
+            {isExtractionResolutionStage && <div className="space-y-6">
               <Card className="shadow-soft border border-border/60">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold">Required Documents Checklist</CardTitle>
@@ -4150,10 +4150,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   )}
                 </CardContent>
               </Card>
-            </div>
+            </div>}
 
-            {/* Document Compliance Grid — compact doc status view */}
-            {sortedDocuments.length > 0 && (
+            {/* Document Compliance Grid — legacy, only for extraction-resolution stage */}
+            {isExtractionResolutionStage && sortedDocuments.length > 0 && (
               <Card className="shadow-soft border border-border/60">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Document Compliance</CardTitle>
