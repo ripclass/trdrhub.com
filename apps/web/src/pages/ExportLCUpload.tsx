@@ -585,6 +585,13 @@ export default function ExportLCUpload({
   const isProcessing = isValidating;
   const isValidationProcessing = isValidating && !isLcResolving;
 
+  // Presentation set confirmation — shown when the user clicks Extract &
+  // Review but their uploaded set doesn't perfectly match the LC's demands.
+  const [presentationConfirm, setPresentationConfirm] = useState<{
+    missing: Array<{ label: string }>;
+    extra: Array<{ name: string; type: string }>;
+  } | null>(null);
+
   // Load draft if draftId is provided in URL params
   useEffect(() => {
     if (draftIdFromQuery) {
@@ -1204,6 +1211,35 @@ export default function ExportLCUpload({
       setShowDocTypeErrors(false);
     }
 
+    // ── Presentation-set check ──────────────────────────────────────
+    // Compare what the LC requires against what the user uploaded.
+    // If there are missing or extra documents, show a confirmation
+    // dialog so the user can decide to proceed or fix their set.
+    if (!presentationConfirm && uploadRequirements.documentRequirements.length > 0) {
+      const missing = requirementUploadStatus.missing;
+      const lcRequiredNormalized = new Set(
+        uploadRequirements.documentRequirements.map(r => normalizeDocumentType(r.type)),
+      );
+      const extra = completedFiles.filter(f => {
+        const norm = normalizeDocumentType(f.documentType) || normalizeDocumentType(f.detectedType);
+        return norm && !lcRequiredNormalized.has(norm);
+      }).map(f => ({
+        name: f.name,
+        type: exportDocumentTypes.find(d => d.value === f.documentType)?.label || f.documentType || 'Unknown',
+      }));
+      if (missing.length > 0 || extra.length > 0) {
+        setPresentationConfirm({ missing, extra });
+        return;
+      }
+    }
+    // Clear any stale confirmation (e.g. user fixed and re-clicked)
+    setPresentationConfirm(null);
+    runExtraction();
+  };
+
+  /** Actually run extraction — called after all pre-checks pass. */
+  const runExtraction = async () => {
+    const completedFiles = uploadedFiles.filter(f => f.status === "completed");
     const files = lcIntake.file ? [lcIntake.file, ...completedFiles.map(f => f.file)] : completedFiles.map(f => f.file);
 
     const resolveFinalDocumentType = (file: UploadedFile): string => {
@@ -2094,6 +2130,77 @@ export default function ExportLCUpload({
                   </Button>
                 </div>
               </div>
+
+              {/* Presentation-set confirmation — shown when Extract &
+               *  Review is clicked and the uploaded set doesn't match
+               *  the LC's document requirements exactly. */}
+              {presentationConfirm && (
+                <div className="rounded-lg border border-amber-400/50 bg-amber-50 dark:bg-amber-950/20 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <p className="font-medium text-foreground">
+                        Review your presentation set before extraction
+                      </p>
+
+                      {presentationConfirm.missing.length > 0 && (
+                        <div>
+                          <p className="text-sm text-foreground font-medium">
+                            Missing — LC requires but not uploaded:
+                          </p>
+                          <ul className="list-disc pl-5 mt-1 space-y-0.5 text-sm text-amber-800 dark:text-amber-300">
+                            {presentationConfirm.missing.map((m, i) => (
+                              <li key={`miss-${i}`}>{m.label}</li>
+                            ))}
+                          </ul>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Validation will flag these as missing-document discrepancies.
+                          </p>
+                        </div>
+                      )}
+
+                      {presentationConfirm.extra.length > 0 && (
+                        <div>
+                          <p className="text-sm text-foreground font-medium">
+                            Extra — uploaded but not required by this LC:
+                          </p>
+                          <ul className="list-disc pl-5 mt-1 space-y-0.5 text-sm text-muted-foreground">
+                            {presentationConfirm.extra.map((e, i) => (
+                              <li key={`extra-${i}`}>
+                                {e.name} <span className="text-xs">({e.type})</span>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            These will be extracted but won't be checked against LC requirements
+                            (UCP 600 Art. 14g — banks disregard unrequired documents).
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPresentationConfirm(null)}
+                    >
+                      Go back and fix
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="hover:opacity-90 bg-gradient-exporter"
+                      onClick={() => {
+                        setPresentationConfirm(null);
+                        runExtraction();
+                      }}
+                    >
+                      Proceed with extraction
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {isValidationProcessing && (
                 <ValidationProgressIndicator
