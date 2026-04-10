@@ -1166,6 +1166,7 @@ def _explicit_title_document_type(extracted_text: Optional[str]) -> Optional[str
         ("packing_list", ["packing list", "marks & numbers", "packing list no"]),
         ("beneficiary_certificate", ["beneficiary certificate", "we, beneficiary", "hereby certify that"]),
         ("weight_list", ["weight list", "gross weight", "net weight"]),
+        ("insurance_policy", ["insurance policy", "policy number", "policy no"]),
         ("insurance_certificate", ["insurance certificate", "insured value", "cover:"]),
         ("certificate_of_origin", ["certificate of origin", "country of origin"]),
     ]

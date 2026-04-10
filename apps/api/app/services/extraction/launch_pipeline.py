@@ -74,6 +74,7 @@ CANONICAL_DOCUMENT_ALIASES = {
     "coo": "certificate_of_origin",
     "insurance": "insurance_certificate",
     "insurance certificate": "insurance_certificate",
+    "insurance policy": "insurance_policy",
     "weight list": "weight_certificate",
     "weight certificate": "weight_certificate",
     "lab test report": "lab_test_report",
@@ -3144,7 +3145,10 @@ def _assess_insurance_completeness(payload: Optional[Dict[str, Any]], *, insuran
 def _detect_insurance_subtype(*, filename: str, extracted_text: str) -> str:
     haystack = f"{filename or ''}\n{extracted_text or ''}".lower()
     checks = [
-        ("insurance_policy", ["insurance policy", "policy"]),
+        # insurance_policy BEFORE insurance_certificate so "policy" wins
+        # over the certificate fallback when both could match.
+        ("insurance_policy", ["insurance policy", "policy number", "policy no.", "policy effective"]),
+        ("insurance_certificate", ["insurance certificate", "certificate of insurance"]),
         ("beneficiary_certificate", ["beneficiary certificate"]),
         ("manufacturer_certificate", ["manufacturer certificate", "manufacturer's certificate", "manufacturers certificate"]),
         ("conformity_certificate", ["conformity certificate", "certificate of conformity"]),
@@ -3156,6 +3160,8 @@ def _detect_insurance_subtype(*, filename: str, extracted_text: str) -> str:
     for subtype, patterns in checks:
         if any(pattern in haystack for pattern in patterns):
             return subtype
+    # If no specific pattern matched but the document ended up in the
+    # insurance family, default to the broader insurance_certificate.
     return "insurance_certificate"
 
 
