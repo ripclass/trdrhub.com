@@ -363,9 +363,12 @@ function parseListPreview(value: string): string[] | null {
     if (parts.length >= 2) return parts;
   }
 
-  // Case C: comma-joined short list (3+ items, each under 80 chars)
+  // Case C: comma-joined short list (3+ items, each under 80 chars).
+  // The negative lookbehind (?<!\d) prevents splitting on thousands
+  // separators like "30,000" — only split on commas NOT preceded by a digit
+  // followed by digits (i.e. real list separators, not number formatting).
   if (!text.includes('\n') && text.length < 500) {
-    const parts = text.split(/,\s*(?=\S)/).map(s => s.trim()).filter(Boolean);
+    const parts = text.split(/,\s*(?!\d{3}\b)(?=\S)/).map(s => s.trim()).filter(Boolean);
     if (parts.length >= 3 && parts.every(p => p.length <= 80)) {
       return parts;
     }
@@ -431,7 +434,8 @@ function buildDocSectionState(
     // screen with un-fillable inputs.
     if (
       raw === '' &&
-      /signature|seal|stamp|designation/i.test(key)
+      /signature|seal|stamp|designation/i.test(key) ||
+      (raw === '' && /^(name|inspector_name|company_seal)$/i.test(key))
     ) {
       return false;
     }
