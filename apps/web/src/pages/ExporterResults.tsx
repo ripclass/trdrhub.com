@@ -94,7 +94,7 @@ import {
   type AmendmentFieldChange,
   type ToleranceApplied,
 } from "./exporter/results";
-import { HistoryTab, AnalyticsTab, IssuesTab } from "./exporter/results/tabs";
+import { VerdictTab, DocumentsTab, FindingsTab, HistoryTab, AnalyticsTab, IssuesTab } from "./exporter/results/tabs";
 import type { EmailDraftContext } from "@/components/exporter/HowToFixSection";
 import { EmailDraftDialog } from "@/components/exporter/EmailDraftDialog";
 import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
@@ -3771,7 +3771,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           }}
           className="space-y-6"
         >
-          <TabsList className={cn("grid w-full", isExtractionResolutionStage ? "grid-cols-2" : "grid-cols-3")}>
+          <TabsList className={cn("grid w-full", isExtractionResolutionStage ? "grid-cols-2" : "grid-cols-4")}>
             {isExtractionResolutionStage ? (
               <>
                 <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
@@ -3779,9 +3779,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               </>
             ) : (
               <>
-                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="overview">Verdict</TabsTrigger>
+                <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
                 <TabsTrigger value="discrepancies" className="relative">
-                  Issues ({totalDiscrepancies})
+                  Findings{totalDiscrepancies > 0 ? ` (${totalDiscrepancies})` : ''}
                   {totalDiscrepancies > 0 && (
                     <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
                   )}
@@ -3821,8 +3822,26 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           )}
 
           <TabsContent value="overview" className="space-y-6">
-            {/* Contract Validation Warnings (Output-First Layer) */}
-            {hasContractWarnings && (
+            {/* Verdict Tab — clean, minimal, answers "can I submit?" */}
+            {!isExtractionResolutionStage && (
+              <VerdictTab
+                issueCards={issueCards}
+                documents={sortedDocuments}
+                totalDocuments={totalDocuments}
+                complianceScore={complianceScore ?? 0}
+                lcNumber={lcNumber}
+                lcData={{
+                  applicant: typeof lcData?.applicant === 'string' ? lcData.applicant : lcData?.applicant?.name,
+                  beneficiary: typeof lcData?.beneficiary === 'string' ? lcData.beneficiary : lcData?.beneficiary?.name,
+                  amount: lcData?.amount?.value ?? lcData?.amount,
+                  currency: lcData?.currency ?? lcData?.amount?.currency,
+                  expiryDate: lcData?.expiry_date ?? lcData?.expiry?.date,
+                }}
+              />
+            )}
+
+            {/* Legacy overview content — only for extraction-resolution stage */}
+            {isExtractionResolutionStage && hasContractWarnings && (
               <Alert variant={contractWarningsByLevel.errors.length > 0 ? "destructive" : "default"} className="border-amber-500/50 bg-amber-500/5">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle className="font-semibold">
@@ -4193,6 +4212,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             )}
 
           </TabsContent>
+
+          {/* Documents Tab — per-document compliance view */}
+          {!isExtractionResolutionStage && (
+            <TabsContent value="documents" className="space-y-4">
+              <DocumentsTab
+                documents={sortedDocuments}
+                issueCards={issueCards}
+              />
+            </TabsContent>
+          )}
+
           <TabsContent value="customs" className="space-y-6">
             <Card
               className={cn(
@@ -4827,23 +4857,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>
 
           <TabsContent value="discrepancies" className="space-y-4">
-            <IssuesTab
-              hasIssueCards={hasIssueCards}
-              issueCards={issueCards}
-              provisionalIssueCards={provisionalIssueCards}
-              filteredIssueCards={filteredIssueCards}
-              reviewFindings={checklistReviewFindings}
-              severityCounts={severityCounts}
-              laneCounts={laneCounts}
-              issueFilter={issueFilter}
-              setIssueFilter={setIssueFilter}
-              documentStatusMap={documentStatusMap}
-              renderAIInsightsCard={renderAIInsightsCard}
-              renderReferenceIssuesCard={renderReferenceIssuesCard}
-              lcNumber={lcNumber}
-              onDraftEmail={handleDraftEmail}
-              workflowStage={workflowStage}
-            />
+            <FindingsTab issueCards={issueCards} />
           </TabsContent>
         </Tabs>
         
