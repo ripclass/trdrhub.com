@@ -4184,6 +4184,20 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               <DocumentsTab
                 documents={sortedDocuments}
                 issueCards={issueCards}
+                onPreviewDocument={async (doc) => {
+                  try {
+                    const { default: apiClient } = await import('@/api/client');
+                    const resp = await apiClient.get(`/api/validate/documents/${doc.id}/preview`);
+                    const url = resp.data?.url;
+                    if (url) {
+                      window.open(url, '_blank');
+                    } else {
+                      toast({ title: 'Preview unavailable', description: 'No file URL returned.', variant: 'destructive' });
+                    }
+                  } catch {
+                    toast({ title: 'Preview unavailable', description: 'Could not load document preview.', variant: 'destructive' });
+                  }
+                }}
                 onViewDocument={(doc) => {
                   setSelectedDocumentForDrawer({
                     id: doc.id,

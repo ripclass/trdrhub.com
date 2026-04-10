@@ -28,7 +28,10 @@ import type { ValidationDocument } from '@/types/lcopilot';
 interface DocumentsTabProps {
   documents: ValidationDocument[];
   issueCards: IssueCard[];
+  /** Opens the DocumentDetailsDrawer for field-level detail */
   onViewDocument?: (doc: ValidationDocument) => void;
+  /** Fetches a signed URL and opens the actual PDF in a new tab */
+  onPreviewDocument?: (doc: ValidationDocument) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +168,7 @@ function IssueInline({ issue }: { issue: IssueCard }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function DocumentsTab({ documents, issueCards, onViewDocument }: DocumentsTabProps) {
+export function DocumentsTab({ documents, issueCards, onViewDocument, onPreviewDocument }: DocumentsTabProps) {
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
 
   const toggleDoc = (id: string) => {
@@ -278,13 +281,13 @@ export function DocumentsTab({ documents, issueCards, onViewDocument }: Document
                         {issues.length} issue{issues.length !== 1 ? 's' : ''}
                       </Badge>
                     )}
-                    {onViewDocument && (
+                    {onPreviewDocument && (
                       <button
                         className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Preview document"
+                        title="Preview original PDF"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onViewDocument(doc);
+                          onPreviewDocument(doc);
                         }}
                       >
                         <Eye className="w-4 h-4" />
