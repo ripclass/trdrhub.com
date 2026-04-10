@@ -150,7 +150,14 @@ All three produce output that gets shaped through `_shape_lc_financial_payload` 
 | `apps/web/src/pages/exporter/ExtractionReview.tsx` | Inline extract-review component, `FIELD_ALIAS_MAP`, `LC_REQUIRED_FIELDS` |
 | `apps/web/src/hooks/use-lcopilot.ts` | `useValidate`, `useResumeValidate`, `useJob`, `useResults` hooks |
 
-**Part 2 — Validation (frozen, don't touch)**
+**Part 2 — Validation (UNFROZEN 2026-04-10/11)**
+
+| File | Role |
+|---|---|
+| `apps/api/app/services/validation/clause_parser.py` | NEW: 46A/47A clause splitter — detects doc types, extracts required fields |
+| `apps/api/app/services/validation/doc_matcher.py` | NEW: per-doc field matcher + crossdoc consistency (amount, ports, parties) |
+| `apps/api/app/services/rulhub_client.py` | NEW: RulHub API client + RulHubRulesAdapter (feature-flagged) |
+| `apps/api/app/routers/validation/validation_execution.py` | Pipeline orchestrator — clause matcher, RulHub/DB rules, Opus veto, crossdoc |
 
 | File | Role |
 |---|---|
@@ -289,11 +296,30 @@ Net across the 2026-04-09 → 2026-04-10 window: roughly **−2500 lines, +300 l
 - ~~Empty signature field filter~~ — hidden from review. Commit `c4858209`.
 
 **Still open:**
-1. **Centralize field name aliases** — still split across `launch_pipeline._FIELD_NAME_ALIASES` and `ExtractionReview.FIELD_ALIAS_MAP`. Down to two sources.
+1. **Centralize field name aliases** — still split across `launch_pipeline._FIELD_NAME_ALIASES` and `ExtractionReview.FIELD_ALIAS_MAP`. Down to two sources. Also `doc_matcher._CANONICAL_ALIASES`.
 2. **Vestigial `schema_fields_by_doc_type`** — no longer drives rendering, just establishes field ordering. Can be simplified.
-3. **Unfreeze Part 2 — Validation** — the validator now has clean per-doc transcripts to work with. Needs 46A/47A clause splitter + per-doc matching logic using the alias map.
+3. ~~**Unfreeze Part 2 — Validation**~~ — **DONE 2026-04-10/11**. Clause parser + doc matcher + crossdoc matcher built and wired. RulHub adapter built (500 from RulHub server — payload shape needs fixing). Opus veto runs independently. 4-tab UI live. Multiple live tests passed.
 4. **Auth hardening** — #1 launch risk. Four auth providers, legacy layers.
 5. **Importer convergence** — waits on exporter extraction + validation spine.
+
+### Part 2 — Validation backlog (active as of 2026-04-11)
+
+**Completed:**
+- ~~Clause parser~~ — `validation/clause_parser.py`, splits 46A/47A, detects doc types.
+- ~~Doc matcher~~ — `validation/doc_matcher.py`, field presence + crossdoc consistency.
+- ~~RulHub adapter~~ — `rulhub_client.py`, feature-flagged, raises on failure.
+- ~~Resume document loss~~ — payload + files_list populated from snapshot.
+- ~~Opus veto independence~~ — runs after RulHub/DB, not inside tiered pipeline.
+- ~~4-tab results UI~~ — Verdict / Documents / Findings / Customs Pack.
+- ~~Compliance scorer~~ — CAP_CRITICAL 0→25%.
+- ~~Confidence~~ — reads real `_extraction_confidence` instead of hardcoded 0.85.
+
+**Next (priority order):**
+1. **Move deterministic checks out of ai_validator.py** — insurance %, weight consistency, date validation, late shipment, presentation period into clause/crossdoc matchers. Limit AI to judgment-only calls.
+2. **Fix RulHub payload shape** — currently sends entire `db_rule_payload`. RulHub expects `{document: {flat fields}, document_type, jurisdiction}`.
+3. **Finding deduplication** — same finding from multiple layers not fully deduped.
+4. **BL weight vs PL weight check** — not implemented.
+5. **Goods description correspondence** — needs at least keyword-level matching.
 
 ### Extraction gotchas (learned the hard way)
 
