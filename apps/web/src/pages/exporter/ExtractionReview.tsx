@@ -12,6 +12,7 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
   FileText,
   Loader2,
   ShieldCheck,
@@ -23,6 +24,7 @@ import {
   type ExtractionReadyResponse,
 } from '@/hooks/use-lcopilot';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 interface ExtractionReviewProps {
   jobId?: string;
@@ -281,6 +283,47 @@ function prettyFormatLongValue(value: string): string {
   return value;
 }
 
+/**
+ * For long-form list-shaped fields (documents_required, additional_conditions,
+ * etc.), split the prettified value back into ordered bullet items so the UI
+ * can render a readable list above the textarea. Returns null if the value
+ * isn't obviously list-shaped.
+ */
+function parseListPreview(value: string): string[] | null {
+  if (!value) return null;
+  const text = value.trim();
+  if (!text) return null;
+
+  // Case A: prettyFormatLongValue already normalized to "1. item\n2. item\n…"
+  const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  if (lines.length >= 2) {
+    const numberedAll = lines.every(l => /^\d+[.)]\s+/.test(l));
+    if (numberedAll) {
+      return lines.map(l => l.replace(/^\d+[.)]\s+/, '').trim()).filter(Boolean);
+    }
+  }
+
+  // Case B: single concatenated string with inline "1) foo 2) bar" markers
+  const inlineNumbered = text.match(/\b\d+\)\s/g);
+  if (inlineNumbered && inlineNumbered.length >= 2) {
+    const parts = text
+      .split(/\b\d+\)\s/)
+      .map(s => s.replace(/[,;\s]+$/, '').trim())
+      .filter(Boolean);
+    if (parts.length >= 2) return parts;
+  }
+
+  // Case C: comma-joined short list (3+ items, each under 80 chars)
+  if (!text.includes('\n') && text.length < 500) {
+    const parts = text.split(/,\s*(?=\S)/).map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 3 && parts.every(p => p.length <= 80)) {
+      return parts;
+    }
+  }
+
+  return null;
+}
+
 function buildFieldState(fieldName: string, extracted: Record<string, any>): FieldState {
   const rawValue = readAliasedValue(extracted, fieldName);
   const stringified = coerceToString(rawValue);
@@ -435,6 +478,10 @@ export function ExtractionReview({
 
   const [docSections, setDocSections] = useState<DocSectionState[]>([]);
   const [missingDocsAcknowledged, setMissingDocsAcknowledged] = useState<boolean>(false);
+  // Per-card collapse state — first card expanded by default, rest collapsed.
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const toggleCard = (key: string) =>
+    setExpandedCards((prev) => ({ ...prev, [key]: !prev[key] }));
 
   // Reset the acknowledgement whenever the set of missing docs changes so the
   // user sees the warning again if they come back after uploading more files.
@@ -469,6 +516,16 @@ export function ExtractionReview({
       return buildDocSectionState(doc, schemaFields);
     });
     setDocSections(built);
+    // First card expanded by default, rest collapsed. Keyed by docKey so a
+    // user's toggle state survives field edits that re-run this effect.
+    setExpandedCards((prev) => {
+      const next: Record<string, boolean> = {};
+      built.forEach((section, idx) => {
+        next[section.docKey] =
+          prev[section.docKey] !== undefined ? prev[section.docKey] : idx === 0;
+      });
+      return next;
+    });
   }, [payload]);
 
   const totalRequired = useMemo(
@@ -576,12 +633,6 @@ export function ExtractionReview({
             We couldn't find an active extraction session. Please re-upload your documents.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Button onClick={handleBack} variant="outline">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to upload
-          </Button>
-        </CardContent>
       </Card>
     );
   }
@@ -591,21 +642,18 @@ export function ExtractionReview({
       {/* Header */}
       <Card className="shadow-soft border-0">
         <CardHeader>
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-exporter p-2 rounded-lg">
+              <Sparkles className="w-5 h-5 text-primary-foreground" />
+            </div>
             <div className="flex-1">
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-blue-500" />
-                Review Extracted Fields
-              </CardTitle>
+              <CardTitle>Review Extracted Fields</CardTitle>
               <CardDescription>
-                Confirm or correct the fields required by this LC before validation runs.
-                Only the fields the LC actually asks for are shown below.
+                Confirm or correct the transcribed values before validation runs. Every field shown
+                was physically present on the document — blanks mean the label was visible but the
+                value was unclear.
               </CardDescription>
             </div>
-            <Button onClick={handleBack} variant="ghost" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to upload
-            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -713,21 +761,26 @@ export function ExtractionReview({
             : 'space-y-1';
           const contentLineCount = (field.currentValue.match(/\n/g)?.length ?? 0) + 1;
           const textareaRows = Math.min(Math.max(contentLineCount + 1, 4), 16);
+          // List-shaped fields render a readable bulleted preview above the
+          // editable textarea so the user isn't staring at a wall of text.
+          const listItems = isLongForm ? parseListPreview(field.currentValue) : null;
           return (
             <div key={`${section.docKey}-${field.name}-${fieldIdx}`} className={wrapperClass}>
               <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
                 {field.label}
-                {!field.isEmpty && !field.isConfirmed && (
-                  <Badge variant="outline" className="text-slate-500 border-slate-300 text-[10px]">
-                    AI extracted
-                  </Badge>
-                )}
                 {field.isConfirmed && (
                   <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">
                     You edited
                   </Badge>
                 )}
               </Label>
+              {listItems && listItems.length > 1 && (
+                <ol className="list-decimal pl-5 space-y-1 text-sm text-foreground rounded-md border border-gray-200/70 bg-secondary/20 p-3">
+                  {listItems.map((item, i) => (
+                    <li key={`${field.name}-item-${i}`}>{item}</li>
+                  ))}
+                </ol>
+              )}
               {isLongForm ? (
                 <Textarea
                   id={`${section.docKey}-${field.name}`}
@@ -735,7 +788,7 @@ export function ExtractionReview({
                   onChange={handleFieldChange(docIdx, fieldIdx)}
                   placeholder={field.isEmpty ? emptyPlaceholder : undefined}
                   rows={textareaRows}
-                  className="font-mono text-sm leading-relaxed resize-y"
+                  className="text-sm leading-relaxed resize-y"
                 />
               ) : (
                 <Input
@@ -758,72 +811,92 @@ export function ExtractionReview({
         const optionalFields = isLC && section.requiredCount != null
           ? section.fields.slice(section.requiredCount)
           : [];
+        const isExpanded = expandedCards[section.docKey] !== false;
         return (
-          <Card key={`${section.docKey}-${docIdx}`} className="shadow-soft border-0">
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <FileText className="w-4 h-4" />
-                    {section.filename}
-                  </CardTitle>
-                  <CardDescription className="mt-1 flex items-center gap-2 flex-wrap">
-                    <Badge variant="secondary">
-                      {humanizeDocType(section.documentType)}
-                    </Badge>
-                    {/* LC-only header badges (40A form_of_documentary_credit etc.) */}
-                    {section.headerBadges?.map((b) => (
-                      <Badge
-                        key={b.label}
-                        variant="outline"
-                        className="border-blue-500/40 text-blue-700 dark:text-blue-300"
-                      >
-                        {b.value}
+          <Card key={`${section.docKey}-${docIdx}`} className="shadow-soft border-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleCard(section.docKey)}
+              className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-exporter/40"
+              aria-expanded={isExpanded}
+              aria-controls={`doc-card-${section.docKey}`}
+            >
+              <CardHeader className="hover:bg-secondary/30 transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="bg-exporter/10 p-1.5 rounded-md">
+                        <FileText className="w-4 h-4 text-exporter" />
+                      </div>
+                      {section.filename}
+                    </CardTitle>
+                    <CardDescription className="mt-1 flex items-center gap-2 flex-wrap">
+                      <Badge variant="secondary">
+                        {humanizeDocType(section.documentType)}
                       </Badge>
-                    ))}
-                    <span className="text-xs text-muted-foreground">
-                      {isLC
-                        ? `${requiredFields.length} field${requiredFields.length === 1 ? '' : 's'}`
-                        : `${section.fields.length} field${section.fields.length === 1 ? '' : 's'}`}
-                    </span>
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {section.fields.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No fields to review for this document.
-                </p>
-              ) : isLC ? (
-                <div className="space-y-6">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
-                      Key fields
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {requiredFields.map((field, fieldIdx) => renderFieldEntry(field, fieldIdx))}
-                    </div>
+                      {/* LC-only header badges (40A form_of_documentary_credit etc.) */}
+                      {section.headerBadges?.map((b) => (
+                        <Badge
+                          key={b.label}
+                          variant="outline"
+                          className="border-exporter/40 text-exporter"
+                        >
+                          {b.value}
+                        </Badge>
+                      ))}
+                      <span className="text-xs text-muted-foreground">
+                        {isLC
+                          ? `${requiredFields.length} field${requiredFields.length === 1 ? '' : 's'}`
+                          : `${section.fields.length} field${section.fields.length === 1 ? '' : 's'}`}
+                      </span>
+                    </CardDescription>
                   </div>
-                  {optionalFields.length > 0 && (
+                  <ChevronDown
+                    className={cn(
+                      "w-5 h-5 text-muted-foreground transition-transform flex-shrink-0 mt-1",
+                      isExpanded ? "rotate-180" : "rotate-0",
+                    )}
+                    aria-hidden="true"
+                  />
+                </div>
+              </CardHeader>
+            </button>
+            {isExpanded && (
+              <CardContent id={`doc-card-${section.docKey}`}>
+                {section.fields.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No fields to review for this document.
+                  </p>
+                ) : isLC ? (
+                  <div className="space-y-6">
                     <div>
                       <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
-                        Additional details (optional, AI auto-extracted)
+                        Key fields
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {optionalFields.map((field, fieldIdx) =>
-                          renderFieldEntry(field, (section.requiredCount ?? 0) + fieldIdx),
-                        )}
+                        {requiredFields.map((field, fieldIdx) => renderFieldEntry(field, fieldIdx))}
                       </div>
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {section.fields.map((field, fieldIdx) => renderFieldEntry(field, fieldIdx))}
-                </div>
-              )}
-            </CardContent>
+                    {optionalFields.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
+                          Additional details
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {optionalFields.map((field, fieldIdx) =>
+                            renderFieldEntry(field, (section.requiredCount ?? 0) + fieldIdx),
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {section.fields.map((field, fieldIdx) => renderFieldEntry(field, fieldIdx))}
+                  </div>
+                )}
+              </CardContent>
+            )}
           </Card>
         );
       })}
@@ -834,9 +907,11 @@ export function ExtractionReview({
       <Card className="shadow-soft border-0">
         <CardContent className="pt-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="w-6 h-6 text-blue-500" />
-              <div>
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="bg-gradient-exporter p-2 rounded-lg flex-shrink-0">
+                <ShieldCheck className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <div className="min-w-0">
                 <p className="font-medium">Ready to validate?</p>
                 <p className="text-sm text-muted-foreground">
                   {hasUnacknowledgedMissingDocs
@@ -848,7 +923,7 @@ export function ExtractionReview({
             <Button
               onClick={handleStartValidation}
               disabled={isStartingValidation || !jobId || hasUnacknowledgedMissingDocs}
-              className="min-w-[180px]"
+              className="min-w-[180px] hover:opacity-90 bg-gradient-exporter"
             >
               {isStartingValidation ? (
                 <>

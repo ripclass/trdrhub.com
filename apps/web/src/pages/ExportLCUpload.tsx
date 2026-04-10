@@ -20,7 +20,6 @@ import { useLcopilotQuota } from "@/hooks/use-lcopilot-quota";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { BlockedUploadModal } from "@/components/validation";
 import { QuotaLimitModal } from "@/components/billing/QuotaLimitModal";
-import { LcopilotQuotaBanner } from "@/components/billing/LcopilotQuotaBanner";
 import { PreparationGuide } from "@/components/exporter/PreparationGuide";
 import { smeTemplatesApi } from "@/api/sme-templates";
 import { buildTemplateUploadPrefill } from "@/lib/exporter/templatePrefill";
@@ -1450,11 +1449,11 @@ export default function ExportLCUpload({
       {!isLoadingDraft && (
         <div className={wrapperClass}>
         {templatePrefillInfo && (
-          <Card className="mb-6 border-blue-200 bg-blue-50">
+          <Card className="mb-6 border-exporter/20 bg-exporter/5">
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
-                <div className="bg-blue-100 p-2 rounded-lg">
-                  <Sparkles className="w-5 h-5 text-blue-600" />
+                <div className="bg-gradient-exporter p-2 rounded-lg">
+                  <Sparkles className="w-5 h-5 text-primary-foreground" />
                 </div>
                 <div className="flex-1">
                   <h4 className="font-semibold text-blue-900 mb-1">
@@ -1473,11 +1472,11 @@ export default function ExportLCUpload({
 
         {/* Re-attach Files Banner - only show if no session files available */}
         {stagedFilesMeta.length > 0 && !hasSessionFiles && (
-          <Card className="mb-6 border-blue-200 bg-blue-50">
+          <Card className="mb-6 border-exporter/20 bg-exporter/5">
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
-                <div className="bg-blue-100 p-2 rounded-lg">
-                  <FileText className="w-5 h-5 text-blue-600" />
+                <div className="bg-gradient-exporter p-2 rounded-lg">
+                  <FileText className="w-5 h-5 text-primary-foreground" />
                 </div>
                 <div className="flex-1">
                   <h4 className="font-semibold text-blue-900 mb-2">Re-attach your files to continue</h4>
@@ -1527,143 +1526,196 @@ export default function ExportLCUpload({
           <CardHeader>
             <CardTitle>Step 1 — Upload Letter of Credit</CardTitle>
             <CardDescription>
-              Start with the LC first. We’ll detect required supporting documents automatically and unlock the bulk uploader below.
+              Start with the LC. We’ll detect the required supporting documents and unlock the bulk uploader below.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div
-              className={cn(
-                "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
-                isLcResolving || !!lcIntake.file
-                  ? "border-exporter bg-exporter/5 cursor-default"
-                  : "border-gray-200 hover:border-exporter/50 hover:bg-secondary/20 cursor-pointer"
-              )}
-              onClick={() => {
-                if (isLcResolving || isProcessing || !!lcIntake.file) return;
-                const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
-                input?.click();
-              }}
-              role="button"
-              tabIndex={isLcResolving || isProcessing || !!lcIntake.file ? -1 : 0}
-              onKeyDown={(e) => {
-                if (isLcResolving || isProcessing || !!lcIntake.file) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
+            <input
+              id="lc-intake-upload"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              className="hidden"
+              onChange={handleLCIntakeFileChange}
+            />
+
+            {!lcIntake.file ? (
+              <div
+                className={cn(
+                  "border-2 border-dashed rounded-lg p-5 text-center transition-colors",
+                  isLcResolving
+                    ? "border-exporter bg-exporter/5 cursor-default"
+                    : "border-gray-200 hover:border-exporter/50 hover:bg-secondary/20 cursor-pointer"
+                )}
+                onClick={() => {
+                  if (isLcResolving || isProcessing) return;
                   const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
                   input?.click();
-                }
-              }}
-            >
-              <input
-                id="lc-intake-upload"
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png"
-                className="hidden"
-                onChange={handleLCIntakeFileChange}
-              />
-              <div className="flex flex-col items-center gap-4">
-                <div className="p-4 rounded-full bg-exporter/10">
-                  <Sparkles className="w-8 h-8 text-exporter" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">
-                    {isLcResolving
-                      ? "Resolving Letter of Credit..."
-                      : lcIntake.file
-                      ? "Letter of Credit Uploaded"
-                      : "Upload Letter of Credit"}
-                  </h3>
-                  <p className="text-muted-foreground mb-4">
-                    {isLcResolving
-                      ? "We’re checking the LC, detecting workflow, and extracting required supporting documents."
-                      : lcIntake.file
-                      ? "The LC file is already attached. Clear it first if you want to upload a different one."
-                      : "Click anywhere in this box or use the button below to choose the LC file first."}
-                  </p>
-                </div>
-                <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isLcResolving || isProcessing || !!lcIntake.file}
-                    onClick={() => {
-                      const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
-                      input?.click();
-                    }}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Choose LC File
-                  </Button>
-                  {lcIntake.file && (
-                    <Button variant="ghost" onClick={handleClearLCIntake} disabled={isLcResolving || isProcessing}>
-                      Clear
+                }}
+                role="button"
+                tabIndex={isLcResolving || isProcessing ? -1 : 0}
+                onKeyDown={(e) => {
+                  if (isLcResolving || isProcessing) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
+                    input?.click();
+                  }
+                }}
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="p-3 rounded-full bg-exporter/10">
+                    <Sparkles className="w-6 h-6 text-exporter" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">
+                      {isLcResolving ? "Resolving Letter of Credit…" : "Upload Letter of Credit"}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {isLcResolving
+                        ? "Checking the LC, detecting workflow, and extracting required supporting documents."
+                        : "Click anywhere in this box or use the button below."}
+                    </p>
+                  </div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isLcResolving || isProcessing}
+                      onClick={() => {
+                        const input = document.getElementById("lc-intake-upload") as HTMLInputElement | null;
+                        input?.click();
+                      }}
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Choose LC File
                     </Button>
-                  )}
+                  </div>
                 </div>
               </div>
-            </div>
-
-            {lcIntake.file && (
-              <div className="rounded-lg border border-gray-200 p-4 bg-secondary/10 space-y-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="font-medium text-foreground">{lcIntake.file.name}</p>
-                    <p className="text-xs text-muted-foreground">{formatFileSize(lcIntake.file.size)}</p>
+            ) : (
+              <div className="space-y-3">
+                {/* Uploaded-LC card — matches the supporting-doc card shape below */}
+                <div className="flex items-center gap-4 p-4 bg-secondary/20 rounded-lg border border-gray-200/50">
+                  <div className="flex-shrink-0">
+                    <div
+                      className={cn(
+                        "p-2 rounded-lg",
+                        isLCResolved
+                          ? "bg-success/10"
+                          : lcIntake.status === "invalid"
+                          ? "bg-destructive/10"
+                          : "bg-exporter/10",
+                      )}
+                    >
+                      {isLCResolved ? (
+                        <FileCheck className="w-5 h-5 text-success" />
+                      ) : lcIntake.status === "invalid" ? (
+                        <AlertTriangle className="w-5 h-5 text-destructive" />
+                      ) : (
+                        <FileText className="w-5 h-5 text-exporter" />
+                      )}
+                    </div>
                   </div>
-                  <Badge variant={isLCResolved ? "default" : lcIntake.status === "uploading" ? "outline" : "secondary"}>
-                    {lcIntake.status === "uploading" ? "Checking LC..." : isLCResolved ? "LC Resolved" : lcIntake.status}
-                  </Badge>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <h5 className="font-medium text-foreground truncate">{lcIntake.file.name}</h5>
+                      <span className="text-sm text-muted-foreground flex-shrink-0">
+                        {formatFileSize(lcIntake.file.size)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge
+                        variant={
+                          isLCResolved
+                            ? "default"
+                            : lcIntake.status === "uploading"
+                            ? "outline"
+                            : "secondary"
+                        }
+                        className="text-xs"
+                      >
+                        {lcIntake.status === "uploading"
+                          ? "Checking LC…"
+                          : isLCResolved
+                          ? "LC Resolved"
+                          : lcIntake.status}
+                      </Badge>
+                      {lcIntake.lcDetection && (
+                        <Badge variant="outline" className="text-xs font-medium">
+                          {getWorkflowPrimaryLabel(lcIntake.lcDetection as WorkflowDetectionSummary)}
+                        </Badge>
+                      )}
+                      {lcIntake.lcDetection?.is_draft && (
+                        <Badge variant="outline" className="text-xs">
+                          Draft LC
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (lcIntake.file && lcIntake.file.size > 0) {
+                          const fileUrl = URL.createObjectURL(lcIntake.file);
+                          window.open(fileUrl, "_blank");
+                          setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
+                        } else {
+                          toast({
+                            title: "Preview Unavailable",
+                            description: "This LC file cannot be previewed.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                      disabled={lcIntake.status === "uploading"}
+                      title="Preview LC"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleClearLCIntake}
+                      disabled={isLcResolving || isProcessing}
+                      title="Remove LC"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
 
                 {(lcIntake.message || lcIntake.error?.message) && (
-                  <div className={cn(
-                    "rounded-md p-3 text-sm border",
-                    isLCResolved ? "bg-green-50 border-green-200 text-green-800" : "bg-amber-50 border-amber-200 text-amber-800"
-                  )}>
+                  <div
+                    className={cn(
+                      "rounded-md p-3 text-sm border",
+                      isLCResolved
+                        ? "bg-green-50 border-green-200 text-green-800"
+                        : "bg-amber-50 border-amber-200 text-amber-800",
+                    )}
+                  >
                     {lcIntake.error?.message || lcIntake.message}
-                  </div>
-                )}
-
-                {lcIntake.lcDetection && (
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <Badge variant="default" className="font-semibold">
-                      {getWorkflowPrimaryLabel(lcIntake.lcDetection as WorkflowDetectionSummary)}
-                    </Badge>
-                    {(() => {
-                      const primary = getWorkflowPrimaryLabel(lcIntake.lcDetection as WorkflowDetectionSummary);
-                      const fallback = formatWorkflowBadgeLabel(lcIntake.lcDetection.lc_type);
-                      // Only show the generic "Export Workflow" badge if the
-                      // subtype classifier couldn't produce a more specific label.
-                      if (primary === "LC" || primary === "Export LC" || primary === "Import LC") {
-                        return <Badge variant="outline">{fallback}</Badge>;
-                      }
-                      return null;
-                    })()}
-                    {getWorkflowDetectionStatusBadge(lcIntake.lcDetection as WorkflowDetectionSummary) && (
-                      <Badge variant="outline">
-                        {getWorkflowDetectionStatusBadge(lcIntake.lcDetection as WorkflowDetectionSummary)}
-                      </Badge>
-                    )}
-                    {typeof lcIntake.lcDetection.confidence === 'number' && (
-                      <Badge variant="outline">
-                        {formatWorkflowConfidenceBadgeLabel(
-                          lcIntake.lcDetection.confidence,
-                          lcIntake.lcDetection as WorkflowDetectionSummary,
-                        )}
-                      </Badge>
-                    )}
-                    {lcIntake.lcDetection.is_draft && <Badge variant="outline">Draft LC</Badge>}
                   </div>
                 )}
 
                 {Object.keys(lcIntake.lcSummary || {}).length > 0 && (
                   <div className="grid md:grid-cols-3 gap-3 text-sm">
-                    {Object.entries(lcIntake.lcSummary || {}).slice(0, 6).map(([key, value]) => (
-                      <div key={key} className="rounded bg-background p-3 border border-gray-200/60">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{key.replace(/_/g, ' ')}</p>
-                        <p className="font-medium text-foreground break-words">{String(value)}</p>
-                      </div>
-                    ))}
+                    {Object.entries(lcIntake.lcSummary || {})
+                      .slice(0, 6)
+                      .map(([key, value]) => (
+                        <div
+                          key={key}
+                          className="rounded bg-background p-3 border border-gray-200/60"
+                        >
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                            {key.replace(/_/g, " ")}
+                          </p>
+                          <p className="font-medium text-foreground break-words">
+                            {String(value)}
+                          </p>
+                        </div>
+                      ))}
                   </div>
                 )}
               </div>
@@ -1679,17 +1731,20 @@ export default function ExportLCUpload({
           </Card>
         )}
 
-        {/* Step 1.5: Requirement summary / live checklist */}
-        <Card className="mb-6 shadow-soft border-0">
+        {/* Step 2: Supporting document bulk uploader */}
+        <Card className="mb-8 shadow-soft border-0">
           <CardHeader>
-            <CardTitle>Documents the LC asks for</CardTitle>
+            <CardTitle>Step 2 — Upload Supporting Documents</CardTitle>
             <CardDescription>
               {isLCResolved
-                ? "The document types the LC mentions. Upload one file per type — any filename, any order."
-                : "This list appears after the LC is resolved."}
+                ? "Upload one file for each document the LC requires. Any filename, any order — we match them automatically."
+                : "Upload and resolve the LC above to unlock this step."}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-5">
+            {/* LC-required document checklist — shown inside Step 2 so the
+             *  user sees "what the LC asks for" immediately above the
+             *  uploader they're about to drop files into. */}
             {!isLCResolved ? (
               <div className="flex items-center gap-3 rounded-lg border border-dashed border-gray-300 p-4 text-sm text-muted-foreground">
                 <Lock className="w-4 h-4" />
@@ -1697,21 +1752,15 @@ export default function ExportLCUpload({
               </div>
             ) : (
               <div className="space-y-4">
-                {requirementUploadStatus.missing.length === 0 && uploadRequirements.documentRequirements.length > 0 && (
-                  <div className="rounded-lg border border-success/30 bg-success/5 p-4">
-                    <p className="text-sm font-semibold text-foreground">All document types the LC mentions are uploaded</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Click Extract &amp; Review below to pull field values from each document. Validation will run afterwards and flag any discrepancies against the LC.
-                    </p>
-                  </div>
-                )}
-                {/* Doc-type chip list.  One chip per doc type the LC
-                 *  mentions, coloured by whether the user has uploaded a
-                 *  matching file yet.  We deliberately do NOT render the
-                 *  clause text under each chip — that was producing walls
-                 *  of text because the LLM returns 46A as a single
-                 *  concatenated string on some LCs.  The full LC clauses
-                 *  are still available to validation downstream. */}
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    Supporting documents this LC requires
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Derived from the LC’s documents-required clause. Green means a file is already attached.
+                  </p>
+                </div>
+
                 {uploadRequirements.documentRequirements.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {uploadRequirements.documentRequirements.map((requirement) => {
@@ -1735,6 +1784,13 @@ export default function ExportLCUpload({
                 ) : (
                   <p className="text-sm text-muted-foreground">The LC didn't mention specific document types.</p>
                 )}
+
+                {requirementUploadStatus.missing.length === 0 && uploadRequirements.documentRequirements.length > 0 && (
+                  <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-foreground">
+                    All required document types are attached. Click Extract &amp; Review below to pull field values.
+                  </div>
+                )}
+
                 {(specialConditionSummary.items.length > 0 || specialConditionSummary.placeholderOnly) && (
                   <div className="rounded-lg border border-gray-200 p-4 bg-secondary/10">
                     <p className="text-sm font-medium text-foreground mb-2">Special Conditions</p>
@@ -1753,18 +1809,6 @@ export default function ExportLCUpload({
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Step 2: Supporting document bulk uploader */}
-        <Card className="mb-8 shadow-soft border-0">
-          <CardHeader>
-            <CardTitle>Step 2 - Upload Supporting Documents</CardTitle>
-            <CardDescription>
-              Upload remaining documents in any order, any filename. We'll match them against LC requirements.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
             <div
               {...(isLCResolved ? getRootProps() : {})}
               className={cn(
@@ -1856,7 +1900,7 @@ export default function ExportLCUpload({
                             <CheckCircle className="w-4 h-4 text-success" />
                             <span className="text-xs text-success">Upload complete</span>
                             {file.detectedType && file.detectedConfidence && file.detectedConfidence > 0.6 && (
-                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                              <Badge variant="outline" className="text-xs border-exporter/40 text-exporter bg-exporter/5">
                                 Auto-detected: {exportDocumentTypes.find(d => d.value === file.detectedType)?.label || file.detectedType}
                                 {file.detectedConfidence >= 0.8 && " ✓"}
                               </Badge>
@@ -1935,16 +1979,10 @@ export default function ExportLCUpload({
           </CardContent>
         </Card>
 
-        {/* Validation Section */}
+        {/* Summary + actions */}
         <Card className="shadow-soft border-0">
-          <CardHeader>
-            <CardTitle>Document Validation</CardTitle>
-            <CardDescription>
-              Validate your LC and trade documents for compliance and completeness
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
+          <CardContent className="pt-6">
+            <div className="space-y-5">
               {/* Summary */}
               <div className="bg-secondary/20 rounded-lg p-4 border border-gray-200/50">
                 <h4 className="font-semibold text-foreground mb-3">Upload Summary</h4>
@@ -1972,42 +2010,40 @@ export default function ExportLCUpload({
                   {isLCResolved && requirementUploadStatus.missing.length > 0 && completedFiles.length > 0 ? (
                     <span>
                       Missing LC-required uploads: {requirementUploadStatus.missing.map((item) => item.label).join(', ')}.
-                      You can still validate the current set, but readiness will stay open until they are uploaded.
+                      You can still run extraction on the current set.
                     </span>
                   ) : isReadyToProcess ? (
-                    <span className="text-success">✓ Ready to validate your export documents</span>
+                    <span className="text-success">✓ Ready to extract and review</span>
                   ) : isLCResolved && completedFiles.length === 0 ? (
-                    <span>LC resolved. Upload at least one supporting document to start validation.</span>
+                    <span>LC resolved. Upload at least one supporting document to continue.</span>
                   ) : isLCResolved ? (
-                    <span>Supporting documents are uploaded. Complete any remaining uploads or review your set before validation.</span>
+                    <span>Supporting documents are uploaded. Review your set or continue to extraction.</span>
                   ) : (
-                    <span>Upload and resolve the LC first to unlock supporting-document validation.</span>
+                    <span>Upload and resolve the LC first to unlock extraction.</span>
                   )}
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex gap-3">
-                    <Button
-                      variant="outline"
-                      onClick={handleSaveDraft}
-                      disabled={isLoadingDraft}
-                    >
-                      {currentDraftId ? "Update Draft" : "Save Draft"}
-                    </Button>
-                    <Button
-                      onClick={handleProcessLC}
-                      disabled={!isReadyToProcess || !quotaState.canValidate}
-                      className="hover:opacity-90 bg-gradient-exporter"
-                    >
-                      {isValidationProcessing ? (
-                        <>
-                          <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                          Extracting...
-                        </>
-                      ) : (
-                        "Extract & Review"
-                      )}
-                    </Button>
-                  </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveDraft}
+                    disabled={isLoadingDraft}
+                  >
+                    {currentDraftId ? "Update Draft" : "Save Draft"}
+                  </Button>
+                  <Button
+                    onClick={handleProcessLC}
+                    disabled={!isReadyToProcess || !quotaState.canValidate}
+                    className="hover:opacity-90 bg-gradient-exporter"
+                  >
+                    {isValidationProcessing ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                        Extracting...
+                      </>
+                    ) : (
+                      "Extract & Review"
+                    )}
+                  </Button>
                 </div>
               </div>
 
@@ -2017,8 +2053,6 @@ export default function ExportLCUpload({
                   realProgress={validationProgress}
                 />
               )}
-
-              <LcopilotQuotaBanner quotaState={quotaState} variant="exporter" />
 
               {showRateLimit && (
                 <div className="mt-6">
