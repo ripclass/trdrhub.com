@@ -4184,6 +4184,37 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               <DocumentsTab
                 documents={sortedDocuments}
                 issueCards={issueCards}
+                onViewDocument={(doc) => {
+                  setSelectedDocumentForDrawer({
+                    id: doc.id,
+                    name: doc.name,
+                    filename: doc.filename,
+                    type: doc.type,
+                    documentType: doc.typeKey,
+                    typeKey: doc.typeKey,
+                    status: doc.status,
+                    extractionStatus: doc.extractionStatus,
+                    issuesCount: doc.issuesCount,
+                    extractedFields:
+                      String(doc.typeKey || '').toLowerCase() === 'letter_of_credit' &&
+                      Object.keys(canonicalLcDrawerFields).length > 0
+                        ? canonicalLcDrawerFields
+                        : doc.extractedFields,
+                    warningReasons: (doc as any).warningReasons ?? [],
+                    reviewReasons: (doc as any).reviewReasons ?? [],
+                    criticalFieldStates: (doc as any).criticalFieldStates ?? {},
+                    fieldDiagnostics: (doc as any).fieldDiagnostics ?? {},
+                    missingRequiredFields: (doc as any).missingRequiredFields ?? [],
+                    rawText: (doc as any).rawText ?? '',
+                    fieldDetails: (doc as any).fieldDetails ?? {},
+                    extractionResolution: (doc as any).extractionResolution,
+                    resolutionItems: (doc as any).resolutionItems,
+                    ocrConfidence: (doc.extractedFields as any)?._extraction_confidence,
+                    sourceFormat: (doc.extractedFields as any)?._source_format,
+                    isElectronicBL: (doc.extractedFields as any)?._is_electronic_bl,
+                  });
+                  setIsDrawerOpen(true);
+                }}
               />
             </TabsContent>
           )}
@@ -4831,13 +4862,27 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 (structuredResult?.amendments_available as any)?.items ??
                 (Array.isArray(structuredResult?.amendments_available) ? structuredResult.amendments_available : undefined)
               }
+              totalAmendmentFee={(structuredResult?.amendments_available as any)?.total_estimated_fee_usd}
               onDownloadMT707={(amendment) => {
-                if (!amendment.swift_mt707_text) return;
-                const blob = new Blob([amendment.swift_mt707_text], { type: 'text/plain' });
+                const text = amendment.swift_mt707_text ?? amendment.mt707_text;
+                if (!text) return;
+                const blob = new Blob([text], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = `MT707_Amendment_${amendment.field?.tag ?? 'LC'}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              onDownloadISO20022={(amendment) => {
+                if (!amendment.iso20022_xml) return;
+                const blob = new Blob([amendment.iso20022_xml], { type: 'application/xml' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ISO20022_trad002_Amendment_${amendment.field?.tag ?? 'LC'}.xml`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);

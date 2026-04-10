@@ -19,6 +19,7 @@ import {
   Lightbulb,
   BookOpen,
   Filter,
+  Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { IssueCard } from '@/types/lcopilot';
@@ -28,19 +29,26 @@ import { BankProfileBadge } from '../BankProfileBadge';
 // Types
 // ---------------------------------------------------------------------------
 
-interface Amendment {
-  field?: { tag?: string; name?: string };
+export interface Amendment {
+  issue_id?: string;
+  field?: { tag?: string; name?: string; current?: string; proposed?: string };
   current_value?: string;
   proposed_value?: string;
+  narrative?: string;
   swift_mt707_text?: string;
+  mt707_text?: string;
   iso20022_xml?: string;
+  bank_processing_days?: number;
+  estimated_fee_usd?: number;
   estimated_fee?: string;
 }
 
 interface FindingsTabProps {
   issueCards: IssueCard[];
   amendments?: Amendment[];
+  totalAmendmentFee?: number;
   onDownloadMT707?: (amendment: Amendment) => void;
+  onDownloadISO20022?: (amendment: Amendment) => void;
   /** The full bank profile object — passed straight to BankProfileBadge */
   bankProfile?: any;
 }
@@ -212,7 +220,9 @@ function FindingCard({ issue, index }: { issue: IssueCard; index: number }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FindingsTab({ issueCards, amendments, onDownloadMT707, bankProfile }: FindingsTabProps) {
+export function FindingsTab({ issueCards, amendments, totalAmendmentFee, onDownloadMT707, onDownloadISO20022, bankProfile }: FindingsTabProps) {
+  const [amendmentsExpanded, setAmendmentsExpanded] = useState(false);
+  const [previewContent, setPreviewContent] = useState<{ title: string; content: string } | null>(null);
   const [filter, setFilter] = useState<SeverityFilter>('all');
   const deduped = useMemo(() => deduplicateIssues(issueCards), [issueCards]);
 
@@ -284,51 +294,132 @@ export function FindingsTab({ issueCards, amendments, onDownloadMT707, bankProfi
         <BankProfileBadge profile={bankProfile} />
       )}
 
-      {/* Amendments banner — actionable */}
+      {/* Amendments — full featured with both formats, preview, fees */}
       {amendments && amendments.length > 0 && (
         <Card className="border border-blue-500/30 bg-blue-500/5">
           <CardContent className="py-4 px-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-blue-400">
-                  {amendments.length} Amendment{amendments.length > 1 ? 's' : ''} Available
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Some discrepancies below can be resolved by amending the LC instead of amending the documents.
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-500/20">
+                  <Lightbulb className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-blue-400">
+                    {amendments.length} Amendment{amendments.length > 1 ? 's' : ''} Available
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Fix via LC amendment instead of amending documents
+                    {totalAmendmentFee != null && totalAmendmentFee > 0 && (
+                      <> &middot; Est. total fee: <span className="font-medium">USD {totalAmendmentFee.toFixed(2)}</span></>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+                onClick={() => setAmendmentsExpanded(!amendmentsExpanded)}
+              >
+                {amendmentsExpanded ? 'Hide' : 'View'} Amendments
+              </Button>
+            </div>
+
+            {amendmentsExpanded && (
+              <div className="mt-4 pt-4 border-t border-blue-500/20 space-y-3">
+                {amendments.map((a, i) => {
+                  const current = a.field?.current ?? a.current_value ?? '';
+                  const proposed = a.field?.proposed ?? a.proposed_value ?? '';
+                  const fee = a.estimated_fee_usd ?? (a.estimated_fee ? parseFloat(a.estimated_fee) : null);
+                  const mt707 = a.swift_mt707_text ?? a.mt707_text;
+
+                  return (
+                    <div key={i} className="p-3 rounded-lg bg-background/50 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium">
+                            {a.field?.tag ? `Field ${a.field.tag}: ` : ''}{a.field?.name ?? `Amendment ${i + 1}`}
+                          </p>
+                          {(current || proposed) && (
+                            <p className="text-xs mt-0.5">
+                              <span className="text-red-400 line-through">{current}</span>
+                              {current && proposed && ' → '}
+                              <span className="text-emerald-400">{proposed}</span>
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {a.narrative ?? 'Amendment to resolve discrepancy'}
+                            {a.bank_processing_days != null && <> &middot; ~{a.bank_processing_days} days</>}
+                            {fee != null && <> &middot; USD {fee.toFixed(2)}</>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {mt707 && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-xs h-7 text-muted-foreground hover:text-foreground"
+                                title="Preview MT707 content"
+                                onClick={() => setPreviewContent({
+                                  title: `MT707 — ${a.field?.name ?? 'Amendment'}`,
+                                  content: mt707,
+                                })}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </Button>
+                              {onDownloadMT707 && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-xs h-7 text-blue-400 hover:text-blue-300"
+                                  title="Download SWIFT MT707"
+                                  onClick={() => onDownloadMT707(a)}
+                                >
+                                  <BookOpen className="w-3.5 h-3.5 mr-1" />
+                                  MT707
+                                </Button>
+                              )}
+                            </>
+                          )}
+                          {a.iso20022_xml && onDownloadISO20022 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-xs h-7 text-emerald-400 hover:text-emerald-300"
+                              title="Download ISO20022 XML (trad.002)"
+                              onClick={() => onDownloadISO20022(a)}
+                            >
+                              <BookOpen className="w-3.5 h-3.5 mr-1" />
+                              ISO20022
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-[10px] text-muted-foreground pt-2 border-t border-blue-500/10">
+                  <span className="font-medium">MT707:</span> Legacy SWIFT FIN format &middot;
+                  <span className="font-medium ml-2">ISO20022:</span> Modern XML standard (trad.002)
                 </p>
               </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* MT707 Preview Dialog */}
+      {previewContent && (
+        <Card className="border border-blue-500/30">
+          <CardContent className="py-3 px-5">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold">{previewContent.title}</p>
+              <Button size="sm" variant="ghost" className="text-xs h-6" onClick={() => setPreviewContent(null)}>Close</Button>
             </div>
-            <div className="mt-3 space-y-2">
-              {amendments.map((a, i) => (
-                <div key={i} className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">
-                      {a.field?.name ?? a.field?.tag ?? `Amendment ${i + 1}`}
-                    </p>
-                    {a.current_value && a.proposed_value && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        <span className="text-red-400 line-through">{a.current_value}</span>
-                        {' → '}
-                        <span className="text-emerald-400">{a.proposed_value}</span>
-                      </p>
-                    )}
-                    {a.estimated_fee && (
-                      <p className="text-[10px] text-muted-foreground">Est. fee: {a.estimated_fee}</p>
-                    )}
-                  </div>
-                  {a.swift_mt707_text && onDownloadMT707 && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs h-7 border-blue-500/30 text-blue-400 hover:bg-blue-500/10 shrink-0"
-                      onClick={() => onDownloadMT707(a)}
-                    >
-                      Download MT707
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <pre className="text-xs font-mono bg-background/80 rounded p-3 overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap">
+              {previewContent.content}
+            </pre>
           </CardContent>
         </Card>
       )}

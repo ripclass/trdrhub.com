@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { IssueCard } from '@/types/lcopilot';
@@ -27,6 +28,7 @@ import type { ValidationDocument } from '@/types/lcopilot';
 interface DocumentsTabProps {
   documents: ValidationDocument[];
   issueCards: IssueCard[];
+  onViewDocument?: (doc: ValidationDocument) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +165,7 @@ function IssueInline({ issue }: { issue: IssueCard }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function DocumentsTab({ documents, issueCards }: DocumentsTabProps) {
+export function DocumentsTab({ documents, issueCards, onViewDocument }: DocumentsTabProps) {
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
 
   const toggleDoc = (id: string) => {
@@ -275,6 +277,18 @@ export function DocumentsTab({ documents, issueCards }: DocumentsTabProps) {
                       >
                         {issues.length} issue{issues.length !== 1 ? 's' : ''}
                       </Badge>
+                    )}
+                    {onViewDocument && (
+                      <button
+                        className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Preview document"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onViewDocument(doc);
+                        }}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
                     )}
                     {isExpanded ? (
                       <ChevronDown className="w-4 h-4 text-muted-foreground" />
