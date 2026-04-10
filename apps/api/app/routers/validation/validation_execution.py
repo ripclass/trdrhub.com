@@ -1373,7 +1373,8 @@ async def execute_validation_pipeline(
             # Delegates rule evaluation to api.rulhub.com instead of
             # running local tiered validation. Falls back to DB path.
             # =============================================================
-            _use_rulhub = getattr(settings, "USE_RULHUB_API", False)
+            from app.config import settings as _app_settings
+            _use_rulhub = getattr(_app_settings, "USE_RULHUB_API", False)
             db_rules_timed_out = False
 
             if _use_rulhub:
