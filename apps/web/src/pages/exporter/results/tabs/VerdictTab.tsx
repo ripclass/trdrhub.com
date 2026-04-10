@@ -43,6 +43,11 @@ interface VerdictTabProps {
   documentsRequired?: Array<string | { raw_text?: string; document_type?: string }>;
   /** 47A Additional Conditions — string array from LC */
   additionalConditions?: string[];
+  /** Bank profile — issuing bank + tolerance policy */
+  bankProfile?: { name?: string; policy_label?: string } | null;
+  /** Amendments available from the validation result */
+  amendmentsCount?: number;
+  amendmentsFee?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +140,9 @@ export function VerdictTab({
   lcData,
   documentsRequired,
   additionalConditions,
+  bankProfile,
+  amendmentsCount,
+  amendmentsFee,
 }: VerdictTabProps) {
   const dedupedIssues = useMemo(() => deduplicateIssues(issueCards), [issueCards]);
 
@@ -316,6 +324,25 @@ export function VerdictTab({
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Bank + Amendments — compact inline */}
+      {(bankProfile || (amendmentsCount && amendmentsCount > 0)) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {bankProfile?.name && (
+            <Badge variant="outline" className="text-xs gap-1 py-1">
+              <FileText className="w-3 h-3" />
+              {bankProfile.name}
+              {bankProfile.policy_label && <span className="text-muted-foreground">· {bankProfile.policy_label}</span>}
+            </Badge>
+          )}
+          {amendmentsCount != null && amendmentsCount > 0 && (
+            <Badge variant="outline" className="text-xs gap-1 py-1 border-blue-500/30 text-blue-400">
+              {amendmentsCount} amendment{amendmentsCount > 1 ? 's' : ''} available
+              {amendmentsFee && <span className="text-muted-foreground">· Est. {amendmentsFee}</span>}
+            </Badge>
+          )}
+        </div>
       )}
 
       {/* LC summary — compact */}

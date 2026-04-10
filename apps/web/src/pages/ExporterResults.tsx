@@ -3779,6 +3779,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 }}
                 documentsRequired={lcData?.documents_required ?? lcData?.documents_required_detailed}
                 additionalConditions={lcData?.additional_conditions}
+                bankProfile={structuredResult?.bank_profile ? {
+                  name: (structuredResult.bank_profile as any)?.name ?? (structuredResult.bank_profile as any)?.bank_name,
+                  policy_label: (structuredResult.bank_profile as any)?.policy_label ?? (structuredResult.bank_profile as any)?.tolerance_policy,
+                } : null}
+                amendmentsCount={(structuredResult?.amendments_available as any)?.count ?? 0}
+                amendmentsFee={(structuredResult?.amendments_available as any)?.estimated_total_fee ? `USD ${(structuredResult.amendments_available as any).estimated_total_fee}` : undefined}
               />
             )}
 

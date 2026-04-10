@@ -1,6 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
+import { CheckCircle, AlertTriangle, XCircle, FileText, Scale, Clock, ShieldCheck } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import type { ValidationResults } from '@/types/lcopilot';
 
 type Props = {
@@ -45,47 +46,68 @@ export function SummaryStrip({
   const complianceRate = complianceScore ?? summary.compliance_rate ?? 0;
 
   const effectiveStatus = overallStatus ?? (complianceRate >= 80 ? 'success' : complianceRate >= 40 ? 'warning' : 'error');
+  const statusBg = effectiveStatus === 'success'
+    ? 'from-emerald-600/20 to-emerald-800/10 border-emerald-500/40'
+    : effectiveStatus === 'error'
+    ? 'from-red-600/20 to-red-800/10 border-red-500/40'
+    : 'from-amber-600/20 to-amber-800/10 border-amber-500/40';
+  const statusColor = effectiveStatus === 'success' ? 'text-emerald-400' : effectiveStatus === 'error' ? 'text-red-400' : 'text-amber-400';
   const StatusIcon = effectiveStatus === 'success' ? CheckCircle : effectiveStatus === 'error' ? XCircle : AlertTriangle;
-  const statusColor = effectiveStatus === 'success' ? 'text-emerald-500' : effectiveStatus === 'error' ? 'text-red-500' : 'text-amber-500';
+  const statusWord = effectiveStatus === 'success' ? 'COMPLIANT' : effectiveStatus === 'error' ? 'BLOCKED' : 'REVIEW';
 
   return (
-    <Card className="shadow-soft border border-border/60">
-      <CardContent className="py-4 px-6">
+    <Card className={cn('border shadow-lg bg-gradient-to-r', statusBg)}>
+      <CardContent className="py-5 px-6">
         <div className="flex items-center gap-6">
-          {/* Status icon + LC type — compact left section */}
+          {/* Status badge — prominent */}
           <div className="flex items-center gap-3 shrink-0">
-            <StatusIcon className={`w-8 h-8 ${statusColor}`} />
-            {lcTypeLabel && (
-              <div>
-                <Badge variant="secondary" className="text-xs">{lcTypeLabel}</Badge>
-                {lcTypeConfidence != null && lcTypeConfidence > 0 && (
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{lcTypeConfidence}% confidence</p>
-                )}
-              </div>
-            )}
+            <StatusIcon className={cn('w-10 h-10', statusColor)} />
+            <div>
+              <p className={cn('text-lg font-bold tracking-wide', statusColor)}>{statusWord}</p>
+              {lcTypeLabel && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Badge variant="secondary" className="text-[10px]">{lcTypeLabel}</Badge>
+                  {lcTypeConfidence != null && lcTypeConfidence > 0 && (
+                    <span className="text-[10px] text-muted-foreground">{lcTypeConfidence}%</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="hidden sm:block w-px h-10 bg-border" />
+          <div className="hidden sm:block w-px h-12 bg-border/50" />
 
-          {/* 4 metric cards — even grid, no squeeze */}
-          <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="text-center sm:text-left">
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Documents</p>
-              <p className="text-xl font-bold">{documentsProcessed}</p>
+          {/* 4 metrics — clean, prominent numbers */}
+          <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex items-center gap-2.5">
+              <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+              <div>
+                <p className="text-2xl font-bold leading-none">{documentsProcessed}</p>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">Documents</p>
+              </div>
             </div>
-            <div className="text-center sm:text-left">
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Issues</p>
-              <p className="text-xl font-bold">{reportableIssueCount}</p>
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-muted-foreground shrink-0" />
+              <div>
+                <p className="text-2xl font-bold leading-none">{reportableIssueCount}</p>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">Issues</p>
+              </div>
             </div>
-            <div className="text-center sm:text-left">
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Score</p>
-              <p className={`text-xl font-bold ${complianceRate >= 80 ? 'text-emerald-500' : complianceRate >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
-                {complianceRate}%
-              </p>
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-muted-foreground shrink-0" />
+              <div>
+                <p className={cn('text-2xl font-bold leading-none', complianceRate >= 80 ? 'text-emerald-400' : complianceRate >= 40 ? 'text-amber-400' : 'text-red-400')}>
+                  {complianceRate}%
+                </p>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">Score</p>
+              </div>
             </div>
-            <div className="text-center sm:text-left">
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Time</p>
-              <p className="text-xl font-bold">{processingTime}</p>
+            <div className="flex items-center gap-2.5">
+              <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+              <div>
+                <p className="text-2xl font-bold leading-none">{processingTime}</p>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">Time</p>
+              </div>
             </div>
           </div>
         </div>
