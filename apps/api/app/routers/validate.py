@@ -867,49 +867,6 @@ logger = logging.getLogger(__name__)
 PROFILE_DB = os.getenv("ENABLE_QUERY_PROFILING", "false").lower() == "true"
 
 
-@router.get("/documents/{document_id}/preview")
-async def preview_document(
-    document_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_user_optional),
-):
-    """Generate a signed URL for previewing an uploaded document in the browser."""
-    from app.models import Document as DocumentModel, ValidationSession
-    import uuid as _uuid
-
-    try:
-        doc_uuid = _uuid.UUID(document_id)
-    except (ValueError, AttributeError):
-        raise HTTPException(status_code=400, detail="Invalid document ID")
-
-    doc = db.query(DocumentModel).filter(DocumentModel.id == doc_uuid).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    # Verify ownership via validation session
-    session = db.query(ValidationSession).filter(ValidationSession.id == doc.validation_session_id).first()
-    if session and current_user and session.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    if not doc.s3_key:
-        raise HTTPException(status_code=404, detail="Document file not available")
-
-    try:
-        from app.services.document_storage import DocumentStorage
-        storage = DocumentStorage()
-        # Content-Disposition: inline so browser renders it instead of downloading
-        signed_url = await storage.get_signed_url(
-            doc.s3_key,
-            expires_in=3600,
-            response_content_disposition=f'inline; filename="{doc.original_filename}"',
-        )
-        return {"url": signed_url, "filename": doc.original_filename, "content_type": doc.content_type}
-    except Exception as exc:
-        logger.warning("Failed to generate preview URL for document %s: %s", document_id, exc)
-        raise HTTPException(status_code=500, detail="Failed to generate preview URL")
-
-
 @contextmanager
 def _profile_section(label: str):
     start = time.perf_counter()
@@ -1000,6 +957,45 @@ async def get_user_optional(
     )
 
 
+@router.get("/documents/{document_id}/preview")
+async def preview_document(
+    document_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_user_optional),
+):
+    """Generate a signed URL for previewing an uploaded document in the browser."""
+    from app.models import Document as DocumentModel, ValidationSession
+    import uuid as _uuid
+
+    try:
+        doc_uuid = _uuid.UUID(document_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid document ID")
+
+    doc = db.query(DocumentModel).filter(DocumentModel.id == doc_uuid).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    session = db.query(ValidationSession).filter(ValidationSession.id == doc.validation_session_id).first()
+    if session and current_user and session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if not doc.s3_key:
+        raise HTTPException(status_code=404, detail="Document file not available")
+
+    try:
+        from app.services.document_storage import DocumentStorage
+        storage = DocumentStorage()
+        signed_url = await storage.get_signed_url(
+            doc.s3_key,
+            expires_in=3600,
+            response_content_disposition=f'inline; filename="{doc.original_filename}"',
+        )
+        return {"url": signed_url, "filename": doc.original_filename, "content_type": doc.content_type}
+    except Exception as exc:
+        logger.warning("Failed to generate preview URL for document %s: %s", document_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to generate preview URL")
 
 
 
