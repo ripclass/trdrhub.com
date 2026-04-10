@@ -318,22 +318,10 @@ class RulHubRulesAdapter:
             }
         except RulHubRateLimited:
             logger.warning("RulHub rate limited during evaluate_rules")
-            return {
-                "outcomes": [],
-                "violations": [],
-                "ruleset_version": "rulhub_api",
-                "rules_evaluated": 0,
-                "_error": "rate_limited",
-            }
+            raise  # Let caller fall back to DB rules
         except RulHubAPIError as exc:
             logger.error("RulHub evaluate_rules failed: %s", exc)
-            return {
-                "outcomes": [],
-                "violations": [],
-                "ruleset_version": "rulhub_api",
-                "rules_evaluated": 0,
-                "_error": str(exc),
-            }
+            raise  # Let caller fall back to DB rules + Opus veto
 
     async def validate_document_set(
         self,

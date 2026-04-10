@@ -1481,6 +1481,38 @@ async def execute_validation_pipeline(
                 "error": str(db_rule_err),
             }
 
+        # =================================================================
+        # OPUS VETO — final review of AI + deterministic findings
+        # Runs regardless of whether RulHub or DB rules produced the
+        # deterministic findings. Can confirm/drop/modify/add findings.
+        # =================================================================
+        try:
+            from app.config import settings as _veto_settings
+            _veto_enabled = bool(getattr(_veto_settings, "VALIDATION_OPUS_VETO_ENABLED", False))
+            if _veto_enabled and (ai_issues or db_rule_issues):
+                from app.services.validation.tiered_validation import _run_opus_veto_pass
+                import asyncio as _asyncio
+                _veto_timeout = float(getattr(_veto_settings, "VALIDATION_VETO_TIMEOUT_SECONDS", 90))
+                try:
+                    vetted_findings = await _asyncio.wait_for(
+                        _run_opus_veto_pass(
+                            document_data=db_rule_payload if 'db_rule_payload' in dir() else {},
+                            document_type=primary_doc_type if 'primary_doc_type' in dir() else "letter_of_credit",
+                            ai_findings=[i for i in (ai_issues or []) if isinstance(i, dict)],
+                            deterministic_findings=[i for i in (db_rule_issues or []) if isinstance(i, dict)],
+                        ),
+                        timeout=_veto_timeout,
+                    )
+                    # Replace db_rule_issues with vetted findings (Opus has final say)
+                    db_rule_issues = vetted_findings
+                    logger.info("Opus veto completed: %d findings after review", len(vetted_findings))
+                except _asyncio.TimeoutError:
+                    logger.warning("Opus veto timed out after %ss — keeping unvetted findings", _veto_timeout)
+                except Exception as _veto_exc:
+                    logger.warning("Opus veto failed — keeping unvetted findings: %s", _veto_exc)
+        except Exception:
+            pass  # Veto is advisory — never block the pipeline
+
         # Run v2 CrossDocValidator
         from app.services.validation.crossdoc_validator import CrossDocValidator
         crossdoc_validator = CrossDocValidator()

@@ -642,16 +642,17 @@ _LC_DOCUMENT_TYPES = {
 def _tier_chain_for_document(document_type: str) -> Tuple[str, ...]:
     """Pick the tier escalation order based on document type.
 
-    ALL documents now start at L2 (Sonnet 4.6). The cheap L1 (GPT-4.1)
-    was consistently dropping non-critical fields (lc_number, hs_code,
-    inspection_date, invoice_date) on supporting docs while passing the
-    escalation check because 2-3 critical fields were enough. The cost
-    delta is ~$0.02-0.05 per validation — not worth the quality loss.
+    LC-family documents start at L2 (Sonnet) because the MT700 structure
+    needs careful parsing. Supporting docs start at L1 (GPT-4.1) and
+    escalate to L2→L3 if critical fields are missing.
 
-    Escalation to L3 (Opus 4.6) still only fires when L2 misses critical
-    fields.
+    Respects EXTRACTION_VISION_L1_MODEL env var — if set, the operator
+    wants L1 in the chain.
     """
-    return ("L2", "L3")
+    lc_types = {"letter_of_credit", "swift_message", "lc_application", "standby_letter_of_credit"}
+    if document_type in lc_types:
+        return ("L2", "L3")
+    return ("L1", "L2", "L3")
 
 
 async def extract_document_multimodal_first(
