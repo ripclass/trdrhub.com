@@ -950,7 +950,8 @@ These documents may be bank-formatted PDFs, scanned documents, or plain text.
 
 IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
-2. If a field is not found, return null - do NOT guess
+2. If a field label is on the document but the value is blank or unclear, include the key with an empty string ""
+3. If a field is NOT on the document at all, OMIT the key entirely from your output - do NOT return null, do NOT guess
 3. For amounts, include the full number without currency symbols
 4. For dates, use ISO format (YYYY-MM-DD) when possible
 5. Look for LC/Credit reference numbers - they link the invoice to the LC
@@ -982,7 +983,7 @@ OPTIONAL FIELDS:
 - exporter_bin: Exporter BIN (if shown)
 - exporter_tin: Exporter TIN (if shown)
 
-Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
+Return a JSON object. Include ONLY keys for fields that are actually present on the document. OMIT keys for fields that are not on the document — do not include them with null.
 
 ---
 DOCUMENT TEXT:
@@ -1193,7 +1194,8 @@ These may be ocean B/Ls, air waybills, or multimodal transport documents.
 
 IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
-2. If a field is not found, return null - do NOT guess
+2. If a field label is on the document but the value is blank or unclear, include the key with an empty string ""
+3. If a field is NOT on the document at all, OMIT the key entirely from your output - do NOT return null, do NOT guess
 3. For dates, use ISO format (YYYY-MM-DD) when possible
 4. The "shipped on board" date is CRITICAL for LC compliance
 5. Port names should be extracted exactly as written
@@ -1227,7 +1229,7 @@ OPTIONAL FIELDS:
 - exporter_bin: Exporter BIN (if shown)
 - exporter_tin: Exporter TIN (if shown)
 
-Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
+Return a JSON object. Include ONLY keys for fields that are actually present on the document. OMIT keys for fields that are not on the document — do not include them with null.
 
 ---
 DOCUMENT TEXT:
@@ -1490,7 +1492,8 @@ These documents detail the contents of shipments and must match the commercial i
 
 IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
-2. If a field is not found, return null - do NOT guess
+2. If a field label is on the document but the value is blank or unclear, include the key with an empty string ""
+3. If a field is NOT on the document at all, OMIT the key entirely from your output - do NOT return null, do NOT guess
 3. Package counts and weights must be exact
 4. Marks and numbers must be captured exactly as written
 5. Be precise - banks check packing details against LC requirements
@@ -1521,7 +1524,7 @@ OPTIONAL FIELDS:
 - exporter_bin: Exporter BIN (if shown)
 - exporter_tin: Exporter TIN (if shown)
 
-Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
+Return a JSON object. Include ONLY keys for fields that are actually present on the document. OMIT keys for fields that are not on the document — do not include them with null.
 
 ---
 DOCUMENT TEXT:
@@ -1671,7 +1674,8 @@ IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
 2. The country of origin is CRITICAL - extract exactly as stated
 3. Certifying authority/chamber must be captured
-4. If a field is not found, return null - do NOT guess
+4. If a field label is on the document but the value is blank, include the key with ""
+5. If a field is NOT on the document at all, OMIT the key from your output - do NOT return null
 5. Be precise - origin certificates affect duty rates and LC compliance
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
@@ -1695,7 +1699,7 @@ OPTIONAL FIELDS:
 - transport_details: Shipping information
 - marks_and_numbers: Shipping marks
 
-Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
+Return a JSON object. Include ONLY keys for fields that are actually present on the document. OMIT keys for fields that are not on the document — do not include them with null.
 
 ---
 DOCUMENT TEXT:
@@ -1798,7 +1802,8 @@ IMPORTANT RULES:
 2. Insurance amount and coverage percentage are CRITICAL
 3. The insured value must typically be invoice value + 10% (CIF + 10%)
 4. Risk coverage types (All Risks, ICC-A, etc.) must be captured
-5. If a field is not found, return null - do NOT guess
+5. If a field label is on the document but the value is blank, include the key with ""
+6. If a field is NOT on the document at all, OMIT the key from your output - do NOT return null
 6. Be precise - banks verify insurance coverage against LC requirements
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
@@ -1823,7 +1828,7 @@ OPTIONAL FIELDS:
 - claims_payable_at: Where claims are paid
 - survey_agent: Survey/claims agent
 
-Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
+Return a JSON object. Include ONLY keys for fields that are actually present on the document. OMIT keys for fields that are not on the document — do not include them with null.
 
 ---
 DOCUMENT TEXT:
@@ -1936,7 +1941,8 @@ IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
 2. Inspection agency/company name is CRITICAL (must be approved agency)
 3. Inspection result (passed/failed) must be captured
-4. If a field is not found, return null - do NOT guess
+4. If a field label is on the document but the value is blank, include the key with ""
+5. If a field is NOT on the document at all, OMIT the key from your output - do NOT return null
 5. Be precise - banks verify inspection agency against LC requirements
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
@@ -1959,7 +1965,7 @@ OPTIONAL FIELDS:
 - inspector_name: Name of the inspector
 - inspection_location: Where inspection took place
 
-Return a JSON object with EXACTLY these canonical keys only. Use null for any field not found. Do not add extra keys.
+Return a JSON object. Include ONLY keys for fields that are actually present on the document. OMIT keys for fields that are not on the document — do not include them with null.
 
 ---
 DOCUMENT TEXT:
