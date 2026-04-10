@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useValidate, type ValidationError } from "@/hooks/use-lcopilot";
+import { useValidate, parseExtractionResponse, type ValidationError } from "@/hooks/use-lcopilot";
 import { ExtractionReview } from "@/pages/exporter/ExtractionReview";
 import { useValidationProgress, type UseValidationProgressState } from "@/hooks/useValidationProgress";
 import { cn } from "@/lib/utils";
@@ -1377,7 +1377,8 @@ export default function ExportLCUpload({
       // and sees the review appear below their uploads; validation still
       // navigates away when they hit "Start Validation".
       if (jobId) {
-        setExtractionPayload(response);
+        const validated = parseExtractionResponse(response);
+        setExtractionPayload(validated);
         console.log('✅ Extraction complete, showing inline review. jobId:', jobId);
         // Scroll the review into view once React renders it.
         setTimeout(() => {

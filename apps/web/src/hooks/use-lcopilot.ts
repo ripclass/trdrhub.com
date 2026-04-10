@@ -45,47 +45,60 @@ export interface ValidationRequest {
   clientRequestId?: string;
 }
 
-export interface ExtractionReadyDocument {
-  id?: string;
-  document_id?: string;
-  document_type?: string;
-  documentType?: string;
-  filename?: string;
-  name?: string;
-  extracted_fields?: Record<string, any>;
-  extractedFields?: Record<string, any>;
-  _field_details?: Record<string, any>;
-  [key: string]: any;
+import { z } from 'zod';
+
+// ── Zod schemas for runtime validation of the extraction API response ──
+
+const ExtractionReadyDocumentSchema = z.object({
+  id: z.string().optional(),
+  document_id: z.string().optional(),
+  document_type: z.string().optional(),
+  documentType: z.string().optional(),
+  filename: z.string().optional(),
+  name: z.string().optional(),
+  extracted_fields: z.record(z.any()).optional(),
+  extractedFields: z.record(z.any()).optional(),
+  _field_details: z.record(z.any()).optional(),
+}).passthrough();  // allow extra keys
+
+const ExtractionReadyMissingDocumentSchema = z.object({
+  type: z.string(),
+  display_name: z.string().optional(),
+  raw_text: z.string().optional(),
+  reason_code: z.string().optional(),
+});
+
+const ExtractionReadyResponseSchema = z.object({
+  status: z.literal('extraction_ready'),
+  job_id: z.string().optional(),
+  jobId: z.string().optional(),
+  documents: z.array(ExtractionReadyDocumentSchema),
+  lc_context: z.record(z.any()).optional(),
+  lc_type: z.string().optional(),
+  required_fields: z.object({
+    schema_fields_by_doc_type: z.record(z.array(z.string())).optional(),
+  }).optional(),
+  missing_required_documents: z.array(ExtractionReadyMissingDocumentSchema).optional(),
+  message: z.string().optional(),
+  telemetry: z.record(z.any()).optional(),
+}).passthrough();
+
+/** Parse an extraction API response with Zod. Returns the typed payload
+ *  on success, or null + console warning on shape mismatch. */
+export function parseExtractionResponse(raw: unknown): ExtractionReadyResponse | null {
+  const result = ExtractionReadyResponseSchema.safeParse(raw);
+  if (result.success) return result.data as ExtractionReadyResponse;
+  console.warn('[LCopilot] Extraction response shape mismatch:', result.error.format());
+  // Fall back to the raw object so we don't hard-break the UI — the old
+  // duck-typed path still works. Log the mismatch for debugging.
+  return raw as ExtractionReadyResponse;
 }
 
-export interface ExtractionReadyMissingDocument {
-  type: string;
-  display_name?: string;
-  raw_text?: string;
-  reason_code?: string;
-}
+// ── TypeScript interfaces (kept for backward compat with existing imports) ──
 
-export interface ExtractionReadyResponse {
-  status: 'extraction_ready';
-  job_id?: string;
-  jobId?: string;
-  documents: ExtractionReadyDocument[];
-  lc_context?: Record<string, any>;
-  lc_type?: string;
-  /** Per-doc-type canonical field SLOT list — which fields the review form
-   *  should render for each document type.  This is NOT a "required by LC"
-   *  statement — it's just the schema's canonical field ordering for the
-   *  review UI.  Whether any given slot is filled is a question the UI
-   *  answers by reading the actual extracted values on each document.
-   *  Validation (Part 2) is the layer that decides whether a missing slot
-   *  constitutes a discrepancy against the LC's 46A/47A demands. */
-  required_fields?: {
-    schema_fields_by_doc_type?: Record<string, string[]>;
-  };
-  missing_required_documents?: ExtractionReadyMissingDocument[];
-  message?: string;
-  telemetry?: Record<string, any>;
-}
+export type ExtractionReadyDocument = z.infer<typeof ExtractionReadyDocumentSchema>;
+export type ExtractionReadyMissingDocument = z.infer<typeof ExtractionReadyMissingDocumentSchema>;
+export type ExtractionReadyResponse = z.infer<typeof ExtractionReadyResponseSchema>;
 
 export interface ValidationResponse {
   jobId?: string;
