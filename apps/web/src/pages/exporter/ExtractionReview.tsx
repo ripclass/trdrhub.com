@@ -527,17 +527,17 @@ export function ExtractionReview({
   const jobId = propJobId ?? payload?.jobId ?? payload?.job_id ?? null;
 
   const [docSections, setDocSections] = useState<DocSectionState[]>([]);
-  const [missingDocsAcknowledged, setMissingDocsAcknowledged] = useState<boolean>(false);
+  // Whether the LC's required-documents list includes types the user didn't
+  // upload.  Drives the warning in the Start Validation footer — no separate
+  // "acknowledge" step; the user either goes back to upload or clicks
+  // "Start Validation Anyway" which IS the validation trigger.
+  const hasMissingDocs =
+    Array.isArray(payload?.missing_required_documents) &&
+    payload!.missing_required_documents!.length > 0;
   // Per-card collapse state — first card expanded by default, rest collapsed.
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   const toggleCard = (key: string) =>
     setExpandedCards((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  // Reset the acknowledgement whenever the set of missing docs changes so the
-  // user sees the warning again if they come back after uploading more files.
-  useEffect(() => {
-    setMissingDocsAcknowledged(false);
-  }, [payload?.missing_required_documents?.map((m) => m.type).join(',')]);
 
   useEffect(() => {
     if (!payload) {
@@ -588,10 +588,6 @@ export function ExtractionReview({
   );
   const totalFilled = totalRequired - totalEmpty;
 
-  const hasUnacknowledgedMissingDocs =
-    Array.isArray(payload?.missing_required_documents) &&
-    payload!.missing_required_documents!.length > 0 &&
-    !missingDocsAcknowledged;
 
   const handleFieldChange =
     (docIdx: number, fieldIdx: number) =>
@@ -742,51 +738,7 @@ export function ExtractionReview({
               </AlertDescription>
             </Alert>
           )}
-          {Array.isArray(payload.missing_required_documents) &&
-            payload.missing_required_documents.length > 0 &&
-            !missingDocsAcknowledged && (
-              <Alert className="mt-4 border-red-500/40 bg-red-50 dark:bg-red-950/20">
-                <AlertCircle className="w-4 h-4 text-red-600" />
-                <AlertTitle>
-                  Your LC requires {payload.missing_required_documents.length}{' '}
-                  document{payload.missing_required_documents.length === 1 ? '' : 's'} you haven't uploaded
-                </AlertTitle>
-                <AlertDescription className="space-y-3">
-                  <ul className="list-disc pl-5 text-sm space-y-1 mt-2">
-                    {payload.missing_required_documents.map((m, i) => (
-                      <li key={`${m.type}-${i}`}>
-                        <span className="font-medium">{m.display_name || m.type}</span>
-                        {m.raw_text ? (
-                          <span className="text-muted-foreground"> — {m.raw_text}</span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-sm">
-                    You can validate without these, but the engine will flag them as missing on
-                    the results page. If you have them, go back and upload; otherwise acknowledge
-                    below to continue.
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleBack}
-                    >
-                      <ArrowLeft className="w-4 h-4 mr-2" />
-                      Upload missing documents
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setMissingDocsAcknowledged(true)}
-                    >
-                      Continue without them
-                    </Button>
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
+          {/* Missing-docs warning moved to the Start Validation footer */}
         </CardContent>
       </Card>
 
@@ -955,38 +907,84 @@ export function ExtractionReview({
 
       {/* Start validation action bar */}
       <Card className="shadow-soft border-0">
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 space-y-4">
+          {/* Missing-docs warning — inline, right above the action button */}
+          {hasMissingDocs && (
+            <div className="rounded-lg border border-amber-400/50 bg-amber-50 dark:bg-amber-950/20 p-4 space-y-2">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="font-medium text-foreground">
+                    Your LC requires {payload!.missing_required_documents!.length}{' '}
+                    document{payload!.missing_required_documents!.length === 1 ? '' : 's'}{' '}
+                    you haven't uploaded
+                  </p>
+                  <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
+                    {payload!.missing_required_documents!.map((m, i) => (
+                      <li key={`miss-${i}`}>
+                        <span className="font-medium text-foreground">{m.display_name || m.type}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Validation will flag these as missing-document discrepancies. If you have them, go
+                    back and upload. Otherwise proceed — the examiner will note what's absent.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="bg-gradient-exporter p-2 rounded-lg flex-shrink-0">
                 <ShieldCheck className="w-5 h-5 text-primary-foreground" />
               </div>
               <div className="min-w-0">
-                <p className="font-medium">Ready to validate?</p>
+                <p className="font-medium">
+                  {hasMissingDocs ? 'Proceed with incomplete set?' : 'Ready to validate?'}
+                </p>
                 <p className="text-sm text-muted-foreground">
-                  {hasUnacknowledgedMissingDocs
-                    ? `${payload?.missing_required_documents?.length ?? 0} required document${(payload?.missing_required_documents?.length ?? 0) === 1 ? '' : 's'} missing — acknowledge the warning above to continue.`
+                  {hasMissingDocs
+                    ? 'Review the transcribed values above, then start validation. Missing documents will be flagged.'
                     : 'Review the transcribed values above and correct anything the extractor got wrong, then run validation.'}
                 </p>
               </div>
             </div>
-            <Button
-              onClick={handleStartValidation}
-              disabled={isStartingValidation || !jobId || hasUnacknowledgedMissingDocs}
-              className="min-w-[180px] hover:opacity-90 bg-gradient-exporter"
-            >
-              {isStartingValidation ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Starting…
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="w-4 h-4 mr-2" />
-                  Start Validation
-                </>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {hasMissingDocs && (
+                <Button
+                  variant="outline"
+                  onClick={handleBack}
+                  disabled={isStartingValidation}
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Upload missing
+                </Button>
               )}
-            </Button>
+              <Button
+                onClick={handleStartValidation}
+                disabled={isStartingValidation || !jobId}
+                className="min-w-[180px] hover:opacity-90 bg-gradient-exporter"
+              >
+                {isStartingValidation ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Starting…
+                  </>
+                ) : hasMissingDocs ? (
+                  <>
+                    <ShieldCheck className="w-4 h-4 mr-2" />
+                    Start Validation Anyway
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4 mr-2" />
+                    Start Validation
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
