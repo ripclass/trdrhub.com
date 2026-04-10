@@ -89,6 +89,7 @@ class SessionStatus(str, Enum):
     CREATED = "created"
     UPLOADING = "uploading"
     PROCESSING = "processing"
+    EXTRACTION_READY = "extraction_ready"
     COMPLETED = "completed"
     FAILED = "failed"
 

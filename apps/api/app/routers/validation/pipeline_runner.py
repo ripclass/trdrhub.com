@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any
 
+from app.models import SessionStatus
 from app.routers.validation.result_finalization import bind_shared as bind_result_finalization_shared
 from app.routers.validation.result_finalization import finalize_validation_result
 from app.routers.validation.session_setup import bind_shared as bind_session_setup_shared
@@ -570,7 +571,7 @@ def _build_extraction_only_response(*, setup_state: dict, payload: dict, db: Any
         extracted_data["_required_fields"] = required_fields
         extracted_data["_extraction_ready_at"] = __import__("datetime").datetime.utcnow().isoformat() + "Z"
         validation_session.extracted_data = extracted_data
-        validation_session.status = "extraction_ready"
+        validation_session.status = SessionStatus.EXTRACTION_READY.value
         try:
             db.commit()
             db.refresh(validation_session)

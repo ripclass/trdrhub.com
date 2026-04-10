@@ -1080,6 +1080,11 @@ const mapIssues = (
       isbpDescription: issue?.isbp_description ?? undefined,
       auto_generated: issue?.auto_generated ?? false,
       extraction_confidence: confidence,
+      // New validation fields from clause matcher / crossdoc matcher
+      lc_clause: issue?.lc_clause ?? undefined,
+      impact: issue?.impact ?? undefined,
+      source_layer: issue?.source_layer ?? undefined,
+      field_name: issue?.field_name ?? issue?.field ?? undefined,
     };
   });
 };

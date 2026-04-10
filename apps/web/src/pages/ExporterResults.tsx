@@ -3771,7 +3771,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           }}
           className="space-y-6"
         >
-          <TabsList className={cn("grid w-full", isExtractionResolutionStage ? "grid-cols-2" : "grid-cols-4")}>
+          <TabsList className={cn("grid w-full", isExtractionResolutionStage ? "grid-cols-2" : "grid-cols-3")}>
             {isExtractionResolutionStage ? (
               <>
                 <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
@@ -3780,7 +3780,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             ) : (
               <>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
                 <TabsTrigger value="discrepancies" className="relative">
                   Issues ({totalDiscrepancies})
                   {totalDiscrepancies > 0 && (
@@ -4133,6 +4132,65 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </CardContent>
               </Card>
             </div>
+
+            {/* Document Compliance Grid — compact doc status view */}
+            {sortedDocuments.length > 0 && (
+              <Card className="shadow-soft border border-border/60">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Document Compliance</CardTitle>
+                  <CardDescription>Status of each document in the presentation set</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {sortedDocuments.map((doc) => {
+                      const docIssueCount = issueCards.filter(
+                        (ic) => (ic.documents ?? []).some(
+                          (d) => d === doc.typeKey || d === doc.type || d === doc.name
+                        )
+                      ).length;
+                      const statusIcon = doc.status === 'success'
+                        ? <CheckCircle className="w-4 h-4 text-emerald-600" />
+                        : doc.status === 'error'
+                        ? <XCircle className="w-4 h-4 text-destructive" />
+                        : <AlertTriangle className="w-4 h-4 text-warning" />;
+                      return (
+                        <details key={doc.id} className="group">
+                          <summary className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-muted/50 cursor-pointer">
+                            {statusIcon}
+                            <span className="text-sm font-medium flex-1">
+                              {getTruthfulDocumentTypeLabel(doc.filename, doc.typeKey || doc.type)}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {Object.keys(doc.extractedFields || {}).length} fields
+                            </span>
+                            {docIssueCount > 0 && (
+                              <Badge variant="outline" className="text-xs bg-destructive/10 text-destructive border-destructive/30">
+                                {docIssueCount} issue{docIssueCount > 1 ? 's' : ''}
+                              </Badge>
+                            )}
+                          </summary>
+                          <div className="pl-10 pb-2 space-y-1">
+                            {Object.entries(doc.extractedFields || {}).slice(0, 12).map(([key, val]) => (
+                              <div key={key} className="flex justify-between text-xs py-0.5">
+                                <span className="text-muted-foreground">{humanizeLabel(key)}</span>
+                                <span className="font-mono text-foreground max-w-[60%] truncate text-right">
+                                  {safeString(typeof val === 'object' ? JSON.stringify(val) : String(val ?? ''))}
+                                </span>
+                              </div>
+                            ))}
+                            {Object.keys(doc.extractedFields || {}).length > 12 && (
+                              <p className="text-xs text-muted-foreground italic">
+                                +{Object.keys(doc.extractedFields || {}).length - 12} more fields
+                              </p>
+                            )}
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
           </TabsContent>
           <TabsContent value="customs" className="space-y-6">

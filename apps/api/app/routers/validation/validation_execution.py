@@ -989,6 +989,71 @@ async def execute_validation_pipeline(
 
         v2_issues = issue_engine.generate_extraction_issues(v2_baseline)
         logger.info("V2 IssueEngine generated %d extraction issues", len(v2_issues))
+
+        # =================================================================
+        # CLAUSE-BASED DOCUMENT MATCHING (46A/47A → per-doc fields)
+        # Reads the LC clauses and checks each document's fields.
+        # This is the deterministic core of Part 2 validation.
+        # =================================================================
+        try:
+            from app.services.validation.clause_parser import parse_lc_clauses
+            from app.services.validation.doc_matcher import (
+                match_clauses_to_documents,
+                check_cross_document_consistency,
+            )
+
+            lc_docs_required = (
+                lc_context.get("documents_required")
+                or lc_context.get("documents_required_detailed")
+                or (extracted_context.get("lc") or {}).get("documents_required")
+                or []
+            )
+            lc_addl_conditions = (
+                lc_context.get("additional_conditions")
+                or (extracted_context.get("lc") or {}).get("additional_conditions")
+                or []
+            )
+
+            parsed_clauses = parse_lc_clauses(lc_docs_required, lc_addl_conditions)
+
+            all_extracted_docs = (
+                extracted_context.get("documents")
+                or payload.get("documents")
+                or []
+            )
+
+            clause_findings = match_clauses_to_documents(parsed_clauses, all_extracted_docs)
+            crossdoc_findings = check_cross_document_consistency(
+                lc_context or {},
+                all_extracted_docs,
+            )
+
+            # Convert findings to issue dicts compatible with the existing pipeline
+            for finding in clause_findings + crossdoc_findings:
+                v2_issues.append({
+                    "id": f"{finding.source_layer}_{finding.document}_{finding.field}",
+                    "title": f"{finding.expected}",
+                    "severity": finding.severity,
+                    "documents": [finding.document],
+                    "expected": finding.expected,
+                    "found": finding.found,
+                    "suggested_fix": finding.suggested_fix,
+                    "description": finding.explanation,
+                    "reference": finding.rule,
+                    "ucp_reference": finding.rule,
+                    "lc_clause": finding.lc_clause,
+                    "impact": finding.impact,
+                    "source_layer": finding.source_layer,
+                    "field_name": finding.field,
+                })
+
+            logger.info(
+                "Clause matcher: %d clause findings + %d crossdoc findings added to v2_issues",
+                len(clause_findings), len(crossdoc_findings),
+            )
+        except Exception:
+            logger.exception("Clause-based document matching failed — continuing without")
+
         workflow_stage_hint = _should_defer_final_validation(
             payload.get("documents") or extracted_context.get("documents") or []
         )
@@ -1303,20 +1368,47 @@ async def execute_validation_pipeline(
             except Exception as rule_watch_err:
                 rule_watch_debug = {"error": str(rule_watch_err)}
 
-            # Three-pass validation pipeline: tiered AI → deterministic rules → Opus veto.
-            # When VALIDATION_TIERED_AI_ENABLED and VALIDATION_OPUS_VETO_ENABLED are both
-            # off in settings, this delegates to the legacy validate_document_async
-            # (deterministic-only) so behavior is unchanged.
-            from app.services.validation.tiered_validation import validate_document_with_pipeline
-            db_rule_issues, db_rules_timed_out = await _await_with_timeout(
-                "DB rules execution",
-                validate_document_with_pipeline(
-                    document_data=db_rule_payload,
-                    document_type=primary_doc_type,
-                ),
-                DB_RULE_TIMEOUT_SECONDS,
-                [],
-            )
+            # =============================================================
+            # RULHUB API PATH (when USE_RULHUB_API=True)
+            # Delegates rule evaluation to api.rulhub.com instead of
+            # running local tiered validation. Falls back to DB path.
+            # =============================================================
+            _use_rulhub = getattr(settings, "USE_RULHUB_API", False)
+            db_rules_timed_out = False
+
+            if _use_rulhub:
+                try:
+                    from app.services.rulhub_client import RulHubRulesAdapter
+                    _rulhub = RulHubRulesAdapter()
+                    _rulhub_result = await _rulhub.evaluate_rules(
+                        rules=[],
+                        input_context={
+                            "document_type": primary_doc_type,
+                            "jurisdiction": primary_jurisdiction,
+                            "fields": db_rule_payload,
+                        },
+                    )
+                    db_rule_issues = _rulhub_result.get("outcomes", [])
+                    logger.info("RulHub API returned %d findings", len(db_rule_issues))
+                except Exception as _rulhub_err:
+                    logger.warning("RulHub API failed, falling back to DB rules: %s", _rulhub_err)
+                    _use_rulhub = False  # fall through to DB path below
+
+            if not _use_rulhub:
+                # Three-pass validation pipeline: tiered AI → deterministic rules → Opus veto.
+                # When VALIDATION_TIERED_AI_ENABLED and VALIDATION_OPUS_VETO_ENABLED are both
+                # off in settings, this delegates to the legacy validate_document_async
+                # (deterministic-only) so behavior is unchanged.
+                from app.services.validation.tiered_validation import validate_document_with_pipeline
+                db_rule_issues, db_rules_timed_out = await _await_with_timeout(
+                    "DB rules execution",
+                    validate_document_with_pipeline(
+                        document_data=db_rule_payload,
+                        document_type=primary_doc_type,
+                    ),
+                    DB_RULE_TIMEOUT_SECONDS,
+                    [],
+                )
 
             # Filter out N/A and passed rules, keep only failures
             db_rule_issues = [

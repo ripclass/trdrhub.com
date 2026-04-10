@@ -333,7 +333,7 @@ def build_router(shared: Any) -> APIRouter:
             }
         """
         from uuid import UUID as _UUID
-        from app.models import ValidationSession as _ValidationSession
+        from app.models import ValidationSession as _ValidationSession, SessionStatus
 
         start_time = time.time()
         timings: Dict[str, float] = {}
@@ -363,11 +363,11 @@ def build_router(shared: Any) -> APIRouter:
             raise HTTPException(status_code=404, detail="Validation session not found")
         if current_user is not None and validation_session.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="Session belongs to a different user")
-        if str(validation_session.status or "").strip().lower() != "extraction_ready":
+        if str(validation_session.status or "").strip().lower() != SessionStatus.EXTRACTION_READY.value:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"Session status is '{validation_session.status}', expected 'extraction_ready'. "
+                    f"Session status is '{validation_session.status}', expected '{SessionStatus.EXTRACTION_READY.value}'. "
                     "Call POST /api/validate/ with extract_only=true first."
                 ),
             )

@@ -430,6 +430,19 @@ export function ExporterIssueCard({
           </div>
         </div>
 
+        {/* LC Clause Quote — shows the exact clause from 46A/47A */}
+        {(issue as any).lc_clause && (
+          <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-300 uppercase tracking-wide flex items-center gap-1">
+              <Scale className="w-3.5 h-3.5" />
+              LC Clause
+            </p>
+            <p className="mt-1 text-sm text-amber-900 dark:text-amber-100 italic">
+              &ldquo;{(issue as any).lc_clause}&rdquo;
+            </p>
+          </div>
+        )}
+
         {/* Color-coded Expected/Found (from V2) */}
         <div className="grid gap-4 md:grid-cols-2">
           <div className="p-3 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
@@ -445,6 +458,17 @@ export function ExporterIssueCard({
             </pre>
           </div>
         </div>
+
+        {/* Impact — what happens if this isn't fixed */}
+        {(issue as any).impact && (
+          <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-lg border border-rose-200 dark:border-rose-800">
+            <p className="text-xs font-medium text-rose-700 dark:text-rose-300 uppercase tracking-wide flex items-center gap-1">
+              <Ban className="w-3.5 h-3.5" />
+              Bank Impact
+            </p>
+            <p className="mt-1 text-sm text-rose-900 dark:text-rose-100">{(issue as any).impact}</p>
+          </div>
+        )}
         
         {/* Tolerance & Confidence Metadata */}
         {(issue.tolerance_applied || issue.extraction_confidence !== undefined) && (

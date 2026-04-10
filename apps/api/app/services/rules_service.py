@@ -684,10 +684,15 @@ def get_rules_service() -> RulesService:
         use_rulhub = getattr(settings, "USE_RULHUB_API", False)
         
         if use_rulhub:
-            # Future: return RulhubAdapter()
-            logger.warning("Rulhub integration not yet implemented, falling back to DBRulesAdapter")
-        
-        # Production: Always use DB-backed adapter
+            try:
+                from app.services.rulhub_client import RulHubRulesAdapter
+                _rules_service = RulHubRulesAdapter()
+                logger.info("Initialized RulesService (RulHubRulesAdapter via api.rulhub.com)")
+                return _rules_service
+            except Exception as exc:
+                logger.error("Failed to init RulHubRulesAdapter, falling back to DB: %s", exc)
+
+        # Fallback / default: DB-backed adapter
         cache_ttl = getattr(settings, "RULESET_CACHE_TTL_MINUTES", 10)
         _rules_service = DBRulesAdapter(cache_ttl_minutes=cache_ttl)
         logger.info(f"Initialized RulesService (DBRulesAdapter, cache TTL: {cache_ttl}min)")

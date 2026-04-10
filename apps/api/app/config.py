@@ -128,14 +128,14 @@ class Settings(BaseSettings):
     API_BASE_URL: str = "http://localhost:8000"
 
     # RulHub Integration
-    USE_RULHUB_API: bool = False
-    
-    # Rules System
+    USE_RULHUB_API: bool = False  # Set True + provide key to route rules through api.rulhub.com
+    RULHUB_API_URL: str = "https://api.rulhub.com"
+    RULHUB_API_KEY: str = ""  # rlh_... (server-side only, from env)
+
+    # Rules System (DB-backed fallback when USE_RULHUB_API=False)
     USE_JSON_RULES: bool = True  # Enable JSON ruleset validation system
     RULESET_CACHE_TTL_MINUTES: int = 10  # Cache TTL for rulesets
     RULES_STORAGE_BUCKET: str = "rules"
-    RULHUB_API_URL: str = ""
-    RULHUB_API_KEY: str = ""
 
     # Stripe configuration
     STRIPE_SECRET_KEY: Optional[str] = None
