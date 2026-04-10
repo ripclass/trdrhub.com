@@ -1380,13 +1380,32 @@ async def execute_validation_pipeline(
             if _use_rulhub:
                 try:
                     from app.services.rulhub_client import RulHubRulesAdapter
+                    import json as _json
+
+                    # Serialize db_rule_payload to plain JSON-safe types.
+                    # v2_baseline fields are FieldResult objects that aren't
+                    # JSON serializable — extract .value from them.
+                    def _jsonable_value(v):
+                        if v is None:
+                            return None
+                        if hasattr(v, 'value'):
+                            return v.value
+                        if hasattr(v, 'model_dump'):
+                            return v.model_dump()
+                        return v
+
+                    _rulhub_payload = dict(db_rule_payload)
+                    for _k in ('lc_number', 'amount', 'currency', 'expiry_date'):
+                        if _k in _rulhub_payload:
+                            _rulhub_payload[_k] = _jsonable_value(_rulhub_payload[_k])
+
                     _rulhub = RulHubRulesAdapter()
                     _rulhub_result = await _rulhub.evaluate_rules(
                         rules=[],
                         input_context={
                             "document_type": primary_doc_type,
                             "jurisdiction": primary_jurisdiction,
-                            "fields": db_rule_payload,
+                            "fields": _rulhub_payload,
                         },
                     )
                     db_rule_issues = _rulhub_result.get("outcomes", [])
