@@ -776,14 +776,14 @@ export function ExtractionReview({
                   </Badge>
                 )}
               </Label>
-              {listItems && listItems.length > 1 && (
+              {listItems && listItems.length > 1 ? (
+                /* Readable list view — replaces the raw textarea for list-shaped fields */
                 <ol className="list-decimal pl-5 space-y-1 text-sm text-foreground rounded-md border border-gray-200/70 bg-secondary/20 p-3">
                   {listItems.map((item, i) => (
                     <li key={`${field.name}-item-${i}`}>{item}</li>
                   ))}
                 </ol>
-              )}
-              {isLongForm ? (
+              ) : isLongForm ? (
                 <Textarea
                   id={`${section.docKey}-${field.name}`}
                   value={field.currentValue}
@@ -931,7 +931,16 @@ export function ExtractionReview({
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-3">
+            {hasMissingDocs && (
+              <Button
+                variant="outline"
+                onClick={handleBack}
+                disabled={isStartingValidation}
+              >
+                Upload remaining doc{payload!.missing_required_documents!.length === 1 ? '' : 's'}
+              </Button>
+            )}
             <Button
               onClick={handleStartValidation}
               disabled={isStartingValidation || !jobId}

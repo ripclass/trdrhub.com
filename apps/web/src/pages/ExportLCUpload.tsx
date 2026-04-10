@@ -2088,52 +2088,9 @@ export default function ExportLCUpload({
                 </div>
               </div>
 
-              {/* Process Button */}
-              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  {isLCResolved && requirementUploadStatus.missing.length > 0 && completedFiles.length > 0 ? (
-                    <span>
-                      Missing LC-required uploads: {requirementUploadStatus.missing.map((item) => item.label).join(', ')}.
-                      You can still run extraction on the current set.
-                    </span>
-                  ) : isReadyToProcess ? (
-                    <span className="text-success">✓ Ready to extract and review</span>
-                  ) : isLCResolved && completedFiles.length === 0 ? (
-                    <span>LC resolved. Upload at least one supporting document to continue.</span>
-                  ) : isLCResolved ? (
-                    <span>Supporting documents are uploaded. Review your set or continue to extraction.</span>
-                  ) : (
-                    <span>Upload and resolve the LC first to unlock extraction.</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={handleSaveDraft}
-                    disabled={isLoadingDraft}
-                  >
-                    {currentDraftId ? "Update Draft" : "Save Draft"}
-                  </Button>
-                  <Button
-                    onClick={handleProcessLC}
-                    disabled={!isReadyToProcess || !quotaState.canValidate}
-                    className="hover:opacity-90 bg-gradient-exporter"
-                  >
-                    {isValidationProcessing ? (
-                      <>
-                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                        Extracting...
-                      </>
-                    ) : (
-                      "Extract & Review"
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Presentation-set confirmation — shown when Extract &
-               *  Review is clicked and the uploaded set doesn't match
-               *  the LC's document requirements exactly. */}
+              {/* Presentation-set confirmation — shown between summary and
+               *  buttons when Extract & Review is clicked and the uploaded
+               *  set doesn't match the LC's requirements exactly. */}
               {presentationConfirm && (
                 <div className="rounded-lg border border-amber-400/50 bg-amber-50 dark:bg-amber-950/20 p-4 space-y-3">
                   <div className="flex items-start gap-3">
@@ -2201,6 +2158,31 @@ export default function ExportLCUpload({
                   </div>
                 </div>
               )}
+
+              {/* Action buttons */}
+              <div className="flex items-center justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleSaveDraft}
+                  disabled={isLoadingDraft}
+                >
+                  {currentDraftId ? "Update Draft" : "Save Draft"}
+                </Button>
+                <Button
+                  onClick={handleProcessLC}
+                  disabled={!isReadyToProcess || !quotaState.canValidate}
+                  className="hover:opacity-90 bg-gradient-exporter"
+                >
+                  {isValidationProcessing ? (
+                    <>
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                      Extracting...
+                    </>
+                  ) : (
+                    "Extract & Review"
+                  )}
+                </Button>
+              </div>
 
               {isValidationProcessing && (
                 <ValidationProgressIndicator
