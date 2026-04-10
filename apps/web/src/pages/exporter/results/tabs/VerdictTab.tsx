@@ -39,6 +39,10 @@ interface VerdictTabProps {
     currency?: string;
     expiryDate?: string;
   };
+  /** 46A Documents Required — raw clause text array from LC */
+  documentsRequired?: Array<string | { raw_text?: string; document_type?: string }>;
+  /** 47A Additional Conditions — string array from LC */
+  additionalConditions?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +133,8 @@ export function VerdictTab({
   complianceScore,
   lcNumber,
   lcData,
+  documentsRequired,
+  additionalConditions,
 }: VerdictTabProps) {
   const dedupedIssues = useMemo(() => deduplicateIssues(issueCards), [issueCards]);
 
@@ -328,6 +334,49 @@ export function VerdictTab({
             </div>
           )}
         </div>
+      )}
+
+      {/* LC Requirements — what the LC demands */}
+      {((documentsRequired && documentsRequired.length > 0) || (additionalConditions && additionalConditions.length > 0)) && (
+        <Card className="border shadow-soft">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">LC Requirements</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {documentsRequired && documentsRequired.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+                  Field 46A — Documents Required
+                </p>
+                <ol className="space-y-1.5 list-decimal list-inside">
+                  {documentsRequired.map((doc, i) => {
+                    const text = typeof doc === 'string' ? doc : (doc?.raw_text ?? '');
+                    if (!text) return null;
+                    return (
+                      <li key={i} className="text-sm text-foreground leading-relaxed">
+                        {text}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            )}
+            {additionalConditions && additionalConditions.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+                  Field 47A — Additional Conditions
+                </p>
+                <ol className="space-y-1.5 list-decimal list-inside">
+                  {additionalConditions.map((cond, i) => (
+                    <li key={i} className="text-sm text-foreground leading-relaxed">
+                      {cond}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

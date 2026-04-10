@@ -3665,69 +3665,9 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             readinessLabel={overviewTruth.readinessLabel}
             readinessSummary={overviewTruth.readinessSummary}
           />
-          {lcClassification && (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Workflow: {workflowLabel}</Badge>
-              <Badge variant="outline">Instrument: {lcInstrumentLabel}</Badge>
-              {revocability !== 'unknown' && (
-                <Badge variant="outline">Terms: {normalizeLcEnumLabel(revocability)}</Badge>
-              )}
-            </div>
-          )}
-          
-          {/* Bank Profile Badge */}
-          {structuredResult?.bank_profile && (
-            <div className="flex items-center gap-2 mt-2">
-              <BankProfileBadge profile={structuredResult.bank_profile as BankProfile} />
-              {structuredResult?.tolerances_applied && Object.keys(structuredResult.tolerances_applied).length > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  • Tolerances applied: {Object.keys(structuredResult.tolerances_applied).join(", ")}
-                </span>
-              )}
-            </div>
-          )}
-          
-          {/* Bank Submission Verdict Card */}
-          {displayBankVerdict && (
-            <BankVerdictCard verdict={displayBankVerdict} />
-          )}
-          
-          {/* OCR Confidence Warning */}
-          {structuredResult?.extraction_confidence && (
-            <OCRConfidenceWarning confidence={structuredResult.extraction_confidence as ExtractionConfidence} />
-          )}
-          
-          {/* Amendment Availability */}
-          {structuredResult?.amendments_available && (structuredResult.amendments_available as AmendmentsAvailable).count > 0 && (
-            <AmendmentCard 
-              amendments={structuredResult.amendments_available as AmendmentsAvailable}
-              onDownloadMT707={(amendment) => {
-                // Download SWIFT MT707 as text file
-                const blob = new Blob([amendment.swift_mt707_text], { type: "text/plain" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `MT707_Amendment_${amendment.field.tag}.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-              }}
-              onDownloadISO20022={(amendment) => {
-                // Download ISO20022 XML file
-                if (!amendment.iso20022_xml) return;
-                const blob = new Blob([amendment.iso20022_xml], { type: "application/xml" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `ISO20022_trad002_Amendment_${amendment.field.tag}.xml`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-              }}
-            />
-          )}
+          {/* Workflow badges, bank profile, REJECT banner, OCR warning,
+              amendments — all removed from above-tabs area.
+              Verdict tab now handles pass/fail, action items, and amendments. */}
           {extractionResolutionSummary.required && (
             <Alert className="mt-4 border-amber-500/40 bg-amber-500/5">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
@@ -3837,6 +3777,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   currency: lcData?.currency ?? lcData?.amount?.currency,
                   expiryDate: lcData?.expiry_date ?? lcData?.expiry?.date,
                 }}
+                documentsRequired={lcData?.documents_required ?? lcData?.documents_required_detailed}
+                additionalConditions={lcData?.additional_conditions}
               />
             )}
 
