@@ -642,14 +642,10 @@ _LC_DOCUMENT_TYPES = {
 def _tier_chain_for_document(document_type: str) -> Tuple[str, ...]:
     """Pick the tier escalation order based on document type.
 
-    ALL documents start at L2 (Sonnet 4.6). L1 (GPT-4.1) is deliberately
-    skipped — it was consistently dropping non-critical fields on supporting
-    docs while passing the escalation check. The quality delta is not worth
-    the cost savings.
-
-    Escalation to L3 (Opus 4.6) fires when L2 misses critical fields.
+    ALL documents start at L1 (configured via EXTRACTION_VISION_L1_MODEL).
+    Escalates to L2 then L3 if critical fields are missing.
     """
-    return ("L2", "L3")
+    return ("L1", "L2", "L3")
 
 
 async def extract_document_multimodal_first(
