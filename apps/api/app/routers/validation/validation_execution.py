@@ -1922,7 +1922,13 @@ async def execute_validation_pipeline(
             session_id=validation_session.id if validation_session else None,
         )
 
-    document_details_for_summaries = payload.get("documents")
+    document_details_for_summaries = (
+        payload.get("documents")
+        or (setup_state.get("extracted_context") or {}).get("documents")
+    )
+    # Also ensure files_list is populated from setup_state if empty
+    if not files_list and document_details_for_summaries:
+        files_list = document_details_for_summaries
     logger.info(
         "Building document summaries: files_list=%d details=%d issues=%d",
         len(files_list) if files_list else 0,

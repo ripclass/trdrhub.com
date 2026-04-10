@@ -664,15 +664,29 @@ async def run_resume_pipeline(
 
     _apply_field_overrides(setup_state, field_overrides or {})
 
+    # Reconstruct payload and files_list from the snapshot so downstream
+    # stages (execution, finalization, response_shaping) see the full
+    # document set instead of an empty placeholder.
+    extracted_context = setup_state.get("extracted_context") or {}
+    snapshot_documents = extracted_context.get("documents") or []
+    resume_payload = dict(payload or {})
+    if not resume_payload.get("documents") and snapshot_documents:
+        resume_payload["documents"] = snapshot_documents
+    # Mirror individual doc-type keys that fact-graph stages expect
+    for doc in snapshot_documents:
+        dt = doc.get("document_type") or ""
+        if dt and dt not in resume_payload:
+            resume_payload[dt] = doc.get("extracted_fields") or {}
+
     _set_pipeline_stage(runtime_context, "validation_execution", timings)
     try:
         execution_state = await execute_validation_pipeline(
             request=request,
             current_user=current_user,
             db=db,
-            payload=payload or {},
-            files_list=[],
-            doc_type=(payload or {}).get("document_type") or "letter_of_credit",
+            payload=resume_payload,
+            files_list=snapshot_documents,
+            doc_type=resume_payload.get("document_type") or "letter_of_credit",
             checkpoint=checkpoint,
             start_time=start_time,
             setup_state=setup_state,
@@ -695,8 +709,8 @@ async def run_resume_pipeline(
             request=request,
             current_user=current_user,
             db=db,
-            payload=payload or {},
-            files_list=[],
+            payload=resume_payload,
+            files_list=snapshot_documents,
             start_time=start_time,
             timings=timings,
             checkpoint=checkpoint,
