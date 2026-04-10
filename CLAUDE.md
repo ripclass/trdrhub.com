@@ -277,13 +277,23 @@ Net across the 2026-04-09 → 2026-04-10 window: roughly **−2500 lines, +300 l
 
 ### Remaining Part 1 backlog
 
-1. **Live verify `dfe065c0`** — the strict Option A refactor is deployed but not yet verified end-to-end with the user. Upload `tmp/live-verification-ideal/LC.pdf` + the 6 supporting docs, STOP at Extract & Review (don't click Start Validation per the extraction-first directive), confirm no blank-slot rendering, no `Not found` chips, no `46A` badges, no jsonish leaks.
-2. **Special Conditions blob on upload page** — the `specialConditionSummary.items` UL still renders the 47A blob on LCs where the vision LLM collapsed 47A into a single string. Low priority, can fix in the frontend with a lightweight splitter on `items[0]` when it contains numbered markers.
-3. **`ai_first_extractor.py` text-fallback prompts** — still use the old null-for-absent-fields pattern. Update them to emit the same 3-case rule so the strict Option A filter is unnecessary as a defensive null-handler.
-4. **Centralize field name aliases** — still split across `launch_pipeline._FIELD_NAME_ALIASES` and `ExtractionReview.FIELD_ALIAS_MAP`. The third source (the deleted derivation module) is gone, so we're down to two.
-5. **Enforce Zod on `ExtractionReadyResponse`** — still duck-typed in `use-lcopilot.ts`. Backend shape drift fails silently.
-6. **Persist `extractionPayload` to sessionStorage** — mid-extraction session expiry still wipes user state on 401 redirect.
-7. **Vestigial `schema_fields_by_doc_type` in extract_only response** — no longer drives rendering (strict Option A reads `extracted_fields` keys directly), just establishes field ordering. Can be simplified further.
+**Completed on 2026-04-10:**
+- ~~Live verify dfe065c0~~ — verified live, zero contract violations.
+- ~~Special Conditions blob~~ — split on inline `1) ... 2) ...` markers via `splitSpecialConditionBlob`. Renders as `<ol>`.
+- ~~ai_first_extractor 3-case rule~~ — all 6 prompts updated. Commit `09d0679d`.
+- ~~Zod on ExtractionReadyResponse~~ — `parseExtractionResponse()` with `safeParse`. Commit `1bf16521`.
+- ~~sessionStorage persistence~~ — `extractionPayload` survives 401 redirects. Commit `341c111e`.
+- ~~Cross-doc context + backfill~~ — deleted entirely. Commit `ead621b1`.
+- ~~Intrinsic-only schemas~~ — cross-ref fields removed from 8 supporting-doc schemas. Commit `f0ea35db`.
+- ~~Insurance policy vs certificate detection~~ — split at 3 layers. Commit `fb7b309b`.
+- ~~Empty signature field filter~~ — hidden from review. Commit `c4858209`.
+
+**Still open:**
+1. **Centralize field name aliases** — still split across `launch_pipeline._FIELD_NAME_ALIASES` and `ExtractionReview.FIELD_ALIAS_MAP`. Down to two sources.
+2. **Vestigial `schema_fields_by_doc_type`** — no longer drives rendering, just establishes field ordering. Can be simplified.
+3. **Unfreeze Part 2 — Validation** — the validator now has clean per-doc transcripts to work with. Needs 46A/47A clause splitter + per-doc matching logic using the alias map.
+4. **Auth hardening** — #1 launch risk. Four auth providers, legacy layers.
+5. **Importer convergence** — waits on exporter extraction + validation spine.
 
 ### Extraction gotchas (learned the hard way)
 
@@ -294,7 +304,7 @@ Net across the 2026-04-09 → 2026-04-10 window: roughly **−2500 lines, +300 l
 - **`_shape_lc_financial_payload`** only has explicit `isinstance(dict)` unwrap branches for **applicant / beneficiary / amount**. Other fields fall through `_first()` which treats any non-empty dict as truthy. If you add a new field that can come back as a dict shape, add an explicit unwrap branch or it will leak.
 - **MT700 timeline regex** at `launch_pipeline.py:2972` re-extracts `issue_date` / `expiry_date` / `latest_shipment_date` from raw text when `lc_format == "mt700"`, overriding whatever the vision LLM returned. This masks upstream shape bugs for date fields specifically — don't be surprised when dates render clean while other fields leak.
 - **Field aliases** live in two places now (down from three after the refactor): `_FIELD_NAME_ALIASES` in `launch_pipeline.py` and `FIELD_ALIAS_MAP` in `ExtractionReview.tsx`. They drift. A new field needs to land in both.
-- **Frontend → backend contract is duck-typed.** `ExtractionReadyResponse` in `use-lcopilot.ts` is a hand-rolled TypeScript interface with `Record<string, any>` fields. No Zod enforcement. Backend shape drift fails silently.
+- **Frontend → backend contract now has Zod enforcement.** `ExtractionReadyResponse` in `use-lcopilot.ts` has Zod schemas validated via `parseExtractionResponse()`. Shape mismatches log a console warning but don't hard-break the UI (falls back to duck-typed path). Fixed in `1bf16521`.
 - **`coerceToString` in `ExtractionReview.tsx`** uses `JSON.stringify` as its fallback for non-string fields. This is a visibility safety net — if any structured data leaks through (jsonish wrapper, array of dicts), it renders visibly instead of silently. Keep the stringify for observability; route complex types out earlier in the pipeline.
 - **Snapshot serializer `_jsonable`** in `pipeline_runner.py` is now type-preserving (Decimal → float, date/datetime → ISO string, Enum → .value, Pydantic → model_dump, bytes → utf-8). Fixed in `a07f8ff9`. Don't regress it back to naive `str(value)`.
 - **Concatenated 46A/47A clauses** — the vision LLM collapses 46A `documents_required` into a single concatenated string on some LCs. Extraction passes this through as-is. DO NOT add a splitter in extraction — if validation needs per-clause access, write the splitter in validation. Reverted commit `9b34140b` was a dead-end.
