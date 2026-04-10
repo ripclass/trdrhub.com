@@ -1748,8 +1748,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   ).toLowerCase();
   const instrumentType = String(lcClassification?.instrument_type ?? "other_or_unknown_undertaking").toLowerCase();
   const revocability = String(lcClassification?.attributes?.revocability ?? "unknown").toLowerCase();
-  // Keep confidence display backward-compatible while workflow/instrument are read from lc_classification.
-  const rawConfidence = structuredResult?.lc_type_confidence ?? lcStructuredData?.lc_type_confidence;
+  // Use real extraction confidence when available, fall back to lc_type_confidence.
+  // lc_type_confidence was historically hardcoded to 0.85 — _extraction_confidence
+  // is the actual LLM extraction confidence and should be preferred.
+  const rawConfidence =
+    lcStructuredData?._extraction_confidence ??
+    (structuredResult as any)?._extraction_confidence ??
+    structuredResult?.lc_type_confidence ??
+    lcStructuredData?.lc_type_confidence;
   const lcTypeConfidenceValue =
     typeof rawConfidence === "number"
       ? Math.round(rawConfidence * 100)
