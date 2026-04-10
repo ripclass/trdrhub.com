@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { IssueCard } from '@/types/lcopilot';
+import { BankProfileBadge } from '../BankProfileBadge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,6 +41,8 @@ interface FindingsTabProps {
   issueCards: IssueCard[];
   amendments?: Amendment[];
   onDownloadMT707?: (amendment: Amendment) => void;
+  /** The full bank profile object — passed straight to BankProfileBadge */
+  bankProfile?: any;
 }
 
 type SeverityFilter = 'all' | 'critical' | 'major' | 'minor';
@@ -209,7 +212,7 @@ function FindingCard({ issue, index }: { issue: IssueCard; index: number }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FindingsTab({ issueCards, amendments, onDownloadMT707 }: FindingsTabProps) {
+export function FindingsTab({ issueCards, amendments, onDownloadMT707, bankProfile }: FindingsTabProps) {
   const [filter, setFilter] = useState<SeverityFilter>('all');
   const deduped = useMemo(() => deduplicateIssues(issueCards), [issueCards]);
 
@@ -275,6 +278,11 @@ export function FindingsTab({ issueCards, amendments, onDownloadMT707 }: Finding
           </Button>
         ))}
       </div>
+
+      {/* Bank examination policy — sets context for how strict findings are judged */}
+      {bankProfile && (
+        <BankProfileBadge profile={bankProfile} />
+      )}
 
       {/* Amendments banner — actionable */}
       {amendments && amendments.length > 0 && (

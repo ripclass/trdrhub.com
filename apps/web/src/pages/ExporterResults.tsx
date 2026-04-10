@@ -4825,6 +4825,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           <TabsContent value="discrepancies" className="space-y-4">
             <FindingsTab
               issueCards={issueCards}
+              bankProfile={structuredResult?.bank_profile ?? null}
               amendments={
                 (structuredResult?.amendments_available as any)?.amendments ??
                 (structuredResult?.amendments_available as any)?.items ??

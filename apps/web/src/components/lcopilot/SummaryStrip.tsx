@@ -72,9 +72,6 @@ export function SummaryStrip({
                   {lcTypeConfidence != null && lcTypeConfidence > 0 && (
                     <span className="text-[10px] text-muted-foreground">{lcTypeConfidence}%</span>
                   )}
-                  {bankName && (
-                    <Badge variant="outline" className="text-[10px] ml-1">{bankName}</Badge>
-                  )}
                 </div>
               )}
             </div>
