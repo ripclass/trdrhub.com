@@ -269,6 +269,31 @@ export function buildValidationProgressCopy(fileCount: number): {
   };
 }
 
+/**
+ * Split a Special Conditions blob that the vision LLM collapsed into a single
+ * string with inline "1) ... 2) ... 3) ..." markers into individual clauses.
+ * Falls back to returning the original items if no inline markers are found.
+ */
+function splitSpecialConditionBlob(items: string[]): string[] {
+  const SPLIT_RE = /\b\d+\)\s/;
+  const TRAILING_JUNK_RE = /[,;\s]+$/;
+  const result: string[] = [];
+  for (const item of items) {
+    const markers = item.match(/\b\d+\)\s/g);
+    if (markers && markers.length >= 2) {
+      const parts = item
+        .split(SPLIT_RE)
+        .map(s => s.replace(TRAILING_JUNK_RE, '').trim())
+        .filter(Boolean);
+      result.push(...parts);
+    } else {
+      const trimmed = item.trim();
+      if (trimmed) result.push(trimmed);
+    }
+  }
+  return result;
+}
+
 function buildLcResolveProgressCopy(): {
   heading: string;
   subheading: string;
@@ -1742,113 +1767,136 @@ export default function ExportLCUpload({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* LC-required document checklist — shown inside Step 2 so the
-             *  user sees "what the LC asks for" immediately above the
-             *  uploader they're about to drop files into. */}
             {!isLCResolved ? (
               <div className="flex items-center gap-3 rounded-lg border border-dashed border-gray-300 p-4 text-sm text-muted-foreground">
                 <Lock className="w-4 h-4" />
                 Upload and resolve the LC first to unlock the supporting-document checklist.
               </div>
             ) : (
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    Supporting documents this LC requires
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Derived from the LC’s documents-required clause. Green means a file is already attached.
-                  </p>
+              <>
+                {/* ── Section 1: LC-required document checklist ── */}
+                <div className="rounded-lg border border-gray-200/70 p-4 bg-secondary/10 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      Supporting documents this LC requires
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Derived from the LC’s documents-required clause. Green means a file is already attached.
+                    </p>
+                  </div>
+
+                  {uploadRequirements.documentRequirements.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {uploadRequirements.documentRequirements.map((requirement) => {
+                        const normalizedType = normalizeDocumentType(requirement.type);
+                        const isFound = completedFiles.some((file) =>
+                          normalizeDocumentType(file.documentType) === normalizedType
+                          || normalizeDocumentType(file.detectedType) === normalizedType,
+                        );
+                        return (
+                          <Badge
+                            key={requirement.key}
+                            variant={isFound ? "default" : "outline"}
+                            className={isFound ? "" : "border-amber-500/40 text-amber-700 bg-amber-500/5"}
+                          >
+                            {isFound ? "\u2713 " : ""}
+                            {requirement.label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">The LC didn’t mention specific document types.</p>
+                  )}
+
+                  {requirementUploadStatus.missing.length === 0 && uploadRequirements.documentRequirements.length > 0 && (
+                    <p className="text-sm text-success">
+                      All required document types are attached.
+                    </p>
+                  )}
+
+                  {(specialConditionSummary.items.length > 0 || specialConditionSummary.placeholderOnly) && (
+                    <div className="border-t border-gray-200/70 pt-3 mt-3">
+                      <p className="text-sm font-medium text-foreground mb-2">Special Conditions</p>
+                      {specialConditionSummary.items.length > 0 ? (
+                        <ol className="list-decimal pl-5 space-y-1 text-sm text-muted-foreground">
+                          {splitSpecialConditionBlob(specialConditionSummary.items).map(
+                            (clause, ci) => (
+                              <li key={`sc-${ci}`}>{clause}</li>
+                            ),
+                          )}
+                        </ol>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {SPECIAL_CONDITIONS_PLACEHOLDER_TEXT}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {uploadRequirements.documentRequirements.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {uploadRequirements.documentRequirements.map((requirement) => {
-                      const normalizedType = normalizeDocumentType(requirement.type);
-                      const isFound = completedFiles.some((file) =>
-                        normalizeDocumentType(file.documentType) === normalizedType
-                        || normalizeDocumentType(file.detectedType) === normalizedType,
-                      );
-                      return (
-                        <Badge
-                          key={requirement.key}
-                          variant={isFound ? "default" : "outline"}
-                          className={isFound ? "" : "border-amber-500/40 text-amber-700 bg-amber-500/5"}
-                        >
-                          {isFound ? "\u2713 " : ""}
-                          {requirement.label}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">The LC didn't mention specific document types.</p>
-                )}
-
-                {requirementUploadStatus.missing.length === 0 && uploadRequirements.documentRequirements.length > 0 && (
-                  <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-foreground">
-                    All required document types are attached. Click Extract &amp; Review below to pull field values.
-                  </div>
-                )}
-
-                {(specialConditionSummary.items.length > 0 || specialConditionSummary.placeholderOnly) && (
-                  <div className="rounded-lg border border-gray-200 p-4 bg-secondary/10">
-                    <p className="text-sm font-medium text-foreground mb-2">Special Conditions</p>
-                    {specialConditionSummary.items.length > 0 ? (
-                      <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
-                        {specialConditionSummary.items.slice(0, 4).map((item, index) => (
-                          <li key={`${item}-${index}`}>{item}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        {SPECIAL_CONDITIONS_PLACEHOLDER_TEXT}
+                {/* ── Section 2: Upload dropzone with LC-required types ── */}
+                <div
+                  {...getRootProps()}
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-6 text-center transition-colors",
+                    isDragActive
+                      ? "border-exporter bg-exporter/5 cursor-pointer"
+                      : "border-gray-200 hover:border-exporter/50 hover:bg-secondary/20 cursor-pointer"
+                  )}
+                >
+                  <input {...getInputProps()} />
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="p-3 rounded-full bg-exporter/10">
+                      <Upload className="w-6 h-6 text-exporter" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-foreground">
+                        {isDragActive ? "Drop files here…" : "Upload Supporting Documents"}
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1 mb-3">
+                        Drag and drop your files here, or click to browse.
                       </p>
-                    )}
+                      {/* Show LC-required types the user still needs to upload */}
+                      {uploadRequirements.documentRequirements.length > 0 ? (
+                        <div className="flex flex-wrap justify-center gap-2 text-xs">
+                          {uploadRequirements.documentRequirements.map((req) => {
+                            const normalizedType = normalizeDocumentType(req.type);
+                            const isFound = completedFiles.some((file) =>
+                              normalizeDocumentType(file.documentType) === normalizedType
+                              || normalizeDocumentType(file.detectedType) === normalizedType,
+                            );
+                            return (
+                              <Badge
+                                key={`drop-${req.key}`}
+                                variant={isFound ? "secondary" : "outline"}
+                                className={isFound ? "opacity-50" : ""}
+                              >
+                                {isFound ? "\u2713 " : ""}
+                                {req.label}
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+                          {quickBadgeTypes.map(type => (
+                            <Badge key={type.value} variant="outline">{type.label}</Badge>
+                          ))}
+                          {hiddenQuickBadgeCount > 0 && (
+                            <Badge variant="secondary">+{hiddenQuickBadgeCount} more in type picker</Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <Button variant="outline" type="button">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Choose Files
+                    </Button>
                   </div>
-                )}
-              </div>
+                </div>
+              </>
             )}
-            <div
-              {...(isLCResolved ? getRootProps() : {})}
-              className={cn(
-                "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
-                isLCResolved
-                  ? isDragActive
-                    ? "border-exporter bg-exporter/5 cursor-pointer"
-                    : "border-gray-200 hover:border-exporter/50 hover:bg-secondary/20 cursor-pointer"
-                  : "border-gray-200 bg-muted/30 opacity-70 cursor-not-allowed"
-              )}
-            >
-              {isLCResolved && <input {...getInputProps()} />}
-              <div className="flex flex-col items-center gap-4">
-                <div className={cn("p-4 rounded-full", isLCResolved ? "bg-exporter/10" : "bg-muted") }>
-                  {isLCResolved ? <Upload className="w-8 h-8 text-exporter" /> : <Lock className="w-8 h-8 text-muted-foreground" />}
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">
-                    {isLCResolved ? (isDragActive ? "Drop supporting documents here..." : "Upload Supporting Documents") : "Supporting uploader locked"}
-                  </h3>
-                  <p className="text-muted-foreground mb-4">
-                    {isLCResolved
-                      ? "Drag and drop your supporting files here, or click to browse"
-                      : "Resolve the LC above to unlock supporting document upload."}
-                  </p>
-                  <div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
-                    {quickBadgeTypes.map(type => (
-                      <Badge key={type.value} variant="outline">{type.label}</Badge>
-                    ))}
-                    {hiddenQuickBadgeCount > 0 && (
-                      <Badge variant="secondary">+{hiddenQuickBadgeCount} more in type picker</Badge>
-                    )}
-                  </div>
-                </div>
-                <Button variant="outline" disabled={!isLCResolved}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Choose Files
-                </Button>
-              </div>
-            </div>
 
             {/* Uploaded Files List */}
             {uploadedFiles.length > 0 && (
