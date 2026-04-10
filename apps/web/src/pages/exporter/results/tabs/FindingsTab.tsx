@@ -27,8 +27,19 @@ import type { IssueCard } from '@/types/lcopilot';
 // Types
 // ---------------------------------------------------------------------------
 
+interface Amendment {
+  field?: { tag?: string; name?: string };
+  current_value?: string;
+  proposed_value?: string;
+  swift_mt707_text?: string;
+  iso20022_xml?: string;
+  estimated_fee?: string;
+}
+
 interface FindingsTabProps {
   issueCards: IssueCard[];
+  amendments?: Amendment[];
+  onDownloadMT707?: (amendment: Amendment) => void;
 }
 
 type SeverityFilter = 'all' | 'critical' | 'major' | 'minor';
@@ -198,7 +209,7 @@ function FindingCard({ issue, index }: { issue: IssueCard; index: number }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FindingsTab({ issueCards }: FindingsTabProps) {
+export function FindingsTab({ issueCards, amendments, onDownloadMT707 }: FindingsTabProps) {
   const [filter, setFilter] = useState<SeverityFilter>('all');
   const deduped = useMemo(() => deduplicateIssues(issueCards), [issueCards]);
 
@@ -264,6 +275,55 @@ export function FindingsTab({ issueCards }: FindingsTabProps) {
           </Button>
         ))}
       </div>
+
+      {/* Amendments banner — actionable */}
+      {amendments && amendments.length > 0 && (
+        <Card className="border border-blue-500/30 bg-blue-500/5">
+          <CardContent className="py-4 px-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-blue-400">
+                  {amendments.length} Amendment{amendments.length > 1 ? 's' : ''} Available
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Some discrepancies below can be resolved by amending the LC instead of amending the documents.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 space-y-2">
+              {amendments.map((a, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
+                      {a.field?.name ?? a.field?.tag ?? `Amendment ${i + 1}`}
+                    </p>
+                    {a.current_value && a.proposed_value && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        <span className="text-red-400 line-through">{a.current_value}</span>
+                        {' → '}
+                        <span className="text-emerald-400">{a.proposed_value}</span>
+                      </p>
+                    )}
+                    {a.estimated_fee && (
+                      <p className="text-[10px] text-muted-foreground">Est. fee: {a.estimated_fee}</p>
+                    )}
+                  </div>
+                  {a.swift_mt707_text && onDownloadMT707 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7 border-blue-500/30 text-blue-400 hover:bg-blue-500/10 shrink-0"
+                      onClick={() => onDownloadMT707(a)}
+                    >
+                      Download MT707
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Finding cards */}
       <div className="space-y-4">

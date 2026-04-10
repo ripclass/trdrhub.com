@@ -16,6 +16,7 @@ type Props = {
   complianceScore?: number;
   readinessLabel?: string;
   readinessSummary?: string;
+  bankName?: string;
 };
 
 export function SummaryStrip({
@@ -25,6 +26,7 @@ export function SummaryStrip({
   overallStatus,
   actualIssuesCount,
   complianceScore,
+  bankName,
 }: Props) {
   const structured = data?.structured_result;
   const summary =
@@ -69,6 +71,9 @@ export function SummaryStrip({
                   <Badge variant="secondary" className="text-[10px]">{lcTypeLabel}</Badge>
                   {lcTypeConfidence != null && lcTypeConfidence > 0 && (
                     <span className="text-[10px] text-muted-foreground">{lcTypeConfidence}%</span>
+                  )}
+                  {bankName && (
+                    <Badge variant="outline" className="text-[10px] ml-1">{bankName}</Badge>
                   )}
                 </div>
               )}

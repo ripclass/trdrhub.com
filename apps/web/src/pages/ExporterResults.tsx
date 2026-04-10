@@ -3679,6 +3679,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             advisoryIssuesCount={advisoryFindingsCount}
             complianceScore={complianceScore}
             readinessLabel={overviewTruth.readinessLabel}
+            bankName={(structuredResult?.bank_profile as any)?.name ?? (structuredResult?.bank_profile as any)?.bank_name}
             readinessSummary={overviewTruth.readinessSummary}
           />
           {/* Workflow badges, bank profile, REJECT banner, OCR warning,
@@ -4822,7 +4823,26 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           </TabsContent>}
 
           <TabsContent value="discrepancies" className="space-y-4">
-            <FindingsTab issueCards={issueCards} />
+            <FindingsTab
+              issueCards={issueCards}
+              amendments={
+                (structuredResult?.amendments_available as any)?.amendments ??
+                (structuredResult?.amendments_available as any)?.items ??
+                (Array.isArray(structuredResult?.amendments_available) ? structuredResult.amendments_available : undefined)
+              }
+              onDownloadMT707={(amendment) => {
+                if (!amendment.swift_mt707_text) return;
+                const blob = new Blob([amendment.swift_mt707_text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `MT707_Amendment_${amendment.field?.tag ?? 'LC'}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+            />
           </TabsContent>
         </Tabs>
         

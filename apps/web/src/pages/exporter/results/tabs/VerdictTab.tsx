@@ -326,38 +326,6 @@ export function VerdictTab({
         </Card>
       )}
 
-      {/* Bank + Amendments — actionable cards */}
-      {(bankProfile?.name || (amendmentsCount != null && amendmentsCount > 0)) && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {bankProfile?.name && (
-            <div className="flex items-center gap-3 p-3 rounded-lg border bg-card">
-              <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-                <FileText className="w-4 h-4 text-blue-400" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{bankProfile.name}</p>
-                <p className="text-xs text-muted-foreground">{bankProfile.policy_label || 'Standard tolerance policy'}</p>
-              </div>
-            </div>
-          )}
-          {amendmentsCount != null && amendmentsCount > 0 && (
-            <div className="flex items-center justify-between gap-3 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-blue-400">
-                  {amendmentsCount} Amendment{amendmentsCount > 1 ? 's' : ''} Available
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {amendmentsFee ? `Estimated fee: ${amendmentsFee}` : 'Some discrepancies can be fixed via LC amendment'}
-                </p>
-              </div>
-              <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400 shrink-0 cursor-pointer hover:bg-blue-500/10">
-                View
-              </Badge>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* LC summary — compact */}
       {lcData && (
         <div className="grid gap-3 sm:grid-cols-2 text-sm">
