@@ -187,11 +187,12 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
     "commercial_invoice": {
         "family": "invoice",
         "title": "Commercial / Proforma Invoice",
-        # All field names are the CANONICAL MT700-aligned keys. Every
-        # supporting doc schema includes the LC cross-reference fields
-        # (lc_number, buyer_purchase_order_number, exporter_bin,
-        # exporter_tin) because every LC presentation doc must carry
-        # them — bank examiners look for them on every page.
+        # All field names are the CANONICAL MT700-aligned keys. The schema
+        # lists lc_number / buyer_purchase_order_number / exporter_bin /
+        # exporter_tin as canonical slots the LLM should look for ON the
+        # document — they are NOT populated from the LC context. Under
+        # the three-case rule, if a field isn't physically on the doc,
+        # the key is OMITTED from the extraction output.
         "fields": [
             "invoice_number", "invoice_date", "amount", "currency",
             "seller", "buyer", "applicant", "beneficiary",
@@ -210,9 +211,9 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "Extract the invoice party names exactly as written.",
             "Do not guess HS codes or Incoterms.",
             "quantity / unit_price / amount should be numbers when possible (multi-line-item invoices may return comma-separated strings).",
-            "lc_number is the LC that authorizes this invoice — look for 'LC No.' / 'LC Reference' / 'Credit Number'.",
-            "buyer_purchase_order_number — look for 'Buyer Purchase Order', 'PO No.', 'Order Ref'.",
-            "exporter_bin / exporter_tin — Bangladesh tax IDs, look for 'BIN', 'TIN'.",
+            "lc_number — include ONLY if the invoice itself prints an LC reference labeled 'LC No.' / 'LC Reference' / 'Credit Number'. If not printed on the invoice, OMIT the key per the three-case rule.",
+            "buyer_purchase_order_number — include ONLY if the invoice prints it under 'Buyer Purchase Order', 'PO No.', or 'Order Ref'. Do NOT invent it. Omit if absent.",
+            "exporter_bin / exporter_tin — Bangladesh tax IDs labeled 'BIN' / 'TIN'. Include ONLY if printed on the invoice; omit if absent.",
         ],
     },
     "packing_list": {
@@ -232,7 +233,7 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "Return EXACTLY these key names. `size_breakdown` NOT `packing_size_breakdown`, `total_packages` NOT `number_of_packages`.",
             "Prioritize package counts, weights, dimensions, and marks/numbers.",
             "size_breakdown should be a structured object when possible — e.g. {\"S\": 100, \"M\": 200, \"L\": 300}.",
-            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin are cross-reference fields — look for them on the packing list header.",
+            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — include these ONLY if they are physically printed on the packing list (usually in the header). If they are not on the document, OMIT the keys per the three-case rule.",
         ],
     },
     "transport_document": {
@@ -257,8 +258,8 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "Return EXACTLY these key names. `bl_number` NOT `bill_of_lading_number`, `buyer_purchase_order_number` NOT `buyer_po_number`.",
             "Use the correct field family for the visible transport mode.",
             "If it is AWB, prefer airway_bill_number / airport fields.",
-            "`applicant` is the same party as the LC's applicant (buyer) — often appears on the BL as the notify party. Copy the notify party's name into `applicant` when they match the LC applicant.",
-            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — look for these in the header, body, or 'Shipping Marks' section.",
+            "`applicant` — include ONLY if the document itself has a field labeled Applicant / Buyer / Importer with a value. Do NOT copy the notify party into applicant. Do NOT invent this field from other information.",
+            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — include these ONLY if they are physically printed on the document (header, body, or 'Shipping Marks' section). If they are not on the document, OMIT the keys per the three-case rule.",
         ],
     },
     "regulatory_document": {
@@ -277,7 +278,7 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "Return EXACTLY these key names. `exporter` NOT `exporter_name`, `importer` NOT `importer_name`, `issuing_authority` NOT `certifying_authority`.",
             "Use certificate_number for most certificates, license_number for licenses, declaration_reference for customs declarations.",
             "issuing_authority — for Bangladesh COOs this is usually 'EPB' / 'Export Promotion Bureau' or 'Chamber of Commerce'.",
-            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — cross-reference fields, look for them in the header.",
+            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — include these ONLY if they are physically printed in the certificate header. If they are not on the document, OMIT the keys per the three-case rule.",
         ],
     },
     "insurance_document": {
@@ -336,7 +337,7 @@ DOC_TYPE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "`inspection_agency` is SGS / Intertek / Bureau Veritas / etc.",
             "`inspection_date` is when the inspection happened; `issue_date` is when the cert was issued.",
             "Use inspection_result / quality_finding / analysis_result based on the visible document type.",
-            "Always return lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin as cross-reference fields.",
+            "lc_number / buyer_purchase_order_number / exporter_bin / exporter_tin — include these ONLY if they are physically printed on the inspection certificate. If they are not on the document, OMIT the keys per the three-case rule.",
         ],
     },
     "supporting_document": {
@@ -549,7 +550,6 @@ async def _attempt_vision_tier(
     source_mode: str,
     subtype_hint: Optional[str],
     extracted_text: str,
-    cross_doc_context: Optional[Dict[str, Any]] = None,
     attempt_record: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Run a single vision extraction attempt at a given tier (L1/L2/L3).
@@ -567,7 +567,6 @@ async def _attempt_vision_tier(
         schema=schema,
         subtype_hint=subtype_hint,
         extracted_text=extracted_text,
-        cross_doc_context=cross_doc_context,
     )
     system_prompt = (
         "You are a senior trade-finance document examiner extracting "
@@ -686,23 +685,18 @@ async def extract_document_multimodal_first(
     content_type: Optional[str],
     extracted_text: str = "",
     subtype_hint: Optional[str] = None,
-    cross_doc_context: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Vision LLM extraction with tier escalation.
 
-    For LC documents, starts at L2 (Sonnet 4.6) — the cheap L1 was
-    inconsistent at SWIFT MT700 field naming. For supporting docs, starts
-    at L1 (GPT-4.1) to keep costs reasonable.
+    Blind per-document OCR. Each call sees exactly one document —
+    no cross-referencing to the LC or other documents. That separation
+    is enforced at the extraction boundary so validation (Part 2) can
+    judge what's actually present on each doc, not a cross-mixed view.
 
     `extracted_text` is the raw PDF text (from pdfminer/pypdf or OCR) — when
     present, it's sent alongside the page images so the LLM has both
     visual layout AND character-perfect text content. Empty string means
     vision-only.
-
-    `cross_doc_context` is the LC's already-extracted summary (lc_number,
-    amount, currency, beneficiary, applicant, ports, etc.). When extracting
-    a supporting doc, this lets the LLM cross-reference the LC's values
-    instead of guessing in isolation.
     """
     if not file_bytes or not _is_supported_content_type(content_type, filename):
         return None
@@ -743,7 +737,6 @@ async def extract_document_multimodal_first(
             source_mode=source_mode,
             subtype_hint=subtype_hint,
             extracted_text=extracted_text,
-            cross_doc_context=cross_doc_context,
             attempt_record=attempt_record,
         )
         if result is None:
@@ -854,7 +847,6 @@ def _build_multimodal_prompt(
     schema: Dict[str, Any],
     subtype_hint: Optional[str],
     extracted_text: str,
-    cross_doc_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     fields = schema.get("fields") or []
     notes = schema.get("notes") or []
@@ -871,37 +863,6 @@ def _build_multimodal_prompt(
     )
     if subtype_hint:
         header += f"Subtype hint: {subtype_hint}\n"
-
-    # Cross-doc context (only sent for supporting docs, never for the LC).
-    context_block = ""
-    if cross_doc_context and isinstance(cross_doc_context, dict):
-        ctx_lines = []
-        for key in (
-            "lc_number",
-            "amount",
-            "currency",
-            "applicant",
-            "beneficiary",
-            "port_of_loading",
-            "port_of_discharge",
-            "latest_shipment_date",
-            "expiry_date",
-            "buyer_purchase_order_number",
-            "exporter_bin",
-            "exporter_tin",
-        ):
-            if cross_doc_context.get(key) is not None:
-                ctx_lines.append(f"  {key}: {cross_doc_context[key]}")
-        if ctx_lines:
-            context_block = (
-                "\n\nLC CROSS-REFERENCE CONTEXT (the LC this document is presented under):\n"
-                + "\n".join(ctx_lines)
-                + "\nWhen extracting fields below, cross-check these LC values. "
-                "If the supporting document carries a copy of any of these "
-                "(e.g. lc_number, buyer_purchase_order_number, exporter_bin), "
-                "return them under the canonical key names — even if the doc "
-                "labels them differently."
-            )
 
     # The "see everything" instruction.  Three-case rule for whether a
     # key should appear in the output JSON:
@@ -967,7 +928,7 @@ def _build_multimodal_prompt(
             f"```\n{support_text}\n```"
         )
 
-    return header + one_shot + instruction + context_block + text_block
+    return header + one_shot + instruction + text_block
 
 
 async def _build_visual_parts(*, file_bytes: bytes, content_type: Optional[str], filename: str, max_pages: int) -> Tuple[List[Dict[str, str]], str]:
