@@ -1751,7 +1751,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   // Use real extraction confidence when available, fall back to lc_type_confidence.
   // lc_type_confidence was historically hardcoded to 0.85 — _extraction_confidence
   // is the actual LLM extraction confidence and should be preferred.
+  // It lives in lc_context (sessionStorage extraction payload), not in lc_structured.
+  const _extractionConfidenceFromSession = useMemo(() => {
+    try {
+      const raw = sessionStorage.getItem('lcopilot_extraction_payload');
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      return p?.lc_context?._extraction_confidence ?? null;
+    } catch { return null; }
+  }, []);
   const rawConfidence =
+    _extractionConfidenceFromSession ??
     lcStructuredData?._extraction_confidence ??
     (structuredResult as any)?._extraction_confidence ??
     structuredResult?.lc_type_confidence ??
