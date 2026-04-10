@@ -424,6 +424,17 @@ function buildDocSectionState(
     if (!(key in extracted)) return false;  // key not in dict → field wasn't on the doc
     const raw = extracted[key];
     if (raw === null || raw === undefined) return false;  // null → treat as absent
+    // Drop empty signature / seal / stamp fields — these are printed
+    // labels on a physical form that will always be blank in a digital
+    // PDF. They're architecturally correct per the 3-case rule (label
+    // visible, value blank → empty string) but they clutter the review
+    // screen with un-fillable inputs.
+    if (
+      raw === '' &&
+      /signature|seal|stamp|designation/i.test(key)
+    ) {
+      return false;
+    }
     return true;
   };
 
