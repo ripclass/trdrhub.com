@@ -257,7 +257,37 @@ function shouldRenderAsTextarea(fieldName: string, value: string): boolean {
 // human-readable text.
 function prettyFormatLongValue(value: string): string {
   if (!value) return '';
-  // Python list repr: "['item one', 'item two']" -> "item one\nitem two"
+  // Helper: split a string on inline "1) foo 2) bar 3) baz" markers when
+  // present, so downstream rendering can treat it as a real list.
+  const splitInlineNumbered = (s: string): string[] | null => {
+    const markers = s.match(/\b\d+\)\s/g);
+    if (!markers || markers.length < 2) return null;
+    const parts = s
+      .split(/\b\d+\)\s/)
+      .map(p => p.replace(/[,;\s]+$/, '').trim())
+      .filter(Boolean);
+    return parts.length >= 2 ? parts : null;
+  };
+  // Normalize a decoded array to a numbered newline-joined string, but if
+  // any element contains inline "1) foo 2) bar" markers, split it into
+  // separate items first so we never emit a "1. 1) foo 2) bar" double-prefix.
+  const renderArray = (arr: unknown[]): string => {
+    const flattened: string[] = [];
+    arr.forEach(el => {
+      const s = typeof el === 'string' ? el : String(el);
+      const inline = splitInlineNumbered(s);
+      if (inline) {
+        flattened.push(...inline);
+      } else {
+        flattened.push(s.trim());
+      }
+    });
+    return flattened
+      .filter(Boolean)
+      .map((s, i) => `${i + 1}. ${s}`)
+      .join('\n');
+  };
+  // Python list repr: "['item one', 'item two']" -> "1. item one\n2. item two"
   if (value.startsWith("['") && value.endsWith("']")) {
     try {
       // Convert single-quoted Python list to JSON array
@@ -266,7 +296,7 @@ function prettyFormatLongValue(value: string): string {
         .replace(/'\]$/, '"]')
         .replace(/', '/g, '", "');
       const arr = JSON.parse(jsonish);
-      if (Array.isArray(arr)) return arr.map((s, i) => `${i + 1}. ${s}`).join('\n');
+      if (Array.isArray(arr)) return renderArray(arr);
     } catch {
       /* fall through */
     }
@@ -275,10 +305,16 @@ function prettyFormatLongValue(value: string): string {
   if (value.startsWith('[') && value.endsWith(']')) {
     try {
       const arr = JSON.parse(value);
-      if (Array.isArray(arr)) return arr.map((s, i) => `${i + 1}. ${s}`).join('\n');
+      if (Array.isArray(arr)) return renderArray(arr);
     } catch {
       /* fall through */
     }
+  }
+  // Plain string with inline "1) foo 2) bar" markers — split and renumber
+  // so the textarea renders as a clean list, not a wall of text.
+  const inlineSplit = splitInlineNumbered(value);
+  if (inlineSplit) {
+    return inlineSplit.map((s, i) => `${i + 1}. ${s}`).join('\n');
   }
   return value;
 }
@@ -294,12 +330,25 @@ function parseListPreview(value: string): string[] | null {
   const text = value.trim();
   if (!text) return null;
 
+  // Strip any remaining leading numbered prefix ("1. ", "1) ") from a line.
+  // Handles the double-prefix case where prettyFormatLongValue prepended
+  // "1. " to a value that already started with "1)".
+  const stripLeadingNumber = (s: string): string => {
+    let out = s.trim();
+    let prev: string;
+    do {
+      prev = out;
+      out = out.replace(/^\d+[.)]\s+/, '').trim();
+    } while (out !== prev && /^\d+[.)]\s+/.test(out));
+    return out;
+  };
+
   // Case A: prettyFormatLongValue already normalized to "1. item\n2. item\n…"
   const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
   if (lines.length >= 2) {
     const numberedAll = lines.every(l => /^\d+[.)]\s+/.test(l));
     if (numberedAll) {
-      return lines.map(l => l.replace(/^\d+[.)]\s+/, '').trim()).filter(Boolean);
+      return lines.map(stripLeadingNumber).filter(Boolean);
     }
   }
 
@@ -309,6 +358,7 @@ function parseListPreview(value: string): string[] | null {
     const parts = text
       .split(/\b\d+\)\s/)
       .map(s => s.replace(/[,;\s]+$/, '').trim())
+      .map(stripLeadingNumber)
       .filter(Boolean);
     if (parts.length >= 2) return parts;
   }
