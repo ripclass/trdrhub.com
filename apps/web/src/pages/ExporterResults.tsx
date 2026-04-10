@@ -4590,7 +4590,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             </Card>
           </TabsContent>
 
-          <TabsContent value="documents" className="space-y-4">
+          {/* Legacy documents view — only for extraction-resolution stage */}
+          {isExtractionResolutionStage && <TabsContent value="documents" className="space-y-4">
             {sortedDocuments.map((document) => {
               const fieldEntries = Object.entries(document.extractedFields || {});
               const hasFieldEntries = fieldEntries.length > 0;
@@ -4854,7 +4855,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                 </Card>
               );
             })}
-          </TabsContent>
+          </TabsContent>}
 
           <TabsContent value="discrepancies" className="space-y-4">
             <FindingsTab issueCards={issueCards} />
