@@ -137,10 +137,22 @@ def resolve_legacy_workflow_lc_fields(*contexts: Optional[Dict[str, Any]]) -> Di
         if isinstance(classification, dict):
             workflow = normalize_lc_type(str(classification.get("workflow_orientation") or "").strip().lower())
             if workflow:
+                # Use the actual extraction confidence if available, not a hardcoded 0.85.
+                # The classification may carry its own confidence, or we read the
+                # document-level extraction confidence from the parent context.
+                raw_conf = (
+                    classification.get("confidence")
+                    or classification.get("workflow_confidence")
+                    or context.get("_extraction_confidence")
+                    or context.get("extraction_confidence")
+                )
+                conf = float(raw_conf) if raw_conf is not None else 0.85
+                # Clamp to [0.5, 1.0] — below 0.5 is noise, above 1.0 is impossible
+                conf = max(0.5, min(1.0, conf))
                 return {
                     "lc_type": workflow,
                     "lc_type_reason": "Derived from canonical workflow_orientation.",
-                    "lc_type_confidence": 0.85,
+                    "lc_type_confidence": conf,
                     "lc_type_source": "lc_classification",
                 }
 
@@ -290,7 +302,14 @@ def build_minimal_lc_structured_output(lc_data: Optional[Dict[str, Any]], contex
         legacy_lc_type = workflow_orientation
         if workflow_orientation != "unknown":
             legacy_lc_type_reason = "Derived from canonical workflow_orientation."
-            legacy_lc_type_confidence = 0.85
+            # Use actual extraction confidence when available
+            raw_conf = (
+                (lc_classification or {}).get("confidence")
+                or (lc_classification or {}).get("workflow_confidence")
+                or lc_data.get("_extraction_confidence")
+                or context.get("_extraction_confidence")
+            )
+            legacy_lc_type_confidence = max(0.5, min(1.0, float(raw_conf))) if raw_conf is not None else 0.85
             legacy_lc_type_source = "lc_classification"
 
     raw_context_lc_type = str(context.get("lc_type") or "").strip().lower()

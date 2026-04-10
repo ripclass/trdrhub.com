@@ -93,7 +93,7 @@ def _resolve_legacy_lc_type_fields(
         base["lc_type"] = workflow_orientation
         if str(extractor_outputs.get("lc_type") or "").strip().lower() not in LEGACY_WORKFLOW_LC_TYPES:
             base["lc_type_reason"] = "Derived from canonical workflow_orientation."
-            base["lc_type_confidence"] = max(float(base.get("lc_type_confidence") or 0.0), 0.85)
+            base["lc_type_confidence"] = max(float(base.get("lc_type_confidence") or 0.0), 0.70)
             base["lc_type_source"] = "lc_classification"
         return base
 

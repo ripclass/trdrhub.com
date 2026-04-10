@@ -245,7 +245,7 @@ async def prepare_validation_session(
         # Use extracted LC type from document
         lc_type = extracted_workflow_lc_type
         lc_type_reason = extracted_lc_type_reason or f"Extracted workflow from LC document: {extracted_workflow_lc_type}"
-        lc_type_confidence = extracted_lc_type_confidence if extracted_lc_type_confidence > 0 else 0.85
+        lc_type_confidence = extracted_lc_type_confidence if extracted_lc_type_confidence > 0 else 0.70
         lc_type_source = lc_context.get("lc_type_source", "document_extraction")
         lc_type_guess = {"lc_type": lc_type, "reason": lc_type_reason, "confidence": lc_type_confidence}
         logger.info(f"LC type from document extraction: {lc_type} (confidence={lc_type_confidence})")

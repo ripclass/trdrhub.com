@@ -121,7 +121,7 @@ class ComplianceScorer:
     """
     
     # Severity caps: Maximum compliance score with each issue type
-    CAP_CRITICAL = 0.0       # Any critical issue → 0% compliance
+    CAP_CRITICAL = 25.0      # Any critical issue → max 25% (was 0 — too aggressive)
     CAP_MAJOR = 55.0         # Any major issue → max 55%
     CAP_MINOR = 85.0         # Any minor issue → max 85%
     CAP_INFO = 100.0         # Info doesn't cap
