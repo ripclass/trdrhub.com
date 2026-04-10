@@ -567,7 +567,28 @@ export default function ExportLCUpload({
   // ExtractionReview component renders inline on this same page (instead
   // of navigating to a separate section) so the user never leaves the
   // upload flow until they explicitly hit "Start Validation".
-  const [extractionPayload, setExtractionPayload] = useState<any>(null);
+  //
+  // Persisted to sessionStorage so a mid-extraction 401 redirect
+  // (Supabase JWT expiry) doesn't wipe the payload on login return.
+  const EXTRACTION_STORAGE_KEY = 'lcopilot_extraction_payload';
+  const [extractionPayload, setExtractionPayloadRaw] = useState<any>(() => {
+    try {
+      const stored = sessionStorage.getItem(EXTRACTION_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const setExtractionPayload = (value: any) => {
+    setExtractionPayloadRaw(value);
+    try {
+      if (value) {
+        sessionStorage.setItem(EXTRACTION_STORAGE_KEY, JSON.stringify(value));
+      } else {
+        sessionStorage.removeItem(EXTRACTION_STORAGE_KEY);
+      }
+    } catch { /* storage full or unavailable — non-critical */ }
+  };
   // Client-generated request id for SSE progress streaming. Set when the user
   // clicks "Extract & Review", cleared when the extract call finishes. The
   // same id is sent in the X-Client-Request-ID header on the POST and used
