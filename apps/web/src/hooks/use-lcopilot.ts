@@ -43,6 +43,9 @@ export interface ValidationRequest {
    * this request.
    */
   clientRequestId?: string;
+  /** Previous extraction job_id — when provided, backend reuses cached
+   *  extraction results for unchanged files instead of re-running vision LLM. */
+  reuseJobId?: string;
 }
 
 import { z } from 'zod';
@@ -380,6 +383,9 @@ export const useValidate = () => {
       }
       if (request.mode) {
         formData.append('mode', request.mode);
+      }
+      if (request.reuseJobId) {
+        formData.append('reuse_job_id', request.reuseJobId);
       }
 
       lcopilotLogger.debug('Making validation request', {

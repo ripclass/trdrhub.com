@@ -1503,12 +1503,18 @@ async def _build_document_context(
     files_list: List[Any],
     document_tags: Optional[Dict[str, Any]] = None,
     job_id: Optional[str] = None,
+    previous_extraction: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Attempt to extract basic structured fields from uploaded documents.
 
     Returns a dictionary that can be merged into the validation payload (e.g. {"lc": {...}}).
     Also stores raw_text and sets extraction_status.
+
+    When ``previous_extraction`` is provided (from a reuse_job_id), files whose
+    filename matches a previously-extracted document are injected from the cache
+    instead of re-running the vision LLM. This avoids re-extracting all documents
+    when the user goes back to upload a missing file and re-clicks Extract.
     """
     if not files_list:
         logger.debug("No files provided for extraction")
@@ -1639,8 +1645,29 @@ async def _build_document_context(
     logger.info(f"Parallel OCR complete: {len(extracted_texts)} files in {ocr_elapsed:.2f}s")
     # ===========================================================================
 
+    # ===================================================================
+    # PREVIOUS EXTRACTION CACHE — reuse results from a prior session
+    # to avoid re-extracting documents that haven't changed.
+    # ===================================================================
+    _cached_doc_by_filename: Dict[str, Dict[str, Any]] = {}
+    _cached_context: Dict[str, Any] = {}
+    if previous_extraction and isinstance(previous_extraction, dict):
+        for prev_doc in (previous_extraction.get("documents") or []):
+            if isinstance(prev_doc, dict) and prev_doc.get("filename"):
+                _cached_doc_by_filename[prev_doc["filename"]] = prev_doc
+        # Pre-populate context from previous session (LC, supporting docs)
+        for ctx_key in ("lc", "lc_text", "lc_number", "lc_structured_output"):
+            if ctx_key in previous_extraction and previous_extraction[ctx_key]:
+                _cached_context[ctx_key] = previous_extraction[ctx_key]
+                context[ctx_key] = previous_extraction[ctx_key]
+        if _cached_doc_by_filename:
+            logger.info(
+                "Re-extraction: %d documents cached from previous session, will skip their vision LLM calls",
+                len(_cached_doc_by_filename),
+            )
+
     lc_required_document_types = _infer_required_document_types_from_lc(context.get("lc") or {})
-    primary_lc_anchor_seen = False
+    primary_lc_anchor_seen = bool(context.get("lc"))
 
     # Process the LC first so its extracted context is available for
     # downstream validation. Extraction itself is per-doc blind OCR —
@@ -1734,6 +1761,33 @@ async def _build_document_context(
             primary_lc_anchor_seen = True
         elif document_type == "duplicate_lc_candidate":
             doc_info.setdefault("review_flags", []).append("extra_lc_like_document")
+
+        # ----- CACHE HIT: reuse extraction from previous session -----
+        _cached = _cached_doc_by_filename.get(filename)
+        if _cached and isinstance(_cached, dict) and _cached.get("extracted_fields"):
+            # Inject cached doc_info fields and skip the expensive LLM call
+            for _ck in ("extracted_fields", "extraction_status", "extraction_method",
+                        "extraction_lane", "extraction_confidence", "field_details",
+                        "lc_subtype", "lc_family", "tier_attempts", "ai_first_status",
+                        "parse_complete", "parse_completeness", "validation_summary",
+                        "missing_required_fields", "required_fields_found",
+                        "required_fields_total", "fact_graph_v1", "factGraphV1",
+                        "extraction_resolution", "extractionResolution",
+                        "day1_runtime", "ocr_quality", "review_reasons"):
+                if _ck in _cached:
+                    doc_info[_ck] = _cached[_ck]
+            doc_info["extraction_status"] = _cached.get("extraction_status", "cached")
+            doc_info["_reused_from_previous_session"] = True
+            doc_info.setdefault("timings_ms", {})["launch_pipeline"] = 0.0
+            logger.info("Reusing cached extraction for %s (skipped vision LLM)", filename)
+            # Populate context + presence tracking
+            cached_doc_type = _cached.get("document_type") or document_type
+            entry = documents_presence.setdefault(cached_doc_type, {"present": False, "count": 0})
+            entry["present"] = True
+            entry["count"] += 1
+            has_structured_data = True
+            document_details.append(doc_info)
+            continue
 
         launch_pipeline_result: Optional[Dict[str, Any]] = None
         launch_pipeline = get_launch_extraction_pipeline()

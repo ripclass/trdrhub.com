@@ -590,6 +590,10 @@ export default function ExportLCUpload({
       }
     } catch { /* storage full or unavailable — non-critical */ }
   };
+  // When the user clicks "Back to Upload" from the review screen, we hide the
+  // review but preserve extractionPayload for cache reuse on re-extraction.
+  const [reviewHidden, setReviewHidden] = useState(false);
+
   // Client-generated request id for SSE progress streaming. Set when the user
   // clicks "Extract & Review", cleared when the extract call finishes. The
   // same id is sent in the X-Client-Request-ID header on the POST and used
@@ -1309,6 +1313,11 @@ export default function ExportLCUpload({
       // Run extraction only — validation happens on the extraction review
       // screen after the user confirms / corrects fields. This is the new
       // LC → supporting docs → extract → user review → validate flow.
+      // If we have a previous extraction (user went back to upload missing
+      // docs), pass the job_id so the backend can reuse cached results
+      // instead of re-extracting all documents.
+      const previousJobId = extractionPayload?.jobId || extractionPayload?.job_id;
+
       const response = await validate({
         files,
         lcNumber: lcNumber.trim(),
@@ -1319,6 +1328,7 @@ export default function ExportLCUpload({
         lcTypeOverride,
         extractOnly: true,
         clientRequestId: requestId,
+        ...(previousJobId ? { reuseJobId: previousJobId } : {}),
       });
 
       // Check for blocked response (wrong LC type, no LC found, etc.)
@@ -1361,6 +1371,7 @@ export default function ExportLCUpload({
       if (jobId) {
         const validated = parseExtractionResponse(response);
         setExtractionPayload(validated);
+        setReviewHidden(false);
         console.log('✅ Extraction complete, showing inline review. jobId:', jobId);
         // Scroll the review into view once React renders it.
         setTimeout(() => {
@@ -2142,7 +2153,7 @@ export default function ExportLCUpload({
             the extract_only call has returned. User stays on this page;
             clicking Start Validation inside ExtractionReview navigates to
             the results section via onStartValidation. */}
-        {extractionPayload && (
+        {extractionPayload && !reviewHidden && (
           <div id="extraction-review-inline" className="mt-8">
             <ExtractionReview
               extractionPayload={extractionPayload}
@@ -2163,7 +2174,9 @@ export default function ExportLCUpload({
                 }
               }}
               onBackToUpload={() => {
-                setExtractionPayload(null);
+                // Preserve extractionPayload so re-extraction can reuse
+                // cached results via reuseJobId (avoids re-extracting all docs)
+                setReviewHidden(true);
                 const uploadEl = document.querySelector('h3');
                 if (uploadEl) uploadEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}

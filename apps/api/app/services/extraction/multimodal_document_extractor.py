@@ -649,10 +649,25 @@ def _tier_chain_for_document(document_type: str) -> Tuple[str, ...]:
 
     LC-family documents start at L2 (Opus) — the LC is the anchor document
     and accuracy is worth the cost. Supporting docs start at L1 (Sonnet).
+
+    When adjacent tiers resolve to the same model, skip the duplicate —
+    retrying the same model with the same prompt wastes money for no gain.
     """
     if document_type in _LC_DOCUMENT_TYPES:
+        _, l2_model = _resolve_vision_tier_config("L2")
+        _, l3_model = _resolve_vision_tier_config("L3")
+        if l2_model == l3_model:
+            return ("L2",)
         return ("L2", "L3")
-    return ("L1", "L2", "L3")
+    # Supporting docs: deduplicate adjacent tiers
+    chain = []
+    prev_model = None
+    for tier in ("L1", "L2", "L3"):
+        _, model = _resolve_vision_tier_config(tier)
+        if model != prev_model:
+            chain.append(tier)
+            prev_model = model
+    return tuple(chain) or ("L1",)
 
 
 async def extract_document_multimodal_first(

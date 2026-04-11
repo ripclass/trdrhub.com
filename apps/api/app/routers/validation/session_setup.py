@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from app.services.facts import (
@@ -117,12 +117,31 @@ async def prepare_validation_session(
     runtime_context["job_id_resolvable"] = validation_session is not None
     runtime_context["job_id_source"] = "session" if validation_session is not None else "ephemeral"
 
-    # Extract structured data from uploaded files (respecting any document tags)
+    # Extract structured data from uploaded files (respecting any document tags).
+    # When reuse_job_id is provided, load the previous session's extraction
+    # results so _build_document_context can skip re-extracting unchanged files.
     document_tags = payload.get("document_tags")
+    previous_extraction: Optional[Dict[str, Any]] = None
+    reuse_job_id = payload.get("reuse_job_id") or payload.get("reuseJobId")
+    if reuse_job_id:
+        try:
+            from app.models.validation import ValidationSession as _VS
+            prev_session = db.query(_VS).filter(_VS.id == str(reuse_job_id)).first()
+            if prev_session and isinstance(prev_session.extracted_data, dict):
+                previous_extraction = prev_session.extracted_data
+                logger.info(
+                    "Re-extraction: loaded previous session %s with %d cached documents",
+                    reuse_job_id,
+                    len((previous_extraction.get("documents") or [])),
+                )
+        except Exception as _reuse_exc:
+            logger.warning("Failed to load previous session %s for reuse: %s", reuse_job_id, _reuse_exc)
+
     extracted_context = await _build_document_context(
         files_list,
         document_tags,
         job_id=job_id,
+        previous_extraction=previous_extraction,
     )
     checkpoint("ocr_extraction_complete")
     if extracted_context:
