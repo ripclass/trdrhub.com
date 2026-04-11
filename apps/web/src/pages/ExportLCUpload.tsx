@@ -1435,7 +1435,27 @@ export default function ExportLCUpload({
       // and sees the review appear below their uploads; validation still
       // navigates away when they hit "Start Validation".
       if (jobId) {
-        const validated = parseExtractionResponse(response);
+        let validated = parseExtractionResponse(response);
+
+        // Incremental merge: the response only contains the newly-extracted
+        // doc(s). Carry over docs from the previous extraction so the review
+        // shows the full set.
+        if (isIncremental && extractionPayload) {
+          const newFilenames = new Set(
+            (validated.documents || []).map((d: any) => d.filename).filter(Boolean)
+          );
+          const carried = (extractionPayload.documents || []).filter(
+            (d: any) => d.filename && !newFilenames.has(d.filename)
+          );
+          if (carried.length > 0) {
+            validated = {
+              ...validated,
+              documents: [...carried, ...(validated.documents || [])],
+            };
+            console.log(`🔄 Incremental merge: carried ${carried.length} previous docs + ${newFilenames.size} new`);
+          }
+        }
+
         setExtractionPayload(validated);
         setReviewHidden(false);
         console.log('✅ Extraction complete, showing inline review. jobId:', jobId);
