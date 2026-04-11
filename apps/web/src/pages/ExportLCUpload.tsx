@@ -1834,7 +1834,7 @@ export default function ExportLCUpload({
         )}
 
         {/* Step 2: Supporting document bulk uploader */}
-        <Card className="mb-8 shadow-soft border-0">
+        <Card id="step-2-supporting-docs" className="mb-8 shadow-soft border-0">
           <CardHeader>
             <CardTitle>Step 2 — Upload Supporting Documents</CardTitle>
             <CardDescription>
@@ -2127,23 +2127,6 @@ export default function ExportLCUpload({
                 </div>
               </div>
 
-              {/* Missing document warning */}
-              {requirementUploadStatus.missing.length > 0 && (
-                <div className="rounded-md border border-amber-300 bg-amber-50 p-3">
-                  <p className="text-sm font-medium text-amber-800">
-                    {requirementUploadStatus.missing.length} required document{requirementUploadStatus.missing.length > 1 ? 's' : ''} not uploaded:
-                  </p>
-                  <ul className="mt-1 list-disc pl-5 text-sm text-amber-700">
-                    {requirementUploadStatus.missing.map((req, i) => (
-                      <li key={`missing-${i}`}>{req.label || req.type}</li>
-                    ))}
-                  </ul>
-                  <p className="mt-1.5 text-xs text-amber-600">
-                    You can still extract now and upload missing documents later.
-                  </p>
-                </div>
-              )}
-
               {/* Action buttons */}
               <div className="flex items-center justify-end gap-3">
                 <Button
@@ -2221,8 +2204,8 @@ export default function ExportLCUpload({
                 // Preserve extractionPayload so re-extraction can reuse
                 // cached results via reuseJobId (avoids re-extracting all docs)
                 setReviewHidden(true);
-                const uploadEl = document.querySelector('h3');
-                if (uploadEl) uploadEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                const step2 = document.getElementById('step-2-supporting-docs');
+                if (step2) step2.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
             />
           </div>
