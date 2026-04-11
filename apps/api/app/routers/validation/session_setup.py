@@ -155,6 +155,32 @@ async def prepare_validation_session(
         previous_extraction=previous_extraction,
     )
     checkpoint("ocr_extraction_complete")
+
+    # Incremental merge: if we have previous docs and only extracted new files,
+    # carry the previously-extracted documents into the current result so the
+    # response contains all docs (old + new) without re-extracting everything.
+    if previous_extraction and extracted_context:
+        new_filenames = {getattr(f, "filename", "") for f in files_list}
+        prev_docs = previous_extraction.get("documents") or []
+        existing_docs = extracted_context.get("documents") or []
+        existing_filenames = {d.get("filename") for d in existing_docs if isinstance(d, dict)}
+        merged_count = 0
+        for prev_doc in prev_docs:
+            if isinstance(prev_doc, dict) and prev_doc.get("filename"):
+                if prev_doc["filename"] not in new_filenames and prev_doc["filename"] not in existing_filenames:
+                    existing_docs.append(prev_doc)
+                    # Update documents_presence for the carried-over doc
+                    prev_dt = prev_doc.get("document_type")
+                    if prev_dt:
+                        dp = extracted_context.setdefault("documents_presence", {})
+                        entry = dp.setdefault(prev_dt, {"present": False, "count": 0})
+                        entry["present"] = True
+                        entry["count"] += 1
+                    merged_count += 1
+        if merged_count:
+            extracted_context["documents"] = existing_docs
+            logger.info("Incremental merge: carried %d previous docs into extraction result", merged_count)
+
     if extracted_context:
         logger.info(
             "Extracted context from %d files. Keys: %s",

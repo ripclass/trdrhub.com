@@ -1283,7 +1283,34 @@ export default function ExportLCUpload({
   /** Actually run extraction — called after all pre-checks pass. */
   const runExtraction = async () => {
     const completedFiles = uploadedFiles.filter(f => f.status === "completed");
-    const files = lcIntake.file ? [lcIntake.file, ...completedFiles.map(f => f.file)] : completedFiles.map(f => f.file);
+
+    // Incremental extraction: if we already have results from a previous run,
+    // only send files that weren't in that extraction. The backend merges
+    // them with the previous session's docs — no need to re-extract everything.
+    const previousJobId = extractionPayload?.jobId || extractionPayload?.job_id;
+    const previousFilenames = new Set<string>(
+      (extractionPayload?.documents || []).map((d: any) => d.filename).filter(Boolean)
+    );
+    const isIncremental = !!previousJobId && previousFilenames.size > 0;
+
+    const newSupportingFiles = isIncremental
+      ? completedFiles.filter(f => !previousFilenames.has(f.name))
+      : completedFiles;
+
+    // If incremental but no new files, just show the existing review
+    if (isIncremental && newSupportingFiles.length === 0) {
+      setReviewHidden(false);
+      setTimeout(() => {
+        document.getElementById('extraction-review-inline')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200);
+      return;
+    }
+
+    // For incremental: skip the LC file (already extracted), send only new supporting docs.
+    // For full extraction: include the LC file + all supporting docs.
+    const files = isIncremental
+      ? newSupportingFiles.map(f => f.file)
+      : lcIntake.file ? [lcIntake.file, ...completedFiles.map(f => f.file)] : completedFiles.map(f => f.file);
 
     const resolveFinalDocumentType = (file: UploadedFile): string => {
       const normalizedManual = normalizeDocumentType(file.documentType);
@@ -1301,12 +1328,13 @@ export default function ExportLCUpload({
       return DOCUMENT_TYPE_VALUES.OTHER;
     };
 
-    // Create document tags mapping
+    // Create document tags mapping — for incremental, only tag new files
     const documentTags: Record<string, string> = {};
-    if (lcIntake.file) {
+    if (!isIncremental && lcIntake.file) {
       documentTags[lcIntake.file.name] = DOCUMENT_TYPE_VALUES.LETTER_OF_CREDIT;
     }
-    completedFiles.forEach(file => {
+    const filesToTag = isIncremental ? newSupportingFiles : completedFiles;
+    filesToTag.forEach(file => {
       const finalDocumentType = resolveFinalDocumentType(file);
       documentTags[file.name] = finalDocumentType;
     });
@@ -1347,12 +1375,11 @@ export default function ExportLCUpload({
       console.log('🔗 Client Request ID:', requestId);
 
       // Run extraction only — validation happens on the extraction review
-      // screen after the user confirms / corrects fields. This is the new
-      // LC → supporting docs → extract → user review → validate flow.
-      // If we have a previous extraction (user went back to upload missing
-      // docs), pass the job_id so the backend can reuse cached results
-      // instead of re-extracting all documents.
-      const previousJobId = extractionPayload?.jobId || extractionPayload?.job_id;
+      // screen after the user confirms / corrects fields.
+      // Incremental mode: only new files are sent; backend merges with previous session.
+      if (isIncremental) {
+        console.log('🔄 Incremental extraction: sending', newSupportingFiles.length, 'new file(s), reusing job', previousJobId);
+      }
 
       const response = await validate({
         files,

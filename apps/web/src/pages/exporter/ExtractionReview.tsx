@@ -283,11 +283,23 @@ function prettyFormatLongValue(value: string): string {
       const parts = s.split(/(?:^|\n)\s*[-•]\s/).map(trim).filter(Boolean);
       if (parts.length >= 2) return parts;
     }
-    // Pattern 5: sentence-ending period + comma (MT700 47A clause format)
+    // Pattern 5: sentence-ending period + comma (MT700 46A/47A clause format)
     // e.g. "DOCUMENTS MUST NOT BE DATED., ANY CORRECTIONS MUST BE AUTHENTICATED."
+    // Also handles 46A where intra-clause abbreviations produce short fragments
+    // like "VOYAGE NO., CONTAINER NO." — these get merged back into the previous clause.
     {
-      const parts = s.split(/\.\s*,\s*/).map(trim).filter(Boolean);
-      if (parts.length >= 3 && parts.every(p => p.length >= 15)) return parts;
+      const rawParts = s.split(/\.\s*,\s*/).map(trim).filter(Boolean);
+      if (rawParts.length >= 3) {
+        const merged: string[] = [];
+        for (const part of rawParts) {
+          if (merged.length > 0 && part.length < 25) {
+            merged[merged.length - 1] += '. ' + part;
+          } else {
+            merged.push(part);
+          }
+        }
+        if (merged.length >= 2) return merged;
+      }
     }
     // Pattern 6: newline-separated lines (each 15+ chars, likely clauses)
     const lines = s.split(/\n+/).map(l => l.trim()).filter(Boolean);
@@ -400,10 +412,21 @@ function parseListPreview(value: string): string[] | null {
     if (parts.length >= 2) return parts;
   }
 
-  // Case F: sentence-ending period + comma (MT700 47A clause format)
+  // Case F: sentence-ending period + comma (MT700 46A/47A clause format)
+  // Merge short fragments (abbreviations like "VOYAGE NO.") back into previous clause.
   {
-    const parts = text.split(/\.\s*,\s*/).map(trim).filter(Boolean);
-    if (parts.length >= 3 && parts.every(p => p.length >= 15)) return parts;
+    const rawParts = text.split(/\.\s*,\s*/).map(trim).filter(Boolean);
+    if (rawParts.length >= 3) {
+      const merged: string[] = [];
+      for (const part of rawParts) {
+        if (merged.length > 0 && part.length < 25) {
+          merged[merged.length - 1] += '. ' + part;
+        } else {
+          merged.push(part);
+        }
+      }
+      if (merged.length >= 2) return merged;
+    }
   }
 
   // Case G: comma-joined short list (3+ items, each under 80 chars)
