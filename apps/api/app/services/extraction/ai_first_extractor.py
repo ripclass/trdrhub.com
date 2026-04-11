@@ -69,7 +69,7 @@ def _resolve_extraction_config() -> Dict[str, Any]:
         or os.getenv("OPENROUTER_MODEL_VERSION")
         or os.getenv("LLM_PRIMARY_MODEL")
         or os.getenv("LLM_MODEL_VERSION")
-        or "openai/gpt-4o-mini"
+        or "anthropic/claude-sonnet-4-6"
     )
     fallback_provider = os.getenv("EXTRACTION_FALLBACK_PROVIDER") or primary_provider
     fallback_model = (
@@ -952,10 +952,11 @@ IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
 2. If a field label is on the document but the value is blank or unclear, include the key with an empty string ""
 3. If a field is NOT on the document at all, OMIT the key entirely from your output - do NOT return null, do NOT guess
-3. For amounts, include the full number without currency symbols
-4. For dates, use ISO format (YYYY-MM-DD) when possible
-5. Look for LC/Credit reference numbers - they link the invoice to the LC
-6. Be precise - banks rely on exact data for documentary credit compliance
+4. For amounts, include the full number without currency symbols
+5. For dates, use ISO format (YYYY-MM-DD) when possible
+6. Look for LC/Credit reference numbers - they link the invoice to the LC
+7. Be precise - banks rely on exact data for documentary credit compliance
+8. VERBATIM: Copy every value EXACTLY as printed. Do NOT correct, modernize, or rename anything. If it says 'Chittagong' write 'Chittagong', not 'Chattogram'. You are a photocopier.
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 
@@ -1196,10 +1197,11 @@ IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
 2. If a field label is on the document but the value is blank or unclear, include the key with an empty string ""
 3. If a field is NOT on the document at all, OMIT the key entirely from your output - do NOT return null, do NOT guess
-3. For dates, use ISO format (YYYY-MM-DD) when possible
-4. The "shipped on board" date is CRITICAL for LC compliance
-5. Port names should be extracted exactly as written
-6. Be precise - banks rely on exact data
+4. For dates, use ISO format (YYYY-MM-DD) when possible
+5. The "shipped on board" date is CRITICAL for LC compliance
+6. Port names must be extracted EXACTLY as written on the document
+7. Be precise - banks rely on exact data
+8. VERBATIM: Copy every value EXACTLY as printed. Do NOT correct, modernize, or rename anything. If it says 'Chittagong' write 'Chittagong', not 'Chattogram'. You are a photocopier.
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 
@@ -1494,9 +1496,10 @@ IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
 2. If a field label is on the document but the value is blank or unclear, include the key with an empty string ""
 3. If a field is NOT on the document at all, OMIT the key entirely from your output - do NOT return null, do NOT guess
-3. Package counts and weights must be exact
-4. Marks and numbers must be captured exactly as written
-5. Be precise - banks check packing details against LC requirements
+4. Package counts and weights must be exact
+5. Marks and numbers must be captured exactly as written
+6. Be precise - banks check packing details against LC requirements
+7. VERBATIM: Copy every value EXACTLY as printed. Do NOT correct, modernize, or rename anything. If it says 'Chittagong' write 'Chittagong', not 'Chattogram'. You are a photocopier.
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 
@@ -1676,7 +1679,8 @@ IMPORTANT RULES:
 3. Certifying authority/chamber must be captured
 4. If a field label is on the document but the value is blank, include the key with ""
 5. If a field is NOT on the document at all, OMIT the key from your output - do NOT return null
-5. Be precise - origin certificates affect duty rates and LC compliance
+6. Be precise - origin certificates affect duty rates and LC compliance
+7. VERBATIM: Copy every value EXACTLY as printed. Do NOT correct, modernize, or rename anything. If it says 'Chittagong' write 'Chittagong', not 'Chattogram'. You are a photocopier.
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 
@@ -1804,7 +1808,8 @@ IMPORTANT RULES:
 4. Risk coverage types (All Risks, ICC-A, etc.) must be captured
 5. If a field label is on the document but the value is blank, include the key with ""
 6. If a field is NOT on the document at all, OMIT the key from your output - do NOT return null
-6. Be precise - banks verify insurance coverage against LC requirements
+7. Be precise - banks verify insurance coverage against LC requirements
+8. VERBATIM: Copy every value EXACTLY as printed. Do NOT correct, modernize, or rename anything. You are a photocopier.
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 
@@ -1943,7 +1948,8 @@ IMPORTANT RULES:
 3. Inspection result (passed/failed) must be captured
 4. If a field label is on the document but the value is blank, include the key with ""
 5. If a field is NOT on the document at all, OMIT the key from your output - do NOT return null
-5. Be precise - banks verify inspection agency against LC requirements
+6. Be precise - banks verify inspection agency against LC requirements
+7. VERBATIM: Copy every value EXACTLY as printed. Do NOT correct, modernize, or rename anything. You are a photocopier.
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 

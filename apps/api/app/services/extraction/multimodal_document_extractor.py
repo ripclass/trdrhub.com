@@ -371,7 +371,7 @@ def _resolve_multimodal_config() -> Tuple[str, str, int]:
         or os.getenv("OPENROUTER_MODEL_VERSION")
         or os.getenv("LLM_PRIMARY_MODEL")
         or os.getenv("LLM_MODEL_VERSION")
-        or "openai/gpt-4o-mini"
+        or "anthropic/claude-sonnet-4-6"
     )
     max_pages = int(os.getenv("EXTRACTION_MULTIMODAL_MAX_PAGES") or "4")
     return provider, model, max(1, max_pages)
@@ -383,9 +383,9 @@ def _resolve_multimodal_config() -> Tuple[str, str, int]:
 # and model env vars; if a tier-specific env var is unset it falls back to the
 # legacy EXTRACTION_MULTIMODAL_* vars (L1) or to a sensible default.
 _VISION_TIER_DEFAULTS: Dict[str, Tuple[str, str]] = {
-    "L1": (LLMProvider.OPENAI.value, "gpt-4.1"),
-    "L2": (LLMProvider.ANTHROPIC.value, "claude-sonnet-4-6"),
-    "L3": (LLMProvider.ANTHROPIC.value, "claude-opus-4-6"),
+    "L1": (LLMProvider.OPENROUTER.value, "anthropic/claude-sonnet-4-6"),
+    "L2": (LLMProvider.OPENROUTER.value, "anthropic/claude-sonnet-4-6"),
+    "L3": (LLMProvider.OPENROUTER.value, "anthropic/claude-opus-4-6"),
 }
 
 
@@ -552,7 +552,12 @@ async def _attempt_vision_tier(
         "PDF pages AND the raw text content. Cross-check both. "
         "Return EVERY field you can see, in canonical JSON form. Don't be "
         "lazy — if a value is on the page anywhere, return it. "
-        "Output ONLY a JSON object, no prose."
+        "Output ONLY a JSON object, no prose.\n\n"
+        "VERBATIM RULE: Copy every value EXACTLY as printed on the document. "
+        "Do NOT correct, modernize, translate, or normalize any text. "
+        "If the document says 'Chittagong' you write 'Chittagong' — not "
+        "'Chattogram'. If it says 'Bombay' you write 'Bombay' — not 'Mumbai'. "
+        "You are a photocopier, not an editor."
     )
 
     try:
@@ -883,6 +888,9 @@ def _build_multimodal_prompt(
         "snake_case key name derived from the printed label.  Do not "
         "skip printed fields just because they are not in the canonical "
         "list.\n\n"
+        "VERBATIM: Every value must be copied EXACTLY as printed. Do NOT "
+        "correct spelling, rename cities, translate terms, or modernize "
+        "any text. You are a photocopier.\n\n"
         "Canonical keys intrinsic to this document type "
         "(use these names when you find the values, per rule above):\n"
         + "\n".join(f"  - {field}" for field in fields)
