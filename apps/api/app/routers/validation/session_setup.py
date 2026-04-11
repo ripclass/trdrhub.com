@@ -147,6 +147,13 @@ async def prepare_validation_session(
         payload.update(extracted_context)
     else:
         logger.warning("No structured data extracted from %d uploaded files", len(files_list))
+
+    # Snapshot the raw extracted LC context BEFORE the fact-graph projection
+    # strips and re-populates fields. The intake path needs the original
+    # flat-scalar values (applicant, beneficiary, port_of_loading, etc.)
+    # for build_lc_intake_summary. The projection is for validation only.
+    _raw_lc_context_for_intake = dict(payload.get("lc") or {}) if intake_only else None
+
     if extracted_context:
         try:
             projected_lc = apply_lc_fact_graph_to_validation_inputs(payload, extracted_context)
@@ -225,7 +232,10 @@ async def prepare_validation_session(
     else:
         logger.warning("Payload does not contain structured data - JSON rules will be skipped")
 
-    lc_context = payload.get("lc") or {}
+    # For intake, use the pre-projection snapshot so build_lc_intake_summary
+    # sees the original flat-scalar fields (applicant, beneficiary, etc.)
+    # that project_lc_validation_context stripped for validation purposes.
+    lc_context = (_raw_lc_context_for_intake if _raw_lc_context_for_intake else None) or payload.get("lc") or {}
     shipment_context = _resolve_shipment_context(payload)
 
     # First, check if LC type was extracted from the document (from :40A: or AI extraction)
