@@ -442,6 +442,8 @@ async def prepare_validation_session(
                 "subtype": lc_subtype_info,
             },
             "lc_summary": lc_summary,
+            "_debug_raw_lc_keys": sorted(list((_raw_lc_context_for_intake or {}).keys()))[:30],
+            "_debug_lc_context_keys": sorted(list(lc_context.keys()))[:30],
             "required_document_types": required_document_types,
             "documents_required": documents_required,
             "required_documents_detailed": required_documents_detailed,
