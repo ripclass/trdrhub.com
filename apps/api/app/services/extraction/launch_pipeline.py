@@ -3880,7 +3880,8 @@ def _apply_canonical_normalization(payload: Dict[str, Any]) -> Dict[str, Any]:
         if field in shaped:
             original = shaped.get(field)
             port_norm = _normalize_port_value(original, country_hint=country_hint)
-            shaped[field] = port_norm["value"]
+            # Extraction = verbatim photocopier. Keep the raw value as-is.
+            # Store normalized data in sidecar only — validation uses this.
             if port_norm.get("code"):
                 normalization_meta[field] = {
                     "raw": original,

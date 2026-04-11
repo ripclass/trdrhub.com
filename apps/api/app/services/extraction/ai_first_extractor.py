@@ -661,9 +661,8 @@ class AIFirstExtractor:
             return None
         
         if field_name in ("port_of_loading", "port_of_discharge"):
-            port = self.port_registry.resolve(str(value))
-            if port:
-                return port.full_name
+            # Extraction = verbatim photocopier. Port normalization belongs
+            # in validation (Part 2), not here. Return the raw value as-is.
             return str(value)
         
         if field_name == "currency":
