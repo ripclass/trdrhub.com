@@ -300,7 +300,16 @@ function splitSpecialConditionBlob(items: string[]): string[] {
       result.push(...item.split(/(?:^|\n)\s*[-•]\s/).map(trim).filter(Boolean));
       continue;
     }
-    // Pattern 5: newline-separated lines (each 15+ chars)
+    // Pattern 5: sentence-ending period followed by comma/space (MT700 47A format)
+    // e.g. "DOCUMENTS MUST NOT BE DATED EARLIER THAN LC ISSUE DATE., ANY CORRECTIONS MUST BE AUTHENTICATED."
+    {
+      const parts = item.split(/\.\s*,\s*/).map(trim).filter(Boolean);
+      if (parts.length >= 3 && parts.every(p => p.length >= 15)) {
+        result.push(...parts);
+        continue;
+      }
+    }
+    // Pattern 6: newline-separated lines (each 15+ chars)
     const lines = item.split(/\n+/).map(l => l.trim()).filter(Boolean);
     if (lines.length >= 2 && lines.every(l => l.length >= 15)) {
       result.push(...lines.map(l => l.replace(/^\d+[.)]\s*/, '').trim()).filter(Boolean));

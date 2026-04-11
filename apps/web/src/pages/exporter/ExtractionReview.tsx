@@ -283,7 +283,13 @@ function prettyFormatLongValue(value: string): string {
       const parts = s.split(/(?:^|\n)\s*[-•]\s/).map(trim).filter(Boolean);
       if (parts.length >= 2) return parts;
     }
-    // Pattern 5: newline-separated lines (each 20+ chars, likely clauses)
+    // Pattern 5: sentence-ending period + comma (MT700 47A clause format)
+    // e.g. "DOCUMENTS MUST NOT BE DATED., ANY CORRECTIONS MUST BE AUTHENTICATED."
+    {
+      const parts = s.split(/\.\s*,\s*/).map(trim).filter(Boolean);
+      if (parts.length >= 3 && parts.every(p => p.length >= 15)) return parts;
+    }
+    // Pattern 6: newline-separated lines (each 15+ chars, likely clauses)
     const lines = s.split(/\n+/).map(l => l.trim()).filter(Boolean);
     if (lines.length >= 2 && lines.every(l => l.length >= 15)) {
       // Strip any leading number prefix from each line
@@ -394,7 +400,13 @@ function parseListPreview(value: string): string[] | null {
     if (parts.length >= 2) return parts;
   }
 
-  // Case F: comma-joined short list (3+ items, each under 80 chars)
+  // Case F: sentence-ending period + comma (MT700 47A clause format)
+  {
+    const parts = text.split(/\.\s*,\s*/).map(trim).filter(Boolean);
+    if (parts.length >= 3 && parts.every(p => p.length >= 15)) return parts;
+  }
+
+  // Case G: comma-joined short list (3+ items, each under 80 chars)
   if (!text.includes('\n') && text.length < 500) {
     const parts = text.split(/,\s*(?!\d{3}\b)(?=\S)/).map(s => s.trim()).filter(Boolean);
     if (parts.length >= 3 && parts.every(p => p.length <= 80)) {
