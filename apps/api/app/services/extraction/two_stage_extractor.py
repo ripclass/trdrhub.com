@@ -270,13 +270,22 @@ class FieldValidator:
         return 0.0, issues
     
     def _validate_port(self, field: ExtractedField) -> Tuple[float, List[str]]:
-        """Validate port using UN/LOCODE registry."""
+        """Validate port using UN/LOCODE registry.
+
+        Extraction = verbatim photocopier. We validate that the port is
+        a known UN/LOCODE entry (confidence = 1.0) but do NOT overwrite
+        the extracted value with the canonical registry name.  If the
+        document says "Chittagong" we keep "Chittagong" — not the
+        registry's "Chattogram".  Canonical data lives in metadata only.
+        """
         value = str(field.raw_value).strip()
         issues = []
-        
+
         port = self._port_registry.resolve(value)
         if port:
-            field.normalized_value = port.full_name
+            # Do NOT set field.normalized_value — keep the raw verbatim text.
+            # Canonical port data is already in the normalization sidecar
+            # from _apply_canonical_normalization in launch_pipeline.py.
             return 1.0, []
         
         # Partial match - might be a valid port we don't have

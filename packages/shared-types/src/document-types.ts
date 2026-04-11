@@ -963,6 +963,35 @@ export function normalizeDocumentType(input: string): DocumentTypeValue {
 }
 
 /**
+ * Type equivalence groups — uploaded types that satisfy the same requirement.
+ * For example a generic "bill_of_lading" can satisfy an "ocean_bill_of_lading"
+ * requirement and vice versa (UCP 600 Art. 20 treats them interchangeably).
+ */
+const DOC_TYPE_EQUIVALENCE_GROUPS: readonly (readonly string[])[] = [
+  [
+    DOCUMENT_TYPE_VALUES.BILL_OF_LADING,
+    DOCUMENT_TYPE_VALUES.OCEAN_BILL_OF_LADING,
+  ],
+  [
+    DOCUMENT_TYPE_VALUES.INSURANCE_CERTIFICATE,
+    'insurance_policy',
+  ],
+] as const;
+
+/**
+ * Check whether an uploaded document type satisfies a required document type.
+ * Returns true when they match directly OR belong to the same equivalence group.
+ */
+export function doesDocTypeSatisfy(uploadedType: string, requiredType: string): boolean {
+  const normUploaded = normalizeDocumentType(uploadedType);
+  const normRequired = normalizeDocumentType(requiredType);
+  if (normUploaded === normRequired) return true;
+  return DOC_TYPE_EQUIVALENCE_GROUPS.some(
+    group => group.includes(normUploaded) && group.includes(normRequired),
+  );
+}
+
+/**
  * Get document type info by value or alias
  */
 export function getDocumentTypeInfo(typeValue: string): DocumentTypeInfo | undefined {

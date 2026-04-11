@@ -36,11 +36,12 @@ import {
 } from "@/lib/exporter/workflowDetection";
 import type { LcClassificationRequiredDocument } from "@/types/lcopilot";
 // Shared document types - SINGLE SOURCE OF TRUTH
-import { 
-  DOCUMENT_TYPES, 
+import {
+  DOCUMENT_TYPES,
   DOCUMENT_TYPE_VALUES,
   DOCUMENT_CATEGORIES,
   normalizeDocumentType,
+  doesDocTypeSatisfy,
   getDocumentTypeIcon,
   type DocumentTypeValue,
 } from "@shared/types";
@@ -1241,12 +1242,11 @@ export default function ExportLCUpload({
     // dialog so the user can decide to proceed or fix their set.
     if (!presentationConfirm && uploadRequirements.documentRequirements.length > 0) {
       const missing = requirementUploadStatus.missing;
-      const lcRequiredNormalized = new Set(
-        uploadRequirements.documentRequirements.map(r => normalizeDocumentType(r.type)),
-      );
+      const requiredTypes = uploadRequirements.documentRequirements.map(r => r.type);
       const extra = completedFiles.filter(f => {
-        const norm = normalizeDocumentType(f.documentType) || normalizeDocumentType(f.detectedType);
-        return norm && !lcRequiredNormalized.has(norm);
+        const uploadedType = f.documentType || f.detectedType;
+        if (!uploadedType) return false;
+        return !requiredTypes.some(req => doesDocTypeSatisfy(uploadedType, req));
       }).map(f => ({
         name: f.name,
         type: exportDocumentTypes.find(d => d.value === f.documentType)?.label || f.documentType || 'Unknown',
@@ -1464,11 +1464,10 @@ export default function ExportLCUpload({
     const missing: typeof uploadRequirements.documentRequirements = [];
 
     uploadRequirements.documentRequirements.forEach((requirement) => {
-      const normalizedType = normalizeDocumentType(requirement.type);
       const isFound = completedFiles.some(
         (file) =>
-          normalizeDocumentType(file.documentType) === normalizedType ||
-          normalizeDocumentType(file.detectedType) === normalizedType,
+          doesDocTypeSatisfy(file.documentType, requirement.type) ||
+          doesDocTypeSatisfy(file.detectedType, requirement.type),
       );
       (isFound ? found : missing).push(requirement);
     });
@@ -1849,10 +1848,9 @@ export default function ExportLCUpload({
                   {uploadRequirements.documentRequirements.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {uploadRequirements.documentRequirements.map((requirement) => {
-                        const normalizedType = normalizeDocumentType(requirement.type);
                         const isFound = completedFiles.some((file) =>
-                          normalizeDocumentType(file.documentType) === normalizedType
-                          || normalizeDocumentType(file.detectedType) === normalizedType,
+                          doesDocTypeSatisfy(file.documentType, requirement.type)
+                          || doesDocTypeSatisfy(file.detectedType, requirement.type),
                         );
                         return (
                           <Badge
@@ -1922,10 +1920,9 @@ export default function ExportLCUpload({
                       {uploadRequirements.documentRequirements.length > 0 ? (
                         <div className="flex flex-wrap justify-center gap-2 text-xs">
                           {uploadRequirements.documentRequirements.map((req) => {
-                            const normalizedType = normalizeDocumentType(req.type);
                             const isFound = completedFiles.some((file) =>
-                              normalizeDocumentType(file.documentType) === normalizedType
-                              || normalizeDocumentType(file.detectedType) === normalizedType,
+                              doesDocTypeSatisfy(file.documentType, req.type)
+                              || doesDocTypeSatisfy(file.detectedType, req.type),
                             );
                             return (
                               <Badge
