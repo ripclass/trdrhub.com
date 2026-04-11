@@ -257,25 +257,46 @@ function shouldRenderAsTextarea(fieldName: string, value: string): boolean {
 // human-readable text.
 function prettyFormatLongValue(value: string): string {
   if (!value) return '';
-  // Helper: split a string on inline "1) foo 2) bar 3) baz" markers when
-  // present, so downstream rendering can treat it as a real list.
-  const splitInlineNumbered = (s: string): string[] | null => {
-    const markers = s.match(/\b\d+\)\s/g);
-    if (!markers || markers.length < 2) return null;
-    const parts = s
-      .split(/\b\d+\)\s/)
-      .map(p => p.replace(/[,;\s]+$/, '').trim())
-      .filter(Boolean);
-    return parts.length >= 2 ? parts : null;
+
+  // Try to split a blob into discrete clause items using progressively
+  // looser heuristics. Returns null when none match.
+  const splitToItems = (s: string): string[] | null => {
+    const trim = (p: string) => p.replace(/[,;\s]+$/, '').trim();
+
+    // Pattern 1: inline "1) foo 2) bar" (parenthesized numbers)
+    if ((s.match(/\b\d+\)\s/g) || []).length >= 2) {
+      const parts = s.split(/\b\d+\)\s/).map(trim).filter(Boolean);
+      if (parts.length >= 2) return parts;
+    }
+    // Pattern 2: inline "1. foo 2. bar" (dot numbers)
+    if ((s.match(/\b\d+\.\s+[A-Z]/g) || []).length >= 2) {
+      const parts = s.split(/\b\d+\.\s+/).map(trim).filter(Boolean);
+      if (parts.length >= 2) return parts;
+    }
+    // Pattern 3: "+" prefixed lines (common in MT700 46A/47A SWIFT fields)
+    if ((s.match(/(?:^|\n)\s*\+/g) || []).length >= 2) {
+      const parts = s.split(/(?:^|\n)\s*\+/).map(trim).filter(Boolean);
+      if (parts.length >= 2) return parts;
+    }
+    // Pattern 4: "-" or "•" bullet lines
+    if ((s.match(/(?:^|\n)\s*[-•]\s/g) || []).length >= 2) {
+      const parts = s.split(/(?:^|\n)\s*[-•]\s/).map(trim).filter(Boolean);
+      if (parts.length >= 2) return parts;
+    }
+    // Pattern 5: newline-separated lines (each 20+ chars, likely clauses)
+    const lines = s.split(/\n+/).map(l => l.trim()).filter(Boolean);
+    if (lines.length >= 2 && lines.every(l => l.length >= 15)) {
+      // Strip any leading number prefix from each line
+      return lines.map(l => l.replace(/^\d+[.)]\s*/, '').trim()).filter(Boolean);
+    }
+    return null;
   };
-  // Normalize a decoded array to a numbered newline-joined string, but if
-  // any element contains inline "1) foo 2) bar" markers, split it into
-  // separate items first so we never emit a "1. 1) foo 2) bar" double-prefix.
+
   const renderArray = (arr: unknown[]): string => {
     const flattened: string[] = [];
     arr.forEach(el => {
       const s = typeof el === 'string' ? el : String(el);
-      const inline = splitInlineNumbered(s);
+      const inline = splitToItems(s);
       if (inline) {
         flattened.push(...inline);
       } else {
@@ -287,34 +308,29 @@ function prettyFormatLongValue(value: string): string {
       .map((s, i) => `${i + 1}. ${s}`)
       .join('\n');
   };
+
   // Python list repr: "['item one', 'item two']" -> "1. item one\n2. item two"
   if (value.startsWith("['") && value.endsWith("']")) {
     try {
-      // Convert single-quoted Python list to JSON array
       const jsonish = value
         .replace(/^\['/, '["')
         .replace(/'\]$/, '"]')
         .replace(/', '/g, '", "');
       const arr = JSON.parse(jsonish);
       if (Array.isArray(arr)) return renderArray(arr);
-    } catch {
-      /* fall through */
-    }
+    } catch { /* fall through */ }
   }
   // JSON array
   if (value.startsWith('[') && value.endsWith(']')) {
     try {
       const arr = JSON.parse(value);
       if (Array.isArray(arr)) return renderArray(arr);
-    } catch {
-      /* fall through */
-    }
+    } catch { /* fall through */ }
   }
-  // Plain string with inline "1) foo 2) bar" markers — split and renumber
-  // so the textarea renders as a clean list, not a wall of text.
-  const inlineSplit = splitInlineNumbered(value);
-  if (inlineSplit) {
-    return inlineSplit.map((s, i) => `${i + 1}. ${s}`).join('\n');
+  // Plain string — try all split patterns
+  const items = splitToItems(value);
+  if (items) {
+    return items.map((s, i) => `${i + 1}. ${s}`).join('\n');
   }
   return value;
 }
@@ -330,9 +346,6 @@ function parseListPreview(value: string): string[] | null {
   const text = value.trim();
   if (!text) return null;
 
-  // Strip any remaining leading numbered prefix ("1. ", "1) ") from a line.
-  // Handles the double-prefix case where prettyFormatLongValue prepended
-  // "1. " to a value that already started with "1)".
   const stripLeadingNumber = (s: string): string => {
     let out = s.trim();
     let prev: string;
@@ -342,6 +355,7 @@ function parseListPreview(value: string): string[] | null {
     } while (out !== prev && /^\d+[.)]\s+/.test(out));
     return out;
   };
+  const trim = (s: string) => s.replace(/[,;\s]+$/, '').trim();
 
   // Case A: prettyFormatLongValue already normalized to "1. item\n2. item\n…"
   const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
@@ -350,23 +364,37 @@ function parseListPreview(value: string): string[] | null {
     if (numberedAll) {
       return lines.map(stripLeadingNumber).filter(Boolean);
     }
+    // Plain newline-separated lines (each 15+ chars — likely clause items)
+    if (lines.every(l => l.length >= 15)) {
+      return lines.map(l => stripLeadingNumber(l)).filter(Boolean);
+    }
   }
 
-  // Case B: single concatenated string with inline "1) foo 2) bar" markers
-  const inlineNumbered = text.match(/\b\d+\)\s/g);
-  if (inlineNumbered && inlineNumbered.length >= 2) {
-    const parts = text
-      .split(/\b\d+\)\s/)
-      .map(s => s.replace(/[,;\s]+$/, '').trim())
-      .map(stripLeadingNumber)
-      .filter(Boolean);
+  // Case B: inline "1) foo 2) bar" (parenthesized numbers)
+  if ((text.match(/\b\d+\)\s/g) || []).length >= 2) {
+    const parts = text.split(/\b\d+\)\s/).map(trim).map(stripLeadingNumber).filter(Boolean);
     if (parts.length >= 2) return parts;
   }
 
-  // Case C: comma-joined short list (3+ items, each under 80 chars).
-  // The negative lookbehind (?<!\d) prevents splitting on thousands
-  // separators like "30,000" — only split on commas NOT preceded by a digit
-  // followed by digits (i.e. real list separators, not number formatting).
+  // Case C: inline "1. foo 2. bar" (dot numbers followed by uppercase)
+  if ((text.match(/\b\d+\.\s+[A-Z]/g) || []).length >= 2) {
+    const parts = text.split(/\b\d+\.\s+/).map(trim).filter(Boolean);
+    if (parts.length >= 2) return parts;
+  }
+
+  // Case D: "+" prefixed items (MT700 SWIFT 46A/47A format)
+  if ((text.match(/(?:^|\n)\s*\+/g) || []).length >= 2) {
+    const parts = text.split(/(?:^|\n)\s*\+/).map(trim).filter(Boolean);
+    if (parts.length >= 2) return parts;
+  }
+
+  // Case E: "-" or "•" bullet items
+  if ((text.match(/(?:^|\n)\s*[-•]\s/g) || []).length >= 2) {
+    const parts = text.split(/(?:^|\n)\s*[-•]\s/).map(trim).filter(Boolean);
+    if (parts.length >= 2) return parts;
+  }
+
+  // Case F: comma-joined short list (3+ items, each under 80 chars)
   if (!text.includes('\n') && text.length < 500) {
     const parts = text.split(/,\s*(?!\d{3}\b)(?=\S)/).map(s => s.trim()).filter(Boolean);
     if (parts.length >= 3 && parts.every(p => p.length <= 80)) {

@@ -276,21 +276,39 @@ export function buildValidationProgressCopy(fileCount: number): {
  * Falls back to returning the original items if no inline markers are found.
  */
 function splitSpecialConditionBlob(items: string[]): string[] {
-  const SPLIT_RE = /\b\d+\)\s/;
-  const TRAILING_JUNK_RE = /[,;\s]+$/;
+  const trim = (s: string) => s.replace(/[,;\s]+$/, '').trim();
   const result: string[] = [];
   for (const item of items) {
-    const markers = item.match(/\b\d+\)\s/g);
-    if (markers && markers.length >= 2) {
-      const parts = item
-        .split(SPLIT_RE)
-        .map(s => s.replace(TRAILING_JUNK_RE, '').trim())
-        .filter(Boolean);
-      result.push(...parts);
-    } else {
-      const trimmed = item.trim();
-      if (trimmed) result.push(trimmed);
+    // Try progressively looser split patterns
+    // Pattern 1: "1) foo 2) bar"
+    if ((item.match(/\b\d+\)\s/g) || []).length >= 2) {
+      result.push(...item.split(/\b\d+\)\s/).map(trim).filter(Boolean));
+      continue;
     }
+    // Pattern 2: "1. foo 2. bar" (dot-numbered, followed by uppercase)
+    if ((item.match(/\b\d+\.\s+[A-Z]/g) || []).length >= 2) {
+      result.push(...item.split(/\b\d+\.\s+/).map(trim).filter(Boolean));
+      continue;
+    }
+    // Pattern 3: "+"-prefixed lines (MT700 SWIFT)
+    if ((item.match(/(?:^|\n)\s*\+/g) || []).length >= 2) {
+      result.push(...item.split(/(?:^|\n)\s*\+/).map(trim).filter(Boolean));
+      continue;
+    }
+    // Pattern 4: "-" or "•" bullets
+    if ((item.match(/(?:^|\n)\s*[-•]\s/g) || []).length >= 2) {
+      result.push(...item.split(/(?:^|\n)\s*[-•]\s/).map(trim).filter(Boolean));
+      continue;
+    }
+    // Pattern 5: newline-separated lines (each 15+ chars)
+    const lines = item.split(/\n+/).map(l => l.trim()).filter(Boolean);
+    if (lines.length >= 2 && lines.every(l => l.length >= 15)) {
+      result.push(...lines.map(l => l.replace(/^\d+[.)]\s*/, '').trim()).filter(Boolean));
+      continue;
+    }
+    // No pattern matched — keep as-is
+    const trimmed = item.trim();
+    if (trimmed) result.push(trimmed);
   }
   return result;
 }
