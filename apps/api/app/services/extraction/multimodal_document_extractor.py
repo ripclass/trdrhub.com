@@ -650,7 +650,7 @@ def _tier_chain_for_document(document_type: str) -> Tuple[str, ...]:
     LC-family documents start at L2 (Opus) — the LC is the anchor document
     and accuracy is worth the cost. Supporting docs start at L1 (Sonnet).
     """
-    if document_type in _LC_FAMILY_DOC_TYPES:
+    if document_type in _LC_DOCUMENT_TYPES:
         return ("L2", "L3")
     return ("L1", "L2", "L3")
 
