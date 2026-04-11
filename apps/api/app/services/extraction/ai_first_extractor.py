@@ -62,28 +62,15 @@ def _log_ai_first_event(event: str, **payload: Any) -> None:
     logger.info("ai_first.telemetry %s", json.dumps({"event": event, **safe_payload}, default=str))
 
 
-def _is_two_stage_enabled() -> bool:
-    return os.getenv("EXTRACTION_TWO_STAGE", "true").strip().lower() in ("1", "true", "yes", "on")
-
-
 def _resolve_extraction_config() -> Dict[str, Any]:
-    two_stage = _is_two_stage_enabled()
-
-    if two_stage:
-        # Stage 1: cheap model does the heavy lifting
-        primary_provider = os.getenv("EXTRACTION_CHEAP_PROVIDER") or os.getenv("LLM_PROVIDER", "openrouter")
-        primary_model = os.getenv("EXTRACTION_CHEAP_MODEL") or "openai/gpt-4o-mini"
-    else:
-        # Single-stage: use the primary (expensive) model directly
-        primary_provider = os.getenv("EXTRACTION_PRIMARY_PROVIDER") or os.getenv("LLM_PROVIDER", "openrouter")
-        primary_model = (
-            os.getenv("EXTRACTION_PRIMARY_MODEL")
-            or os.getenv("OPENROUTER_MODEL_VERSION")
-            or os.getenv("LLM_PRIMARY_MODEL")
-            or os.getenv("LLM_MODEL_VERSION")
-            or "anthropic/claude-sonnet-4-6"
-        )
-
+    primary_provider = os.getenv("EXTRACTION_PRIMARY_PROVIDER") or os.getenv("LLM_PROVIDER", "openrouter")
+    primary_model = (
+        os.getenv("EXTRACTION_PRIMARY_MODEL")
+        or os.getenv("OPENROUTER_MODEL_VERSION")
+        or os.getenv("LLM_PRIMARY_MODEL")
+        or os.getenv("LLM_MODEL_VERSION")
+        or "anthropic/claude-sonnet-4-6"
+    )
     fallback_provider = os.getenv("EXTRACTION_FALLBACK_PROVIDER") or primary_provider
     fallback_model = (
         os.getenv("EXTRACTION_FALLBACK_MODEL")
@@ -97,7 +84,6 @@ def _resolve_extraction_config() -> Dict[str, Any]:
         "fallback_provider": fallback_provider,
         "fallback_model": fallback_model,
         "max_tokens": max_tokens,
-        "two_stage": two_stage,
     }
 
 
@@ -135,121 +121,6 @@ async def _generate_extraction_with_model_routing(
     return response, tokens_in, tokens_out, provider_used, llm_trace
 
 
-# ---------------------------------------------------------------------------
-# Two-stage review: Sonnet cross-checks the cheap model's extraction
-# ---------------------------------------------------------------------------
-
-_REVIEW_SYSTEM_PROMPT = (
-    "You are a quality-control reviewer for trade document extraction. "
-    "You receive the SOURCE TEXT of a document and a JSON extraction produced by a junior model. "
-    "Cross-check every field in the JSON against the source text.\n\n"
-    "Rules:\n"
-    "1. VERBATIM — every value must match the source text EXACTLY as printed. "
-    "Do NOT correct, modernize, translate, or rename anything.\n"
-    "2. If the JSON has a value that does NOT appear in the source text, REMOVE that key (hallucination).\n"
-    "3. If the source text has a clearly labeled field that the JSON missed, ADD it with the exact printed value.\n"
-    "4. If a value is slightly wrong (typo, truncation, extra text from a different field), FIX it to match the source exactly.\n"
-    "5. Preserve the original JSON keys. Do not rename keys.\n"
-    "6. Return ONLY the corrected JSON object. No prose, no markdown fences."
-)
-
-
-async def _review_extraction(
-    source_text: str,
-    extracted_json: Dict[str, Any],
-    doc_type: str,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Stage 2: Sonnet reviews the cheap model's extraction against the source text.
-
-    Returns (reviewed_json, review_trace). If review fails or is disabled,
-    returns (extracted_json, trace_with_skipped_reason).
-    """
-    if not _is_two_stage_enabled():
-        return extracted_json, {"reviewed": False, "reason": "two_stage_disabled"}
-
-    review_provider = os.getenv("EXTRACTION_REVIEW_PROVIDER") or os.getenv("EXTRACTION_PRIMARY_PROVIDER") or "openrouter"
-    review_model = (
-        os.getenv("EXTRACTION_REVIEW_MODEL")
-        or os.getenv("EXTRACTION_PRIMARY_MODEL")
-        or "anthropic/claude-sonnet-4-6"
-    )
-
-    # Build a compact prompt — source text + cheap JSON
-    # Truncate to keep costs low: source 8K chars, JSON 4K chars
-    clean_json = {k: v for k, v in extracted_json.items() if not k.startswith("_")}
-    review_prompt = (
-        f"DOCUMENT TYPE: {doc_type}\n\n"
-        f"SOURCE TEXT (verbatim from the uploaded document):\n"
-        f"---\n{source_text[:8000]}\n---\n\n"
-        f"EXTRACTED JSON (by junior model — may contain errors):\n"
-        f"{json.dumps(clean_json, indent=2, default=str)[:4000]}\n\n"
-        f"Cross-check every field against the source text. Return corrected JSON only."
-    )
-
-    review_trace: Dict[str, Any] = {
-        "reviewed": True,
-        "review_provider": review_provider,
-        "review_model": review_model,
-        "doc_type": doc_type,
-        "original_field_count": len(clean_json),
-    }
-
-    try:
-        from ..llm_provider import LLMProviderFactory
-
-        response, tokens_in, tokens_out, _ = await LLMProviderFactory.generate_with_fallback(
-            prompt=review_prompt,
-            system_prompt=_REVIEW_SYSTEM_PROMPT,
-            temperature=0.0,
-            max_tokens=2000,
-            primary_provider=review_provider,
-            model_override=review_model,
-            extraction_mode=True,
-        )
-        review_trace["tokens_in"] = tokens_in
-        review_trace["tokens_out"] = tokens_out
-
-        if not response:
-            review_trace["outcome"] = "empty_response"
-            logger.warning("Two-stage review returned empty for %s — using original", doc_type)
-            return extracted_json, review_trace
-
-        # Parse the reviewed JSON
-        candidate = _extract_candidate_json_text(response)
-        try:
-            reviewed = json.loads(candidate)
-        except (json.JSONDecodeError, TypeError):
-            reviewed = None
-        if not isinstance(reviewed, dict) or not reviewed:
-            reviewed = await _parse_llm_json_with_repair(None, response)
-
-        if isinstance(reviewed, dict) and reviewed:
-            # Carry over internal metadata from original
-            for k, v in extracted_json.items():
-                if k.startswith("_") and k not in reviewed:
-                    reviewed[k] = v
-            review_trace["outcome"] = "success"
-            review_trace["reviewed_field_count"] = len({k for k in reviewed if not k.startswith("_")})
-            fields_added = set(reviewed.keys()) - set(extracted_json.keys()) - {"_"}
-            fields_removed = set(extracted_json.keys()) - set(reviewed.keys()) - {k for k in extracted_json if k.startswith("_")}
-            review_trace["fields_added"] = list(fields_added)[:10]
-            review_trace["fields_removed"] = list(fields_removed)[:10]
-            logger.info(
-                "Two-stage review [%s]: %d→%d fields, +%d -%d",
-                doc_type, len(clean_json), review_trace["reviewed_field_count"],
-                len(fields_added), len(fields_removed),
-            )
-            return reviewed, review_trace
-        else:
-            review_trace["outcome"] = "parse_error"
-            logger.warning("Two-stage review parse failed for %s — using original", doc_type)
-            return extracted_json, review_trace
-
-    except Exception as exc:
-        review_trace["outcome"] = "error"
-        review_trace["error"] = str(exc)[:200]
-        logger.warning("Two-stage review failed for %s: %s — using original", doc_type, exc)
-        return extracted_json, review_trace
 
 
 class FieldStatus(str, Enum):
@@ -1242,16 +1113,12 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
                 logger.warning("Failed to parse/repair AI invoice response")
                 return None, "parse_error"
 
-            # --- Two-stage review: Sonnet cross-checks cheap model output ---
-            result, review_trace = await _review_extraction(raw_text, result, "commercial_invoice")
-
             result = _wrap_ai_result_with_default_confidence(result)
             _unwrap_confidence_scalars_in_place(result)
             _flatten_structural_field_values_in_place(result)
             result["_llm_provider"] = llm_trace["provider"]
             result["_llm_model"] = llm_trace["model"]
             result["_llm_router_layer"] = llm_trace["router_layer"]
-            result["_two_stage_review"] = review_trace.get("outcome", "skipped")
             _log_ai_first_event(
                 "invoice_parse_output",
                 provider=llm_trace["provider"],
@@ -1259,7 +1126,6 @@ class InvoiceAIFirstExtractor(AIFirstExtractor):
                 router_layer=llm_trace["router_layer"],
                 ai_parse_success=True,
                 parsed_field_count=sum(1 for k, v in result.items() if isinstance(k, str) and not k.startswith("_") and v not in (None, "", [], {})),
-                two_stage_review=review_trace.get("outcome", "skipped"),
             )
 
             return result, provider_used
@@ -1479,16 +1345,12 @@ class BLAIFirstExtractor(AIFirstExtractor):
                 logger.warning("Failed to parse/repair AI B/L response")
                 return None, "parse_error"
 
-            # --- Two-stage review: Sonnet cross-checks cheap model output ---
-            result, review_trace = await _review_extraction(raw_text, result, "bill_of_lading")
-
             result = _wrap_ai_result_with_default_confidence(result)
             _unwrap_confidence_scalars_in_place(result)
             _flatten_structural_field_values_in_place(result)
             result["_llm_provider"] = llm_trace["provider"]
             result["_llm_model"] = llm_trace["model"]
             result["_llm_router_layer"] = llm_trace["router_layer"]
-            result["_two_stage_review"] = review_trace.get("outcome", "skipped")
             _log_ai_first_event(
                 "bl_parse_output",
                 provider=llm_trace["provider"],
@@ -1496,7 +1358,6 @@ class BLAIFirstExtractor(AIFirstExtractor):
                 router_layer=llm_trace["router_layer"],
                 ai_parse_success=True,
                 parsed_field_count=sum(1 for k, v in result.items() if isinstance(k, str) and not k.startswith("_") and v not in (None, "", [], {})),
-                two_stage_review=review_trace.get("outcome", "skipped"),
             )
 
             return result, provider_used
@@ -1710,8 +1571,7 @@ class PackingListAIFirstExtractor(AIFirstExtractor):
             return self._empty_result("empty_input")
         
         ai_result, ai_provider = await self._run_ai_extraction_generic(
-            raw_text, PACKING_LIST_EXTRACTION_PROMPT, PACKING_LIST_EXTRACTION_SYSTEM_PROMPT,
-            doc_type="packing_list",
+            raw_text, PACKING_LIST_EXTRACTION_PROMPT, PACKING_LIST_EXTRACTION_SYSTEM_PROMPT
         )
         
         if not ai_result and use_fallback_on_ai_failure:
@@ -1887,8 +1747,7 @@ class CertificateOfOriginAIFirstExtractor(AIFirstExtractor):
             return self._empty_result("empty_input")
         
         ai_result, ai_provider = await self._run_ai_extraction_generic(
-            raw_text, COO_EXTRACTION_PROMPT, COO_EXTRACTION_SYSTEM_PROMPT,
-            doc_type="certificate_of_origin",
+            raw_text, COO_EXTRACTION_PROMPT, COO_EXTRACTION_SYSTEM_PROMPT
         )
         
         if not ai_result and use_fallback_on_ai_failure:
@@ -2023,8 +1882,7 @@ class InsuranceCertificateAIFirstExtractor(AIFirstExtractor):
             return self._empty_result("empty_input")
         
         ai_result, ai_provider = await self._run_ai_extraction_generic(
-            raw_text, INSURANCE_EXTRACTION_PROMPT, INSURANCE_EXTRACTION_SYSTEM_PROMPT,
-            doc_type="insurance_certificate",
+            raw_text, INSURANCE_EXTRACTION_PROMPT, INSURANCE_EXTRACTION_SYSTEM_PROMPT
         )
         
         if not ai_result and use_fallback_on_ai_failure:
@@ -2157,8 +2015,7 @@ class InspectionCertificateAIFirstExtractor(AIFirstExtractor):
             return self._empty_result("empty_input")
         
         ai_result, ai_provider = await self._run_ai_extraction_generic(
-            raw_text, INSPECTION_EXTRACTION_PROMPT, INSPECTION_EXTRACTION_SYSTEM_PROMPT,
-            doc_type="inspection_certificate",
+            raw_text, INSPECTION_EXTRACTION_PROMPT, INSPECTION_EXTRACTION_SYSTEM_PROMPT
         )
         
         if not ai_result and use_fallback_on_ai_failure:
@@ -2531,7 +2388,6 @@ async def _run_ai_extraction_generic(
     raw_text: str,
     prompt_template: str,
     system_prompt: str,
-    doc_type: str = "unknown",
 ) -> Tuple[Optional[Dict[str, Any]], str]:
     """Generic AI extraction for any document type."""
     try:
@@ -2575,18 +2431,12 @@ async def _run_ai_extraction_generic(
             logger.warning("Failed to parse/repair AI response")
             return None, "parse_error"
 
-        # --- Two-stage review: Sonnet cross-checks cheap model output ---
-        result, review_trace = await _review_extraction(raw_text, result, doc_type)
-        if review_trace.get("reviewed"):
-            llm_trace["review"] = review_trace
-
         result = _wrap_ai_result_with_default_confidence(result)
         _unwrap_confidence_scalars_in_place(result)
         _flatten_structural_field_values_in_place(result)
         result["_llm_provider"] = llm_trace["provider"]
         result["_llm_model"] = llm_trace["model"]
         result["_llm_router_layer"] = llm_trace["router_layer"]
-        result["_two_stage_review"] = review_trace.get("outcome", "skipped")
         _log_ai_first_event(
             "generic_parse_output",
             provider=llm_trace["provider"],
@@ -2594,7 +2444,6 @@ async def _run_ai_extraction_generic(
             router_layer=llm_trace["router_layer"],
             ai_parse_success=True,
             parsed_field_count=sum(1 for k, v in result.items() if isinstance(k, str) and not k.startswith("_") and v not in (None, "", [], {})),
-            two_stage_review=review_trace.get("outcome", "skipped"),
         )
 
         return result, provider_used

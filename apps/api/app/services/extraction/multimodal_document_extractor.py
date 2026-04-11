@@ -384,7 +384,7 @@ def _resolve_multimodal_config() -> Tuple[str, str, int]:
 # legacy EXTRACTION_MULTIMODAL_* vars (L1) or to a sensible default.
 _VISION_TIER_DEFAULTS: Dict[str, Tuple[str, str]] = {
     "L1": (LLMProvider.OPENROUTER.value, "anthropic/claude-sonnet-4-6"),
-    "L2": (LLMProvider.OPENROUTER.value, "anthropic/claude-sonnet-4-6"),
+    "L2": (LLMProvider.OPENROUTER.value, "anthropic/claude-opus-4-6"),
     "L3": (LLMProvider.OPENROUTER.value, "anthropic/claude-opus-4-6"),
 }
 
@@ -647,9 +647,11 @@ _LC_DOCUMENT_TYPES = {
 def _tier_chain_for_document(document_type: str) -> Tuple[str, ...]:
     """Pick the tier escalation order based on document type.
 
-    ALL documents start at L1 (configured via EXTRACTION_VISION_L1_MODEL).
-    Escalates to L2 then L3 if critical fields are missing.
+    LC-family documents start at L2 (Opus) — the LC is the anchor document
+    and accuracy is worth the cost. Supporting docs start at L1 (Sonnet).
     """
+    if document_type in _LC_FAMILY_DOC_TYPES:
+        return ("L2", "L3")
     return ("L1", "L2", "L3")
 
 
