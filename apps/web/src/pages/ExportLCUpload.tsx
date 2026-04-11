@@ -1077,10 +1077,11 @@ export default function ExportLCUpload({
       // Open in new tab for preview
       window.open(fileUrl, '_blank');
 
-      // Clean up the object URL after a short delay
+      // Clean up the object URL after the new tab has loaded the PDF.
+      // Chrome's built-in PDF viewer needs several seconds to read the blob.
       setTimeout(() => {
         URL.revokeObjectURL(fileUrl);
-      }, 1000);
+      }, 60_000);
     } else {
       toast({
         title: "Preview Unavailable",
@@ -1745,7 +1746,7 @@ export default function ExportLCUpload({
                         if (lcIntake.file && lcIntake.file.size > 0) {
                           const fileUrl = URL.createObjectURL(lcIntake.file);
                           window.open(fileUrl, "_blank");
-                          setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
+                          setTimeout(() => URL.revokeObjectURL(fileUrl), 60_000);
                         } else {
                           toast({
                             title: "Preview Unavailable",
