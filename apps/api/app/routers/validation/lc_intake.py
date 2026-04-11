@@ -338,18 +338,23 @@ def build_lc_intake_summary(lc_payload: Dict[str, Any]) -> Dict[str, Any]:
         return {}
     lc_payload = repair_lc_mt700_dates(dict(lc_payload)) or lc_payload
 
-    applicant = lc_payload.get("applicant") if isinstance(lc_payload.get("applicant"), dict) else {}
-    beneficiary = lc_payload.get("beneficiary") if isinstance(lc_payload.get("beneficiary"), dict) else {}
-    amount = lc_payload.get("amount") if isinstance(lc_payload.get("amount"), dict) else {}
+    # Applicant/beneficiary/amount may arrive as nested dicts (legacy)
+    # OR as flat scalars after _shape_lc_financial_payload flattens them.
+    applicant_raw = lc_payload.get("applicant")
+    beneficiary_raw = lc_payload.get("beneficiary")
+    amount_raw = lc_payload.get("amount")
+    applicant = applicant_raw if isinstance(applicant_raw, dict) else {}
+    beneficiary = beneficiary_raw if isinstance(beneficiary_raw, dict) else {}
+    amount = amount_raw if isinstance(amount_raw, dict) else {}
     dates = lc_payload.get("dates") if isinstance(lc_payload.get("dates"), dict) else {}
     ports = lc_payload.get("ports") if isinstance(lc_payload.get("ports"), dict) else {}
 
     summary = {
         "lc_number": lc_payload.get("number") or lc_payload.get("lc_number"),
-        "applicant": applicant.get("name") or lc_payload.get("applicant_name"),
-        "beneficiary": beneficiary.get("name") or lc_payload.get("beneficiary_name"),
+        "applicant": applicant.get("name") or (applicant_raw if isinstance(applicant_raw, str) else None) or lc_payload.get("applicant_name"),
+        "beneficiary": beneficiary.get("name") or (beneficiary_raw if isinstance(beneficiary_raw, str) else None) or lc_payload.get("beneficiary_name"),
         "currency": amount.get("currency") or lc_payload.get("currency"),
-        "amount": amount.get("amount") or lc_payload.get("lc_amount") or lc_payload.get("amount_value"),
+        "amount": amount.get("amount") or (amount_raw if not isinstance(amount_raw, dict) else None) or lc_payload.get("lc_amount") or lc_payload.get("amount_value"),
         "issue_date": dates.get("issue_date") or dates.get("issue") or lc_payload.get("issue_date"),
         "expiry_date": dates.get("expiry_date") or dates.get("expiry") or lc_payload.get("expiry_date"),
         "latest_shipment_date": dates.get("latest_shipment_date") or dates.get("latest_shipment") or lc_payload.get("latest_shipment_date") or lc_payload.get("latest_shipment"),
