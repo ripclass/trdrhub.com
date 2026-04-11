@@ -1093,6 +1093,9 @@ export default function ExportLCUpload({
     const nextFile = event.target.files?.[0] || null;
     if (!nextFile) return;
 
+    // Clear stale extraction data from a previous run — a new LC means a fresh start.
+    setExtractionPayload(null);
+
     setLcIntake({ status: "uploading", file: nextFile });
 
     // Generate a client request id so the LC intake phase also streams real
