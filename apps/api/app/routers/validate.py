@@ -220,7 +220,7 @@ from app.services.extraction.ai_first_extractor import (
     extract_insurance_ai_first,
     extract_inspection_ai_first,
 )
-from app.services.extraction.launch_pipeline import get_launch_extraction_pipeline
+from app.services.extraction.launch_pipeline import get_launch_extraction_pipeline, LaunchExtractionPipeline
 from app.services.extraction.iso20022_lc_extractor import detect_iso20022_schema
 from app.services.extraction.lc_taxonomy import (
     build_lc_classification,
@@ -1677,13 +1677,89 @@ async def _build_document_context(
         try:
             f = files_list[idx_val]
             fname = getattr(f, "filename", "") or ""
-            tag = (normalized_tags or {}).get(fname, "")
+            tag = (normalized_tags or {}).get(fname.lower(), "") or (normalized_tags or {}).get(fname, "")
             return tag in ("letter_of_credit", "swift_message", "lc_application", "standby_letter_of_credit", "bank_guarantee")
         except Exception:
             return False
     _processing_order.sort(key=lambda i: 0 if _is_lc_index(i) else 1)
 
+    # ===================================================================
+    # PARALLEL VISION LLM EXTRACTION for supporting documents.
+    # LC must be processed first (sequential) to set primary_lc_anchor_seen
+    # and lc_required_document_types. Supporting doc extractions are fired
+    # in parallel after the LC is done, then results are consumed by the
+    # main loop at the process_document call site.
+    # ===================================================================
+    _parallel_prefetch_fired = False
+    _parallel_extraction_results: Dict[int, Optional[Dict[str, Any]]] = {}
+    extraction_llm_concurrency = max(1, int(os.getenv("EXTRACTION_LLM_CONCURRENCY", str(settings.EXTRACTION_LLM_CONCURRENCY))))
+
     for idx in _processing_order:
+        # ---- Fire parallel extraction after all LC docs are processed ----
+        if not _parallel_prefetch_fired and not _is_lc_index(idx):
+            _parallel_prefetch_fired = True
+            _non_lc_indices = [i for i in _processing_order if not _is_lc_index(i)]
+            _extraction_semaphore = asyncio.Semaphore(extraction_llm_concurrency)
+
+            # Prep: identify which supporting docs need vision LLM
+            _pending_extractions: List[tuple] = []
+            for _nidx in _non_lc_indices:
+                _nf = files_list[_nidx]
+                _nfname = getattr(_nf, "filename", f"document_{_nidx+1}")
+                _ndoctype = _resolve_document_type(_nfname, _nidx, normalized_tags)
+                _ntext = extracted_texts.get(_nidx)
+                _nctype = getattr(_nf, "content_type", "unknown")
+                _nartifacts = extraction_artifacts_by_idx.get(_nidx) or _empty_extraction_artifacts_v1(raw_text=_ntext or "")
+
+                if not _ntext:
+                    continue  # no text, loop body will handle skip
+                _ncached = _cached_doc_by_filename.get(_nfname)
+                if _ncached and isinstance(_ncached, dict) and _ncached.get("extracted_fields"):
+                    continue  # cache hit, loop body will handle
+
+                # Content type promotion (uses LC context from phase 1)
+                _nctr = _maybe_promote_document_type_from_content(
+                    filename=_nfname, current_type=_ndoctype,
+                    extracted_text=_ntext,
+                    required_document_types=lc_required_document_types,
+                    has_primary_lc_anchor=primary_lc_anchor_seen,
+                )
+                if _nctr.get("promoted"):
+                    _ndoctype = str(_nctr.get("document_type") or _ndoctype)
+
+                _fbytes = await _nf.read()
+                await _nf.seek(0)
+                _pending_extractions.append((_nidx, _ntext, _ndoctype, _nfname, _nartifacts, _fbytes, _nctype))
+
+            if _pending_extractions:
+                async def _extract_parallel(_item: tuple) -> tuple:
+                    _i, _txt, _dt, _fn, _art, _fb, _ct = _item
+                    async with _extraction_semaphore:
+                        _pipeline = LaunchExtractionPipeline()
+                        try:
+                            _res = await _pipeline.process_document(
+                                extracted_text=_txt, document_type=_dt, filename=_fn,
+                                extraction_artifacts_v1=_art, file_bytes=_fb, content_type=_ct,
+                            )
+                            return (_i, _res)
+                        except Exception as _exc:
+                            logger.warning("Parallel extraction failed for %s: %s", _fn, _exc, exc_info=True)
+                            return (_i, None)
+
+                logger.info(
+                    "Starting parallel vision LLM for %d supporting docs (concurrency=%d)",
+                    len(_pending_extractions), extraction_llm_concurrency,
+                )
+                _par_start = time.time()
+                _par_results = await asyncio.gather(*[_extract_parallel(p) for p in _pending_extractions])
+                for _pi, _pr in _par_results:
+                    _parallel_extraction_results[_pi] = _pr
+                logger.info(
+                    "Parallel vision LLM done: %d docs in %.2fs",
+                    len(_pending_extractions), time.time() - _par_start,
+                )
+        # ---- End parallel prefetch ----
+
         upload_file = files_list[idx]
         filename = getattr(upload_file, "filename", f"document_{idx+1}")
         content_type = getattr(upload_file, "content_type", "unknown")
@@ -1792,7 +1868,11 @@ async def _build_document_context(
         launch_pipeline_result: Optional[Dict[str, Any]] = None
         launch_pipeline = get_launch_extraction_pipeline()
         launch_pipeline_started_at = time.perf_counter()
-        if document_type in ("letter_of_credit", "swift_message", "lc_application", "commercial_invoice", "proforma_invoice", "bill_of_lading", "packing_list", "certificate_of_origin", "insurance_certificate", "insurance_policy", "inspection_certificate", "pre_shipment_inspection", "quality_certificate", "weight_certificate", "weight_list", "measurement_certificate", "analysis_certificate", "lab_test_report", "sgs_certificate", "bureau_veritas_certificate", "intertek_certificate", "beneficiary_certificate", "manufacturer_certificate", "conformity_certificate", "non_manipulation_certificate", "phytosanitary_certificate", "fumigation_certificate", "health_certificate", "veterinary_certificate", "sanitary_certificate", "halal_certificate", "kosher_certificate", "organic_certificate", "gsp_form_a", "eur1_movement_certificate", "customs_declaration", "export_license", "import_license", "air_waybill", "sea_waybill", "road_transport_document", "railway_consignment_note", "forwarder_certificate_of_receipt", "shipping_company_certificate", "warehouse_receipt", "cargo_manifest", "supporting_document"):
+        if idx in _parallel_extraction_results:
+            # Use pre-computed result from parallel vision LLM phase
+            launch_pipeline_result = _parallel_extraction_results[idx]
+            logger.info("Using parallel-prefetched extraction for %s", filename)
+        elif document_type in ("letter_of_credit", "swift_message", "lc_application", "commercial_invoice", "proforma_invoice", "bill_of_lading", "packing_list", "certificate_of_origin", "insurance_certificate", "insurance_policy", "inspection_certificate", "pre_shipment_inspection", "quality_certificate", "weight_certificate", "weight_list", "measurement_certificate", "analysis_certificate", "lab_test_report", "sgs_certificate", "bureau_veritas_certificate", "intertek_certificate", "beneficiary_certificate", "manufacturer_certificate", "conformity_certificate", "non_manipulation_certificate", "phytosanitary_certificate", "fumigation_certificate", "health_certificate", "veterinary_certificate", "sanitary_certificate", "halal_certificate", "kosher_certificate", "organic_certificate", "gsp_form_a", "eur1_movement_certificate", "customs_declaration", "export_license", "import_license", "air_waybill", "sea_waybill", "road_transport_document", "railway_consignment_note", "forwarder_certificate_of_receipt", "shipping_company_certificate", "warehouse_receipt", "cargo_manifest", "supporting_document"):
             try:
                 file_bytes = await upload_file.read()
                 await upload_file.seek(0)

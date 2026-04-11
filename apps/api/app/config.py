@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     OCR_MIN_TEXT_CHARS_FOR_SKIP: int = 1200  # Hard skip OCR when native text is already rich enough
     OCR_NATIVE_TEXT_SOFT_SKIP_CHARS: int = 250  # For file-native PDFs, skip OCR when native text is already usable support text
     OCR_MAX_CONCURRENCY: int = 4  # Max parallel OCR operations (for 10-12 doc batches)
+    EXTRACTION_LLM_CONCURRENCY: int = 4  # Max parallel vision LLM extraction calls
     OCR_RUNTIME_DIAGNOSTICS_ENABLED: bool = True  # Track bounded OCR runtime diagnostics
     OCR_DIAGNOSTICS_MAX_ERRORS: int = 10  # Max recent OCR errors exposed by diagnostics endpoint
     OCR_HEALTH_ENDPOINT_ENABLED: bool = True  # Enable internal OCR health endpoint

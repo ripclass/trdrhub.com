@@ -91,6 +91,7 @@ class _LoggerStub:
 
 class _SettingsStub:
     OCR_MAX_CONCURRENCY = 2
+    EXTRACTION_LLM_CONCURRENCY = 4
 
 
 class DummyUploadFile:
@@ -263,6 +264,7 @@ def test_build_document_context_lc_first_mixed_batch_uses_launch_pipeline_as_sin
             "content_classification": None,
         },
         "get_launch_extraction_pipeline": lambda: pipeline,
+        "LaunchExtractionPipeline": type(pipeline),
         "_apply_two_stage_validation": lambda payload, *args, **kwargs: (payload, {}),
         "_context_payload_for_doc_type": lambda context, document_type: context.get(document_type) or context.get({
             "letter_of_credit": "lc",
@@ -285,6 +287,10 @@ def test_build_document_context_lc_first_mixed_batch_uses_launch_pipeline_as_sin
         "build_lc_classification": lambda lc, context=None: {"required_documents": [{"code": "commercial_invoice"}, {"code": "weight_certificate"}]},
         "_build_minimal_lc_structured_output": lambda lc_data, context: {"lc_number": (lc_data or {}).get("lc_number")},
         "_extraction_fallback_hotfix_enabled": lambda: False,
+        "_backfill_lc_mt700_sources": lambda lc_data, *args, **kwargs: lc_data,
+        "_repair_lc_mt700_dates": lambda payload: payload,
+        "build_lc_requirements_graph_v1": lambda lc_data: {},
+        "_extract_extraction_resolution_from_context_payload": lambda payload: None,
     }
 
     loaded = _load_symbols(VALIDATE_PATH, {"_build_document_context"}, namespace)
@@ -309,13 +315,12 @@ def test_build_document_context_lc_first_mixed_batch_uses_launch_pipeline_as_sin
         )
     )
 
-    assert [call["filename"] for call in pipeline.calls] == [
-        "LC_001.pdf",
-        "Invoice_001.pdf",
-        "Weight_List_001.pdf",
-        "Unknown_Support.pdf",
-    ]
-    assert all(call["has_file_bytes"] for call in pipeline.calls)
+    # LC goes through singleton pipeline; supporting docs run in parallel
+    # via fresh LaunchExtractionPipeline instances (to avoid shared state).
+    # The singleton only sees the LC call.
+    lc_calls = [c for c in pipeline.calls if c["filename"] == "LC_001.pdf"]
+    assert len(lc_calls) == 1
+    assert lc_calls[0]["has_file_bytes"]
     assert context["lc_number"] == "LC12345"
     assert context["lc"]["documents_required"] == ["INVOICE", "WEIGHT LIST"]
     assert context["invoice"]["invoice_number"] == "INV-001"
@@ -446,6 +451,7 @@ def test_build_document_context_allows_lc_launch_pipeline_when_route_text_is_emp
             "content_classification": None,
         },
         "get_launch_extraction_pipeline": lambda: pipeline,
+        "LaunchExtractionPipeline": type(pipeline),
         "_apply_two_stage_validation": lambda payload, *args, **kwargs: (payload, {}),
         "_context_payload_for_doc_type": lambda context, document_type: context.get(document_type) or context.get({
             "letter_of_credit": "lc",
@@ -467,6 +473,10 @@ def test_build_document_context_allows_lc_launch_pipeline_when_route_text_is_emp
         "build_lc_classification": lambda lc, context=None: {"required_documents": [{"code": "commercial_invoice"}, {"code": "packing_list"}]},
         "_build_minimal_lc_structured_output": lambda lc_data, context: {"lc_number": (lc_data or {}).get("lc_number")},
         "_extraction_fallback_hotfix_enabled": lambda: False,
+        "_backfill_lc_mt700_sources": lambda lc_data, *args, **kwargs: lc_data,
+        "_repair_lc_mt700_dates": lambda payload: payload,
+        "build_lc_requirements_graph_v1": lambda lc_data: {},
+        "_extract_extraction_resolution_from_context_payload": lambda payload: None,
     }
 
     loaded = _load_symbols(VALIDATE_PATH, {"_build_document_context"}, namespace)
