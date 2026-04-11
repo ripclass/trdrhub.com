@@ -31,11 +31,13 @@ Your task is to extract structured data from LC documents. These documents may b
 
 IMPORTANT RULES:
 1. Extract ONLY what is explicitly stated in the document
-2. If a field is not found, return null - do NOT guess
-3. For amounts, include the full number without currency symbols
-4. For dates, use ISO format (YYYY-MM-DD) when possible
-5. For parties (applicant/beneficiary), extract the company/person NAME only
-6. Be precise - banks rely on exact data
+2. If a field label is on the document but the value is blank or unclear, include the key with an empty string ""
+3. If a field is NOT on the document at all, OMIT the key entirely from your output - do NOT return null, do NOT guess
+4. For amounts, include the full number without currency symbols
+5. For dates, use ISO format (YYYY-MM-DD) when possible
+6. For parties (applicant/beneficiary), extract the company/person NAME only
+7. Be precise - banks rely on exact data
+8. VERBATIM: Copy every value EXACTLY as printed. Do NOT correct, modernize, or rename anything. If it says 'Chittagong' write 'Chittagong', not 'Chattogram'. You are a photocopier.
 
 OUTPUT FORMAT: JSON only, no markdown, no explanation."""
 
@@ -106,73 +108,33 @@ async def extract_lc_with_ai(
     # Truncate if too long (save tokens + stay under context limits)
     text_to_process = ocr_text[:max_chars] if len(ocr_text) > max_chars else ocr_text
     
-    # Try ensemble extraction first if enabled
-    if use_ensemble:
-        try:
-            from .ensemble_extractor import EnsembleLCExtractor, get_ensemble_status
-            
-            status = get_ensemble_status()
-            if status["ensemble_available"]:
-                logger.info(
-                    "Using ensemble extraction with %d providers: %s",
-                    status["providers_available"],
-                    status["providers"]
-                )
-                
-                extractor = EnsembleLCExtractor(
-                    min_providers=2,
-                    temperature=temperature,
-                )
-                result = await extractor.extract(text_to_process)
-                
-                # Convert to dict format
-                extracted = result.to_dict()
-                
-                logger.info(
-                    "Ensemble LC Extraction: providers=%s, agreement=%.2f, confidence=%.2f",
-                    result.providers_used,
-                    result.overall_agreement,
-                    result.overall_confidence,
-                )
-                
-                # Add ensemble metadata
-                extracted["_extraction_method"] = "ensemble"
-                extracted["_providers_used"] = result.providers_used
-                extracted["_overall_agreement"] = result.overall_agreement
-                
-                # Get fields that need review
-                needs_review = [
-                    name for name, field in result.fields.items()
-                    if field.needs_review
-                ]
-                if needs_review:
-                    extracted["_fields_need_review"] = needs_review
-                    logger.warning(
-                        "Ensemble extraction: %d fields need manual review: %s",
-                        len(needs_review), needs_review
-                    )
-                
-                return extracted, result.overall_confidence, "ensemble:" + ",".join(result.providers_used)
-            else:
-                logger.info(
-                    "Ensemble not available (%s), falling back to single provider",
-                    status["recommendation"]
-                )
-        except ImportError:
-            logger.debug("Ensemble extractor not available, using single provider")
-        except Exception as e:
-            logger.warning(f"Ensemble extraction failed, falling back to single provider: {e}")
-    
-    # Fallback to single-provider extraction
+    # Ensemble disabled — single Opus/Sonnet call is more accurate and
+    # costs the same as running 3 providers in parallel.
+    # The LC is the anchor document; use the best model available.
+    import os as _os
+    lc_model = (
+        _os.getenv("EXTRACTION_LC_MODEL")
+        or _os.getenv("EXTRACTION_VISION_L2_MODEL")
+        or _os.getenv("EXTRACTION_PRIMARY_MODEL")
+        or "anthropic/claude-opus-4-6"
+    )
+    lc_provider = (
+        _os.getenv("EXTRACTION_LC_PROVIDER")
+        or _os.getenv("EXTRACTION_VISION_L2_PROVIDER")
+        or _os.getenv("EXTRACTION_PRIMARY_PROVIDER")
+        or "openrouter"
+    )
+
     prompt = LC_EXTRACTION_PROMPT.format(document_text=text_to_process)
-    
+
     try:
-        # Call LLM with fallback
         output, tokens_in, tokens_out, provider = await LLMProviderFactory.generate_with_fallback(
             prompt=prompt,
             system_prompt=LC_EXTRACTION_SYSTEM_PROMPT,
             max_tokens=1500,
             temperature=temperature,
+            primary_provider=lc_provider,
+            model_override=lc_model,
         )
         
         logger.info(
