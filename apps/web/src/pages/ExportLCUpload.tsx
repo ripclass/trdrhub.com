@@ -9,6 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate, parseExtractionResponse, type ValidationError } from "@/hooks/use-lcopilot";
 import { ExtractionReview } from "@/pages/exporter/ExtractionReview";
@@ -620,6 +624,8 @@ export default function ExportLCUpload({
   // When the user clicks "Back to Upload" from the review screen, we hide the
   // review but preserve extractionPayload for cache reuse on re-extraction.
   const [reviewHidden, setReviewHidden] = useState(false);
+  // Confirmation dialog when extracting with missing required docs.
+  const [missingDocConfirmOpen, setMissingDocConfirmOpen] = useState(false);
 
   // Client-generated request id for SSE progress streaming. Set when the user
   // clicks "Extract & Review", cleared when the extract call finishes. The
@@ -1265,9 +1271,12 @@ export default function ExportLCUpload({
       setShowDocTypeErrors(false);
     }
 
-    // No intermediate confirmation dialog — the main button already
-    // says "Extract Anyway" when docs are missing, matching the
-    // "Start Validation Anyway" pattern on the review page.
+    // If required documents are missing, show confirmation dialog
+    // before proceeding. The user can cancel to upload the missing files.
+    if (requirementUploadStatus.missing.length > 0) {
+      setMissingDocConfirmOpen(true);
+      return;
+    }
     runExtraction();
   };
 
@@ -2146,8 +2155,6 @@ export default function ExportLCUpload({
                       <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
                       Extracting...
                     </>
-                  ) : requirementUploadStatus.missing.length > 0 ? (
-                    "Extract Anyway"
                   ) : (
                     "Extract & Review"
                   )}
@@ -2212,6 +2219,42 @@ export default function ExportLCUpload({
         )}
         </div>
       )}
+
+      {/* Missing document confirmation — shown when user clicks Extract & Review with missing required docs */}
+      <AlertDialog open={missingDocConfirmOpen} onOpenChange={setMissingDocConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {requirementUploadStatus.missing.length} required document{requirementUploadStatus.missing.length === 1 ? ' is' : 's are'} missing
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <ul className="list-disc pl-5 space-y-1">
+                  {requirementUploadStatus.missing.map((req, i) => (
+                    <li key={`confirm-missing-${i}`} className="text-foreground">{req.label || req.type}</li>
+                  ))}
+                </ul>
+                <p className="text-sm text-muted-foreground">
+                  You can extract now and upload the missing document{requirementUploadStatus.missing.length === 1 ? '' : 's'} later,
+                  or cancel to add {requirementUploadStatus.missing.length === 1 ? 'it' : 'them'} first.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-gradient-exporter hover:opacity-90"
+              onClick={() => {
+                setMissingDocConfirmOpen(false);
+                runExtraction();
+              }}
+            >
+              Extract Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Blocked Upload Modal - Shows when LC type mismatch or no LC found */}
       <BlockedUploadModal
