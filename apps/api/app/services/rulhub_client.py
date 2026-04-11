@@ -238,6 +238,64 @@ class RulHubClient:
 # RulHub adapter that implements the RulesService interface
 # ---------------------------------------------------------------------------
 
+def _flatten_for_rulhub(raw: Dict[str, Any], doc_type: str) -> Dict[str, Any]:
+    """Flatten the massive db_rule_payload into RulHub's expected shape.
+
+    RulHub expects: {"beneficiary_name": "...", "amount": 150000, ...}
+    We receive: {"lc": {nested...}, "extracted_context": {nested...}, ...}
+    """
+    flat: Dict[str, Any] = {}
+
+    # Extract LC fields from the "lc" or "credit" sub-dict
+    lc = raw.get("lc") or raw.get("credit") or {}
+    if isinstance(lc, dict):
+        for key in (
+            "lc_number", "number", "amount", "currency", "expiry_date",
+            "issue_date", "latest_shipment_date", "goods_description",
+            "port_of_loading", "port_of_discharge", "partial_shipments",
+            "transshipment", "incoterm", "payment_terms",
+            "documents_required", "additional_conditions",
+            "available_with", "available_by",
+        ):
+            val = lc.get(key)
+            if val is not None and val != "" and val != []:
+                # Unwrap dict-shaped amounts/parties to scalar
+                if isinstance(val, dict) and "value" in val:
+                    flat[key] = val["value"]
+                elif isinstance(val, dict) and "name" in val:
+                    flat[key] = val["name"]
+                else:
+                    flat[key] = val
+
+        # Parties — flatten from dict to name string
+        for party_key in ("applicant", "beneficiary", "issuing_bank", "advising_bank"):
+            party = lc.get(party_key)
+            if isinstance(party, dict):
+                flat[f"{party_key}_name"] = party.get("name", "")
+                flat[f"{party_key}_address"] = party.get("address", "")
+            elif isinstance(party, str) and party:
+                flat[f"{party_key}_name"] = party
+
+    # Extract per-doc-type fields from payload keys
+    for dtype in ("invoice", "bill_of_lading", "insurance", "certificate_of_origin", "packing_list"):
+        doc_data = raw.get(dtype)
+        if isinstance(doc_data, dict):
+            for k, v in doc_data.items():
+                if k.startswith("_"):
+                    continue
+                if v is None or v == "" or v == []:
+                    continue
+                flat[f"{dtype}_{k}"] = v
+
+    # Top-level scalars that the caller already extracted
+    for key in ("lc_number", "amount", "currency", "expiry_date", "jurisdiction", "domain"):
+        val = raw.get(key)
+        if val is not None and val != "" and key not in flat:
+            flat[key] = val
+
+    return flat
+
+
 class RulHubRulesAdapter:
     """
     RulesService-compatible adapter backed by the RulHub API.
@@ -288,10 +346,14 @@ class RulHubRulesAdapter:
         """
         doc_type = input_context.get("document_type", "lc")
         jurisdiction = input_context.get("jurisdiction", "global")
-        fields = input_context.get("fields", input_context)
+        raw_fields = input_context.get("fields", input_context)
+
+        # Flatten the massive db_rule_payload into the clean shape
+        # RulHub expects: {field: scalar_value, ...}
+        flat = _flatten_for_rulhub(raw_fields, doc_type)
 
         try:
-            result = await self.client.validate_document(fields, doc_type, jurisdiction)
+            result = await self.client.validate_document(flat, doc_type, jurisdiction)
             discrepancies = result.get("discrepancies", [])
 
             # Map RulHub discrepancies to our internal finding shape
