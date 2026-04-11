@@ -246,8 +246,10 @@ async def prepare_validation_session(
         bool(payload.get("lc", {}).get("raw_text"))  # Also check if LC data exists
     )
 
-    # Block if no LC found on Exporter dashboard (LC is required for validation)
-    if user_type == "exporter" and not has_lc_document and len(files_list) > 0:
+    # Block if no LC found on Exporter dashboard (LC is required for validation).
+    # Skip this gate when reuse_job_id is provided — the LC was already extracted
+    # in the previous session and its context was pre-loaded above.
+    if user_type == "exporter" and not has_lc_document and len(files_list) > 0 and not reuse_job_id:
         logger.warning(
             f"No LC document found in {len(files_list)} uploaded files. "
             f"Detected types: {detected_doc_types}"
