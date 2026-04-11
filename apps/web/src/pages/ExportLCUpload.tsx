@@ -2118,6 +2118,23 @@ export default function ExportLCUpload({
                 </div>
               </div>
 
+              {/* Missing document warning */}
+              {requirementUploadStatus.missing.length > 0 && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 p-3">
+                  <p className="text-sm font-medium text-amber-800">
+                    {requirementUploadStatus.missing.length} required document{requirementUploadStatus.missing.length > 1 ? 's' : ''} not uploaded:
+                  </p>
+                  <ul className="mt-1 list-disc pl-5 text-sm text-amber-700">
+                    {requirementUploadStatus.missing.map((req, i) => (
+                      <li key={`missing-${i}`}>{req.label || req.type}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-xs text-amber-600">
+                    You can still extract now and upload missing documents later.
+                  </p>
+                </div>
+              )}
+
               {/* Action buttons */}
               <div className="flex items-center justify-end gap-3">
                 <Button

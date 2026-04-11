@@ -128,12 +128,23 @@ async def prepare_validation_session(
             from app.models.validation import ValidationSession as _VS
             prev_session = db.query(_VS).filter(_VS.id == str(reuse_job_id)).first()
             if prev_session and isinstance(prev_session.extracted_data, dict):
-                previous_extraction = prev_session.extracted_data
-                logger.info(
-                    "Re-extraction: loaded previous session %s with %d cached documents",
-                    reuse_job_id,
-                    len((previous_extraction.get("documents") or [])),
-                )
+                raw_data = prev_session.extracted_data
+                # Documents and LC context live inside the setup snapshot,
+                # not at the top level of extracted_data.
+                snapshot = raw_data.get("_setup_snapshot") or {}
+                extracted_ctx = snapshot.get("extracted_context") or {}
+                if isinstance(extracted_ctx, dict) and extracted_ctx.get("documents"):
+                    previous_extraction = extracted_ctx
+                    logger.info(
+                        "Re-extraction: loaded previous session %s with %d cached documents",
+                        reuse_job_id,
+                        len(previous_extraction.get("documents") or []),
+                    )
+                else:
+                    logger.warning(
+                        "Re-extraction: previous session %s has no documents in snapshot",
+                        reuse_job_id,
+                    )
         except Exception as _reuse_exc:
             logger.warning("Failed to load previous session %s for reuse: %s", reuse_job_id, _reuse_exc)
 
