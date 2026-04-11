@@ -5,14 +5,22 @@ For each parsed 46A/47A clause, walks the relevant document's extracted
 fields (using the canonical alias map) and produces a Finding if a
 required field is missing or mismatched.
 
+Also contains deterministic cross-document consistency checks:
+- Insurance coverage >= 110% CIF (UCP600 Art 28(f)(ii))
+- BL vs Packing List weight consistency
+- Late shipment / stale documents / LC expiry date checks
+- Goods description keyword matching (LC vs invoice/BL)
+
 Extraction (Part 1) is a blind transcriber. This module is the examiner.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.services.validation.clause_parser import ParsedClause
 
@@ -288,8 +296,10 @@ def check_cross_document_consistency(
     - Amount on invoice <= LC amount
     - Party names match across docs
     - Ports match LC stipulation
-    - Goods description corresponds
-    - Dates within LC validity
+    - Insurance coverage >= 110% CIF (UCP600 Art 28(f)(ii))
+    - BL vs Packing List weight consistency (ISBP745 L4)
+    - Late shipment / stale documents / LC expiry (UCP600 Art 14(c), 6(d))
+    - Goods description correspondence (UCP600 Art 18(c), 14(e))
     """
     findings: List[Finding] = []
 
@@ -378,6 +388,12 @@ def check_cross_document_consistency(
                     source_layer="crossdoc_matcher",
                 ))
 
+    # --- Deterministic checks (delegated to specialized functions) ---
+    findings.extend(check_insurance_coverage(lc_fields, extracted_documents))
+    findings.extend(check_weight_consistency(extracted_documents))
+    findings.extend(check_date_compliance(lc_fields, extracted_documents))
+    findings.extend(check_goods_description_correspondence(lc_fields, extracted_documents))
+
     return findings
 
 
@@ -459,3 +475,500 @@ def _fuzzy_match(a: str, b: str) -> bool:
         return False
     overlap = len(a_tokens & b_tokens) / max(len(a_tokens), len(b_tokens))
     return overlap >= 0.75
+
+
+# ---------------------------------------------------------------------------
+# Date parsing helper
+# ---------------------------------------------------------------------------
+
+_DATE_FORMATS = [
+    "%Y-%m-%d",
+    "%d/%m/%Y",
+    "%m/%d/%Y",
+    "%d-%m-%Y",
+    "%d %B %Y",
+    "%d %b %Y",
+    "%B %d, %Y",
+    "%b %d, %Y",
+    "%Y%m%d",
+]
+
+
+def _parse_date(val: Any) -> Optional[date]:
+    """Try to parse a date from various formats."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):
+        return val
+    if isinstance(val, dict):
+        val = val.get("value") or val.get("date") or ""
+    text = str(val).strip()
+    if not text:
+        return None
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    # ISO-like with T
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Weight parsing helper
+# ---------------------------------------------------------------------------
+
+_WEIGHT_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*(?:kgs?|kilograms?|kg\.?)?", re.IGNORECASE)
+
+
+def _parse_weight(val: Any) -> Optional[float]:
+    """Extract a numeric weight value, stripping units."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, dict):
+        val = val.get("value") or val.get("weight") or ""
+    text = str(val).strip()
+    if not text:
+        return None
+    m = _WEIGHT_RE.search(text)
+    if m:
+        try:
+            return float(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    # Plain number
+    try:
+        return float(text.replace(",", ""))
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Insurance coverage helper
+# ---------------------------------------------------------------------------
+
+def _parse_coverage_percentage(val: Any) -> Optional[float]:
+    """Parse a coverage percentage like '110%' or '110' into 110.0."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, dict):
+        val = val.get("value") or val.get("percentage") or ""
+    text = str(val).strip().rstrip("%")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _parse_insured_amount(fields: Dict[str, Any]) -> Optional[float]:
+    """Extract the insured/coverage amount from insurance fields."""
+    for key in ("insured_amount", "coverage_amount", "sum_insured", "insured_value", "amount"):
+        val = fields.get(key)
+        if val is None:
+            continue
+        if isinstance(val, dict):
+            val = val.get("value") or val.get("amount")
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            try:
+                cleaned = val.replace(",", "").replace(" ", "")
+                cleaned = re.sub(r"^[A-Z]{3}\s*", "", cleaned)
+                return float(cleaned)
+            except (ValueError, TypeError):
+                pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Goods description keyword matching
+# ---------------------------------------------------------------------------
+
+# Noise words to exclude from keyword matching
+_GOODS_STOPWORDS: Set[str] = {
+    "THE", "A", "AN", "AND", "OR", "OF", "IN", "TO", "FOR", "ON", "AT",
+    "BY", "AS", "IS", "ARE", "WITH", "FROM", "PER", "ALL", "ANY", "EACH",
+    "NO", "NOT", "BE", "BEEN", "BEING", "HAVE", "HAS", "HAD", "DO", "DOES",
+    "DID", "WILL", "SHALL", "SHOULD", "WOULD", "COULD", "MAY", "MIGHT",
+    "MUST", "THAT", "THIS", "THESE", "THOSE", "WHICH", "WHO", "WHOM",
+    "WHAT", "WHERE", "WHEN", "HOW", "IF", "THAN", "THEN", "SO", "SUCH",
+    "ONLY", "ALSO", "ABOUT", "ABOVE", "AFTER", "BEFORE", "BETWEEN",
+    "UNDER", "OVER", "THROUGH", "DURING", "UNTIL", "INTO", "UPON",
+    # Trade-finance boilerplate
+    "LC", "CREDIT", "DOCUMENTARY", "REQUIRED", "DOCUMENTS", "DOCUMENT",
+    "FOLLOWING", "MENTIONED", "STATED", "SPECIFIED", "ACCORDANCE",
+    "HEREWITH", "THEREOF", "THEREIN", "HEREIN", "HEREBY",
+}
+
+
+def _extract_goods_keywords(text: str) -> Set[str]:
+    """Extract meaningful keywords from a goods description."""
+    if not text:
+        return set()
+    # Normalize
+    upper = text.upper()
+    # Split on non-alpha (keep numbers for quantities)
+    tokens = re.findall(r"[A-Z0-9]+(?:[./%-][A-Z0-9]+)*", upper)
+    # Filter stopwords and very short tokens
+    return {t for t in tokens if len(t) > 2 and t not in _GOODS_STOPWORDS}
+
+
+def check_goods_description_correspondence(
+    lc_fields: Dict[str, Any],
+    extracted_documents: List[Dict[str, Any]],
+) -> List[Finding]:
+    """
+    Check that the goods description on invoice and BL corresponds to the
+    LC goods description per UCP600 Art 18(c) / Art 14(e).
+
+    The invoice description must NOT be inconsistent with the LC.
+    Other documents may use general terms (ISBP745 D1).
+    """
+    lc_goods = _normalize_text(
+        lc_fields.get("goods_description")
+        or lc_fields.get("description_of_goods")
+        or (lc_fields.get("mt700") or {}).get("goods_description")
+        or (lc_fields.get("mt700") or {}).get("45A")
+    )
+    if not lc_goods:
+        return []
+
+    lc_keywords = _extract_goods_keywords(lc_goods)
+    if len(lc_keywords) < 2:
+        return []
+
+    findings: List[Finding] = []
+
+    for doc in (extracted_documents or []):
+        dt = doc.get("document_type") or doc.get("doc_type") or ""
+        fields = doc.get("extracted_fields") or doc.get("fields") or {}
+
+        doc_goods = _normalize_text(
+            _find_field_value(fields, "goods_description")
+        )
+        if not doc_goods:
+            continue
+
+        doc_keywords = _extract_goods_keywords(doc_goods)
+        if not doc_keywords:
+            continue
+
+        # Overlap ratio: what fraction of LC keywords appear in the doc
+        overlap = len(lc_keywords & doc_keywords)
+        lc_coverage = overlap / len(lc_keywords) if lc_keywords else 0
+
+        if dt == "commercial_invoice":
+            # Invoice must correspond to LC description — stricter threshold
+            if lc_coverage < 0.40:
+                missing_kw = lc_keywords - doc_keywords
+                sample = ", ".join(sorted(missing_kw)[:5])
+                findings.append(Finding(
+                    severity="discrepancy",
+                    document=dt,
+                    field="goods_description",
+                    lc_clause="LC Field 45A (Goods Description)",
+                    expected=f"Invoice goods description must correspond to LC. LC keywords: {', '.join(sorted(lc_keywords)[:8])}",
+                    found=f"Invoice keywords overlap {overlap}/{len(lc_keywords)} ({lc_coverage:.0%}). Missing: {sample}",
+                    rule="UCP600 Art 18(c)",
+                    explanation="The description of goods in the commercial invoice must correspond to the description in the credit. "
+                                "Key product terms from the LC are not reflected in the invoice.",
+                    suggested_fix="Amend the commercial invoice to include the goods description as stated in the LC.",
+                    impact="Bank will reject. Goods description on invoice does not correspond to LC.",
+                    source_layer="crossdoc_matcher",
+                ))
+        elif dt == "bill_of_lading":
+            # BL may use general terms, but should not conflict (Art 14(e))
+            if lc_coverage < 0.25:
+                findings.append(Finding(
+                    severity="advisory",
+                    document=dt,
+                    field="goods_description",
+                    lc_clause="LC Field 45A (Goods Description)",
+                    expected=f"BL goods description should not conflict with LC",
+                    found=f"Low keyword overlap: {overlap}/{len(lc_keywords)} ({lc_coverage:.0%})",
+                    rule="UCP600 Art 14(e)",
+                    explanation="Transport documents may use general terms for goods not inconsistent with the LC, "
+                                "but very low overlap may indicate a conflict.",
+                    suggested_fix="Verify that the BL goods description is not inconsistent with the LC.",
+                    impact="May cause rejection if the bank considers it inconsistent.",
+                    source_layer="crossdoc_matcher",
+                ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Insurance coverage check — UCP600 Art 28(f)(ii)
+# ---------------------------------------------------------------------------
+
+def check_insurance_coverage(
+    lc_fields: Dict[str, Any],
+    extracted_documents: List[Dict[str, Any]],
+) -> List[Finding]:
+    """
+    Verify insurance covers at least 110% of CIF/CIP value.
+    UCP600 Art 28(f)(ii): If no percentage is specified in the credit,
+    insurance must cover at least 110% of the CIF or CIP value.
+    """
+    lc_amount = _extract_amount(lc_fields)
+    if lc_amount is None or lc_amount <= 0:
+        return []
+
+    findings: List[Finding] = []
+
+    for doc in (extracted_documents or []):
+        dt = doc.get("document_type") or doc.get("doc_type") or ""
+        if dt not in ("insurance_certificate", "insurance_policy", "insurance"):
+            continue
+
+        fields = doc.get("extracted_fields") or doc.get("fields") or {}
+
+        # Check via explicit coverage percentage
+        coverage_pct = _parse_coverage_percentage(
+            _find_field_value(fields, "coverage_percentage")
+        )
+        if coverage_pct is not None and coverage_pct < 110:
+            findings.append(Finding(
+                severity="discrepancy",
+                document=dt,
+                field="coverage_percentage",
+                lc_clause="UCP600 Art 28(f)(ii)",
+                expected="Insurance coverage >= 110% of CIF/CIP value",
+                found=f"Coverage: {coverage_pct}%",
+                rule="UCP600 Art 28(f)(ii)",
+                explanation="Insurance must cover at least 110% of the CIF or CIP value of the goods. "
+                            "If the credit does not specify a percentage, 110% is the minimum.",
+                suggested_fix=f"Obtain amended insurance with coverage of at least 110% (i.e., {lc_amount * 1.1:,.2f}).",
+                impact="Bank will reject. Insurance coverage below minimum 110%.",
+                source_layer="crossdoc_matcher",
+            ))
+            continue
+
+        # Check via insured amount vs LC amount
+        insured_amount = _parse_insured_amount(fields)
+        if insured_amount is not None and lc_amount > 0:
+            min_required = lc_amount * 1.10
+            if insured_amount < min_required:
+                actual_pct = (insured_amount / lc_amount) * 100
+                findings.append(Finding(
+                    severity="discrepancy",
+                    document=dt,
+                    field="insured_amount",
+                    lc_clause="UCP600 Art 28(f)(ii)",
+                    expected=f"Insured amount >= {min_required:,.2f} (110% of LC amount {lc_amount:,.2f})",
+                    found=f"Insured amount: {insured_amount:,.2f} ({actual_pct:.1f}% of LC amount)",
+                    rule="UCP600 Art 28(f)(ii)",
+                    explanation="The insured amount must be at least 110% of the CIF or CIP value.",
+                    suggested_fix=f"Obtain amended insurance covering at least {min_required:,.2f}.",
+                    impact="Bank will reject. Insured amount below 110% of credit value.",
+                    source_layer="crossdoc_matcher",
+                ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# BL vs Packing List weight consistency
+# ---------------------------------------------------------------------------
+
+def check_weight_consistency(
+    extracted_documents: List[Dict[str, Any]],
+) -> List[Finding]:
+    """
+    Check that gross weight on the BL matches the packing list.
+    ISBP745 para L4: weight on transport document must match packing list.
+    """
+    bl_gross: Optional[float] = None
+    pl_gross: Optional[float] = None
+    bl_net: Optional[float] = None
+    pl_net: Optional[float] = None
+
+    for doc in (extracted_documents or []):
+        dt = doc.get("document_type") or doc.get("doc_type") or ""
+        fields = doc.get("extracted_fields") or doc.get("fields") or {}
+
+        if dt == "bill_of_lading":
+            bl_gross = _parse_weight(_find_field_value(fields, "gross_weight"))
+            bl_net = _parse_weight(_find_field_value(fields, "net_weight"))
+        elif dt == "packing_list":
+            pl_gross = _parse_weight(_find_field_value(fields, "gross_weight"))
+            pl_net = _parse_weight(_find_field_value(fields, "net_weight"))
+
+    findings: List[Finding] = []
+
+    if bl_gross is not None and pl_gross is not None:
+        # Allow 1% tolerance for rounding
+        diff = abs(bl_gross - pl_gross)
+        tolerance = max(bl_gross, pl_gross) * 0.01
+        if diff > tolerance:
+            findings.append(Finding(
+                severity="discrepancy",
+                document="bill_of_lading",
+                field="gross_weight",
+                lc_clause="Packing List gross weight",
+                expected=f"BL gross weight should match Packing List: {pl_gross:,.2f} kg",
+                found=f"BL shows: {bl_gross:,.2f} kg (difference: {diff:,.2f} kg)",
+                rule="ISBP745 L4",
+                explanation="The gross weight stated on the bill of lading must be consistent "
+                            "with the gross weight on the packing list.",
+                suggested_fix="Reconcile the gross weight between the BL and packing list. "
+                              "Obtain amended documents if needed.",
+                impact="Bank may reject. Weight discrepancy between transport document and packing list.",
+                source_layer="crossdoc_matcher",
+            ))
+
+    if bl_net is not None and pl_net is not None:
+        diff = abs(bl_net - pl_net)
+        tolerance = max(bl_net, pl_net) * 0.01
+        if diff > tolerance:
+            findings.append(Finding(
+                severity="advisory",
+                document="bill_of_lading",
+                field="net_weight",
+                lc_clause="Packing List net weight",
+                expected=f"BL net weight should match Packing List: {pl_net:,.2f} kg",
+                found=f"BL shows: {bl_net:,.2f} kg (difference: {diff:,.2f} kg)",
+                rule="ISBP745 L4",
+                explanation="The net weight on the bill of lading should be consistent "
+                            "with the net weight on the packing list.",
+                suggested_fix="Verify the net weight figures and reconcile if necessary.",
+                impact="May cause rejection if the discrepancy is material.",
+                source_layer="crossdoc_matcher",
+            ))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Date validation — late shipment, stale docs, LC expiry
+# ---------------------------------------------------------------------------
+
+def check_date_compliance(
+    lc_fields: Dict[str, Any],
+    extracted_documents: List[Dict[str, Any]],
+) -> List[Finding]:
+    """
+    Check date-related compliance:
+    1. Late shipment — BL on-board date > LC latest shipment date (UCP600 Art 14(c))
+    2. Stale documents — presentation > 21 days after shipment (UCP600 Art 14(c))
+    3. LC expired — current date or BL date > LC expiry date (UCP600 Art 6(d))
+    """
+    lc_latest_shipment = _parse_date(
+        lc_fields.get("latest_shipment_date")
+        or lc_fields.get("latest_date_of_shipment")
+        or (lc_fields.get("mt700") or {}).get("latest_shipment_date")
+        or (lc_fields.get("mt700") or {}).get("44C")
+    )
+    lc_expiry = _parse_date(
+        lc_fields.get("expiry_date")
+        or lc_fields.get("date_of_expiry")
+        or (lc_fields.get("mt700") or {}).get("expiry_date")
+        or (lc_fields.get("mt700") or {}).get("31D")
+    )
+    lc_presentation_period = None
+    pp_val = (
+        lc_fields.get("presentation_period")
+        or lc_fields.get("period_for_presentation")
+        or (lc_fields.get("mt700") or {}).get("48")
+    )
+    if pp_val:
+        # Try to extract number of days
+        pp_str = str(pp_val).strip()
+        m = re.search(r"(\d+)\s*(?:days?|calendar days?)", pp_str, re.IGNORECASE)
+        if m:
+            lc_presentation_period = int(m.group(1))
+    # Default per UCP600 Art 14(c): 21 calendar days
+    if lc_presentation_period is None:
+        lc_presentation_period = 21
+
+    findings: List[Finding] = []
+    bl_on_board: Optional[date] = None
+
+    for doc in (extracted_documents or []):
+        dt = doc.get("document_type") or doc.get("doc_type") or ""
+        fields = doc.get("extracted_fields") or doc.get("fields") or {}
+
+        if dt == "bill_of_lading":
+            bl_on_board = _parse_date(
+                _find_field_value(fields, "on_board_date")
+                or _find_field_value(fields, "issue_date")
+            )
+            if bl_on_board is None:
+                continue
+
+            # 1. Late shipment check
+            if lc_latest_shipment and bl_on_board > lc_latest_shipment:
+                days_late = (bl_on_board - lc_latest_shipment).days
+                findings.append(Finding(
+                    severity="discrepancy",
+                    document=dt,
+                    field="on_board_date",
+                    lc_clause=f"LC Field 44C (Latest Shipment Date: {lc_latest_shipment.isoformat()})",
+                    expected=f"Shipment on or before {lc_latest_shipment.isoformat()}",
+                    found=f"BL on-board date: {bl_on_board.isoformat()} ({days_late} days late)",
+                    rule="UCP600 Art 14(c)",
+                    explanation="The shipment date on the bill of lading exceeds the latest date "
+                                "of shipment specified in the credit.",
+                    suggested_fix="Late shipment cannot be cured by amendment after the fact. "
+                                  "Request an LC amendment extending the latest shipment date, "
+                                  "or negotiate with the issuing bank.",
+                    impact="Bank will reject. Late shipment is a non-waivable discrepancy.",
+                    source_layer="crossdoc_matcher",
+                ))
+
+            # 2. Stale documents check
+            today = date.today()
+            deadline = bl_on_board + timedelta(days=lc_presentation_period)
+            if lc_expiry:
+                deadline = min(deadline, lc_expiry)
+            if today > deadline:
+                days_stale = (today - deadline).days
+                findings.append(Finding(
+                    severity="discrepancy",
+                    document=dt,
+                    field="presentation_deadline",
+                    lc_clause=f"UCP600 Art 14(c) — {lc_presentation_period} days from shipment",
+                    expected=f"Documents presented by {deadline.isoformat()} "
+                             f"({lc_presentation_period} days from shipment {bl_on_board.isoformat()})",
+                    found=f"Today is {today.isoformat()} — {days_stale} days past deadline",
+                    rule="UCP600 Art 14(c)",
+                    explanation="Documents must be presented within the period specified in the LC "
+                                f"(or 21 days after shipment if not specified). "
+                                f"The presentation deadline was {deadline.isoformat()}.",
+                    suggested_fix="Contact the issuing bank urgently to discuss late presentation. "
+                                  "Request an LC amendment if possible.",
+                    impact="Bank will reject. Stale documents (late presentation).",
+                    source_layer="crossdoc_matcher",
+                ))
+
+    # 3. LC expiry check (independent of BL)
+    if lc_expiry:
+        today = date.today()
+        if today > lc_expiry:
+            days_past = (today - lc_expiry).days
+            findings.append(Finding(
+                severity="discrepancy",
+                document="letter_of_credit",
+                field="expiry_date",
+                lc_clause=f"LC Field 31D (Expiry Date: {lc_expiry.isoformat()})",
+                expected=f"LC valid until {lc_expiry.isoformat()}",
+                found=f"LC expired {days_past} days ago (today: {today.isoformat()})",
+                rule="UCP600 Art 6(d)(i)",
+                explanation="The credit has expired. No presentation can be made under an expired credit.",
+                suggested_fix="Do not present documents under this LC. Contact the issuing bank "
+                              "to request an extension or a new credit.",
+                impact="Bank will reject. Credit has expired.",
+                source_layer="crossdoc_matcher",
+            ))
+
+    return findings

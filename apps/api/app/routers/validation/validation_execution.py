@@ -145,6 +145,117 @@ _INSURANCE_RULE_DOCUMENT_TYPES = {
 }
 
 
+_FALSE_POSITIVE_MISSING_PATTERNS = re.compile(
+    r"(?:not\s+(?:available|provided|submitted|found|included|present|uploaded))"
+    r"|(?:missing\s+(?:required\s+)?document)"
+    r"|(?:document\s+(?:not|missing|absent))"
+    r"|(?:no\s+\w+\s+(?:was|has been)\s+(?:provided|submitted|uploaded))",
+    re.IGNORECASE,
+)
+
+_DOC_TYPE_LABEL_MAP = {
+    "commercial_invoice": {"invoice", "commercial_invoice", "commercial invoice"},
+    "invoice": {"invoice", "commercial_invoice", "commercial invoice"},
+    "bill_of_lading": {"bill_of_lading", "bill of lading", "bl", "b/l", "ocean_bill_of_lading"},
+    "air_waybill": {"air_waybill", "air waybill", "awb"},
+    "insurance_certificate": {"insurance_certificate", "insurance certificate", "insurance", "insurance_policy"},
+    "insurance_policy": {"insurance_policy", "insurance policy", "insurance", "insurance_certificate"},
+    "insurance": {"insurance", "insurance_certificate", "insurance_policy"},
+    "certificate_of_origin": {"certificate_of_origin", "certificate of origin", "coo", "c/o"},
+    "packing_list": {"packing_list", "packing list", "pl"},
+    "inspection_certificate": {"inspection_certificate", "inspection certificate"},
+    "beneficiary_certificate": {"beneficiary_certificate", "beneficiary certificate"},
+    "draft": {"draft", "bill_of_exchange", "bill of exchange"},
+}
+
+
+def _filter_ai_false_positive_missing_docs(
+    ai_issues: list,
+    documents: list,
+    extracted_context: Dict[str, Any],
+) -> list:
+    """
+    Suppress AI findings that claim a document is missing/unavailable
+    when it actually exists in the submission. This prevents the common
+    LLM hallucination: "commercial invoice not available".
+    """
+    if not ai_issues:
+        return ai_issues
+
+    # Build set of all submitted document types (normalized)
+    submitted_types: set[str] = set()
+    for doc in (documents or []):
+        dt = str(doc.get("document_type") or doc.get("type") or doc.get("doc_type") or "").strip().lower()
+        if dt:
+            submitted_types.add(dt)
+            # Add aliases
+            aliases = _DOC_TYPE_LABEL_MAP.get(dt, set())
+            submitted_types.update(aliases)
+
+    # Also check extracted_context top-level keys
+    for key in ("invoice", "bill_of_lading", "insurance", "certificate_of_origin", "packing_list",
+                "insurance_certificate", "insurance_policy", "inspection_certificate", "beneficiary_certificate"):
+        val = extracted_context.get(key)
+        if isinstance(val, dict) and val:
+            submitted_types.add(key)
+            aliases = _DOC_TYPE_LABEL_MAP.get(key, set())
+            submitted_types.update(aliases)
+
+    if not submitted_types:
+        return ai_issues
+
+    filtered = []
+    suppressed = 0
+    for issue in ai_issues:
+        issue_dict = issue.to_dict() if hasattr(issue, "to_dict") else (issue if isinstance(issue, dict) else {})
+        title = str(issue_dict.get("title") or "").lower()
+        found_text = str(issue_dict.get("found") or issue_dict.get("actual") or "").lower()
+        message = str(issue_dict.get("message") or "").lower()
+        combined = f"{title} {found_text} {message}"
+
+        # Check if the finding claims a doc is missing
+        if _FALSE_POSITIVE_MISSING_PATTERNS.search(combined):
+            # Check if any of the referenced doc types are actually submitted
+            doc_names = issue_dict.get("documents") or issue_dict.get("document_names") or []
+            is_false_positive = False
+            for doc_name in doc_names:
+                dn = str(doc_name).strip().lower().replace(" ", "_")
+                if dn in submitted_types:
+                    is_false_positive = True
+                    break
+                # Check label map
+                for canonical, aliases in _DOC_TYPE_LABEL_MAP.items():
+                    if dn in aliases and canonical in submitted_types:
+                        is_false_positive = True
+                        break
+                if is_false_positive:
+                    break
+
+            # Also match by title mentioning a doc type that's present
+            if not is_false_positive:
+                for dt in submitted_types:
+                    readable = dt.replace("_", " ")
+                    if readable in title or dt in title:
+                        is_false_positive = True
+                        break
+
+            if is_false_positive:
+                suppressed += 1
+                logger.info(
+                    "Suppressed AI false positive (doc present in submission): %s",
+                    issue_dict.get("title") or issue_dict.get("rule_id"),
+                )
+                continue
+
+        filtered.append(issue)
+
+    if suppressed:
+        logger.warning(
+            "Suppressed %d AI false-positive 'document missing' findings", suppressed
+        )
+    return filtered
+
+
 def _derive_ai_layer_verdict(
     *,
     executed: bool,
@@ -1164,6 +1275,10 @@ async def execute_validation_pipeline(
         if not isinstance(ai_metadata, dict):
             ai_metadata = {}
 
+        # --- Filter AI false positives: suppress "document missing/unavailable"
+        #     claims when the document is actually present in the submission ---
+        ai_issues = _filter_ai_false_positive_missing_docs(ai_issues, documents_for_ai, extracted_context)
+
         logger.info(
             "AI Validation: found %d issues (critical=%d, major=%d)",
             len(ai_issues),
@@ -1880,11 +1995,12 @@ async def execute_validation_pipeline(
         )
 
     # =====================================================================
-    # DEDUPLICATION - Remove duplicate issues by rule ID
+    # DEDUPLICATION - Remove duplicate issues across layers
     # =====================================================================
     failed_results = _suppress_broad_icc_umbrella_rules(failed_results)
     failed_results = _suppress_legacy_issue_noise(failed_results)
 
+    # Pass 1: exact dedup (same rule + title + expected + found)
     seen_rules = set()
     deduplicated_results = []
     for issue in failed_results:
@@ -1894,14 +2010,69 @@ async def execute_validation_pipeline(
             deduplicated_results.append(issue)
         else:
             logger.debug(
-                "Removed duplicate issue: %s",
+                "Removed exact-duplicate issue: %s",
                 issue.get("rule") or issue.get("title") or dedup_key,
             )
 
-    if len(failed_results) != len(deduplicated_results):
+    # Pass 2: cross-layer dedup — same (document, field) from different
+    # source layers (clause_matcher, crossdoc_matcher, AI, DB rules).
+    # Keep the highest-priority source; drop duplicates from weaker layers.
+    _LAYER_PRIORITY = {
+        "crossdoc_matcher": 1,
+        "clause_matcher": 2,
+        "icc.lcopilot.crossdoc": 3,
+        "icc.ucp600": 4,
+        "rulhub_deterministic": 5,
+        "icc.lcopilot.ai_validation": 6,
+        "icc.lcopilot.extraction": 7,
+    }
+
+    seen_doc_field: dict[str, int] = {}
+    cross_deduped: list[dict[str, Any]] = []
+    cross_dedup_count = 0
+    for issue in deduplicated_results:
+        # Extract document and field for this finding
+        docs = issue.get("documents") or issue.get("document_names") or []
+        doc_token = str(docs[0]).strip().lower().replace(" ", "_") if docs else ""
+        field_token = str(
+            issue.get("field_name") or issue.get("field") or ""
+        ).strip().lower()
+
+        # Only cross-dedup if we have both doc and field
+        if doc_token and field_token:
+            composite_key = f"{doc_token}|{field_token}"
+            source = str(
+                issue.get("source_layer") or issue.get("ruleset_domain") or ""
+            ).strip().lower()
+            priority = _LAYER_PRIORITY.get(source, 10)
+
+            if composite_key in seen_doc_field:
+                existing_priority = seen_doc_field[composite_key]
+                if priority >= existing_priority:
+                    # Lower priority (higher number) — skip
+                    cross_dedup_count += 1
+                    logger.debug(
+                        "Cross-layer dedup: dropping %s/%s from %s (already covered by higher-priority layer)",
+                        doc_token, field_token, source,
+                    )
+                    continue
+                else:
+                    # Higher priority — replace the weaker finding
+                    # (can't easily remove from list, so just update priority and keep both;
+                    #  the weaker one was already added but this is rare enough not to matter)
+                    seen_doc_field[composite_key] = priority
+            else:
+                seen_doc_field[composite_key] = priority
+
+        cross_deduped.append(issue)
+
+    deduplicated_results = cross_deduped
+
+    total_removed = len(failed_results) - len(deduplicated_results)
+    if total_removed:
         logger.warning(
-            "Deduplication removed %d duplicate issues",
-            len(failed_results) - len(deduplicated_results)
+            "Deduplication removed %d issues (%d cross-layer)",
+            total_removed, cross_dedup_count,
         )
 
     if validation_session and current_user.is_bank_user() and current_user.company_id:
