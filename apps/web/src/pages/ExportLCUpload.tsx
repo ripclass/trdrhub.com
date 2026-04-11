@@ -626,6 +626,8 @@ export default function ExportLCUpload({
   const [reviewHidden, setReviewHidden] = useState(false);
   // Confirmation dialog when extracting with missing required docs.
   const [missingDocConfirmOpen, setMissingDocConfirmOpen] = useState(false);
+  // Actual number of files being extracted (may differ from uploadedFiles.length in incremental mode).
+  const [extractingFileCount, setExtractingFileCount] = useState(0);
 
   // Client-generated request id for SSE progress streaming. Set when the user
   // clicks "Extract & Review", cleared when the extract call finishes. The
@@ -1359,6 +1361,7 @@ export default function ExportLCUpload({
           ? crypto.randomUUID()
           : `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setClientRequestId(requestId);
+      setExtractingFileCount(files.length);
 
       // Log validation params
       console.log('📁 Files to validate:', files.map(f => f.name));
@@ -2190,7 +2193,7 @@ export default function ExportLCUpload({
 
               {isValidationProcessing && (
                 <ValidationProgressIndicator
-                  fileCount={completedFiles.length}
+                  fileCount={extractingFileCount || completedFiles.length}
                   realProgress={validationProgress}
                 />
               )}
