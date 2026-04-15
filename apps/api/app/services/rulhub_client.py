@@ -346,11 +346,14 @@ class RulHubRulesAdapter:
         """
         doc_type = input_context.get("document_type", "lc")
         jurisdiction = input_context.get("jurisdiction", "global")
+        source = input_context.get("source")
         raw_fields = input_context.get("fields", input_context)
 
         # Flatten the massive db_rule_payload into the clean shape
         # RulHub expects: {field: scalar_value, ...}
         flat = _flatten_for_rulhub(raw_fields, doc_type)
+        if source:
+            flat["source"] = source
 
         try:
             result = await self.client.validate_document(flat, doc_type, jurisdiction)

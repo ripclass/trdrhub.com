@@ -1520,6 +1520,7 @@ async def execute_validation_pipeline(
                         input_context={
                             "document_type": primary_doc_type,
                             "jurisdiction": primary_jurisdiction,
+                            "source": "UCP600",
                             "fields": _rulhub_payload,
                         },
                     )
@@ -1617,6 +1618,13 @@ async def execute_validation_pipeline(
                             deterministic_findings=[i for i in (db_rule_issues or []) if isinstance(i, dict)],
                         ),
                         timeout=_veto_timeout,
+                    )
+                    # Post-veto: suppress any "document missing" anomalies Opus
+                    # fabricates when the doc is actually present. The pre-veto
+                    # filter at line ~1280 only covers ai_issues; anomaly_findings
+                    # injected inside _run_opus_veto_pass bypass it.
+                    vetted_findings = _filter_ai_false_positive_missing_docs(
+                        vetted_findings, documents_for_ai, extracted_context,
                     )
                     # Replace db_rule_issues with vetted findings (Opus has final say)
                     db_rule_issues = vetted_findings
