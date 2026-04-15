@@ -1520,7 +1520,7 @@ async def execute_validation_pipeline(
                         input_context={
                             "document_type": primary_doc_type,
                             "jurisdiction": primary_jurisdiction,
-                            "source": "UCP600",
+                            "rules": "ucp600",
                             "fields": _rulhub_payload,
                         },
                     )

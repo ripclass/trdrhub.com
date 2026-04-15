@@ -125,6 +125,7 @@ class RulHubClient:
         document_fields: Dict[str, Any],
         document_type: str,
         jurisdiction: str = "global",
+        rules: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         POST /v1/validate — single-document validation.
@@ -140,11 +141,13 @@ class RulHubClient:
                 }
             }
         """
-        payload = {
+        payload: Dict[str, Any] = {
             "document": document_fields,
             "document_type": document_type,
             "jurisdiction": jurisdiction,
         }
+        if rules:
+            payload["rules"] = rules
         result = await self._request("POST", "/v1/validate", json=payload)
         return result.get("data", result)
 
@@ -346,17 +349,17 @@ class RulHubRulesAdapter:
         """
         doc_type = input_context.get("document_type", "lc")
         jurisdiction = input_context.get("jurisdiction", "global")
-        source = input_context.get("source")
+        rules_family = input_context.get("rules")
         raw_fields = input_context.get("fields", input_context)
 
         # Flatten the massive db_rule_payload into the clean shape
         # RulHub expects: {field: scalar_value, ...}
         flat = _flatten_for_rulhub(raw_fields, doc_type)
-        if source:
-            flat["source"] = source
 
         try:
-            result = await self.client.validate_document(flat, doc_type, jurisdiction)
+            result = await self.client.validate_document(
+                flat, doc_type, jurisdiction, rules=rules_family,
+            )
             discrepancies = result.get("discrepancies", [])
 
             # Map RulHub discrepancies to our internal finding shape
