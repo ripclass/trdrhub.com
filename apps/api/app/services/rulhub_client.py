@@ -290,8 +290,15 @@ def _flatten_for_rulhub(raw: Dict[str, Any], doc_type: str) -> Dict[str, Any]:
                     continue
                 flat[f"{dtype}_{k}"] = v
 
-    # Top-level scalars that the caller already extracted
-    for key in ("lc_number", "amount", "currency", "expiry_date", "jurisdiction", "domain"):
+    # Top-level scalars that the caller already extracted.
+    # NEVER include "jurisdiction", "domain", "version", "metadata",
+    # or "taxonomy" here — rulhub's validate_v1 helper auto-promotes
+    # those keys from the document body to hard SQL filters
+    # (Rule.domain == X, Rule.version == X, etc., exact equality).
+    # trdrhub's internal "domain" is "icc.ucp600" but the seeded rules
+    # use "icc_core" — sending ours strips all matches to zero.
+    # Jurisdiction is already passed as a top-level HTTP payload field.
+    for key in ("lc_number", "amount", "currency", "expiry_date"):
         val = raw.get(key)
         if val is not None and val != "" and key not in flat:
             flat[key] = val
