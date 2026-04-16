@@ -136,9 +136,10 @@ All three produce output that gets shaped through `_shape_lc_financial_payload` 
 
 | File | Role |
 |---|---|
-| `apps/api/app/services/extraction/multimodal_document_extractor.py` | Layer 1: vision LLM tier L1/L2/L3, one-shot MT700 example, cross-doc context |
-| `apps/api/app/services/extraction/swift_mt700_full.py` | Layer 1.5: regex MT700 parser, LC-only fallback, returns clean scalars |
-| `apps/api/app/services/extraction/ai_first_extractor.py` | Layer 2: text-based AI fallback, owns `_wrap_ai_result_with_default_confidence` / `_unwrap_confidence_scalars_in_place` |
+| `apps/api/app/services/extraction/multimodal_document_extractor.py` | Vision LLM tier chain. LC starts at L2 (Opus), supporting docs at L1 (Sonnet). Tier defaults in `_VISION_TIER_DEFAULTS`. |
+| `apps/api/app/services/extraction/swift_mt700_full.py` | Regex MT700 parser, LC-only fallback, returns clean scalars |
+| `apps/api/app/services/extraction/ai_lc_extractor.py` | LC text-based extraction. Single Opus call (ensemble disabled 2026-04-11). Uses `EXTRACTION_LC_MODEL` env var. |
+| `apps/api/app/services/extraction/ai_first_extractor.py` | Supporting doc text fallback. Uses `EXTRACTION_PRIMARY_MODEL` (Sonnet). Owns `_wrap_ai_result_with_default_confidence` / `_unwrap_confidence_scalars_in_place` |
 | `apps/api/app/services/extraction/lc_document.py` | Canonical `LCDocument` Pydantic model; `from_xxx()` adapters per extractor; `to_lc_context()` legacy shape emitter |
 | `apps/api/app/services/extraction/launch_pipeline.py` | `_process_lc_like` orchestrator, `_shape_lc_financial_payload`, `_canonicalize_field_names`, `_FIELD_NAME_ALIASES` |
 | `apps/api/app/services/extraction/required_fields_derivation.py` | Derives required field map per doc type from LC 46A/47A clauses |
@@ -250,7 +251,15 @@ GET  /api/exporter/banks                     # Available banks
 
 ## Current Focus
 
-**Part 1 — Extraction hardening, transcription-only model.** Parts 2 and 3 are frozen.
+**Part 1 — Extraction hardening, ISO 20022 gap fixed.** Part 2 is unfrozen and working live (RulHub + veto filter + crossdoc). Part 3 is still frozen.
+
+**2026-04-16 status:**
+- **ISO 20022 extraction fixed.** Commit `dd44d9dc` fixed three cascading failures (XML wrapper, flat schema, Ccy attribute strip). Currency extraction 0/9 → 9/9, ISO perfect sets reject → review. See `project_iso20022_extraction_gap.md`.
+- **Part 2 unblocked end-to-end.** RulHub 200ing with real UCP600-18/UCP600-38G findings. Post-veto false-positive filter clean across all 18 stress tests.
+- **18-set stress matrix: 12/18 verdict match.** 6 remaining mismatches are all minor→reject (3 MT + 3 ISO) due to Part 2 threshold (`major_count > 2` at `response_shaping.py:561`) + universal "LC Expiry Date Not Found" major from test data lacking expiry dates. Not an extraction or validation bug — test data quality issue.
+- **Stress corpus ready.** 27 labeled sets (`SET_NOTES.txt` per set with machine-readable Intended outcome + LC Number) at `apps/api/tests/stress_corpus/`, gitignored. See `reference_stress_corpus.md`.
+
+**The extraction separation contract remains in force** (below).
 
 On **2026-04-10** we shipped a major architectural refactor that separated extraction from validation. The contract now is:
 
@@ -296,11 +305,13 @@ Net across the 2026-04-09 → 2026-04-10 window: roughly **−2500 lines, +300 l
 - ~~Empty signature field filter~~ — hidden from review. Commit `c4858209`.
 
 **Still open:**
-1. **Centralize field name aliases** — still split across `launch_pipeline._FIELD_NAME_ALIASES` and `ExtractionReview.FIELD_ALIAS_MAP`. Down to two sources. Also `doc_matcher._CANONICAL_ALIASES`.
-2. **Vestigial `schema_fields_by_doc_type`** — no longer drives rendering, just establishes field ordering. Can be simplified.
-3. ~~**Unfreeze Part 2 — Validation**~~ — **DONE 2026-04-10/11**. Clause parser + doc matcher + crossdoc matcher built and wired. RulHub adapter built (500 from RulHub server — payload shape needs fixing). Opus veto runs independently. 4-tab UI live. Multiple live tests passed.
-4. **Auth hardening** — #1 launch risk. Four auth providers, legacy layers.
-5. **Importer convergence** — waits on exporter extraction + validation spine.
+1. ~~★ ISO 20022 LC extraction gap~~ — **FIXED 2026-04-16** commit `dd44d9dc`. Currency 0/9→9/9, latest_shipment 0/9→9/9, ISO perfect reject→review. See `project_iso20022_extraction_gap.md`.
+2. **Centralize field name aliases** — still split across `launch_pipeline._FIELD_NAME_ALIASES` and `ExtractionReview.FIELD_ALIAS_MAP`. Down to two sources. Also `doc_matcher._CANONICAL_ALIASES`.
+3. **Vestigial `schema_fields_by_doc_type`** — no longer drives rendering, just establishes field ordering. Can be simplified.
+4. ~~**Unfreeze Part 2 — Validation**~~ — **DONE 2026-04-10/11** + **RulHub path unblocked 2026-04-15** (commits `a5b5bf9a → 3d3dad04 → eccc8a85`). Clause parser + doc matcher + crossdoc matcher + RulHub adapter all wired and producing real findings (UCP600-18, UCP600-38G) across MT + ISO tests. Opus veto runs independently with post-veto false-positive filter.
+5. **Auth hardening** — #1 launch risk. Four auth providers, legacy layers.
+6. **Importer convergence** — waits on exporter extraction + validation spine.
+7. **Minor over-reject calibration** — 6/18 stress tests (all minor sets) reject with 0 critical, 3-4 major. Threshold is `major_count > 2` at `response_shaping.py:561`. 1 of those majors is universal "LC Expiry Date Not Found" from test data lacking expiry dates. Test data quality issue, not code bug. Could fix by adding expiry dates to stress corpus PDFs or by calibrating Part 2 severity assignment.
 
 ### Part 2 — Validation backlog (active as of 2026-04-11)
 
@@ -321,6 +332,23 @@ Net across the 2026-04-09 → 2026-04-10 window: roughly **−2500 lines, +300 l
 4. **BL weight vs PL weight check** — not implemented.
 5. **Goods description correspondence** — needs at least keyword-level matching.
 
+### Extraction model routing (updated 2026-04-11)
+
+| Document | Vision tier | Text fallback | Model |
+|----------|------------|---------------|-------|
+| LC | L2→L3 | `ai_lc_extractor` (single call) | **Opus** |
+| Supporting docs | L1→L2→L3 | `ai_first_extractor` | **Sonnet** |
+
+The LC has **4 separate extraction paths** — trace ALL before debugging model routing:
+1. `multimodal_document_extractor.extract_document_multimodal_first` — vision tier chain
+2. `swift_mt700_full.parse_mt700_full` — regex, fires when text has SWIFT tags
+3. `ai_lc_extractor.extract_lc_with_ai` — text-based, single Opus (ensemble disabled)
+4. `ai_first_extractor.extract_lc_ai_first` — final fallback
+
+All paths enter via `validate.py:_build_document_context` → `launch_pipeline.process_document` → `_process_lc_like`.
+
+**Port normalization removed from extraction (2026-04-11):** `_normalize_field` in `ai_first_extractor.py` and `_normalize_port_value` in `launch_pipeline.py` no longer overwrite port values. Raw verbatim values preserved. Canonical names stored in `_meta` sidecar for validation to use.
+
 ### Extraction gotchas (learned the hard way)
 
 - **Schema-priming trap** (fixed in the 2026-04-10 intrinsic-fields pass): leaving `lc_number` / `buyer_purchase_order_number` / `exporter_bin` / `exporter_tin` in supporting-doc schemas' `fields` lists primed the LLM to hunt for them on every invoice / BL / COO / etc. On "ideal" test PDFs where those values were printed, it looked fine. On real dirty invoices the LLM would (a) coerce ambiguous reference numbers into `lc_number` → masking discrepancies or (b) emit `lc_number: ""` when a label was present but unreadable → confusing validation. Deleted from seven supporting schemas. Kept on the `letter_of_credit` schema (where `lc_number` is Field 20, the LC's own identity field). The LLM still captures these values opportunistically when they ARE printed, via the "transcribe ANY printed labeled field" prompt instruction + `_FIELD_NAME_ALIASES` normalization.
@@ -334,6 +362,8 @@ Net across the 2026-04-09 → 2026-04-10 window: roughly **−2500 lines, +300 l
 - **`coerceToString` in `ExtractionReview.tsx`** uses `JSON.stringify` as its fallback for non-string fields. This is a visibility safety net — if any structured data leaks through (jsonish wrapper, array of dicts), it renders visibly instead of silently. Keep the stringify for observability; route complex types out earlier in the pipeline.
 - **Snapshot serializer `_jsonable`** in `pipeline_runner.py` is now type-preserving (Decimal → float, date/datetime → ISO string, Enum → .value, Pydantic → model_dump, bytes → utf-8). Fixed in `a07f8ff9`. Don't regress it back to naive `str(value)`.
 - **Concatenated 46A/47A clauses** — the vision LLM collapses 46A `documents_required` into a single concatenated string on some LCs. Extraction passes this through as-is. DO NOT add a splitter in extraction — if validation needs per-clause access, write the splitter in validation. Reverted commit `9b34140b` was a dead-end.
+- **ISO 20022 XML wrapper trap** (fixed in `dd44d9dc`): ISO 20022 PDFs embed `<Document>` XML inside non-XML prose headers/footers. `ET.fromstring()` fails on the mixed content. The extractor now regex-extracts `<Document>...</Document>` before parsing. Simplified tsmt.* schemas use flat element names (`TxId`, `TtlAmt`, `LodgPort`, `LatstShipmntDt`) directly under root — not nested under `DocCdtDtls`/`TermsAndConds` wrappers. The extractor has an `else` branch that searches root for these. `_xml_to_plain_text` preserves `Ccy` attributes. Don't regress any of these.
+- **ISO path skips `_shape_lc_financial_payload`**: when `lc_format == "iso20022"`, `_process_lc_like` returns `iso_context` directly from the ISO extractor — it does NOT run `_shape_lc_financial_payload`, `LCDocument` canonicalization, or `_assess_lc_financial_completeness`. The ISO extractor must emit the right key names (e.g. `number`, `currency`, `port_of_loading`, `latest_shipment_date`) because `_build_lc_user_facing_extracted_fields` reads them directly.
 - **Ignore the Vercel plugin hook nags**: the repo's auto-injected validators suggest `"use client"` / `searchParams is async` / `setTimeout not available in workflow sandbox scope`. `apps/web` is a **Vite + React 18 SPA**, not a Next.js App Router app, not a Vercel Workflow sandbox. All those suggestions are false positives from path-matching. Do not add `"use client"` or `sleep()` from `"workflow"` to any file.
 
 ## Parked (Don't Touch)
