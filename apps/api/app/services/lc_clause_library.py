@@ -2159,6 +2159,124 @@ REGIONAL_CLAUSES = [
         bias=BiasIndicator.NEUTRAL,
         tags=["China", "SAFE", "forex"]
     ),
+
+    # Turkey Requirements — TCMB (Central Bank) / Ministry of Trade
+    LCClause(
+        code="TR-001",
+        category=ClauseCategory.SPECIAL,
+        subcategory="Turkey Trade",
+        title="VKN Reference",
+        clause_text="VERGI KIMLIK NUMARASI (VKN) {vkn} MUST BE REFERENCED ON DOCUMENTS",
+        plain_english="Turkish exporters must include their 10-digit tax ID.",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Turkey", "VKN", "regulatory"],
+    ),
+    LCClause(
+        code="TR-002",
+        category=ClauseCategory.SPECIAL,
+        subcategory="Turkey Trade",
+        title="E-Fatura Invoice",
+        clause_text="COMMERCIAL INVOICE MUST BE ISSUED AS E-FATURA PER TURKISH REVENUE ADMINISTRATION",
+        plain_english="Turkey mandates electronic invoice (e-fatura) for registered exporters.",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Turkey", "e-fatura", "invoice"],
+    ),
+    LCClause(
+        code="TR-003",
+        category=ClauseCategory.SPECIAL,
+        subcategory="Turkey Trade",
+        title="Export Declaration (GÇB)",
+        clause_text="GÜMRÜK ÇIKIŞ BEYANNAMESI (GÇB) NUMBER MUST BE REFERENCED",
+        plain_english="Turkey's customs export declaration number must appear on documents.",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Turkey", "GÇB", "customs"],
+    ),
+
+    # Vietnam Requirements — SBV (State Bank) / MOIT / customs
+    LCClause(
+        code="VN-001",
+        category=ClauseCategory.SPECIAL,
+        subcategory="SBV Vietnam",
+        title="MST Tax Code Reference",
+        clause_text="MÃ SỐ THUẾ (MST) {mst} MUST BE REFERENCED ON DOCUMENTS",
+        plain_english="Vietnamese exporters must include their tax code (MST).",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Vietnam", "MST", "regulatory"],
+    ),
+    LCClause(
+        code="VN-002",
+        category=ClauseCategory.SPECIAL,
+        subcategory="SBV Vietnam",
+        title="Foreign Currency Repatriation",
+        clause_text="EXPORT PROCEEDS MUST BE REPATRIATED AND CONVERTED PER STATE BANK OF VIETNAM CIRCULARS",
+        plain_english="Vietnam law: export USD proceeds must be repatriated through a licensed bank.",
+        risk_level=RiskLevel.MEDIUM,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Vietnam", "SBV", "repatriation"],
+    ),
+    LCClause(
+        code="VN-003",
+        category=ClauseCategory.SPECIAL,
+        subcategory="Vietnam Trade",
+        title="Customs Declaration",
+        clause_text="VIETNAM CUSTOMS DECLARATION (TỜ KHAI HẢI QUAN) NUMBER MUST BE REFERENCED",
+        plain_english="Vietnam's export customs declaration number must appear on shipping docs.",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Vietnam", "customs", "MOIT"],
+    ),
+
+    # Pakistan — SBP / FBR (additions to existing SBP coverage)
+    LCClause(
+        code="PK-003",
+        category=ClauseCategory.SPECIAL,
+        subcategory="SBP Pakistan",
+        title="Form E Reference",
+        clause_text="FORM E NUMBER {form_e_number} DATED {date} MUST BE REFERENCED",
+        plain_english="Pakistan exporters must reference their Form E (analogous to BD's EXP form).",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Pakistan", "Form E", "regulatory"],
+    ),
+    LCClause(
+        code="PK-004",
+        category=ClauseCategory.SPECIAL,
+        subcategory="SBP Pakistan",
+        title="Electronic Import Form (EIF)",
+        clause_text="ELECTRONIC IMPORT FORM (EIF) {eif_number} MUST BE STATED FOR IMPORT-LINKED TRANSACTIONS",
+        plain_english="Pakistan's EIF number required on import-linked trade documents.",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Pakistan", "EIF", "regulatory"],
+    ),
+
+    # Saudi Arabia — Zatca / SASO
+    LCClause(
+        code="SA-001",
+        category=ClauseCategory.SPECIAL,
+        subcategory="Saudi Arabia",
+        title="SASO Quality Mark",
+        clause_text="SASO (SAUDI STANDARDS ORGANIZATION) QUALITY MARK REQUIRED FOR REGULATED GOODS",
+        plain_english="Saudi Arabia's standards body certification for many regulated product categories.",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Saudi", "SASO", "conformity"],
+    ),
+    LCClause(
+        code="SA-002",
+        category=ClauseCategory.SPECIAL,
+        subcategory="Saudi Arabia",
+        title="Zatca E-Invoice",
+        clause_text="COMMERCIAL INVOICE MUST COMPLY WITH ZATCA E-INVOICING (FATOORAH) REQUIREMENTS",
+        plain_english="Saudi Arabia's tax authority mandates electronic invoicing (Fatoorah).",
+        risk_level=RiskLevel.LOW,
+        bias=BiasIndicator.NEUTRAL,
+        tags=["Saudi", "Zatca", "invoice"],
+    ),
 ]
 
 # ============================================================================
@@ -3660,7 +3778,12 @@ class LCClauseLibrary:
             if "UCP600" in c.code and "application" in c.title.lower():
                 scores[c.code] = scores.get(c.code, 0) + 100
         
-        # Country-specific suggestions
+        # Country-specific suggestions.  Each jurisdiction below boosts the
+        # relevance score of clauses tagged for that jurisdiction.  Keep
+        # this list balanced — coverage of the regional clause library
+        # varies (Bangladesh has 8 clauses, Turkey has 3, Vietnam 3, etc.),
+        # so the boost is uniform across all countries to avoid penalizing
+        # jurisdictions with fewer catalogued clauses.
         if origin_country:
             origin_lower = origin_country.lower()
             for c in ALL_CLAUSES:
@@ -3668,20 +3791,35 @@ class LCClauseLibrary:
                 if origin_lower in ["bangladesh", "bd"]:
                     if any(tag in c.tags for tag in ["bangladesh", "rmg", "textiles", "south asia"]):
                         scores[c.code] = scores.get(c.code, 0) + 30
-                
+
                 # China
                 elif origin_lower in ["china", "cn", "prc"]:
                     if any(tag in c.tags for tag in ["china", "asia", "manufacturing"]):
                         scores[c.code] = scores.get(c.code, 0) + 30
-                
+
                 # India
                 elif origin_lower in ["india", "in"]:
                     if any(tag in c.tags for tag in ["india", "south asia"]):
                         scores[c.code] = scores.get(c.code, 0) + 30
-                
-                # Middle East
-                elif origin_lower in ["uae", "saudi arabia", "qatar", "bahrain", "kuwait", "oman"]:
-                    if any(tag in c.tags for tag in ["middle east", "gcc", "halal", "islamic"]):
+
+                # Pakistan
+                elif origin_lower in ["pakistan", "pk"]:
+                    if any(tag in c.tags for tag in ["pakistan", "south asia"]):
+                        scores[c.code] = scores.get(c.code, 0) + 30
+
+                # Turkey
+                elif origin_lower in ["turkey", "tr", "türkiye", "turkiye"]:
+                    if any(tag in c.tags for tag in ["turkey", "middle east"]):
+                        scores[c.code] = scores.get(c.code, 0) + 30
+
+                # Vietnam
+                elif origin_lower in ["vietnam", "viet nam", "vn"]:
+                    if any(tag in c.tags for tag in ["vietnam", "asia"]):
+                        scores[c.code] = scores.get(c.code, 0) + 30
+
+                # Middle East (GCC)
+                elif origin_lower in ["uae", "saudi arabia", "saudi", "qatar", "bahrain", "kuwait", "oman"]:
+                    if any(tag in c.tags for tag in ["middle east", "gcc", "halal", "islamic", "saudi", "uae"]):
                         scores[c.code] = scores.get(c.code, 0) + 30
         
         if destination_country:
