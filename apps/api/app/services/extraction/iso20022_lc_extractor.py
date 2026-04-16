@@ -133,6 +133,13 @@ def extract_iso20022_lc_enhanced(xml_text: str) -> Dict[str, Any]:
     
     logger.info(f"ISO 20022 schema detected: {schema_type} (confidence: {detection_confidence})")
     
+    # ISO 20022 PDFs often embed the XML inside non-XML prose (headers,
+    # footers, bank instructions).  Extract just the <Document>…</Document>
+    # portion so ElementTree can parse it.
+    doc_match = re.search(r'(<Document\b[^>]*>.*?</Document\s*>)', xml_text, re.DOTALL)
+    if doc_match:
+        xml_text = doc_match.group(1)
+
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
@@ -255,7 +262,7 @@ def _extract_documentary_credit(root: ET.Element, context: Dict[str, Any]) -> No
 
         # Amount — must use _first_descendant because <LcAmt> is a leaf
         # element and ElementTree treats leaves as falsy in `or`-chains.
-        amt = _first_descendant(lc_dtls, "LcAmt", "DocCdtAmt", "Amt")
+        amt = _first_descendant(lc_dtls, "LcAmt", "DocCdtAmt", "TtlAmt", "Amt")
         if amt is not None:
             _extract_amount(amt, context)
 
@@ -278,6 +285,38 @@ def _extract_documentary_credit(root: ET.Element, context: Dict[str, Any]) -> No
         advising_bank = _first_descendant(lc_dtls, "AdvsgBk", "AdvisingBank")
         if advising_bank is not None:
             context["advising_bank"] = _parse_party_info(advising_bank)
+    else:
+        # Flat/simplified ISO schema — elements are direct children of root,
+        # not nested under DocCdtDtls / LCDtls wrappers.  Common in
+        # trade-settlement messages (tsmt.*) and simplified implementations.
+        ref = (
+            _get_descendant_text(root, "TxId")
+            or _get_descendant_text(root, "InstrId")
+            or _get_descendant_text(root, "DocCdtId")
+            or _get_descendant_text(root, "Id")
+        )
+        if ref:
+            context["number"] = ref
+
+        amt = _first_descendant(root, "TtlAmt", "LcAmt", "DocCdtAmt", "Amt")
+        if amt is not None:
+            _extract_amount(amt, context)
+
+        applicant = _first_descendant(root, "Applcnt", "Buyer", "Ordrr")
+        if applicant is not None:
+            context["applicant"] = _parse_party_info(applicant)
+
+        beneficiary = _first_descendant(root, "Bnfcry", "Seller")
+        if beneficiary is not None:
+            context["beneficiary"] = _parse_party_info(beneficiary)
+
+        issuing_bank = _first_descendant(root, "IssgBk", "IssuingBank", "IssrBk")
+        if issuing_bank is not None:
+            context["issuing_bank"] = _parse_party_info(issuing_bank)
+
+        advising_bank = _first_descendant(root, "AdvsgBk", "AdvisingBank")
+        if advising_bank is not None:
+            context["advising_bank"] = _parse_party_info(advising_bank)
 
     # Terms and Conditions
     terms = _first_descendant(root, "TermsAndConds", "TermsAndCond", "LCTerms")
@@ -295,6 +334,52 @@ def _extract_documentary_credit(root: ET.Element, context: Dict[str, Any]) -> No
         _extract_goods(goods, context)
 
     _extract_required_documents(root, context)
+
+    # ----- Flat-element fallbacks for simplified ISO schemas -----
+    # When standard wrapper elements (TermsAndConds, ShipmntDtls, Goods)
+    # are absent, look for flat elements directly under root.
+
+    if not context.get("dates", {}).get("latest_shipment") and "latest_shipment_date" not in context:
+        latest_ship = _get_descendant_text(root, "LatstShipmntDt") or _get_descendant_text(root, "LtstShipmntDt")
+        if latest_ship:
+            context.setdefault("dates", {})["latest_shipment"] = latest_ship.strip()
+            context["latest_shipment_date"] = latest_ship.strip()
+
+    if not context.get("dates", {}).get("expiry"):
+        expiry = _get_descendant_text(root, "XpryDt") or _get_descendant_text(root, "ExpiryDt")
+        if expiry:
+            context.setdefault("dates", {})["expiry"] = expiry.strip()
+            context["expiry_date"] = expiry.strip()
+
+    if not context.get("ports", {}).get("loading") and "port_of_loading" not in context:
+        pol = _get_descendant_text(root, "LodgPort") or _get_descendant_text(root, "PortOfLoading") or _get_descendant_text(root, "PortOfLdg")
+        if pol:
+            context.setdefault("ports", {})["loading"] = pol.strip()
+            context["port_of_loading"] = pol.strip()
+
+    if not context.get("ports", {}).get("discharge") and "port_of_discharge" not in context:
+        pod = _get_descendant_text(root, "DschrgPort") or _get_descendant_text(root, "PortOfDischarge") or _get_descendant_text(root, "PortOfDschg")
+        if pod:
+            context.setdefault("ports", {})["discharge"] = pod.strip()
+            context["port_of_discharge"] = pod.strip()
+
+    if not context.get("goods_description"):
+        goods_desc = _get_descendant_text(root, "GoodsDesc") or _get_descendant_text(root, "GdsDesc")
+        if goods_desc:
+            context["goods_description"] = goods_desc.strip()
+
+    if not context.get("incoterm"):
+        incoterm_text = _get_descendant_text(root, "IncoTerm") or _get_descendant_text(root, "Incoterms") or _get_descendant_text(root, "Incoterm")
+        if incoterm_text:
+            context["incoterm"] = _normalize_incoterm(incoterm_text)
+
+    if not context.get("documents_required"):
+        reqrd_docs = _get_descendant_text(root, "ReqrdDocs") or _get_descendant_text(root, "DocReqrd")
+        if reqrd_docs:
+            # Pipe-delimited or newline-delimited list
+            parts = [p.strip() for p in re.split(r'[|\n]', reqrd_docs) if p.strip()]
+            if parts:
+                context["documents_required"] = parts
 
     # Fill in the MT700 mandatory fields the rest of this function doesn't
     # cover (Field 27, 31C, 40E, 41a, 47A, 48).
@@ -620,7 +705,7 @@ def _extract_mt700_mandatory_equivalents(root: ET.Element, context: Dict[str, An
 
     # ---- Field 47A: Additional Conditions (free-text rules list) ----
     conditions: List[str] = []
-    for condition_name in ("AddtlCondtns", "AddlCondtns", "AdditionalConditions", "SpclTerms", "OthrInstrs"):
+    for condition_name in ("AddtlCondtns", "AddlCondtns", "AdditionalConditions", "SpclTerms", "SpclCond", "OthrInstrs"):
         for elem in root.iter():
             if _local_name(elem.tag) != condition_name:
                 continue
@@ -649,6 +734,7 @@ def _extract_mt700_mandatory_equivalents(root: ET.Element, context: Dict[str, An
         _get_descendant_text(root, "PresntnPrd")
         or _get_descendant_text(root, "PrsttnPrd")
         or _get_descendant_text(root, "PresentationPeriod")
+        or _get_descendant_text(root, "PresntnPeriod")
         or _get_descendant_text(root, "PrdForPresn")
     )
     if period_text:
@@ -996,17 +1082,33 @@ async def extract_iso20022_with_ai_fallback(
 
 def _xml_to_plain_text(xml_text: str) -> str:
     """Convert XML to plain text for AI processing."""
+    # Extract embedded XML first (same logic as the structured parser).
+    doc_match = re.search(r'(<Document\b[^>]*>.*?</Document\s*>)', xml_text, re.DOTALL)
+    if doc_match:
+        xml_text = doc_match.group(1)
+
     try:
         root = ET.fromstring(xml_text)
         texts = []
         for elem in root.iter():
+            local = _local_name(elem.tag)
+            # Preserve currency attribute so downstream AI sees it.
+            ccy = elem.attrib.get("Ccy") or elem.attrib.get("ccy")
             if elem.text and elem.text.strip():
-                local = _local_name(elem.tag)
-                texts.append(f"{local}: {elem.text.strip()}")
+                line = f"{local}: {elem.text.strip()}"
+                if ccy:
+                    line += f" (Currency: {ccy})"
+                texts.append(line)
+            elif ccy:
+                texts.append(f"{local}: Currency={ccy}")
         return "\n".join(texts)
     except Exception:
-        # Fallback: strip tags with regex
+        # Fallback: strip tags with regex but preserve Ccy attributes first.
+        # Pull currency attributes before stripping tags.
+        ccy_match = re.search(r'Ccy\s*=\s*["\'](\w{3})["\']', xml_text)
         text = re.sub(r'<[^>]+>', ' ', xml_text)
         text = re.sub(r'\s+', ' ', text)
+        if ccy_match:
+            text = f"Currency: {ccy_match.group(1)}\n{text.strip()}"
         return text.strip()
 
