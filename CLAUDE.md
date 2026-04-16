@@ -251,13 +251,15 @@ GET  /api/exporter/banks                     # Available banks
 
 ## Current Focus
 
-**Part 1 — Extraction hardening, ISO 20022 gap fixed.** Part 2 is unfrozen and working live (RulHub + veto filter + crossdoc). Part 3 is still frozen.
+**Part 1 — Extraction hardening complete. Part 2 — Validator false positives are the #1 active issue.** Part 3 is still frozen.
 
-**2026-04-16 status:**
-- **ISO 20022 extraction fixed.** Commit `dd44d9dc` fixed three cascading failures (XML wrapper, flat schema, Ccy attribute strip). Currency extraction 0/9 → 9/9, ISO perfect sets reject → review. See `project_iso20022_extraction_gap.md`.
-- **Part 2 unblocked end-to-end.** RulHub 200ing with real UCP600-18/UCP600-38G findings. Post-veto false-positive filter clean across all 18 stress tests.
-- **18-set stress matrix: 12/18 verdict match.** 6 remaining mismatches are all minor→reject (3 MT + 3 ISO) due to Part 2 threshold (`major_count > 2` at `response_shaping.py:561`) + universal "LC Expiry Date Not Found" major from test data lacking expiry dates. Not an extraction or validation bug — test data quality issue.
-- **Stress corpus ready.** 27 labeled sets (`SET_NOTES.txt` per set with machine-readable Intended outcome + LC Number) at `apps/api/tests/stress_corpus/`, gitignored. See `reference_stress_corpus.md`.
+**2026-04-16 end-of-day status (19 commits shipped):**
+- **Extraction side: healthy.** ISO 20022 works (9/9 on stress matrix), MT700 works (IDEAL SAMPLE extracts 92 fields clean), blind-transcriber contract enforced (commit `c92e174b` stopped extraction-core from judging). See `project_session_2026_04_16_full.md`.
+- **Results page: 4-tab verdict view restored** (commit `856470b4`, +60/-937 lines). The zombie 2-tab "extraction resolution" mode is gone.
+- **Bangladesh de-hardcoded across 10 sites.** Residency, currency, SSLCommerz, doc generator, port normalization, locale profiles, port registry, pricing FX, LC clause library. See `project_session_2026_04_16_full.md`.
+- **Validator false positives surfaced.** IDEAL SAMPLE MT700 (8 clean docs) produced 12 findings of which 10 are false positives. Grouped into 4 clusters (A: invoice lookup fail, B: field-alias drift, C: port aliasing not applied, D: insurance math + Incoterm). See `project_validator_false_positive_clusters.md`. **This is the #1 priority for next session.**
+
+**Stress corpus** at `apps/api/tests/stress_corpus/` (gitignored). IDEAL SAMPLE at `F:\New Download\LC Copies\Synthetic\Export LC\IDEAL SAMPLE\`.
 
 **The extraction separation contract remains in force** (below).
 
@@ -305,13 +307,18 @@ Net across the 2026-04-09 → 2026-04-10 window: roughly **−2500 lines, +300 l
 - ~~Empty signature field filter~~ — hidden from review. Commit `c4858209`.
 
 **Still open:**
-1. ~~★ ISO 20022 LC extraction gap~~ — **FIXED 2026-04-16** commit `dd44d9dc`. Currency 0/9→9/9, latest_shipment 0/9→9/9, ISO perfect reject→review. See `project_iso20022_extraction_gap.md`.
-2. **Centralize field name aliases** — still split across `launch_pipeline._FIELD_NAME_ALIASES` and `ExtractionReview.FIELD_ALIAS_MAP`. Down to two sources. Also `doc_matcher._CANONICAL_ALIASES`.
-3. **Vestigial `schema_fields_by_doc_type`** — no longer drives rendering, just establishes field ordering. Can be simplified.
-4. ~~**Unfreeze Part 2 — Validation**~~ — **DONE 2026-04-10/11** + **RulHub path unblocked 2026-04-15** (commits `a5b5bf9a → 3d3dad04 → eccc8a85`). Clause parser + doc matcher + crossdoc matcher + RulHub adapter all wired and producing real findings (UCP600-18, UCP600-38G) across MT + ISO tests. Opus veto runs independently with post-veto false-positive filter.
+1. ~~★ ISO 20022 LC extraction gap~~ — **FIXED 2026-04-16** commit `dd44d9dc`.
+2. **Centralize field name aliases** — still split across `launch_pipeline._FIELD_NAME_ALIASES`, `ExtractionReview.FIELD_ALIAS_MAP`, `doc_matcher._CANONICAL_ALIASES`. Drift is the root cause of validator Cluster B (see #7 below).
+3. **Vestigial `schema_fields_by_doc_type`** — no longer drives rendering, just establishes field ordering.
+4. ~~**Unfreeze Part 2 — Validation**~~ — **DONE 2026-04-10/11** + **RulHub path unblocked 2026-04-15**.
 5. **Auth hardening** — #1 launch risk. Four auth providers, legacy layers.
 6. **Importer convergence** — waits on exporter extraction + validation spine.
-7. **Minor over-reject calibration** — 6/18 stress tests (all minor sets) reject with 0 critical, 3-4 major. Threshold is `major_count > 2` at `response_shaping.py:561`. 1 of those majors is universal "LC Expiry Date Not Found" from test data lacking expiry dates. Test data quality issue, not code bug. Could fix by adding expiry dates to stress corpus PDFs or by calibrating Part 2 severity assignment.
+7. **★ Validator false-positive clusters — THE #1 active issue.** IDEAL SAMPLE test (2026-04-16) produced 12 findings, 10 false positives. See `project_validator_false_positive_clusters.md`:
+   - **Cluster A** (4 findings): "No commercial invoice available to verify" — invoice IS available with 14 fields. One lookup bug. Start here.
+   - **Cluster B** (3 findings): "Not found in document" when field IS in document. Field-alias drift — validator raw-dict-access instead of alias-aware `_find_field_value`.
+   - **Cluster C** (1 MAJOR finding): Port of loading "CHITTAGONG" vs "Chattogram" — same city. Port registry aliases (commit `2ef8a17c`) not consulted by crossdoc check.
+   - **Cluster D** (1 MAJOR finding): Insurance coverage check treats "110" as dollars (not percentage), uses wrong 110% math base, ignores FOB Incoterm where seller doesn't arrange insurance.
+8. **Minor over-reject calibration** — stress tests on minor sets reject with 0 critical, 3-4 major. Threshold `major_count > 2` at `response_shaping.py:561`. Deprioritized below #7.
 
 ### Part 2 — Validation backlog (active as of 2026-04-11)
 
