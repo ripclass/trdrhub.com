@@ -3,6 +3,21 @@ Pricing configuration and cost calculation logic for LCopilot billing system.
 
 This module defines pricing constants, subscription plans, and cost calculation
 functions for different billing actions.
+
+## Currency
+
+All numeric pricing values in this module are denominated in **BDT**
+(Bangladeshi Taka).  This is an explicit historical choice — the product
+originally launched for Bangladesh exporters and the plan prices are
+quoted in BDT.  A multi-currency pricing refactor (per-jurisdiction plan
+catalogs, live FX conversion for display) is tracked separately.  Until
+that lands:
+
+- SubscriptionPlan.monthly_price_bdt fields are literal BDT amounts.
+- PricingConstants values are literal BDT amounts.
+- Callers presenting prices to non-BD users must convert via a live FX
+  rate (see `convert_bdt_to_usd` — which now requires the caller to
+  supply the rate; no more silent stale fallback).
 """
 
 from decimal import Decimal
@@ -261,10 +276,20 @@ def format_price_bdt(amount: Decimal) -> str:
 
 
 def convert_bdt_to_usd(bdt_amount: Decimal, exchange_rate: Optional[Decimal] = None) -> Decimal:
-    """Convert BDT to USD using current exchange rate."""
+    """Convert BDT to USD using a caller-supplied exchange rate.
+
+    Callers MUST pass `exchange_rate` from a live FX source (e.g. a cached
+    daily rate from an FX provider).  Previously this function had a
+    hardcoded 0.0085 fallback ("1 BDT ≈ 0.0085 USD") that silently gave
+    customers stale/incorrect USD figures on invoices and dashboards
+    whenever the live rate moved.  Better to fail loud than display wrong
+    money.
+    """
     if exchange_rate is None:
-        # Default exchange rate - in production this should come from a live API
-        exchange_rate = Decimal("0.0085")  # 1 BDT ≈ 0.0085 USD (approximate)
+        raise ValueError(
+            "exchange_rate is required. Fetch the current BDT→USD rate from "
+            "your FX provider and pass it in; do not use a hardcoded fallback."
+        )
 
     return bdt_amount * exchange_rate
 
