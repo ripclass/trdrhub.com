@@ -490,8 +490,13 @@ def _plaintext_pattern_validity(
     if field_name == "bin_tin":
         digits = re.sub(r"\D", "", normalized_text or _normalize_numeric_context(raw_text))
         hints = _profile_field_hints(document_type, field_name)
-        preferred_lengths = _hint_ints(hints.get("preferred_lengths"), (13,))
-        allowed_lengths = _hint_ints(hints.get("allowed_lengths"), (10, 11, 12, 13))
+        # Global tax ID defaults — jurisdiction-agnostic.  Bangladesh BIN/NTN
+        # is 13 digits but Turkish VKN is 10, Pakistani NTN is 7, Vietnamese
+        # MST is 10-13, Indian GSTIN is 15 alphanumeric.  No single "preferred"
+        # length makes sense at the extraction layer; Part 2 validation can
+        # enforce jurisdiction-specific rules once the LC is classified.
+        preferred_lengths = _hint_ints(hints.get("preferred_lengths"), ())
+        allowed_lengths = _hint_ints(hints.get("allowed_lengths"), tuple(range(6, 21)))
         if len(digits) in preferred_lengths:
             return 1.0
         if len(digits) in allowed_lengths:
@@ -517,8 +522,13 @@ def _plaintext_normalization_validity(field_name: str, normalized_value: Any, do
     if field_name == "bin_tin":
         digits = re.sub(r"\D", "", normalized_text)
         hints = _profile_field_hints(document_type, field_name)
-        preferred_lengths = _hint_ints(hints.get("preferred_lengths"), (13,))
-        allowed_lengths = _hint_ints(hints.get("allowed_lengths"), (10, 11, 12, 13))
+        # Global tax ID defaults — jurisdiction-agnostic.  Bangladesh BIN/NTN
+        # is 13 digits but Turkish VKN is 10, Pakistani NTN is 7, Vietnamese
+        # MST is 10-13, Indian GSTIN is 15 alphanumeric.  No single "preferred"
+        # length makes sense at the extraction layer; Part 2 validation can
+        # enforce jurisdiction-specific rules once the LC is classified.
+        preferred_lengths = _hint_ints(hints.get("preferred_lengths"), ())
+        allowed_lengths = _hint_ints(hints.get("allowed_lengths"), tuple(range(6, 21)))
         if len(digits) in preferred_lengths:
             return 1.0
         return 0.8 if len(digits) in allowed_lengths else 0.0
@@ -638,8 +648,13 @@ def _candidate_confidence_for_field(
 
     if field_name == "bin_tin":
         hints = _profile_field_hints(document_type, field_name)
-        preferred_lengths = _hint_ints(hints.get("preferred_lengths"), (13,))
-        allowed_lengths = _hint_ints(hints.get("allowed_lengths"), (10, 11, 12, 13))
+        # Global tax ID defaults — jurisdiction-agnostic.  Bangladesh BIN/NTN
+        # is 13 digits but Turkish VKN is 10, Pakistani NTN is 7, Vietnamese
+        # MST is 10-13, Indian GSTIN is 15 alphanumeric.  No single "preferred"
+        # length makes sense at the extraction layer; Part 2 validation can
+        # enforce jurisdiction-specific rules once the LC is classified.
+        preferred_lengths = _hint_ints(hints.get("preferred_lengths"), ())
+        allowed_lengths = _hint_ints(hints.get("allowed_lengths"), tuple(range(6, 21)))
         digits = re.sub(r"\D", "", _normalize_text(normalized_value))
         if len(digits) in preferred_lengths:
             score += 0.06
@@ -1012,8 +1027,10 @@ def _normalize_bin_tin(raw_value: Any, document_type: Optional[str] = None) -> T
         text,
     )
     hints = _profile_field_hints(document_type or "supporting_document", "bin_tin")
-    preferred_lengths = _hint_ints(hints.get("preferred_lengths"), (13,))
-    allowed_lengths = _hint_ints(hints.get("allowed_lengths"), (10, 11, 12, 13))
+    # Global tax ID defaults — jurisdiction-agnostic.  See comments on the
+    # other _hint_ints call sites in this file for the rationale.
+    preferred_lengths = _hint_ints(hints.get("preferred_lengths"), ())
+    allowed_lengths = _hint_ints(hints.get("allowed_lengths"), tuple(range(6, 21)))
 
     candidates: List[str] = []
     for token in re.findall(r"[A-Z0-9-]{4,}", text):
