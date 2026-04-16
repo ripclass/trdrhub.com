@@ -1900,42 +1900,98 @@ class CrossDocValidator:
         
         return issues, executed, passed
     
+    # Standard B/L boilerplate phrases that some extractors mis-label as
+    # `goods_description`.  These aren't goods descriptions under UCP600
+    # Art 20(a)(v) — they're cargo-condition / responsibility clauses.
+    # Treat their presence as "B/L silent on goods," which under UCP600
+    # Art 14(e) / ISBP745 A22 is NOT inconsistent with the credit.
+    _BL_GOODS_BOILERPLATE_MARKERS = (
+        "shipped in apparent good order",
+        "received in apparent good order",
+        "apparent good order and condition",
+        "said to contain",
+        "said to weigh",
+        "shipper's load and count",
+        "shippers load and count",
+        "stc ",
+        " slac",
+        "weight unknown",
+        "contents unknown",
+        "clean on board",
+    )
+
     def _check_invoice_bl_goods(
         self,
         invoice: Dict[str, Any],
         bl: Dict[str, Any],
     ) -> Optional[CrossDocIssue]:
-        """Check goods description is consistent between invoice and B/L."""
+        """Check goods description consistency between invoice and B/L.
+
+        Per UCP600 Art 14(e) and ISBP745 A22, the goods description on a
+        bill of lading (and any non-invoice document) may be in general
+        terms not inconsistent with the credit.  The standard is
+        "not inconsistent," NOT "matching."  A B/L silent on goods, or one
+        using standard cargo-condition language ("shipped in apparent good
+        order and condition"), is not inconsistent with the credit — it's
+        just silent on goods, which is common and acceptable practice.
+
+        This check previously fired MAJOR on any low text-similarity, which
+        produced false positives whenever:
+          - The B/L legitimately used general terms (Art 14(e) allows this)
+          - The extractor mis-labeled B/L boilerplate as `goods_description`
+          - The B/L was silent on goods (legitimate)
+
+        Now:
+          - Skip when either side is empty (no comparison possible)
+          - Skip when B/L `goods_description` looks like standard boilerplate
+            (extraction artifact, not a real goods description)
+          - When a real description diverges, emit MINOR (advisory) not
+            MAJOR, per UCP600 Art 14(e) — "not inconsistent" is weaker than
+            a blocking discrepancy
+        """
         inv_goods = self._normalize_text(
             invoice.get("goods_description") or invoice.get("description")
         )
         bl_goods = self._normalize_text(
             bl.get("goods_description") or bl.get("description")
         )
-        
+
         if not inv_goods or not bl_goods:
             return None
-        
+
+        # Boilerplate filter — if the B/L's "goods_description" is standard
+        # cargo-condition language, the B/L is silent on goods.  Silent is
+        # not inconsistent per UCP600 Art 14(e).
+        bl_goods_lower = bl_goods.lower()
+        if any(marker in bl_goods_lower for marker in self._BL_GOODS_BOILERPLATE_MARKERS):
+            return None
+
         similarity = self._text_similarity(inv_goods, bl_goods)
-        
+
         if similarity < SIMILARITY.GOODS:
             return CrossDocIssue(
                 rule_id="CROSSDOC-INV-BL-001",
-                title="Goods Description Inconsistency",
-                severity=IssueSeverity.MAJOR,
-                message="Goods description differs significantly between invoice and B/L.",
-                expected=f"Consistent description: {inv_goods[:80]}...",
+                title="Goods Description May Differ Between Invoice and B/L",
+                severity=IssueSeverity.MINOR,
+                message=(
+                    "B/L goods description appears to differ from invoice. "
+                    "Per UCP600 Art 14(e), non-invoice docs may use general "
+                    "terms not inconsistent with the credit — verify the B/L "
+                    "description is not actually inconsistent."
+                ),
+                expected=f"Not inconsistent with: {inv_goods[:80]}...",
                 found=f"B/L states: {bl_goods[:80]}...",
-                suggestion="Align goods description across all documents.",
+                suggestion="Verify B/L goods description is not inconsistent with the invoice/LC. Per UCP600 Art 14(e), general terms are acceptable.",
                 source_doc=DocumentType.INVOICE,
                 target_doc=DocumentType.BILL_OF_LADING,
                 source_field="goods_description",
                 target_field="goods_description",
+                ucp_article="UCP600 Article 14(e)",
                 isbp_paragraph="ISBP745 A22",
                 source_value=inv_goods,
                 target_value=bl_goods,
             )
-        
+
         return None
     
     # =========================================================================
