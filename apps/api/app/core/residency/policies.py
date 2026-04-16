@@ -67,7 +67,13 @@ class ResidencyPolicyEngine:
             ),
             ResidencyRegion.GLOBAL: ResidencyMapping(
                 region="GLOBAL",
-                bucket_pattern=f"{settings.PROJECT_NAME}-docs-bd-{settings.ENVIRONMENT}",  # Default to BD
+                # GLOBAL means "no specific residency restriction" — NOT "store
+                # in Bangladesh." Previously this quietly routed every tenant
+                # without an explicit policy into the BD bucket, which is a
+                # data-sovereignty violation for EU/SG/other-region tenants.
+                # Use a dedicated global bucket so the operator can configure
+                # its actual jurisdiction (e.g. US-East, EU-West) separately.
+                bucket_pattern=f"{settings.PROJECT_NAME}-docs-global-{settings.ENVIRONMENT}",
                 description="Global - No specific residency requirements"
             )
         }
@@ -239,15 +245,31 @@ class ResidencyPolicyEngine:
             return [policy.value]
 
     def get_bucket_for_region(self, region: str) -> str:
-        """Get the storage bucket for a specific region"""
+        """Get the storage bucket for a specific region.
+
+        Raises ValueError if the region is not a supported ResidencyRegion.
+        Previously this silently fell back to the Bangladesh bucket on any
+        unrecognized input — which is a data-sovereignty hazard: a typo in
+        a region code or an unsupported jurisdiction would cause a Turkish
+        or EU customer's documents to land in BD storage without any
+        indication.  Fail loud so the caller can handle unknown regions
+        explicitly (e.g. by rejecting the upload or prompting for a
+        supported region).
+        """
 
         try:
             region_enum = ResidencyRegion(region.upper())
-            return self.region_mappings[region_enum].bucket_pattern
-        except ValueError:
-            # Unknown region - default to BD
-            logger.warning(f"Unknown region {region}, defaulting to BD")
-            return self.region_mappings[ResidencyRegion.BD].bucket_pattern
+        except ValueError as exc:
+            supported = sorted(r.value for r in ResidencyRegion)
+            logger.error(
+                "Unsupported residency region %r — supported: %s",
+                region, supported,
+            )
+            raise ValueError(
+                f"Unsupported residency region {region!r}. "
+                f"Supported: {supported}"
+            ) from exc
+        return self.region_mappings[region_enum].bucket_pattern
 
     def get_policy_violations(
         self,
