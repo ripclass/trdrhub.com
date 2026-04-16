@@ -1,0 +1,8 @@
+locale: pk
+# Islamic Republic of Pakistan
+# Tax ID: NTN (National Tax Number) is 7 digits; newer NTNs with a
+# check digit are 8.  STRN (Sales Tax Registration Number) is 11 digits.
+# CNIC (national ID, sometimes appears on invoices) is 13 digits.
+tax_id:
+  min_digits: 7
+  max_digits: 13

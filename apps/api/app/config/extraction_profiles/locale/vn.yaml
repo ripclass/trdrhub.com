@@ -1,0 +1,7 @@
+locale: vn
+# Cộng hòa xã hội chủ nghĩa Việt Nam — Socialist Republic of Vietnam
+# Tax ID: MST (Mã số thuế) is 10 digits for a parent entity; 13 digits
+# when the last 3 represent a branch identifier.
+tax_id:
+  min_digits: 10
+  max_digits: 13

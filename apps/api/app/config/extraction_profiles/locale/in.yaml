@@ -1,0 +1,11 @@
+locale: in
+# India — Republic of India
+# Tax ID: GSTIN (Goods and Services Tax Identification Number) is 15
+# characters alphanumeric.  PAN is 10 alphanumeric (3 chars + 4 digits +
+# 1 char).  TAN is 10 alphanumeric.  TIN (pre-GST, still seen on older
+# docs) is 11 digits.  Because Indian IDs are alphanumeric we keep a
+# broad digit range — the regex-based extractors strip non-digits to
+# count, so 15-char GSTIN collapses to ~13 digits in practice.
+tax_id:
+  min_digits: 10
+  max_digits: 15

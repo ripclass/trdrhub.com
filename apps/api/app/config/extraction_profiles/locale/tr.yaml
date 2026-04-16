@@ -1,0 +1,7 @@
+locale: tr
+# Türkiye Cumhuriyeti — Turkey
+# Tax ID: VKN (Vergi Kimlik Numarası) is 10 digits for legal entities.
+# TCKN (T.C. Kimlik Numarası) is 11 digits for individuals.
+tax_id:
+  min_digits: 10
+  max_digits: 11
