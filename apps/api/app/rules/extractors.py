@@ -16,32 +16,130 @@ class ISO20022ParseError(Exception):
     """Raised when an ISO 20022 LC payload cannot be parsed."""
 
 
+# Lightweight normalization map for the most common trade-finance
+# jurisdictions in our user base.  This is intentionally short — the
+# full port/country registry is at `apps/api/app/reference_data/ports.py`.
+# Keeping every major origin/destination here causes drift; only the
+# codes users type by hand most often need normalization.
 ISO_COUNTRY_NORMALIZATION = {
+    # North America
     "us": "United States",
     "usa": "United States",
     "united states": "United States",
     "united states of america": "United States",
-    "bd": "Bangladesh",
-    "bangladesh": "Bangladesh",
+    # Europe
     "de": "Germany",
     "ger": "Germany",
     "germany": "Germany",
+    "uk": "United Kingdom",
+    "gb": "United Kingdom",
+    "nl": "Netherlands",
+    "netherlands": "Netherlands",
+    # Asia-Pacific
     "cn": "China",
     "chn": "China",
     "china": "China",
     "hk": "Hong Kong",
-    "uk": "United Kingdom",
-    "gb": "United Kingdom",
+    "jp": "Japan",
+    "japan": "Japan",
+    "kr": "South Korea",
+    "korea": "South Korea",
+    "sg": "Singapore",
+    "singapore": "Singapore",
+    # South Asia
+    "bd": "Bangladesh",
+    "bangladesh": "Bangladesh",
+    "in": "India",
+    "ind": "India",
+    "india": "India",
+    "pk": "Pakistan",
+    "pakistan": "Pakistan",
+    # Southeast Asia
+    "vn": "Vietnam",
+    "viet nam": "Vietnam",
+    "vietnam": "Vietnam",
+    "id": "Indonesia",
+    "indonesia": "Indonesia",
+    "th": "Thailand",
+    "thailand": "Thailand",
+    "my": "Malaysia",
+    "malaysia": "Malaysia",
+    # Middle East
+    "ae": "United Arab Emirates",
+    "uae": "United Arab Emirates",
+    "sa": "Saudi Arabia",
+    "saudi arabia": "Saudi Arabia",
+    "tr": "Turkey",
+    "turkiye": "Turkey",
+    "türkiye": "Turkey",
+    "turkey": "Turkey",
+    # Africa
+    "eg": "Egypt",
+    "egypt": "Egypt",
+    "za": "South Africa",
+    "south africa": "South Africa",
+    "ma": "Morocco",
+    "morocco": "Morocco",
+    # Latin America
+    "br": "Brazil",
+    "brazil": "Brazil",
+    "mx": "Mexico",
+    "mexico": "Mexico",
 }
 
 ISO_PORT_NORMALIZATION = {
+    # Bangladesh
     "chittagong": "Chittagong, Bangladesh",
     "chattogram": "Chittagong, Bangladesh",
     "chitagong": "Chittagong, Bangladesh",
+    # US
     "new york": "New York, United States",
     "newyork": "New York, United States",
+    "los angeles": "Los Angeles, United States",
+    "long beach": "Long Beach, United States",
+    # China
     "ningbo": "Ningbo, China",
     "shanghai": "Shanghai, China",
+    "shenzhen": "Shenzhen, China",
+    "qingdao": "Qingdao, China",
+    # India
+    "mumbai": "Mumbai, India",
+    "nhava sheva": "Nhava Sheva, India",
+    "chennai": "Chennai, India",
+    "kolkata": "Kolkata, India",
+    # Pakistan
+    "karachi": "Karachi, Pakistan",
+    "port qasim": "Port Qasim, Pakistan",
+    # Turkey
+    "istanbul": "Istanbul, Turkey",
+    "mersin": "Mersin, Turkey",
+    "izmir": "Izmir, Turkey",
+    "ambarli": "Ambarli, Turkey",
+    # Vietnam
+    "ho chi minh": "Ho Chi Minh City, Vietnam",
+    "ho chi minh city": "Ho Chi Minh City, Vietnam",
+    "cat lai": "Cat Lai, Vietnam",
+    "haiphong": "Haiphong, Vietnam",
+    # Europe
+    "rotterdam": "Rotterdam, Netherlands",
+    "hamburg": "Hamburg, Germany",
+    "felixstowe": "Felixstowe, United Kingdom",
+    "antwerp": "Antwerp, Belgium",
+    # Middle East
+    "jebel ali": "Jebel Ali, United Arab Emirates",
+    "dubai": "Dubai, United Arab Emirates",
+    "jeddah": "Jeddah, Saudi Arabia",
+    # Southeast Asia
+    "singapore": "Singapore",
+    "jakarta": "Jakarta, Indonesia",
+    "tanjung priok": "Tanjung Priok, Indonesia",
+    "port klang": "Port Klang, Malaysia",
+    "laem chabang": "Laem Chabang, Thailand",
+    # Africa
+    "casablanca": "Casablanca, Morocco",
+    "alexandria": "Alexandria, Egypt",
+    "port said": "Port Said, Egypt",
+    "durban": "Durban, South Africa",
 }
 
 
