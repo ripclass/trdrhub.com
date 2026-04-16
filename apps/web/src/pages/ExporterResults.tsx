@@ -1106,7 +1106,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const [showRawLcJson, setShowRawLcJson] = useState(false);
   const [selectedDocumentForDrawer, setSelectedDocumentForDrawer] = useState<DocumentForDrawer | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const hasAutoDirectedExtractionStageRef = useRef(false);
   const submissionHistoryRef = useRef<HTMLDivElement | null>(null);
   
   useEffect(() => {
@@ -1576,80 +1575,17 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const provisionalIssueCards = resultData?.provisional_issues ?? [];
   const analyticsData = resultData?.analytics ?? null;
   const timelineEvents = resultData?.timeline ?? [];
-  const backendWorkflowStage =
-    (structuredResult as any)?.workflow_stage ??
-    (structuredResult as any)?.workflowStage ??
-    null;
-  const workflowStage = resultData?.workflowStage ?? null;
-  const isExtractionResolutionStage = workflowStage?.stage === 'extraction_resolution';
-  const visibleActiveTab: ResultsTab =
-    isExtractionResolutionStage && (activeTab === 'discrepancies' || activeTab === 'customs')
-      ? 'documents'
-      : activeTab;
-  const pageTitle = isExtractionResolutionStage
-    ? 'Export LC Extraction Resolution'
-    : 'Export LC Validation Results';
-  const pageSubtitle = isExtractionResolutionStage
-    ? 'Confirm unresolved extracted fields from source evidence before treating validation as final.'
-    : 'Review the results of your latest document validation';
+  // Extraction resolution belongs to the upload / extraction-review phase
+  // (inline ExtractionReview component).  Once the user clicks Start
+  // Validation, extraction is finalized — the results page always renders
+  // the 4-tab verdict view.  The backend may still emit
+  // `workflow_stage.stage === 'extraction_resolution'` for analytics, but
+  // we ignore it here to prevent a zombie 2-tab recovery mode that was
+  // left over from the pre-2026-04-09 separate-extraction-review era.
+  const visibleActiveTab: ResultsTab = activeTab;
+  const pageTitle = 'Export LC Validation Results';
+  const pageSubtitle = 'Review the results of your latest document validation';
   const totalDocuments = summary?.total_documents ?? documents.length ?? 0;
-  const extractionResolutionSummary = useMemo(() => {
-    // Trust the backend workflow_stage as the single source of truth.
-    // If the backend says we're past extraction_resolution, do NOT override
-    // that based on stale per-document required flags.
-    const backendStage = workflowStage?.stage;
-    const isExtractionStage = backendStage === 'extraction_resolution';
-
-    if (!isExtractionStage) {
-      return {
-        required: false,
-        documents: [] as typeof documents,
-        documentCount: 0,
-        unresolvedCount: 0,
-        summary: null as string | null,
-      };
-    }
-
-    const docsNeedingResolution = documents.filter((doc) => doc.extractionResolution?.required);
-    const fallbackUnresolvedCount = docsNeedingResolution.reduce(
-      (count, doc) => count + (doc.extractionResolution?.unresolvedCount ?? 0),
-      0,
-    );
-    return {
-      required: true,
-      documents: docsNeedingResolution,
-      documentCount:
-        typeof workflowStage?.unresolved_documents === 'number'
-          ? workflowStage.unresolved_documents
-          : docsNeedingResolution.length,
-      unresolvedCount:
-        typeof workflowStage?.unresolved_fields === 'number'
-          ? workflowStage.unresolved_fields
-          : fallbackUnresolvedCount,
-      summary:
-        typeof backendWorkflowStage?.summary === 'string' && backendWorkflowStage.summary.trim().length > 0
-          ? backendWorkflowStage.summary
-          : null,
-    };
-  }, [backendWorkflowStage, documents, workflowStage]);
-
-  useEffect(() => {
-    if (embedded || initialTab || tabParam || !isExtractionResolutionStage) {
-      return;
-    }
-    if (hasAutoDirectedExtractionStageRef.current || activeTab !== DEFAULT_TAB) {
-      return;
-    }
-    hasAutoDirectedExtractionStageRef.current = true;
-    handleActiveTabChange("documents");
-  }, [
-    activeTab,
-    embedded,
-    handleActiveTabChange,
-    initialTab,
-    isExtractionResolutionStage,
-    tabParam,
-  ]);
 
   const backendIssueCount = Math.max(summary?.total_issues ?? 0, issueCards.length);
   const severityBreakdown = summary?.severity_breakdown ?? {
@@ -2024,7 +1960,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
 
   const suppressChecklistExtractionReview = useMemo(
     () =>
-      !isExtractionResolutionStage &&
       canonicalResultTruth.finalVerdict === 'pass' &&
       canonicalResultTruth.canSubmitFromValidation &&
       !canonicalResultTruth.requirementReviewNeeded &&
@@ -2036,7 +1971,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       canonicalResultTruth.finalVerdict,
       canonicalResultTruth.primaryDecisionLane,
       canonicalResultTruth.requirementReviewNeeded,
-      isExtractionResolutionStage,
     ],
   );
 
@@ -2592,21 +2526,8 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     ],
   );
   const exporterPresentationTruth = useMemo(
-    () => {
-      if (isExtractionResolutionStage) {
-        return {
-          readinessLabel: 'Review needed' as const,
-          readinessSummary:
-            workflowStage?.summary ||
-            'Validation is still provisional because extracted fields need confirmation before the case should be treated as clean.',
-          overallStatus: 'warning' as const,
-          presentationStatus: 'review_required' as const,
-          presentationSummary:
-            'Resolve extraction confirmation items before treating presentation readiness as final.',
-        };
-      }
-
-      return getExporterPresentationTruth({
+    () =>
+      getExporterPresentationTruth({
         canonicalResultTruth,
         checklistTruth: {
           missingRequirements: requirementChecklistSummary.missing,
@@ -2616,14 +2537,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           awaitingDocuments: requirementChecklistSummary.awaitingDocument,
         },
         totalIssues: reportableFindingsCount,
-      });
-    },
+      }),
     [
       canonicalResultTruth,
-      isExtractionResolutionStage,
       reportableFindingsCount,
       requirementChecklistSummary,
-      workflowStage?.summary,
     ],
   );
   const contractRequirementActions = useMemo(() => {
@@ -2660,16 +2578,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   }, [canonicalResultTruth.requirementReadinessItems]);
   const actionEngine = useMemo(() => {
     const actions: Array<{ priority: 'critical' | 'major' | 'minor'; title: string; detail: string }> = [];
-
-    if (isExtractionResolutionStage) {
-      actions.push({
-        priority: 'critical',
-        title: 'Confirm unresolved extracted fields',
-        detail:
-          workflowStage?.summary ||
-          'Review source evidence in the Documents tab and confirm unresolved fields before treating validation findings as final.',
-      });
-    }
 
     checklistReviewFindings.forEach((finding) => {
       actions.push({
@@ -2731,7 +2639,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       const rank = { critical: 0, major: 1, minor: 2 };
       return rank[a.priority] - rank[b.priority];
     });
-  }, [checklistReviewFindings, contractRequirementActions, isExtractionResolutionStage, issueCards, workflowStage?.summary]);
+  }, [checklistReviewFindings, contractRequirementActions, issueCards]);
   const additionalActionItems = useMemo(() => {
     const reviewFindingTitles = new Set(checklistReviewFindings.map((finding) => finding.title));
     return actionEngine.filter((action) => !reviewFindingTitles.has(action.title));
@@ -2812,36 +2720,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     const baseVerdict = (contractDisplayBankVerdict as BankVerdict | null) ?? null;
     const normalizedVerdict = String(baseVerdict?.verdict ?? '').trim().toUpperCase();
 
-    if (isExtractionResolutionStage) {
-      const checklistCriticalCount = checklistReviewFindings.filter((finding) => finding.severity === 'critical').length;
-      const checklistMajorCount = checklistReviewFindings.length - checklistCriticalCount;
-      const actionItems: BankVerdictActionItem[] = actionEngine.slice(0, 5).map((action) => ({
-        priority: action.priority === 'critical' ? 'critical' : action.priority === 'major' ? 'high' : 'medium',
-        issue: action.title,
-        action: action.detail,
-      }));
-
-      return {
-        verdict: 'CAUTION',
-        verdict_color: 'yellow',
-        verdict_message: 'Extraction resolution required before bank review',
-        recommendation:
-          workflowStage?.summary ||
-          'Confirm the unresolved extracted fields, then rerun validation before treating this case as ready for submission.',
-        can_submit: false,
-        will_be_rejected: false,
-        estimated_discrepancy_fee: baseVerdict?.estimated_discrepancy_fee ?? 0,
-        issue_summary: {
-          critical: checklistCriticalCount,
-          major: checklistMajorCount,
-          minor: 0,
-          total: checklistReviewFindings.length,
-        },
-        action_items: actionItems,
-        action_items_count: actionEngine.length,
-      };
-    }
-
     if (exporterPresentationTruth.presentationStatus === 'ready') {
       return baseVerdict;
     }
@@ -2917,8 +2795,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     contractRequirementReadiness,
     contractDisplayBankVerdict,
     exporterPresentationTruth.presentationStatus,
-    isExtractionResolutionStage,
-    workflowStage?.summary,
   ]);
   const customsPackReadiness = useMemo(() => {
     const derivedBlockers = requirementChecklist.filter(
@@ -2945,19 +2821,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       else if (owner.includes('waiver')) ownerBuckets.waiver += 1;
     });
 
-    if (isExtractionResolutionStage) {
-      return {
-        status: 'review_required' as const,
-        summary:
-          workflowStage?.summary ||
-          'Resolve extraction confirmation items before treating customs readiness as final.',
-        blockers: [],
-        reviews: derivedReviews,
-        ownerBuckets,
-        source: 'workflow_stage',
-      };
-    }
-
     if (contractRequirementReadiness.hasItems) {
       return {
         status: exporterPresentationTruth.presentationStatus,
@@ -2983,8 +2846,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     requirementChecklist,
     issueCards,
     exporterPresentationTruth,
-    isExtractionResolutionStage,
-    workflowStage?.summary,
   ]);
   const customsPack = structuredResult?.customs_pack;
   const packGenerated = Boolean(manifestData?.documents?.length);
@@ -3034,7 +2895,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const submissionEligibility = canonicalResultTruth.submissionEligibility;
   const canSubmitFromValidation = canonicalResultTruth.canSubmitFromValidation;
   const canGenerateCustomsPack =
-    exporterPresentationTruth.presentationStatus !== 'not_ready' && !isExtractionResolutionStage;
+    exporterPresentationTruth.presentationStatus !== 'not_ready';
   const sortedSubmissions = useMemo(() => {
     return [...(submissionsData?.items ?? [])].sort((left, right) => {
       const leftTime = new Date(left.submitted_at || left.created_at).getTime();
@@ -3046,7 +2907,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
   const isReadyToSubmit = useMemo(() => {
     if (!enableBankSubmission) return false;
     if (guardrailsQueryEnabled && guardrailsLoading) return false;
-    if (isExtractionResolutionStage) return false;
     if (contractRequirementReadiness.hasItems && canonicalResultTruth.requirementReviewNeeded) return false;
     if (!canSubmitFromValidation) return false;
     if (exporterPresentationTruth.presentationStatus !== 'ready') return false;
@@ -3063,7 +2923,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     canonicalResultTruth.requirementReviewNeeded,
     contractRequirementReadiness.hasItems,
     exporterPresentationTruth.presentationStatus,
-    isExtractionResolutionStage,
   ]);
   const latestSubmissionStatusMeta = useMemo(() => {
     if (!latestSubmission) return null;
@@ -3082,19 +2941,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     return { label: safeString(latestSubmission.status), variant: 'outline' as const, tone: 'warning' as const };
   }, [latestSubmission]);
   const customsCurrentStep = useMemo(() => {
-    if (isExtractionResolutionStage) {
-      return {
-        tone: 'warning' as const,
-        title: 'Resolve extracted fields before presentation work',
-        detail:
-          workflowStage?.summary ||
-          'Validation remains provisional until unresolved extracted fields are confirmed from source evidence.',
-        helper: 'Next surface: Documents tab',
-        action: 'documents' as const,
-        actionLabel: 'Open Documents',
-      };
-    }
-
     if (customsPackReadiness.status === 'blocked') {
       return {
         tone: 'destructive' as const,
@@ -3189,12 +3035,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     customsPackReadiness.blockers.length,
     customsPackReadiness.status,
     customsPackReadiness.summary,
-    isExtractionResolutionStage,
     isReadyToSubmit,
     latestSubmission,
     latestSubmissionStatusMeta?.label,
     packGenerated,
-    workflowStage?.summary,
   ]);
 
   // Contract Validation warnings (Output-First layer)
@@ -3685,40 +3529,11 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           {/* Workflow badges, bank profile, REJECT banner, OCR warning,
               amendments — all removed from above-tabs area.
               Verdict tab now handles pass/fail, action items, and amendments. */}
-          {extractionResolutionSummary.required && (
-            <Alert className="mt-4 border-amber-500/40 bg-amber-500/5">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              <AlertTitle className="font-semibold">
-                Extraction Resolution Required
-              </AlertTitle>
-              <AlertDescription className="mt-2 space-y-2 text-sm">
-                <p>
-                  {extractionResolutionSummary.summary ?? (
-                    <>
-                      Validation below is provisional until{' '}
-                      <span className="font-medium">{extractionResolutionSummary.unresolvedCount}</span>{' '}
-                      extracted field{extractionResolutionSummary.unresolvedCount === 1 ? '' : 's'} across{' '}
-                      <span className="font-medium">{extractionResolutionSummary.documentCount}</span>{' '}
-                      document{extractionResolutionSummary.documentCount === 1 ? '' : 's'} are confirmed.
-                    </>
-                  )}
-                </p>
-                <p className="text-muted-foreground">
-                  Open the Documents tab, review the source evidence, and confirm only the unresolved fields. This refreshes the same session and does not start a new paid validation run.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {extractionResolutionSummary.documents.slice(0, 4).map((document) => (
-                    <Badge key={`resolution-${document.id}`} variant="outline" className="border-amber-500/30 text-amber-700 bg-amber-500/5">
-                      {document.name}: {document.extractionResolution?.unresolvedCount ?? 0} field{(document.extractionResolution?.unresolvedCount ?? 0) === 1 ? '' : 's'}
-                    </Badge>
-                  ))}
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
         </div>
 
-        {/* Detailed Results */}
+        {/* Detailed Results — always 4-tab verdict view.  Extraction
+            resolution is handled on the upload / extraction-review page
+            before the user clicks Start Validation, not here. */}
         <Tabs
           value={visibleActiveTab}
           onValueChange={(value) => {
@@ -3728,460 +3543,48 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
           }}
           className="space-y-6"
         >
-          <TabsList className={cn("grid w-full", isExtractionResolutionStage ? "grid-cols-2" : "grid-cols-4")}>
-            {isExtractionResolutionStage ? (
-              <>
-                <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-              </>
-            ) : (
-              <>
-                <TabsTrigger value="overview">Verdict</TabsTrigger>
-                <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
-                <TabsTrigger value="discrepancies" className="relative">
-                  Findings{totalDiscrepancies > 0 ? ` (${totalDiscrepancies})` : ''}
-                  {totalDiscrepancies > 0 && (
-                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="customs">Customs Pack</TabsTrigger>
-              </>
-            )}
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="overview">Verdict</TabsTrigger>
+            <TabsTrigger value="documents">Documents ({totalDocuments})</TabsTrigger>
+            <TabsTrigger value="discrepancies" className="relative">
+              Findings{totalDiscrepancies > 0 ? ` (${totalDiscrepancies})` : ''}
+              {totalDiscrepancies > 0 && (
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full"></div>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="customs">Customs Pack</TabsTrigger>
           </TabsList>
-
-          {isExtractionResolutionStage && (
-            <Card className="border-amber-500/30 bg-amber-500/5">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold">
-                  Validation Results Unlock After Extraction Resolution
-                </CardTitle>
-                <CardDescription>
-                  Focus on the Documents tab first. Final-validation workspaces stay closed until unresolved fields are confirmed from source evidence.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline" className="border-amber-500/30 text-amber-700 bg-amber-500/5">
-                    Active now: Documents
-                  </Badge>
-                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
-                    Also available: Overview
-                  </Badge>
-                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
-                    Opens later: Issues
-                  </Badge>
-                  <Badge variant="outline" className="border-slate-400/30 text-slate-600">
-                    Opens later: Customs Pack
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           <TabsContent value="overview" className="space-y-6">
             {/* Verdict Tab — clean, minimal, answers "can I submit?" */}
-            {!isExtractionResolutionStage && (
-              <VerdictTab
-                issueCards={issueCards}
-                documents={sortedDocuments}
-                totalDocuments={totalDocuments}
-                complianceScore={complianceScore ?? 0}
-                lcNumber={lcNumber}
-                lcData={{
-                  applicant: typeof lcData?.applicant === 'string' ? lcData.applicant : lcData?.applicant?.name,
-                  beneficiary: typeof lcData?.beneficiary === 'string' ? lcData.beneficiary : lcData?.beneficiary?.name,
-                  amount: lcData?.amount?.value ?? lcData?.amount,
-                  currency: lcData?.currency ?? lcData?.amount?.currency,
-                  expiryDate: lcData?.expiry_date ?? lcData?.expiry?.date,
-                }}
-                documentsRequired={lcData?.documents_required ?? lcData?.documents_required_detailed}
-                additionalConditions={lcData?.additional_conditions}
-                bankProfile={structuredResult?.bank_profile ? {
-                  name: (structuredResult.bank_profile as any)?.name ?? (structuredResult.bank_profile as any)?.bank_name,
-                  policy_label: (structuredResult.bank_profile as any)?.policy_label ?? (structuredResult.bank_profile as any)?.tolerance_policy,
-                } : null}
-                amendmentsCount={(structuredResult?.amendments_available as any)?.count ?? 0}
-                amendmentsFee={(structuredResult?.amendments_available as any)?.estimated_total_fee ? `USD ${(structuredResult.amendments_available as any).estimated_total_fee}` : undefined}
-              />
-            )}
-
-            {/* Legacy overview content — only for extraction-resolution stage */}
-            {isExtractionResolutionStage && hasContractWarnings && (
-              <Alert variant={contractWarningsByLevel.errors.length > 0 ? "destructive" : "default"} className="border-amber-500/50 bg-amber-500/5">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle className="font-semibold">
-                  Extraction Notice
-                  {contractWarningsByLevel.errors.length > 0 && (
-                    <Badge variant="destructive" className="ml-2 text-xs">{contractWarningsByLevel.errors.length} critical</Badge>
-                  )}
-                  {contractWarningsByLevel.warnings.length > 0 && (
-                    <Badge variant="outline" className="ml-2 text-xs border-amber-500/50 text-amber-600">{contractWarningsByLevel.warnings.length} warning{contractWarningsByLevel.warnings.length > 1 ? 's' : ''}</Badge>
-                  )}
-                </AlertTitle>
-                <AlertDescription className="mt-2">
-                  <ul className="space-y-1 text-sm">
-                    {contractWarningsByLevel.errors.map((w, i) => (
-                      <li key={`err-${i}`} className="flex items-start gap-2">
-                        <XCircle className="w-3.5 h-3.5 mt-0.5 text-destructive shrink-0" />
-                        <span>{w.message}</span>
-                      </li>
-                    ))}
-                    {contractWarningsByLevel.warnings.map((w, i) => (
-                      <li key={`warn-${i}`} className="flex items-start gap-2">
-                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-amber-500 shrink-0" />
-                        <span>{w.message}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {contractWarningsByLevel.infos.length > 0 && (
-                    <details className="mt-2 text-xs text-muted-foreground">
-                      <summary className="cursor-pointer">Show {contractWarningsByLevel.infos.length} info message{contractWarningsByLevel.infos.length > 1 ? 's' : ''}</summary>
-                      <ul className="mt-1 space-y-0.5 pl-2">
-                        {contractWarningsByLevel.infos.map((w, i) => (
-                          <li key={`info-${i}`}>• {w.message}</li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                </AlertDescription>
-              </Alert>
-            )}
-            <div className="space-y-6">
-              {isExtractionResolutionStage && (
-                <Card className="shadow-soft border border-amber-500/40 bg-amber-500/5">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-amber-600" />
-                      Current Stage: Extraction Resolution
-                    </CardTitle>
-                    <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      Confirm unresolved extracted fields before relying on final validation findings
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      {workflowStage?.summary ||
-                        'The system is still resolving extracted fields from the uploaded documents. Validation remains provisional until those fields are confirmed.'}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Use the Documents tab to review source evidence and confirm only the unresolved fields. The checklist below remains useful, but final discrepancy and readiness decisions are not settled yet.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-              {isExtractionResolutionStage && hasTimeline && (
-                <Card className="shadow-soft border border-border/60">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                      <Clock className="w-5 h-5" />
-                      Validation Timeline
-                    </CardTitle>
-                    <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      Recent steps from this validation run
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {timelineDisplay.map((event, index) => {
-                      const statusClass =
-                        event.status === "error"
-                          ? "bg-destructive"
-                          : event.status === "warning"
-                          ? "bg-warning"
-                          : "bg-success";
-                      return (
-                        <div
-                          key={`${event.title}-${index}`}
-                          className="flex items-center gap-3 text-sm"
-                        >
-                          <div className={`w-3 h-3 rounded-full ${statusClass}`}></div>
-                          <div className="flex-1">
-                            <p className="font-medium">{event.title}</p>
-                            {event.timestamp ? (
-                              <p className="text-xs text-muted-foreground">
-                                {format(new Date(event.timestamp), "HH:mm")}
-                                {event.description ? ` - ${event.description}` : ''}
-                              </p>
-                            ) : event.description ? (
-                              <p className="text-xs text-muted-foreground">{event.description}</p>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              )}
-              <Card hidden className="shadow-soft border border-border/60">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold">Case At A Glance</CardTitle>
-                  <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    These metrics explain the current review state. They do not replace it.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {overviewTruth.summaryMetrics.map((metric) => {
-                      const toneClass =
-                        metric.tone === 'success'
-                          ? 'text-success'
-                          : metric.tone === 'warning'
-                          ? 'text-warning'
-                          : metric.tone === 'destructive'
-                          ? 'text-destructive'
-                          : metric.tone === 'primary'
-                          ? 'text-primary'
-                          : 'text-foreground';
-                      return (
-                        <div key={metric.label} className="rounded-lg border border-border/60 p-3">
-                          <p className="text-xs text-muted-foreground uppercase tracking-wide">{metric.label}</p>
-                          <p className={`text-2xl font-semibold ${toneClass}`}>{metric.value}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-                    <div className="grid grid-cols-2 gap-3">
-                      {overviewTruth.supportMetrics.map((metric) => {
-                        const toneClass =
-                          metric.tone === 'success'
-                            ? 'text-success'
-                            : metric.tone === 'warning'
-                            ? 'text-warning'
-                            : metric.tone === 'destructive'
-                            ? 'text-destructive'
-                            : metric.tone === 'primary'
-                            ? 'text-primary'
-                            : 'text-foreground';
-                        return (
-                          <div key={metric.label} className="rounded-lg border border-border/60 p-3">
-                            <p className="text-xs text-muted-foreground uppercase tracking-wide">{metric.label}</p>
-                            <p className={`text-2xl font-semibold ${toneClass}`}>{metric.value}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="space-y-3">
-                      {overviewTruth.progressMetrics.map((metric) => (
-                        <div key={metric.label}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm">{metric.label}</span>
-                            <span className="text-sm font-medium">{metric.value}%</span>
-                          </div>
-                          <Progress value={metric.value} className="h-2" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                    <div className="rounded-lg border border-border/60 p-3 bg-muted/20">
-                      <div className="flex items-center gap-2 mb-2">
-                        <TrendingUp className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-medium text-primary">What Happened In This Run</span>
-                      </div>
-                    <ul className="text-xs text-muted-foreground space-y-1">
-                      {overviewTruth.performanceInsights.map((insight, idx) => (
-                        <li key={idx}>• {insight}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-            
-            {/* Required-doc checklist — legacy, only for extraction-resolution stage */}
-            {isExtractionResolutionStage && <div className="space-y-6">
-              <Card className="shadow-soft border border-border/60">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold">Required Documents Checklist</CardTitle>
-                  <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    {isExtractionResolutionStage
-                      ? 'LC-required documents, uploaded files, and provisional requirement coverage'
-                      : 'LC-required documents, uploaded files, and requirement coverage'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {isExtractionResolutionStage && (
-                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-                      <p className="text-sm font-medium text-amber-800">Checklist coverage is still provisional</p>
-                      <p className="mt-1 text-xs text-amber-700">
-                        Uploaded-document coverage shown below is based on the current extracted field set and may change after unresolved fields are confirmed in the Documents tab.
-                      </p>
-                    </div>
-                  )}
-                  {requirementChecklist.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No explicit LC requirements were parsed into checklist items yet.</p>
-                  ) : (
-                    requirementChecklist.map((item) => {
-                      const uploadStatusLabel = item.matchedDoc ? `Found: ${item.matchedDoc.name}` : 'Missing upload';
-                      const coverageLabel =
-                        item.requirementStatus === 'matched'
-                          ? 'Covers requirement'
-                          : item.requirementStatus === 'partial'
-                          ? 'Partially covers requirement'
-                          : 'Missing upload';
-                      const coverageStatus: 'success' | 'warning' | 'error' =
-                        item.requirementStatus === 'matched'
-                          ? 'success'
-                          : item.requirementStatus === 'partial'
-                          ? 'warning'
-                          : 'error';
-
-                      return (
-                        <div key={item.key} className="rounded-lg border border-border/60 p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-3 flex-wrap">
-                            <div className="space-y-1">
-                              <p className="font-medium text-sm">{item.label}</p>
-                              <p className="text-xs text-muted-foreground">{item.requirementText}</p>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant={item.matchedDoc ? "outline" : "destructive"}>{uploadStatusLabel}</Badge>
-                              <StatusBadge status={coverageStatus}>
-                                {coverageLabel}
-                              </StatusBadge>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  {(lcRequirementConditions.length > 0 || lcUnmappedRequirements.length > 0) && (
-                    <div className="space-y-3">
-                      {lcRequirementConditions.length > 0 && (
-                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
-                          <p className="text-sm font-semibold">Document Presentation Conditions</p>
-                          <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
-                            {lcRequirementConditions.map((condition, idx) => (
-                              <li key={`requirement-condition-${idx}`}>{condition}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {lcUnmappedRequirements.length > 0 && (
-                        <div className="rounded-lg border border-border/60 bg-muted/10 p-4 space-y-2">
-                          <p className="text-sm font-semibold">Requirement Text Needing Mapping</p>
-                          <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                            {lcUnmappedRequirements.map((requirement, idx) => (
-                              <li key={`unmapped-requirement-${idx}`}>{requirement}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              <Card className="shadow-soft border border-border/60">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-semibold">Operator Next Actions</CardTitle>
-                  <CardDescription className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    The most important next steps from the current review state
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Critical: <span className="font-medium text-foreground">{actionEngine.filter((action) => action.priority === 'critical').length}</span></span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Major: <span className="font-medium text-foreground">{actionEngine.filter((action) => action.priority === 'major').length}</span></span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-1">Minor: <span className="font-medium text-foreground">{actionEngine.filter((action) => action.priority === 'minor').length}</span></span>
-                  </div>
-                  {actionEngine.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No immediate actions generated from the current validation state.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {checklistReviewFindings.slice(0, 3).map((finding) => (
-                        <ReviewFindingCard
-                          key={`overview-finding-${finding.key}`}
-                          finding={finding}
-                          variant="compact"
-                        />
-                      ))}
-                      {additionalActionItems.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                            Additional discrepancy actions
-                          </p>
-                          {additionalActionItems.slice(0, 3).map((action, idx) => (
-                            <div key={`${action.title}-${idx}`} className="rounded-lg border border-border/60 p-3 flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-medium text-sm">{action.title}</p>
-                                <p className="text-xs text-muted-foreground mt-1">{action.detail}</p>
-                              </div>
-                              <Badge variant={action.priority === 'critical' ? 'destructive' : 'outline'} className={action.priority === 'major' ? 'border-amber-500/30 text-amber-700 bg-amber-500/5' : ''}>
-                                {action.priority}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>}
-
-            {/* Document Compliance Grid — legacy, only for extraction-resolution stage */}
-            {isExtractionResolutionStage && sortedDocuments.length > 0 && (
-              <Card className="shadow-soft border border-border/60">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Document Compliance</CardTitle>
-                  <CardDescription>Status of each document in the presentation set</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {sortedDocuments.map((doc) => {
-                      const docIssueCount = issueCards.filter(
-                        (ic) => (ic.documents ?? []).some(
-                          (d) => d === doc.typeKey || d === doc.type || d === doc.name
-                        )
-                      ).length;
-                      const statusIcon = doc.status === 'success'
-                        ? <CheckCircle className="w-4 h-4 text-emerald-600" />
-                        : doc.status === 'error'
-                        ? <XCircle className="w-4 h-4 text-destructive" />
-                        : <AlertTriangle className="w-4 h-4 text-warning" />;
-                      return (
-                        <details key={doc.id} className="group">
-                          <summary className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-muted/50 cursor-pointer">
-                            {statusIcon}
-                            <span className="text-sm font-medium flex-1">
-                              {getTruthfulDocumentTypeLabel(doc.filename, doc.typeKey || doc.type)}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {Object.keys(doc.extractedFields || {}).length} fields
-                            </span>
-                            {docIssueCount > 0 && (
-                              <Badge variant="outline" className="text-xs bg-destructive/10 text-destructive border-destructive/30">
-                                {docIssueCount} issue{docIssueCount > 1 ? 's' : ''}
-                              </Badge>
-                            )}
-                          </summary>
-                          <div className="pl-10 pb-2 space-y-1">
-                            {Object.entries(doc.extractedFields || {}).slice(0, 12).map(([key, val]) => (
-                              <div key={key} className="flex justify-between text-xs py-0.5">
-                                <span className="text-muted-foreground">{humanizeLabel(key)}</span>
-                                <span className="font-mono text-foreground max-w-[60%] truncate text-right">
-                                  {safeString(typeof val === 'object' ? JSON.stringify(val) : String(val ?? ''))}
-                                </span>
-                              </div>
-                            ))}
-                            {Object.keys(doc.extractedFields || {}).length > 12 && (
-                              <p className="text-xs text-muted-foreground italic">
-                                +{Object.keys(doc.extractedFields || {}).length - 12} more fields
-                              </p>
-                            )}
-                          </div>
-                        </details>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            <VerdictTab
+              issueCards={issueCards}
+              documents={sortedDocuments}
+              totalDocuments={totalDocuments}
+              complianceScore={complianceScore ?? 0}
+              lcNumber={lcNumber}
+              lcData={{
+                applicant: typeof lcData?.applicant === 'string' ? lcData.applicant : lcData?.applicant?.name,
+                beneficiary: typeof lcData?.beneficiary === 'string' ? lcData.beneficiary : lcData?.beneficiary?.name,
+                amount: lcData?.amount?.value ?? lcData?.amount,
+                currency: lcData?.currency ?? lcData?.amount?.currency,
+                expiryDate: lcData?.expiry_date ?? lcData?.expiry?.date,
+              }}
+              documentsRequired={lcData?.documents_required ?? lcData?.documents_required_detailed}
+              additionalConditions={lcData?.additional_conditions}
+              bankProfile={structuredResult?.bank_profile ? {
+                name: (structuredResult.bank_profile as any)?.name ?? (structuredResult.bank_profile as any)?.bank_name,
+                policy_label: (structuredResult.bank_profile as any)?.policy_label ?? (structuredResult.bank_profile as any)?.tolerance_policy,
+              } : null}
+              amendmentsCount={(structuredResult?.amendments_available as any)?.count ?? 0}
+              amendmentsFee={(structuredResult?.amendments_available as any)?.estimated_total_fee ? `USD ${(structuredResult.amendments_available as any).estimated_total_fee}` : undefined}
+            />
 
           </TabsContent>
 
           {/* Documents Tab — per-document compliance view */}
-          {!isExtractionResolutionStage && (
-            <TabsContent value="documents" className="space-y-4">
-              <DocumentsTab
+          <TabsContent value="documents" className="space-y-4">
+            <DocumentsTab
                 documents={sortedDocuments}
                 issueCards={issueCards}
                 onPreviewDocument={async (doc) => {
@@ -4230,8 +3633,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   setIsDrawerOpen(true);
                 }}
               />
-            </TabsContent>
-          )}
+          </TabsContent>
 
           <TabsContent value="customs" className="space-y-6">
             <Card
@@ -4270,11 +3672,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <p className="text-xs text-muted-foreground">{customsCurrentStep.helper}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {customsCurrentStep.action === 'documents' && (
-                    <Button variant="outline" onClick={() => setActiveTab('documents')}>
-                      Open Documents
-                    </Button>
-                  )}
                   {customsCurrentStep.action === 'overview' && (
                     <Button variant="outline" onClick={() => setActiveTab('overview')}>
                       Review Checklist
@@ -4329,15 +3726,13 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                   <div className="p-4 rounded-lg border border-border/60 space-y-2">
                     <p className="text-xs uppercase text-muted-foreground tracking-wide">Status</p>
                     <div className="flex items-center gap-2">
-                      <StatusBadge status={isExtractionResolutionStage ? "warning" : packGenerated ? "success" : "warning"}>
-                        {isExtractionResolutionStage ? "Paused" : packGenerated ? "Ready" : "Pending"}
+                      <StatusBadge status={packGenerated ? "success" : "warning"}>
+                        {packGenerated ? "Ready" : "Pending"}
                       </StatusBadge>
                       <Badge variant="outline">{customsPack?.format ?? "zip"}</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {isExtractionResolutionStage
-                        ? "Extraction resolution is still open. Customs-pack generation and presentation checks remain provisional until unresolved fields are confirmed."
-                        : packGenerated
+                      {packGenerated
                         ? "Customs pack generated and ready to download."
                         : "Generate your customs pack to create the manifest and bundle documents."}
                     </p>
@@ -4387,9 +3782,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </Button>
                       {!canGenerateCustomsPack && (
                         <p className="text-xs text-muted-foreground">
-                          {isExtractionResolutionStage
-                            ? 'Confirm unresolved extracted fields in the Documents tab before generating a customs pack.'
-                            : 'Resolve blocked required-document or review states before generating a customs pack.'}
+                          Resolve blocked required-document or review states before generating a customs pack.
                         </p>
                       )}
                       {/* Show Download only when manifest exists (pack was generated) */}
@@ -4451,9 +3844,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                       </div>
                       {customsPackReadiness.blockers.length === 0 ? (
                         <p className="text-sm text-muted-foreground mt-3">
-                          {isExtractionResolutionStage
-                            ? 'Final presentation blockers are deferred until extraction resolution is complete.'
-                            : 'No hard blockers are currently preventing customs-pack generation.'}
+                          No hard blockers are currently preventing customs-pack generation.
                         </p>
                       ) : (
                         <ul className="mt-3 space-y-2 text-sm">
@@ -4545,12 +3936,10 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                         <CardContent className="py-8 text-center">
                           <Package className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
                           <p className="text-sm text-muted-foreground mb-1">
-                            {isExtractionResolutionStage ? 'Manifest generation is deferred' : 'No manifest generated yet'}
+                            No manifest generated yet
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {isExtractionResolutionStage
-                              ? 'Confirm unresolved extracted fields first. Then generate the customs pack once readiness is no longer provisional.'
-                              : 'Click "Generate Customs Pack" above to create your customs manifest.'}
+                            Click "Generate Customs Pack" above to create your customs manifest.
                           </p>
                         </CardContent>
                       </Card>
@@ -4600,272 +3989,6 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
             </Card>
           </TabsContent>
 
-          {/* Legacy documents view — only for extraction-resolution stage */}
-          {isExtractionResolutionStage && <TabsContent value="documents" className="space-y-4">
-            {sortedDocuments.map((document) => {
-              const fieldEntries = Object.entries(document.extractedFields || {});
-              const hasFieldEntries = fieldEntries.length > 0;
-              const parseComplete = (document as any).parseComplete;
-              const parseCompleteness = (document as any).parseCompleteness;
-              const requiredFieldsFound = (document as any).requiredFieldsFound;
-              const requiredFieldsTotal = (document as any).requiredFieldsTotal;
-              const discrepancyCount = document.issuesCount ?? 0;
-              const normalizedDocumentType = String(document.typeKey || '').toLowerCase();
-              const warningReasons = ((document as any).warningReasons ?? []) as string[];
-              const reviewReasons = ((document as any).reviewReasons ?? []) as string[];
-              const requirementStatus = document.requirementStatus ?? 'matched';
-              const reviewState = document.reviewState ?? 'ready';
-              const extractionResolution = document.extractionResolution;
-              const isLcRequiredDocument = lcRequiredDocumentTypeSet.has(normalizedDocumentType);
-              const isOptionalSupportingDocument =
-                normalizedDocumentType !== 'letter_of_credit' && !isLcRequiredDocument;
-              const effectiveWarningReasons =
-                isOptionalSupportingDocument && discrepancyCount === 0 ? [] : warningReasons;
-              const effectiveReviewReasons =
-                isOptionalSupportingDocument && discrepancyCount === 0 ? [] : reviewReasons;
-              const effectiveReviewState: typeof reviewState =
-                isOptionalSupportingDocument && discrepancyCount === 0 ? 'ready' : reviewState;
-              const extractionLabel =
-                extractionResolution?.required
-                  ? 'Needs field confirmation'
-                  : 
-                document.status === 'success'
-                  ? 'Structured read complete'
-                  : document.status === 'error'
-                  ? 'Extraction blocked'
-                  : 'Extraction needs review';
-              const requirementMeta =
-                isOptionalSupportingDocument
-                  ? { label: 'Extra upload', status: 'pending' as const, note: 'Uploaded as supporting evidence, but this LC does not require this document type.' }
-                  : requirementStatus === 'matched'
-                  ? { label: 'Covers LC requirement', status: 'success' as const, note: 'This upload covers the required LC document type.' }
-                  : requirementStatus === 'missing'
-                  ? { label: 'Does not cover LC requirement', status: 'error' as const, note: 'This upload does not currently satisfy the required LC document coverage.' }
-                  : { label: 'Partially covers requirement', status: 'warning' as const, note: 'This upload only partially satisfies the required LC document coverage.' };
-              const reviewMeta =
-                isOptionalSupportingDocument && discrepancyCount === 0
-                  ? { label: 'Informational only', status: 'pending' as const, note: 'This extra supporting document does not block clean presentation.' }
-                  : extractionResolution?.required
-                  ? { label: 'Awaiting extraction confirmation', status: 'warning' as const, note: extractionResolution.summary }
-                  : effectiveReviewState === 'ready'
-                  ? { label: 'No review hold', status: 'success' as const, note: 'No active review hold is attached to this document.' }
-                  : effectiveReviewState === 'blocked'
-                  ? { label: 'Review blocked', status: 'error' as const, note: 'This document currently blocks clean presentation.' }
-                  : effectiveReviewState === 'needs_review'
-                  ? { label: 'Needs manual review', status: 'warning' as const, note: 'This document needs manual review before clean presentation.' }
-                  : { label: 'Waiting for matching upload', status: 'warning' as const, note: 'A matching supporting document is still required before clean presentation.' };
-              
-              return (
-                <Card
-                  key={document.id}
-                  className="shadow-soft border border-border/60 transition duration-200 hover:-translate-y-0.5 hover:border-primary/40"
-                >
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-muted/50">
-                          <FileText className="w-5 h-5 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-lg font-semibold">{document.name}</CardTitle>
-                          <CardDescription className="text-sm text-muted-foreground">
-                            {safeString(document.type)}
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <StatusBadge status={document.status}>
-                          {extractionLabel}
-                        </StatusBadge>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            setSelectedDocumentForDrawer({
-                              id: document.id,
-                              name: document.name,
-                              filename: document.filename,
-                              type: document.type,
-                              documentType: document.typeKey,
-                              typeKey: document.typeKey,
-                              status: document.status,
-                              extractionStatus: document.extractionStatus,
-                              issuesCount: document.issuesCount,
-                              extractedFields:
-                                String(document.typeKey || "").toLowerCase() === "letter_of_credit" &&
-                                Object.keys(canonicalLcDrawerFields).length > 0
-                                  ? canonicalLcDrawerFields
-                                  : document.extractedFields,
-                              warningReasons: (document as any).warningReasons ?? [],
-                              reviewReasons: (document as any).reviewReasons ?? [],
-                              criticalFieldStates: (document as any).criticalFieldStates ?? {},
-                              fieldDiagnostics: (document as any).fieldDiagnostics ?? {},
-                              missingRequiredFields: (document as any).missingRequiredFields ?? [],
-                              rawText: (document as any).rawText ?? '',
-                              fieldDetails: (document as any).fieldDetails ?? {},
-                              extractionResolution: (document as any).extractionResolution,
-                              resolutionItems: (document as any).resolutionItems,
-                              ocrConfidence: (document.extractedFields as any)?._extraction_confidence,
-                              sourceFormat: (document.extractedFields as any)?._source_format,
-                              isElectronicBL: (document.extractedFields as any)?._is_electronic_bl,
-                            });
-                            setIsDrawerOpen(true);
-                          }}
-                        >
-                          <Eye className="w-4 h-4 mr-2" />
-                          View Details
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="mb-4 grid gap-3 md:grid-cols-3">
-                      <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">What we read from this file</p>
-                        <div className="flex items-center justify-between gap-2">
-                          <StatusBadge status={document.status}>{extractionLabel}</StatusBadge>
-                          <span className="text-xs text-muted-foreground text-right">
-                            {typeof parseComplete === "boolean"
-                              ? `Structured read ${parseComplete ? 'complete' : 'partial'}`
-                              : (document.extractionStatus ?? 'unknown').replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                        {(typeof requiredFieldsFound === 'number' && typeof requiredFieldsTotal === 'number') || typeof parseCompleteness === 'number' ? (
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {typeof requiredFieldsFound === 'number' && typeof requiredFieldsTotal === 'number'
-                              ? `${requiredFieldsFound}/${requiredFieldsTotal} extraction-required fields found`
-                              : `Parse completeness ${Math.round((parseCompleteness ?? 0) * 100)}%`}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">LC requirement match</p>
-                        <div className="flex items-center justify-between gap-2">
-                          <StatusBadge status={requirementMeta.status}>{requirementMeta.label}</StatusBadge>
-                          <span className="text-xs text-muted-foreground text-right">
-                            {discrepancyCount > 0 ? `${discrepancyCount} linked issue${discrepancyCount > 1 ? 's' : ''}` : 'No linked issues'}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs text-muted-foreground">{requirementMeta.note}</p>
-                      </div>
-                      <div className="rounded-md border border-border/60 p-3 bg-muted/10">
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Current review status</p>
-                        <div className="flex items-center justify-between gap-2">
-                          <StatusBadge status={reviewMeta.status}>{reviewMeta.label}</StatusBadge>
-                          <span className="text-xs text-muted-foreground text-right">
-                            {effectiveReviewReasons.length > 0 ? `${effectiveReviewReasons.length} review note${effectiveReviewReasons.length > 1 ? 's' : ''}` : 'No review notes'}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs text-muted-foreground">{reviewMeta.note}</p>
-                      </div>
-                    </div>
-                    {effectiveWarningReasons.length > 0 && (
-                      <div className="mb-3 space-y-2">
-                        <div className="flex flex-wrap gap-2">
-                          {effectiveWarningReasons.map((reason, idx) => (
-                            <Badge key={`${document.id}-reason-${idx}`} variant="outline" className="text-xs border-amber-500/30 text-amber-700 bg-amber-500/5">
-                              {reason}
-                            </Badge>
-                          ))}
-                        </div>
-                        <p className="text-xs text-amber-700">
-                          {effectiveWarningReasons[0]}
-                        </p>
-                      </div>
-                    )}
-                    {hasFieldEntries ? (
-                      document.typeKey === "letter_of_credit" && lcData ? (
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <p className="text-sm font-semibold">Letter of Credit Snapshot</p>
-                            <Button variant="ghost" size="sm" onClick={() => setShowRawLcJson((prev) => !prev)}>
-                              {showRawLcJson ? "Hide raw JSON" : "View raw JSON"}
-                            </Button>
-                          </div>
-                          <div className="rounded-md border bg-card/50 p-4 space-y-4">
-                            {lcSummaryRows.length > 0 && (
-                              <div className="grid gap-4 md:grid-cols-2">{lcSummaryRows}</div>
-                            )}
-                            {lcDateRows.length > 0 && (
-                              <div>
-                                <p className="text-sm font-semibold mb-2">Key Dates</p>
-                                <div className="grid gap-4 md:grid-cols-2">{lcDateRows}</div>
-                              </div>
-                            )}
-                            <div className="grid gap-4 md:grid-cols-2">
-                              {lcApplicantCard}
-                              {lcBeneficiaryCard}
-                            </div>
-                            {lcPortsCard}
-                            {lcGoodsItemsList}
-                            {(lcAdditionalConditionSummary.items.length > 0 ||
-                              lcAdditionalConditionSummary.placeholderOnly) && (
-                              <div>
-                                <p className="text-sm font-semibold mb-2">Additional Conditions (47A)</p>
-                                {lcAdditionalConditionSummary.items.length > 0 ? (
-                                  <ul className="text-sm space-y-1.5 list-disc list-inside">
-                                    {lcAdditionalConditionSummary.items.map((condition, idx) => (
-                                      <li key={idx} className="text-muted-foreground">{condition}</li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <p className="text-sm text-muted-foreground">
-                                    {SPECIAL_CONDITIONS_PLACEHOLDER_TEXT}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          {showRawLcJson && (
-                            <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-                              <Table>
-                                <TableBody>
-                                  {Object.entries(lcData || {}).map(([key, val]) => (
-                                    <TableRow key={key}>
-                                      <TableCell className="font-medium capitalize w-1/3">
-                                        {key.replace(/([A-Z])/g, " $1").trim()}
-                                      </TableCell>
-                                      <TableCell className="text-sm">
-                                        {typeof val === "object" && val !== null
-                                          ? JSON.stringify(val, null, 2)
-                                          : String(val || "")}
-                                      </TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-                          {fieldEntries.map(([key, value]) => {
-                            const displayValue = formatExtractedValue(value);
-                            return (
-                              <div key={key} className="space-y-1">
-                                <p className="text-xs text-muted-foreground font-medium capitalize">
-                                  {key.replace(/([A-Z])/g, " $1").trim()}
-                                </p>
-                                <p className="text-sm font-medium text-foreground whitespace-pre-wrap break-words">
-                                  {displayValue}
-                                </p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )
-                    ) : (
-                      <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground">
-                        {['partial', 'text_only', 'pending', 'unknown', 'error', 'failed', 'empty'].includes((document.extractionStatus ?? '').toLowerCase())
-                          ? 'This document could not be fully parsed. Preview text is available for manual review.'
-                          : 'No structured fields were extracted for this document.'}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </TabsContent>}
 
           <TabsContent value="discrepancies" className="space-y-4">
             <FindingsTab
