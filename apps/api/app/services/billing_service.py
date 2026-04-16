@@ -419,12 +419,14 @@ class BillingService:
             # Generate invoice number
             invoice_number = Invoice.generate_invoice_number(str(company_id))
 
-            # Create invoice
+            # Create invoice — default currency is USD (international trade
+            # convention).  Company-level overrides can set BDT/EUR/etc.
+            # later via a migration if needed.
             invoice = Invoice(
                 company_id=company_id,
                 invoice_number=invoice_number,
                 amount=total_amount,
-                currency=Currency.BDT,
+                currency=Currency.USD,
                 period_start=period_start,
                 period_end=period_end,
                 description=description or f"Billing for {period_start.strftime('%B %Y')}",

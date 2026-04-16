@@ -35,7 +35,12 @@ class Invoice(Base):
     # Invoice details
     invoice_number = Column(String(50), unique=True, nullable=False, index=True)
     amount = Column(Numeric(10, 2), nullable=False)  # Total amount
-    currency = Column(Enum(Currency), nullable=False, default=Currency.BDT)
+    # Default currency is USD — international trade finance convention.
+    # Changed from BDT (Bangladeshi Taka) which wrongly presented all
+    # invoices in Taka to non-Bangladesh customers regardless of their
+    # actual jurisdiction.  Operators targeting a BD-only product line
+    # can override at the application layer.
+    currency = Column(Enum(Currency), nullable=False, default=Currency.USD)
 
     # Billing period (null for pay-per-check)
     period_start = Column(Date, nullable=True)

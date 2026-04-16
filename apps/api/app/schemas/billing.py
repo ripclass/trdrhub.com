@@ -113,7 +113,7 @@ class InvoiceLineItem(InvoiceLineItemBase):
 class InvoiceBase(BaseModel):
     """Base invoice schema."""
     amount: Money
-    currency: str = "BDT"
+    currency: str = "USD"
     due_date: date
     description: Optional[str] = None
 
@@ -166,7 +166,7 @@ class PaymentIntentCreate(BaseModel):
     """Create payment intent request."""
     invoice_id: Optional[UUID] = None
     amount: Optional[Money] = None
-    currency: str = "BDT"
+    currency: str = "USD"
     payment_method_types: Optional[List[str]] = None
     return_url: Optional[str] = None
     cancel_url: Optional[str] = None
@@ -263,7 +263,7 @@ class PricingInfo(BaseModel):
     per_check: Decimal = PricingConstants.PER_CHECK
     import_draft: Decimal = PricingConstants.IMPORT_DRAFT
     import_bundle: Decimal = PricingConstants.IMPORT_BUNDLE
-    currency: str = "BDT"
+    currency: str = "USD"
 
     class Config:
         use_enum_values = True
