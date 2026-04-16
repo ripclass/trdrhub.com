@@ -377,6 +377,19 @@ async def generate_certificate(
     if not doc_set:
         raise HTTPException(status_code=404, detail="Document set not found")
     
+    # country_of_origin must be explicitly set on the document set —
+    # generating a Certificate of Origin with a fabricated country would
+    # be trade-finance fraud.  Previously fell back to "Bangladesh" which
+    # was wrong for every non-BD exporter.
+    if not doc_set.country_of_origin:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Document set is missing country_of_origin. Set it on the "
+                "document set before generating a Certificate of Origin."
+            ),
+        )
+
     # Build data from document set
     cert_data = {
         "reference_number": f"GSP-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}",
@@ -384,7 +397,7 @@ async def generate_certificate(
         "exporter_address": doc_set.beneficiary_address or "",
         "consignee_name": doc_set.applicant_name,
         "consignee_address": doc_set.applicant_address or "",
-        "country_of_origin": doc_set.country_of_origin or "Bangladesh",
+        "country_of_origin": doc_set.country_of_origin,
         "destination_country": doc_set.applicant_country or "",
         "goods_description": "",  # Aggregate from line items
         "hs_code": "",
