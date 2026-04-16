@@ -64,6 +64,21 @@ class SSLCommerzProvider(PaymentProvider):
     def _get_provider_name(self) -> str:
         return "sslcommerz"
 
+    # SSLCommerz fields that the caller MUST provide via `metadata` before
+    # we forward the session create to the gateway.  Previously these had
+    # silent Dhaka/Bangladesh/+880 fallbacks, which recorded false customer
+    # data on the payment intent for anyone who didn't populate metadata.
+    _REQUIRED_CUSTOMER_METADATA = (
+        "customer_name",
+        "customer_email",
+        "customer_address",
+        "customer_city",
+        "customer_state",
+        "customer_postcode",
+        "customer_country",
+        "customer_phone",
+    )
+
     def create_payment_intent(
         self,
         amount: Decimal,
@@ -75,7 +90,24 @@ class SSLCommerzProvider(PaymentProvider):
         cancel_url: Optional[str] = None,
         payment_method_types: Optional[List[str]] = None
     ) -> PaymentIntent:
-        """Create SSLCommerz payment session."""
+        """Create SSLCommerz payment session.
+
+        Requires customer metadata — caller must pass name, email, address,
+        city, state, postcode, country, phone.  No silent Dhaka defaults;
+        SSLCommerz is a Bangladesh-licensed gateway but we won't fabricate
+        address data for non-BD customers.
+        """
+
+        if not metadata:
+            raise ValueError(
+                "SSLCommerz requires customer metadata; got None. "
+                f"Required keys: {self._REQUIRED_CUSTOMER_METADATA}"
+            )
+        missing = [k for k in self._REQUIRED_CUSTOMER_METADATA if not metadata.get(k)]
+        if missing:
+            raise ValueError(
+                f"SSLCommerz customer metadata missing required keys: {missing}"
+            )
 
         # Generate unique transaction ID
         tran_id = f"LCopilot_{uuid.uuid4().hex[:16]}"
@@ -97,15 +129,15 @@ class SSLCommerzProvider(PaymentProvider):
             'product_category': 'Service',
             'product_profile': 'general',
 
-            # Customer information
-            'cus_name': metadata.get("customer_name", "Customer") if metadata else "Customer",
-            'cus_email': metadata.get("customer_email", "customer@lcopilot.com") if metadata else "customer@lcopilot.com",
-            'cus_add1': metadata.get("customer_address", "Dhaka, Bangladesh") if metadata else "Dhaka, Bangladesh",
-            'cus_city': metadata.get("customer_city", "Dhaka") if metadata else "Dhaka",
-            'cus_state': metadata.get("customer_state", "Dhaka") if metadata else "Dhaka",
-            'cus_postcode': metadata.get("customer_postcode", "1000") if metadata else "1000",
-            'cus_country': metadata.get("customer_country", "Bangladesh") if metadata else "Bangladesh",
-            'cus_phone': metadata.get("customer_phone", "01700000000") if metadata else "01700000000",
+            # Customer information — all required, validated above
+            'cus_name': metadata["customer_name"],
+            'cus_email': metadata["customer_email"],
+            'cus_add1': metadata["customer_address"],
+            'cus_city': metadata["customer_city"],
+            'cus_state': metadata["customer_state"],
+            'cus_postcode': metadata["customer_postcode"],
+            'cus_country': metadata["customer_country"],
+            'cus_phone': metadata["customer_phone"],
 
             # Shipping information (same as customer for services)
             'shipping_method': 'NO',
