@@ -44,14 +44,27 @@ def severity_to_status(severity: Optional[str]) -> str:
 
 
 def normalize_issue_severity(value: Optional[str]) -> str:
-    """Normalize issue severity to standard values: critical, major, minor."""
+    """Normalize issue severity to standard values: critical, major, minor.
+
+    Handles the non-standard severity vocabularies emitted by different
+    validation layers:
+      - `doc_matcher.py` emits "discrepancy" / "advisory" / "info"
+      - `tiered_validation.py` AI prompts emit "compliance" / "discrepancy" / "advisory"
+      - `crossdoc_validator.py` uses IssueSeverity enum directly (critical/major/minor)
+
+    "discrepancy" in trade finance = a bank-rejectable issue per UCP600 Art 14.
+    It must map to "major", not "minor" — missing this was dropping weight
+    mismatches, missing document findings, and goods description issues from
+    the major count, which is what the verdict threshold reads.
+    """
     if not value:
         return "minor"
     normalized = value.lower()
-    if normalized in {"critical", "high"}:
+    if normalized in {"critical", "high", "blocker"}:
         return "critical"
-    if normalized in {"major", "medium", "warn", "warning"}:
+    if normalized in {"major", "medium", "warn", "warning", "discrepancy"}:
         return "major"
+    # "advisory" / "info" / "compliance" fall through to minor (informational).
     return "minor"
 
 
