@@ -1919,6 +1919,24 @@ def build_extraction_core_bundle(documents: List[Dict[str, Any]]) -> Optional[Di
 
 
 def annotate_documents_with_review_metadata(documents: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Write per-field diagnostic state onto each document.
+
+    Extraction is a blind transcriber per the 2026-04-10 contract.  This
+    function used to also promote `review_required`, `review_reasons`, and
+    `extraction_resolution` from its internal format validators onto the
+    document dict — but those writes made the extraction layer judge
+    completeness (e.g. tagging Turkish VKN tax IDs `FORMAT_INVALID`
+    because the validator's regex was Bangladesh-shaped), and the
+    judgments cascaded into Part 2 / results-page "Low Extraction
+    Confidence" findings on documents that extracted cleanly.
+
+    We now keep the diagnostic bundle (for the per-field drawer UI) and
+    `critical_field_states` (per-field state read by the frontend), but
+    do NOT write the cross-cutting review flags.  Part 2 validation is
+    the layer that decides whether a given value is acceptable for the
+    LC, jurisdiction, and bank profile — not a hardcoded regex at
+    extraction time.
+    """
     bundle = build_extraction_core_bundle(documents)
     if not bundle:
         return None
@@ -1932,21 +1950,6 @@ def annotate_documents_with_review_metadata(documents: List[Dict[str, Any]]) -> 
             for field in extraction_doc.get("fields", [])
             if isinstance(field, dict) and field.get("name")
         }
-        review_required = bool(extraction_doc.get("review_required", False))
-        review_reasons = extraction_doc.get("review_reasons") or []
-        extraction_resolution = (
-            extraction_doc.get("extraction_resolution")
-            if isinstance(extraction_doc.get("extraction_resolution"), dict)
-            else None
-        )
-
-        document["review_required"] = review_required
-        document["reviewRequired"] = review_required
-        document["review_reasons"] = review_reasons
-        document["reviewReasons"] = review_reasons
-        if extraction_resolution:
-            document["extraction_resolution"] = extraction_resolution
-            document["extractionResolution"] = extraction_resolution
         document["critical_field_states"] = critical_field_states
         document["criticalFieldStates"] = critical_field_states
 
