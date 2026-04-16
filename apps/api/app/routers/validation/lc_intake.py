@@ -239,6 +239,24 @@ def prepare_extractor_outputs_for_structured_result(payload: Optional[Dict[str, 
             "dates",
             "timeline",
             "mt700",
+            # Core commercial fields — required for downstream validation.
+            # Missing `amount`/`currency` triggers response_contract_validator's
+            # "LC amount missing from extraction" / "LC currency missing from
+            # extraction" criticals on the results screen, which forces the
+            # UI into "extraction resolution" mode instead of the final
+            # 4-tab verdict view.  The ISO 20022 path especially depends on
+            # these because it never runs `_shape_lc_financial_payload`.
+            "amount",
+            "currency",
+            "incoterm",
+            "ucp_reference",
+            "applicable_rules",
+            "form_of_documentary_credit",
+            "form_of_doc_credit",
+            "issuing_bank",
+            "advising_bank",
+            "hs_codes",
+            "required_document_types",
         ):
             if merged.get(field) in (None, "", [], {}):
                 value = lc_payload.get(field)
