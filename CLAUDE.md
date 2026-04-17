@@ -251,13 +251,20 @@ GET  /api/exporter/banks                     # Available banks
 
 ## Current Focus
 
-**Part 1 — Extraction hardening complete. Part 2 — Validator false positives are the #1 active issue.** Part 3 is still frozen.
+**Part 2 — Validation pivoted to RulHub-primary on 2026-04-17.** Extraction hardening is complete (Part 1). Part 3 is still frozen.
 
-**2026-04-16 end-of-day status (19 commits shipped):**
-- **Extraction side: healthy.** ISO 20022 works (9/9 on stress matrix), MT700 works (IDEAL SAMPLE extracts 92 fields clean), blind-transcriber contract enforced (commit `c92e174b` stopped extraction-core from judging). See `project_session_2026_04_16_full.md`.
-- **Results page: 4-tab verdict view restored** (commit `856470b4`, +60/-937 lines). The zombie 2-tab "extraction resolution" mode is gone.
-- **Bangladesh de-hardcoded across 10 sites.** Residency, currency, SSLCommerz, doc generator, port normalization, locale profiles, port registry, pricing FX, LC clause library. See `project_session_2026_04_16_full.md`.
-- **Validator false positives surfaced.** IDEAL SAMPLE MT700 (8 clean docs) produced 12 findings of which 10 are false positives. Grouped into 4 clusters (A: invoice lookup fail, B: field-alias drift, C: port aliasing not applied, D: insurance math + Incoterm). See `project_validator_false_positive_clusters.md`. **This is the #1 priority for next session.**
+**2026-04-17 end-of-day status (architectural pivot shipped):**
+- **Validation source of truth is now api.rulhub.com** (Ripon's separate product — repo at `J:\Enso Intelligence\ICC Rule Engine`, 7,804 rules across UCP/ISBP/URDG/sanctions/country/bank/TBML). trdrhub's role is now *extract → POST /v1/validate/set → render*. The full story is in `memory/project_rulhub_is_the_engine.md`.
+- **Active production commits**: `5bcc50a3` (C1 kill switches — turned off 4 duplicate engines) → `5ff5a861` (RulHub-primary pivot, local engines skipped behind `USE_RULHUB_API=True`) → `0f8fba32` (422 fix: `document_type`→`type`, surface errors) → `5921c84e` (doc-type prefixes aligned: `bl`/`coo`/..., field aliases: `shipment_date`/`issuer`/`total_cartons`/`incoterms`-plural/`transhipment`-single-s).
+- **Reverted on 2026-04-17**: `50fe761a` + `60d259f3` (C2-spine LLM enforcement — the wrong move, produced 83 findings on a clean package because the LLM was asked to enforce every 46A/47A clause). Revert commits: `10745d56`, `64bcc03d`. These are cautionary — **do not re-attempt this pattern**.
+- **Live state**: `USE_RULHUB_API=True` + `RULHUB_API_KEY` set on Render. `RulHub /v1/validate/set` returns 200 OK. Current IDEAL SAMPLE result is **COMPLIANT 77% · 0 findings** — which is misleading. Most RulHub rules return `insufficient_data` (silent pass) because the extracted field names don't exactly match the paths the rules reference. See `memory/reference_rulhub_api_conventions.md` for the contracts.
+- **#1 priority next session: field-name coverage audit.** Grep every condition path in `J:\Enso Intelligence\ICC Rule Engine\Data\crossdoc\*.json` + icc_core + sanctions, extend `_FIELD_ALIASES_FOR_RULHUB` in `validation_execution.py` to cover all of them. Plus add extraction of fields rules expect but we don't emit (`bl.clauses`, `invoice.date`, `coo.consignee`, `packing_list.shipping_marks`, etc.).
+
+**Architectural rule now in force — do not rebuild RulHub inside trdrhub.** Before writing any UCP/ISBP/crossdoc/sanctions validator in `apps/api/app/services/validation/`, open `J:\Enso Intelligence\ICC Rule Engine\CLAUDE.md` and check if RulHub already covers it. See `memory/feedback_dont_reinvent_rulhub.md`.
+
+**Scope note**: touching the ICC Rule Engine repo is a separate Claude workspace's job. If RulHub needs a new rule, surface it to Ripon — do not edit that repo from this session.
+
+**Historical** (2026-04-16 end-of-day): ISO 20022 working (9/9 stress matrix), MT700 working (IDEAL SAMPLE extracts 92 fields clean), blind-transcriber contract enforced, 4-tab results view restored, Bangladesh de-hardcoded across 10 sites. Pre-pivot, the "validator Cluster A-D" false positives were the #1 issue — but the real fix was the RulHub pivot, not cluster patches. The Cluster A-D work is preserved as commits `e71cfc2e`, `3ada6254`, `c5eef229` (mostly dormant now that local engines are gated off, kept as fallback when `USE_RULHUB_API=False`).
 
 **Stress corpus** at `apps/api/tests/stress_corpus/` (gitignored). IDEAL SAMPLE at `F:\New Download\LC Copies\Synthetic\Export LC\IDEAL SAMPLE\`.
 

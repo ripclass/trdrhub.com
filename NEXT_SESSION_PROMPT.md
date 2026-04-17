@@ -1,177 +1,144 @@
-# Next Session Prompt — Fix the 4 validator false-positive clusters
+# Next Session Prompt — RulHub field-name coverage
 
-Paste or summarize this to kick off the next Claude session. Self-contained; assumes zero memory of the 2026-04-16 session.
+Paste this (or summarize) to start the next Claude session. Self-contained, assumes zero memory of 2026-04-17.
 
 ---
 
-## Context
+## Read first (2 min)
 
-Previous session (2026-04-16) shipped 19 commits hardening the **extraction** side: ISO 20022 extractor fixed (0/9 → 9/9 currency), the 4-tab verdict view restored (+60/-937 lines), extraction-core's illegitimate format validators removed, and 10 Bangladesh-hardcoded sites globalized. **Don't redo any of that.**
+Before anything else, read these five memory files — they contain the full picture and the load-bearing constraints:
 
-Then a browser test against the IDEAL SAMPLE MT700 LC package at `F:\New Download\LC Copies\Synthetic\Export LC\IDEAL SAMPLE\` (8 docs — LC, Invoice, BL, Packing List, COO, Insurance, Inspection, Beneficiary Cert) produced:
+1. `memory/project_rulhub_is_the_engine.md` — **★★ The architectural truth.** RulHub (api.rulhub.com, Ripon's separate product at `J:\Enso Intelligence\ICC Rule Engine`) has 7,804 rules. trdrhub is the consumer. Do not rebuild RulHub.
+2. `memory/feedback_dont_reinvent_rulhub.md` — **★★ The rule.** Before writing any UCP/ISBP/crossdoc logic in `apps/api/app/services/validation/`, check RulHub first.
+3. `memory/reference_rulhub_api_conventions.md` — **★ Contracts.** POST /v1/validate/set shape, rule-catalog doc-type prefixes (`lc`/`invoice`/`bl`/`coo`/`insurance`/`packing_list`/`draft`), field-name alignments.
+4. `memory/project_session_2026_04_17_rulhub_pivot.md` — Yesterday's session log. What was committed, what was reverted, why.
+5. `memory/feedback_scope_trdrhub_only.md` — **★ Scope rule.** Do NOT edit the ICC Rule Engine repo from this session. If RulHub needs a rule, surface it to Ripon.
 
-- `final_verdict: review`
-- 12 findings (0 critical, 3 major, 9 advisory)
-- 31% compliance score
+## What's live right now
 
-**After cross-checking each finding against raw document text: 2/12 legitimate, 10/12 false positives.** An operator looking at this output would dismiss the tool. Fix this before anything else.
+- `USE_RULHUB_API=True`, `RULHUB_API_KEY` set on Render (`srv-d41dio8dl3ps73db8gpg`).
+- Local validators (`doc_matcher`, `crossdoc_validator`, `ai_validator`, `tiered_validation`) are **skipped when RulHub is on** — they remain as fallback for `USE_RULHUB_API=False`.
+- `POST /v1/validate/set` is called with proper shape: `{"type": "lc"|"invoice"|"bl"|"coo"|"insurance"|"packing_list", "fields": {...}}`.
+- Current tip of master: `5921c84e` (all 2026-04-17 commits merged; C2-spine reverted).
 
-## The #1 priority
+## The exact problem to solve
 
-Fix the 4 validator false-positive clusters documented in `memory/project_validator_false_positive_clusters.md`. Each cluster is self-contained; any can ship independently.
+Live IDEAL SAMPLE run (all 8 docs — `.playwright-mcp/ideal-sample/*.pdf`) returns:
+- Verdict: **COMPLIANT**
+- Compliance: **77%**
+- Findings: **0**
+- Time: **~4 seconds**
 
-Read these memory files first:
+This is misleading. The IDEAL SAMPLE has real discrepancies (missing invoice signature, missing invoice date, missing COO date, missing "FULL SET" / "CLEAN" BL notation, invoice arithmetic gap $61,700). RulHub isn't catching them because:
 
-1. `project_validator_false_positive_clusters.md` — THE target. Full cross-check matrix + root-cause groupings + suggested fix order.
-2. `feedback_cross_check_findings_against_docs.md` — how to verify your fix (don't trust summary metrics).
-3. `feedback_extraction_is_blind_transcriber.md` — don't accidentally put format validators back at extraction layer.
-4. `project_session_2026_04_16_full.md` — what shipped yesterday so you don't re-do it.
-5. `arch_extraction_contract.md` + `feedback_extraction_gotchas.md` — load-bearing contracts.
+**Root cause**: Most RulHub rule conditions return `insufficient_data` (= silent pass) because the field names we send don't match the paths the rules reference. Examples from `J:\Enso Intelligence\ICC Rule Engine\Data\crossdoc\lcopilot_crossdoc_v3.json`:
 
-## Fix order (recommended)
+- `CROSSDOC-BL-LC-7`: checks `bl.clauses` for "clean" — we don't emit `bl.clauses`
+- `CROSSDOC-BL-LC-11`: `on_board_notation` — passes because we have date+vessel, but no visible finding
+- `CROSSDOC-REQ-2`: `copy_count_compliance` — no way to count copies from a single PDF
 
-### Cluster A — "No commercial invoice available to verify" (4 findings collapsed into one fix)
+## The work — 3 items in order
 
-Findings #9, #10, #11, #12 from the IDEAL SAMPLE all say the same "Found" text:
+### 1. Field-name coverage audit (highest leverage)
 
-```
-No commercial invoice available to verify
-```
-
-But the invoice IS available and extracted with 14 fields (LC No, PO number, BIN, TIN, HS codes, quantities, prices, total). One lookup bug producing 4 duplicate false positives.
-
-**Investigation:**
-```bash
-# Find where the phrase comes from
-grep -rn "No commercial invoice available" apps/api/app/services/validation/
-```
-
-Likely a validator is looking for a document with key `commercial_invoice` in a dict, but the extracted docs collection is keyed differently (e.g., doc_type field `invoice` vs `commercial_invoice`, or docs list vs dict). Or the validator reads from a different part of the context than where the extraction results land.
-
-**One fix → 4 findings eliminated.** Fastest win and sets the pattern for the others.
-
-### Cluster C — Port of loading alias check (1 MAJOR finding)
-
-Finding #7: LC says `44E: CHITTAGONG SEA PORT, BANGLADESH`. BL says `Port of Loading: Chattogram, Bangladesh`. Same city. "Chattogram" is the official current Bangladeshi name for what was called "Chittagong." Commit `2ef8a17c` yesterday added `BDCGP: ["Chattogram", "Chitagong", "CTG", "Chittagong Port"]` to `apps/api/app/reference_data/ports.py`, but the crossdoc port-of-loading check does a raw string compare instead of using the registry.
-
-**Investigation:**
-```bash
-grep -rn "port_of_loading" apps/api/app/services/validation/crossdoc_validator.py
-```
-
-Find the check (probably `_check_port_of_loading` or similar). Replace the raw comparison with a normalized comparison using the port registry:
-- Look up both LC port and BL port in the registry
-- If they resolve to the same UN/LOCODE, they're equivalent
-
-This fix alone removes a MAJOR-severity false positive from the verdict page.
-
-### Cluster B — "Not found in document" when field IS in document (3 findings)
-
-Findings #3, #4, #5. Validator says field is missing but it's in the raw text:
-
-| Finding | Field | Document | Actual text |
-|---|---|---|---|
-| #3 | `freight_status` | Bill of Lading | `Freight: Collect` |
-| #4 | `quantity` | Inspection Certificate | `30,000 PCS / 12,000 PCS / 8,500 PCS` |
-| #5 | `buyer_purchase_order_number` | Beneficiary Certificate | `Purchase Order No.: GBE-44592` |
-
-Field-name drift between what validator asks for and what extractor labeled. The extractor likely wrote `freight` / `quantity` (or `total_quantity`) / `po_number` / `purchase_order_no`, and the validator does raw dict access with the canonical name instead of going through alias resolution.
-
-**Investigation:**
-```bash
-# Find the checks
-grep -rn 'freight_status\|"quantity"\|buyer_purchase_order_number' apps/api/app/services/validation/crossdoc_validator.py
-
-# Look at how they access the field value
-```
-
-**Fix:** Replace raw dict lookup (e.g., `doc.get("freight_status")`) with alias-aware lookup via `doc_matcher._find_field_value(doc_fields, "freight_status")` — that function already walks `_CANONICAL_ALIASES`. Or import the alias resolver.
-
-Related open task: centralize field aliases (currently split across `launch_pipeline._FIELD_NAME_ALIASES`, `ExtractionReview.FIELD_ALIAS_MAP`, `doc_matcher._CANONICAL_ALIASES`). If you're already in this area, consider doing the centralization at the same time — one source of truth for all alias consumers.
-
-### Cluster D — Insurance coverage math + Incoterm awareness (1 MAJOR finding)
-
-Finding #1: "Insurance Coverage Below LC Requirement"
-- EXPECTED: `>= 914,695.05 (110% of LC amount)`
-- FOUND: `110.00`
-- LC amount: USD 458,750.00
-
-**Three distinct bugs:**
-
-1. **"110" treated as dollars.** Insurance Certificate has `Coverage: 110% of invoice value`. Extractor pulled `110` (number). Validator compared `110 < 914,695 → fail`. But the value is a *percentage*, not dollars. The check should compare percentage-to-percentage (`110 >= 110 → pass`) OR compute the dollar coverage (`invoice * 110% = 504,625`) and compare to the insurance dollar amount.
-
-2. **Math is wrong.** 110% of 458,750 = **504,625**, not 914,695.05. The expected figure appears to be ~200% of LC. Either the validator is doubling (maybe for CIF safety margin?) or there's a plain calculation bug. Trace the formula.
-
-3. **FOB context ignored.** LC Incoterm is `FOB CHITTAGONG`. Under FOB, the buyer arranges insurance, not the seller. Insurance Certificate explicitly says `Incoterm: FOB (Buyer Covers Insurance)` and `Insurer: Buyer-arranged coverage`. Per UCP600 Art 28, insurance is only required when the credit calls for it. This check should be skipped entirely (or downgraded to advisory) when the LC Incoterm doesn't require seller-arranged insurance.
-
-**Investigation:**
-```bash
-grep -rn "Insurance Coverage Below" apps/api/app/services/validation/
-```
-
-Find `_check_insurance_coverage` or similar. Fix in layers: (a) percentage-aware parsing, (b) correct the 110% math base, (c) respect Incoterm context.
-
-## Test infrastructure
-
-### Credentials (unchanged)
-- **Supabase login:** `imran@iec.com` / `ripc0722`
-- **API base:** `https://api.trdrhub.com`
-- **Upload route:** `https://trdrhub.com/lcopilot/exporter-dashboard?section=upload`
-- **Supabase JWT TTL:** 60 minutes. User will paste fresh when needed.
-
-### IDEAL SAMPLE docs
-
-Copied to `.playwright-mcp/ideal-sample/` for Playwright sandbox access. Source at `F:\New Download\LC Copies\Synthetic\Export LC\IDEAL SAMPLE\`. Use this for regression testing after each cluster fix — it's the known-clean 8-doc package that should produce a near-pass verdict.
-
-### Browser test via Playwright
-
-Playwright works for most of the flow (login, upload, extract, validate). See `feedback_playwright_cloudflare_block.md` — the 2026-04-15 "all blocked" note is outdated; as of 2026-04-16 only `/auth/me` and SSE streams are blocked. Main user flow works.
-
-### curl orchestration for stress matrix
-
-`reference_curl_validate_orchestration.md` + `project_session_2026_04_15_afternoon.md` have the recipes. The 27-set stress corpus at `apps/api/tests/stress_corpus/` is gitignored but ready for re-runs.
-
-### Render
-
-- `trdrhub-api` = `srv-d41dio8dl3ps73db8gpg` (FastAPI backend)
-- `icc-rule-engine` = `srv-d35ovhndiees738g995g` (RulHub — READ only, don't deploy per `feedback_scope_trdrhub_only.md`)
-
-Deploy monitor command:
-```bash
-render deploys list srv-d41dio8dl3ps73db8gpg -o json | python -c "import sys,json; d=json.load(sys.stdin)[0]; print(d.get('status'), d.get('commit',{}).get('message','')[:60])"
-```
-
-## Definition of done for the session
-
-After fixing the 4 clusters, re-run the IDEAL SAMPLE in Playwright and cross-check the findings. Target:
-
-- Findings drop from 12 → ≤3
-- Verdict stays `review` or improves to `pass`
-- Compliance score improves from 31% → ≥80%
-- **Every remaining finding cross-checks as legitimate** per `feedback_cross_check_findings_against_docs.md`
-- No MAJOR severity false positives remain
-
-If any cluster fix introduces regressions on the Turkey-ISO stress corpus, roll it back and investigate.
-
-## Execution style reminders
-
-- **Do, don't ask.** Ship commits fast as long as they're tested. Ripon is fine with a commit cadence.
-- **Cross-check findings against raw docs** before claiming verification. Don't trust summary metrics (see `feedback_cross_check_findings_against_docs.md`).
-- **Extraction is a blind transcriber** — don't accidentally put format validators back in when fixing the validator (see `feedback_extraction_is_blind_transcriber.md`).
-- **Trdrhub only.** If rulhub needs a change, surface it and ask the user to relay to rulhub Claude.
-- **No vague answers.** Trace the code. Never "most likely" without file:line proof.
-
-## What NOT to touch
-
-- **Extraction side** — just hardened across 8 commits. ISO 20022, blind-transcriber contract, global BIN/TIN, port registry. Don't regress.
-- **Frozen commits `0368a97a` → `8825118a`** — parallel vision LLM, missing-doc dialog, incremental extraction, Documents Required list.
-- **Rulhub / icc-rule-engine code.**
-- **Bangladesh de-hardcoding fixes** (residency, currency, SSLCommerz, doc generator, port normalization, locale profiles, pricing FX, LC clause library) — if you find another BD reference, check it's not legitimate (BD is a real country).
-
-## First command to run
+For each doc type, enumerate every path in RulHub's rule catalog, then extend the alias map in `apps/api/app/routers/validation/validation_execution.py` (`_FIELD_ALIASES_FOR_RULHUB`) to map trdrhub's extraction canonical names → RulHub-expected names.
 
 ```bash
-grep -rn "No commercial invoice available" apps/api/app/services/validation/
+# From a new shell
+python -c "
+import json, glob
+paths = set()
+for f in glob.glob(r'J:/Enso Intelligence/ICC Rule Engine/Data/crossdoc/*.json') + \
+         glob.glob(r'J:/Enso Intelligence/ICC Rule Engine/Data/icc_core/**/*.json', recursive=True):
+    try:
+        rules = json.load(open(f, encoding='utf-8'))
+    except Exception:
+        continue
+    if not isinstance(rules, list): continue
+    for r in rules:
+        for c in (r.get('conditions') or []):
+            for k in ('source','target','first_path','second_path','path','field','first','second'):
+                v = c.get(k)
+                if isinstance(v, str) and '.' in v:
+                    paths.add(v)
+by_prefix = {}
+for p in paths:
+    pre, _, f = p.partition('.')
+    by_prefix.setdefault(pre, set()).add(f)
+for pre in sorted(by_prefix):
+    print(f'{pre}: {sorted(by_prefix[pre])}')
+"
 ```
 
-Start with Cluster A. Fast win, sets the pattern.
+Compare each prefix's fields against:
+- what trdrhub's extractors emit (see `apps/api/app/services/extraction/multimodal_document_extractor.py:DOC_TYPE_SCHEMAS`)
+- what `_FIELD_ALIASES_FOR_RULHUB` already maps
+
+Extend the alias map. Each missing mapping = rules that start firing.
+
+### 2. Add extraction for fields we don't emit but RulHub checks
+
+Examples the 2026-04-17 diagnosis surfaced (not exhaustive — see the audit output):
+- `bl.clauses` — free-text block of BL marks / clauses / "CLEAN ON BOARD" statement. The multimodal BL schema needs a `clauses` field and prompt nudge.
+- `invoice.date` — the extractor schema lists `invoice_date` but RulHub expects `date`. Either alias or add to schema.
+- `coo.consignee`, `coo.form_type` — extraction currently emits exporter/importer but not consignee.
+- `packing_list.shipping_marks`, `packing_list.issuer`.
+- `bl.originals_issued` / `bl.originals_presented` — for copy-count rules.
+
+Each one that gets emitted = more rules can evaluate.
+
+### 3. Manual Review panel (UI)
+
+For the ~4 discrepancy kinds RulHub genuinely doesn't cover (invoice arithmetic, packing-list size_breakdown, AZO/EU-US safety statements, "6 copies" physical counts), add a "Manual Review" section in `apps/web/src/pages/ExporterResults.tsx` that renders the raw 46A/47A clauses with per-clause pass/fail tick buttons. Compliance score aggregates RulHub findings + operator ticks.
+
+This is the only place LC-specific logic lives — outside RulHub's universal rulebook.
+
+## Verify-live loop (use every cycle)
+
+```bash
+# After each commit:
+render deploys list srv-d41dio8dl3ps73db8gpg -o json | head -5
+# Wait for "live", then:
+render logs -r srv-d41dio8dl3ps73db8gpg --limit 200 --text "validate/set,RulHub"
+```
+
+Look for:
+- `RulHub /v1/validate/set → N discrepancies + M crossdoc = N+M findings` — should grow as field coverage improves.
+- 422 errors → payload shape regression (check `type` not `document_type`).
+- 200 OK with 0 findings → field-name mismatch continuing. Increase coverage.
+
+## Live test credentials + auth
+
+- **Supabase login**: `imran@iec.com` / `ripc0722`
+- **Main flow**: https://trdrhub.com/lcopilot/exporter-dashboard?section=upload
+- **Playwright** works for main flow (auth, upload, extract, validate). `/auth/me` + SSE still ERR_ABORTED per `memory/feedback_playwright_cloudflare_block.md`.
+- **IDEAL SAMPLE**: `.playwright-mcp/ideal-sample/*.pdf` (8 files — LC, Invoice, BL, Packing List, COO, Insurance, Inspection, Beneficiary Cert). Gold-standard clean MT700 package.
+
+## Rules that MUST NOT be broken
+
+1. **Do not add local validators for things RulHub already covers.** Check `J:\Enso Intelligence\ICC Rule Engine\CLAUDE.md` + the Data/ folder first.
+2. **Do not edit the ICC Rule Engine repo** — separate workspace. Surface needs to Ripon.
+3. **Do not re-enable the local engines** (they're behind `USE_RULHUB_API` gates). Do not revert C1 (`5bcc50a3`).
+4. **Do not reintroduce any LLM enforcement layer** — C2-spine was reverted for a reason. Read `memory/project_session_2026_04_17_rulhub_pivot.md` failure-modes section.
+5. **Do not prompt-engineer against one set.** If you find yourself writing "when LC says X, handle Y" for the IDEAL SAMPLE, stop. Ripon catches this every time.
+
+## Definition of done for this session
+
+- Field-name audit done, `_FIELD_ALIASES_FOR_RULHUB` extended.
+- Extraction additions for the top ~5 missing fields RulHub references.
+- Live IDEAL SAMPLE returns **N ≥ 4 findings, all clause-cited, cross-checked against raw PDFs as legitimate.** Compliance score reflects actual rule-evaluation coverage (not "insufficient_data masquerading as pass").
+- Manual Review panel either built OR explicitly deferred with a written plan.
+
+If you hit 4+ legitimate findings with 0 false positives, that's launchable. The regression harness (20 labeled packages) is the next milestone after that.
+
+## First commands to run
+
+```bash
+cd H:\.openclaw\workspace\trdrhub.com
+git log --oneline -8
+git status --short
+# Then run the field-path audit command above.
+# Then open memory/reference_rulhub_api_conventions.md + project_rulhub_is_the_engine.md.
+```
+
+Don't touch validation_execution.py or rulhub_client.py until you've read both memory files.
