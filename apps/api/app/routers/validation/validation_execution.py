@@ -1641,41 +1641,67 @@ async def execute_validation_pipeline(
         except Exception:
             pass  # Veto is advisory — never block the pipeline
 
-        # Run v2 CrossDocValidator
-        from app.services.validation.crossdoc_validator import CrossDocValidator
-        crossdoc_validator = CrossDocValidator()
-        crossdoc_lc_context = dict(lc_ctx) if isinstance(lc_ctx, dict) else {}
-        metadata_dict = payload.get("metadata") or {}
-        if isinstance(metadata_dict, str):
-            try:
-                metadata_dict = json.loads(metadata_dict)
-            except Exception:
-                metadata_dict = {}
-        if isinstance(metadata_dict, dict):
-            date_received = metadata_dict.get("dateReceived") or metadata_dict.get("date_received")
-            if date_received and not crossdoc_lc_context.get("date_received"):
-                crossdoc_lc_context["date_received"] = date_received
-                bank_metadata = crossdoc_lc_context.get("bank_metadata")
-                if isinstance(bank_metadata, dict):
-                    bank_metadata.setdefault("date_received", date_received)
-                else:
-                    crossdoc_lc_context["bank_metadata"] = {"date_received": date_received}
-        crossdoc_result = crossdoc_validator.validate_all(
-            lc_baseline=v2_baseline,
-            invoice=payload.get("invoice"),
-            bill_of_lading=payload.get("bill_of_lading"),
-            insurance=payload.get("insurance") or payload.get("insurance_certificate"),
-            certificate_of_origin=payload.get("certificate_of_origin"),
-            packing_list=payload.get("packing_list"),
-            inspection_certificate=payload.get("inspection_certificate"),
-            beneficiary_certificate=payload.get("beneficiary_certificate"),
-            context={
-                "lc": crossdoc_lc_context,
-                "requirements_graph_v1": requirements_graph_v1 if isinstance(requirements_graph_v1, dict) else None,
-            },
+        # ---------------------------------------------------------------
+        # Legacy v2 CrossDocValidator — gated OFF by default (C1 of the
+        # consolidation plan). This engine runs its OWN insurance / port /
+        # amount / goods checks in parallel with doc_matcher's
+        # match_clauses_to_documents + check_cross_document_consistency,
+        # and raises findings with its OWN titles and shapes. That was the
+        # root cause of the IDEAL SAMPLE's "Insurance Coverage Below LC
+        # Requirement" finding firing even when 46A/47A never asked for
+        # insurance: CrossDocValidator doesn't consult the LC clause graph,
+        # it just runs Art 28(f)(ii) whenever an insurance doc is present.
+        #
+        # Enable only with VALIDATION_LEGACY_CROSSDOC_ENABLED=true to
+        # run a side-by-side comparison; otherwise the spine is doc_matcher
+        # (fed from the LC's own parsed 46A/47A clauses) and only that.
+        # ---------------------------------------------------------------
+        from app.config import settings as _spine_settings
+        _legacy_crossdoc_enabled = bool(
+            getattr(_spine_settings, "VALIDATION_LEGACY_CROSSDOC_ENABLED", False)
         )
-        v2_crossdoc_issues = crossdoc_result.issues
-        logger.info("V2 CrossDocValidator found %d issues", len(v2_crossdoc_issues))
+
+        if _legacy_crossdoc_enabled:
+            from app.services.validation.crossdoc_validator import CrossDocValidator
+            crossdoc_validator = CrossDocValidator()
+            crossdoc_lc_context = dict(lc_ctx) if isinstance(lc_ctx, dict) else {}
+            metadata_dict = payload.get("metadata") or {}
+            if isinstance(metadata_dict, str):
+                try:
+                    metadata_dict = json.loads(metadata_dict)
+                except Exception:
+                    metadata_dict = {}
+            if isinstance(metadata_dict, dict):
+                date_received = metadata_dict.get("dateReceived") or metadata_dict.get("date_received")
+                if date_received and not crossdoc_lc_context.get("date_received"):
+                    crossdoc_lc_context["date_received"] = date_received
+                    bank_metadata = crossdoc_lc_context.get("bank_metadata")
+                    if isinstance(bank_metadata, dict):
+                        bank_metadata.setdefault("date_received", date_received)
+                    else:
+                        crossdoc_lc_context["bank_metadata"] = {"date_received": date_received}
+            crossdoc_result = crossdoc_validator.validate_all(
+                lc_baseline=v2_baseline,
+                invoice=payload.get("invoice"),
+                bill_of_lading=payload.get("bill_of_lading"),
+                insurance=payload.get("insurance") or payload.get("insurance_certificate"),
+                certificate_of_origin=payload.get("certificate_of_origin"),
+                packing_list=payload.get("packing_list"),
+                inspection_certificate=payload.get("inspection_certificate"),
+                beneficiary_certificate=payload.get("beneficiary_certificate"),
+                context={
+                    "lc": crossdoc_lc_context,
+                    "requirements_graph_v1": requirements_graph_v1 if isinstance(requirements_graph_v1, dict) else None,
+                },
+            )
+            v2_crossdoc_issues = crossdoc_result.issues
+            logger.info("Legacy CrossDocValidator found %d issues (enabled via flag)", len(v2_crossdoc_issues))
+        else:
+            logger.info(
+                "Legacy CrossDocValidator SKIPPED (VALIDATION_LEGACY_CROSSDOC_ENABLED=false). "
+                "Findings come from the doc_matcher clause spine only."
+            )
+            v2_crossdoc_issues = []
         checkpoint("crossdoc_validation_complete")
 
         # =================================================================

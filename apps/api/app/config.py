@@ -158,20 +158,45 @@ class Settings(BaseSettings):
     # AI/LLM Configuration
     AI_ENRICHMENT: bool = False  # Enable AI enrichment in validation pipeline
     # Three-pass validation: tiered AI (L1→L2→L3) + deterministic rules + Opus veto.
-    # This is the active architecture — AI layers judge findings first, then
-    # deterministic rules run, then Opus (L3) has veto authority over the
-    # combined set. Turn OFF via env var to fall back to the legacy
-    # deterministic-only path (validate_document_async).
-    VALIDATION_TIERED_AI_ENABLED: bool = True
-    # Opus veto: final pass calls Claude Opus 4.6 to confirm, drop, modify,
-    # or add findings from the AI + deterministic passes. Independently
-    # toggleable so the AI pre-pass can run without veto if Opus cost is
-    # a concern.
+    #
+    # As of C1 of the consolidation plan the three layers have distinct jobs:
+    #   - Tiered AI: parse the LC's own 46A/47A clauses into a structured
+    #     requirement graph. Does NOT invent findings. (The discrepancy-finding
+    #     behaviour was the root cause of hallucinated UCP rules that weren't
+    #     in the LC under review.)
+    #   - Deterministic rules (doc_matcher): the ONLY source of findings.
+    #     Every finding cites a specific 46A/47A clause of THIS LC.
+    #   - Opus veto: confirm / drop / modify only. May not add findings.
+    #
+    # Tiered AI is OFF in C1 — the current prompt asks the LLM to "find
+    # compliance issues", and that's the hallucination vector we are
+    # eliminating. C2 will re-enable it with a rewritten prompt ("parse the
+    # LC's 46A/47A clauses into a requirement graph") and it will feed the
+    # deterministic spine, not produce findings directly.
+    #
+    # Opus veto stays ON — it correctly drops false positives from the
+    # deterministic spine, and its anomaly-injection branch is already
+    # removed in tiered_validation._run_opus_veto_pass.
+    VALIDATION_TIERED_AI_ENABLED: bool = False
     VALIDATION_OPUS_VETO_ENABLED: bool = True
     # Hard timeout for the tiered AI validation pass (seconds).
     VALIDATION_AI_PASS_TIMEOUT_SECONDS: int = 60
     # Hard timeout for the Opus veto pass (seconds).
     VALIDATION_VETO_TIMEOUT_SECONDS: int = 90
+    # Legacy parallel engine — CrossDocValidator in
+    # app.services.validation.crossdoc_validator. It runs UCP600 Art 28
+    # (insurance), port/amount/goods checks on its own, WITHOUT consulting
+    # the LC's 46A/47A clause graph. That produced the IDEAL SAMPLE's
+    # "Insurance Coverage Below LC Requirement" false positive on an LC
+    # that never asked for insurance. Off by default; enable only for
+    # side-by-side debugging against the doc_matcher spine.
+    VALIDATION_LEGACY_CROSSDOC_ENABLED: bool = False
+    # L3 "advanced anomaly review" inside ai_validator — produces
+    # "Low Extraction Confidence" items that are extraction-quality signals,
+    # not LC-clause discrepancies. Belongs in an advisory/intelligence
+    # channel (C3 of the consolidation plan). Off by default; enable if
+    # you want the raw signals surfaced in the findings list for debugging.
+    VALIDATION_L3_ANOMALY_REVIEW_ENABLED: bool = False
     LLM_PROVIDER: str = "openrouter"  # openrouter|openai|anthropic|gemini
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"

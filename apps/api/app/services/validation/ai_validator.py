@@ -885,18 +885,29 @@ async def run_ai_validation(
         metadata["packing_list_issues"] = 0
     
     # =================================================================
-    # 5. ADVANCED ANOMALY REVIEW (L3)
-    # =================================================================
-    logger.info("Step 5: Running bounded advanced anomaly review...")
-    metadata["checks_performed"].append("advanced_anomaly_review")
-    l3_issues, l3_metadata = review_advanced_anomalies(documents, extracted_context)
-    all_issues.extend(l3_issues)
-    metadata.update(l3_metadata)
-    logger.info(
-        "Step 5: L3 reviewed %d documents and flagged %d low-confidence anomalies",
-        metadata.get("l3_documents_reviewed_count", 0),
-        metadata.get("l3_issue_count", 0),
-    )
+    # 5. ADVANCED ANOMALY REVIEW (L3) — gated OFF by default in C1 of the
+    # consolidation plan. This pass flags "Low Extraction Confidence" items
+    # that are extraction-quality signals, not LC-clause discrepancies. They
+    # belong in an advisory/intelligence channel, not in Findings. Enable
+    # with VALIDATION_L3_ANOMALY_REVIEW_ENABLED=true if you want to see
+    # them for debugging; keep them off the user-facing findings list.
+    from app.config import settings as _ai_settings
+    _l3_enabled = bool(getattr(_ai_settings, "VALIDATION_L3_ANOMALY_REVIEW_ENABLED", False))
+    if _l3_enabled:
+        logger.info("Step 5: Running bounded advanced anomaly review...")
+        metadata["checks_performed"].append("advanced_anomaly_review")
+        l3_issues, l3_metadata = review_advanced_anomalies(documents, extracted_context)
+        all_issues.extend(l3_issues)
+        metadata.update(l3_metadata)
+        logger.info(
+            "Step 5: L3 reviewed %d documents and flagged %d low-confidence anomalies",
+            metadata.get("l3_documents_reviewed_count", 0),
+            metadata.get("l3_issue_count", 0),
+        )
+    else:
+        logger.info("Step 5: L3 anomaly review SKIPPED (flag off, C1 spine-only mode)")
+        metadata["l3_documents_reviewed_count"] = 0
+        metadata["l3_issue_count"] = 0
 
     # =================================================================
     # 6. DEDUPLICATE ISSUES

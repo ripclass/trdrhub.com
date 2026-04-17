@@ -455,11 +455,21 @@ def _normalize_ai_finding(raw: Dict[str, Any], tier: str) -> Dict[str, Any]:
 
 _OPUS_VETO_SYSTEM_PROMPT = (
     "You are the senior reviewer for a trade-finance document validation "
-    "system. You see findings from two layers — an AI examiner and a "
-    "deterministic UCP600/ISBP745 rule engine — and your job is to decide "
-    "the final list. You can confirm, drop, or modify any finding. You can "
-    "ADD findings the previous layers missed, especially TBML/fraud signals "
-    "and structural anomalies. Be ruthless about dropping false positives.\n\n"
+    "system. You see findings produced by the deterministic rule engine "
+    "(and sometimes an AI examiner layer), and your ONLY job is to decide "
+    "which of those findings survive. You can confirm, drop, or modify any "
+    "finding. You CANNOT add new findings — if the deterministic engine did "
+    "not raise it, it does not belong in the output.\n\n"
+    "Why this rule exists: every finding in this product must cite a specific "
+    "46A/47A clause of the LC under review. The deterministic engine already "
+    "parses those clauses and raises findings for each one. If you invent a "
+    "new finding here, it won't carry a clause citation and will usually be "
+    "a UCP600 rule you remembered from training rather than something the "
+    "LC itself demands — that's the exact failure mode we are eliminating.\n\n"
+    "Be ruthless about DROPPING false positives. If the doc-section in the "
+    "prompt clearly contradicts a finding's 'found' text, drop it with a "
+    "reason. If a finding is substantively correct but phrased poorly, "
+    "modify the title/severity. If in doubt, confirm.\n\n"
     "IMPORTANT: Each document was extracted independently by a blind per-doc "
     "OCR transcriber. Field names may appear under variant aliases. A field "
     "absent from a document may simply not be printed on that doc type — do "
@@ -501,13 +511,10 @@ def _build_opus_veto_prompt(
         f"{doc_sections}\n\n"
         f"AI examiner findings ({len(ai_summary)}):\n```json\n{json.dumps(ai_summary, indent=2)[:6000]}\n```\n\n"
         f"Deterministic rule findings ({len(det_summary)}):\n```json\n{json.dumps(det_summary, indent=2)[:6000]}\n```\n\n"
-        "Review these and return JSON with this exact shape:\n"
+        "Review these findings and return JSON with this exact shape:\n"
         "{\n"
         "  \"actions\": [\n"
         "    {\"source\": \"ai\"|\"deterministic\", \"index\": <int>, \"action\": \"confirm\"|\"drop\"|\"modify\", \"reason\": \"...\", \"updated_title\": \"...\"|null, \"updated_severity\": \"...\"|null}\n"
-        "  ],\n"
-        "  \"anomalies\": [\n"
-        "    {\"title\": \"...\", \"severity\": \"compliance\"|\"discrepancy\"|\"advisory\", \"category\": \"tbml\"|\"fraud\"|\"structural\", \"expected\": \"...\", \"found\": \"...\", \"next_action\": \"...\"}\n"
         "  ],\n"
         "  \"overall_assessment\": \"one-sentence summary\"\n"
         "}\n\n"
@@ -516,11 +523,15 @@ def _build_opus_veto_prompt(
         "- \"confirm\" means keep the finding as-is\n"
         "- \"drop\" means delete it (false positive). Always include a reason.\n"
         "- \"modify\" means keep but adjust title/severity. Include updated_title and/or updated_severity.\n"
-        "- Anomalies are NEW findings you raise that the previous layers missed.\n"
+        "- You CANNOT add new findings. Only the deterministic engine sources findings — "
+        "it reads the LC's own 46A/47A clauses and raises one finding per unmet clause. "
+        "Any new 'finding' you invent here would bypass that citation contract and "
+        "almost always reflects a UCP600 rule you remembered from training rather than "
+        "something this specific LC demands.\n"
         "- Be conservative: only drop a finding if you are confident it's a false positive.\n"
-        "- If a document section above contains data, that document IS present. Do not\n"
-        "  raise a new anomaly whose 'found' text claims the document is missing or\n"
-        "  unavailable — that was a known false-positive pattern and will be suppressed.\n\n"
+        "- If a document section above contains data, that document IS present. Drop any\n"
+        "  finding whose 'found' text claims the document is missing/unavailable when the\n"
+        "  section above shows it with extracted fields.\n\n"
         "Return JSON only, no prose."
     )
 
@@ -567,20 +578,37 @@ async def _run_opus_veto_pass(
         return [*ai_findings, *deterministic_findings]
 
     actions = parsed.get("actions") or []
-    anomalies = parsed.get("anomalies") or []
 
-    # Apply actions to ai_findings and deterministic_findings
+    # Apply actions to ai_findings and deterministic_findings. The veto's ONLY
+    # job is confirm/drop/modify on the finding set the deterministic engine
+    # produced. The Opus "anomalies" branch used to be parsed here and merged
+    # back in as fresh findings — that's what produced false-positive titles
+    # like "Insurance Coverage Below LC Requirement" on an LC that never
+    # required insurance, "Invoice port name mismatch" when the two names
+    # are just aliases for the same UN/LOCODE, and so on. Those findings had
+    # no clause citation because they weren't rooted in this LC's 46A/47A —
+    # they came from the LLM's general UCP600 training. Intentionally dropped
+    # in C1 of the consolidation plan: deterministic is the only source.
     final_ai = _apply_veto_actions(ai_findings, actions, "ai")
     final_det = _apply_veto_actions(deterministic_findings, actions, "deterministic")
 
-    # Convert Opus anomalies into the standard finding shape
-    anomaly_findings = [_normalize_anomaly_finding(a) for a in anomalies if isinstance(a, dict)]
+    # If Opus emitted any "anomalies" anyway (ignoring the system prompt),
+    # log their titles so we can spot regressions and tune the prompt — but
+    # never feed them back into the findings list.
+    stray_anomalies = parsed.get("anomalies") or []
+    if stray_anomalies:
+        logger.warning(
+            "Opus veto emitted %d anomalies despite the instruction to only "
+            "confirm/drop/modify. Suppressing. Titles: %s",
+            len(stray_anomalies),
+            [str(a.get("title"))[:80] for a in stray_anomalies if isinstance(a, dict)],
+        )
 
     overall = parsed.get("overall_assessment")
     if overall:
         logger.info("Opus veto overall_assessment: %s", overall)
 
-    return [*final_ai, *final_det, *anomaly_findings]
+    return [*final_ai, *final_det]
 
 
 def _apply_veto_actions(
