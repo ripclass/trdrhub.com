@@ -2486,7 +2486,14 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
       return [];
     });
   }, [requirementChecklist]);
-  const surfaceFindingsCount = issueCards.length > 0 ? backendIssueCount : checklistReviewFindings.length;
+  // Tab label + SummaryStrip count must match what the Findings tab
+  // actually renders. FindingsTab displays ``issueCards`` only, so
+  // falling back to ``checklistReviewFindings.length`` produced a
+  // "Findings (2)" label with an empty panel — see screenshot from
+  // 2026-04-17 live test. checklistReviewFindings (UI-derived from
+  // requirement checklist state) belong in the per-doc Documents
+  // tab and Verdict action-items, not in the backend-issue count.
+  const surfaceFindingsCount = backendIssueCount;
   const hasContractIssueLanes =
     canonicalResultTruth.primaryDecisionLane !== 'none' ||
     canonicalResultTruth.documentaryIssueCount > 0 ||
