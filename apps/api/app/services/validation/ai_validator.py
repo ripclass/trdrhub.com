@@ -1148,27 +1148,79 @@ async def run_ai_validation(
         logger.info("Step 4: No packing list data to validate")
         metadata["packing_list_issues"] = 0
 
+    # Build a doc-type → data lookup. Prefer the raw ``documents`` list
+    # (which carries raw_text per uploaded file) and fall back to the
+    # structured ``extracted_context[doc_type]`` dict. Either side is
+    # incomplete on its own: extracted_context has structured fields but
+    # often strips raw_text; documents has raw_text but not always the
+    # normalised structured data.
+    docs_by_type: Dict[str, Dict[str, Any]] = {}
+    for _d in documents or []:
+        if not isinstance(_d, dict):
+            continue
+        _dt = _normalize_document_type(_d.get("document_type") or _d.get("type"))
+        if not _dt or _dt in docs_by_type:
+            continue
+        docs_by_type[_dt] = _d
+
+    def _merged_doc_data(doc_type_key: str) -> Dict[str, Any]:
+        canonical = _normalize_document_type(doc_type_key)
+        merged: Dict[str, Any] = {}
+        ctx = extracted_context.get(doc_type_key) or extracted_context.get(canonical)
+        if isinstance(ctx, dict):
+            merged.update(ctx)
+        list_entry = docs_by_type.get(canonical) or docs_by_type.get(doc_type_key)
+        if isinstance(list_entry, dict):
+            # documents list takes priority for raw_text (where it lives)
+            if list_entry.get("raw_text") and not merged.get("raw_text"):
+                merged["raw_text"] = list_entry["raw_text"]
+            # absorb extracted_data / extracted_fields payloads
+            for sub_key in ("extracted_data", "extracted_fields", "fields"):
+                sub = list_entry.get(sub_key)
+                if isinstance(sub, dict):
+                    for k, v in sub.items():
+                        if k not in merged:
+                            merged[k] = v
+            # any scalar fields on the list entry (filename, status, etc)
+            for k, v in list_entry.items():
+                if k in ("raw_text", "extracted_data", "extracted_fields", "fields"):
+                    continue
+                if k not in merged:
+                    merged[k] = v
+        return merged
+
     # =================================================================
     # 4a. INVOICE ARITHMETIC (Σ line items vs stated total)
     # UCP600 Art 18(c). RulHub's generic rules can't easily check
     # this — line item data is structural and per-invoice.
     # =================================================================
-    invoice_data = extracted_context.get("invoice") or {}
-    if invoice_data:
-        logger.info("Step 4a: Validating invoice arithmetic...")
+    invoice_merged = _merged_doc_data("invoice")
+    if invoice_merged:
+        logger.info(
+            "Step 4a: Validating invoice arithmetic... (raw_text=%d chars, "
+            "line_items=%s, total=%s)",
+            len(str(invoice_merged.get("raw_text") or "")),
+            "yes" if invoice_merged.get("line_items") else "no",
+            invoice_merged.get("total_amount")
+            or invoice_merged.get("amount")
+            or invoice_merged.get("invoice_amount"),
+        )
         metadata["checks_performed"].append("invoice_arithmetic")
-        inv_arith_issues = validate_invoice_arithmetic(invoice_data)
+        inv_arith_issues = validate_invoice_arithmetic(invoice_merged)
         all_issues.extend(inv_arith_issues)
         metadata["invoice_arithmetic_issues"] = len(inv_arith_issues)
 
     # =================================================================
     # 4b. CLEAN ON-BOARD NOTATION ON BL (UCP600 Art 20)
     # =================================================================
-    bl_data = extracted_context.get("bill_of_lading") or {}
-    if bl_data:
-        logger.info("Step 4b: Validating BL clean on-board notation...")
+    bl_merged = _merged_doc_data("bill_of_lading")
+    if bl_merged:
+        logger.info(
+            "Step 4b: Validating BL clean on-board notation... (raw_text=%d chars)",
+            len(str(bl_merged.get("raw_text") or "")),
+        )
         metadata["checks_performed"].append("bl_clean_on_board")
-        clean_issues = validate_bl_clean_on_board(lc_text, bl_data)
+        clean_issues = validate_bl_clean_on_board(lc_text, bl_merged)
         all_issues.extend(clean_issues)
         metadata["bl_clean_on_board_issues"] = len(clean_issues)
 
@@ -1179,16 +1231,20 @@ async def run_ai_validation(
     logger.info("Step 4c: Validating signature/stamp presence...")
     metadata["checks_performed"].append("signature_presence")
     sig_count = 0
-    for _dt_key, _dt_label in (
-        ("inspection_certificate", "inspection_certificate"),
-        ("beneficiary_certificate", "beneficiary_certificate"),
-        ("invoice", "invoice"),
-        ("certificate_of_origin", "certificate_of_origin"),
+    for _dt_key in (
+        "inspection_certificate",
+        "beneficiary_certificate",
+        "invoice",
+        "certificate_of_origin",
     ):
-        _dt_data = extracted_context.get(_dt_key) or {}
-        if not _dt_data:
+        _dt_merged = _merged_doc_data(_dt_key)
+        if not _dt_merged:
             continue
-        _sig_issues = validate_signature_presence(_dt_label, _dt_data)
+        raw_len = len(str(_dt_merged.get("raw_text") or ""))
+        logger.info(
+            "Step 4c: %s signature check (raw_text=%d chars)", _dt_key, raw_len,
+        )
+        _sig_issues = validate_signature_presence(_dt_key, _dt_merged)
         all_issues.extend(_sig_issues)
         sig_count += len(_sig_issues)
     metadata["signature_presence_issues"] = sig_count
