@@ -201,29 +201,44 @@ _CLAUSE_SPLIT_RE = re.compile(
 
 
 def _split_concatenated_clauses(text: str) -> List[str]:
-    """Split a concatenated 46A blob into individual clause strings."""
+    """Split a concatenated 46A / 47A blob into individual clause strings.
+
+    Real extraction outputs both newline-separated numbered clauses
+    ("1) X\\n2) Y\\n...") and inline-comma-separated ones
+    ("1) X., 2) Y., 3) Z."). The inline form is especially common from
+    LLM extractors that flatten whitespace. Both must split correctly,
+    otherwise downstream ``detect_document_type`` scans the whole blob
+    and matches on noise words — e.g. the literal "INVOICE" in clause 3
+    "THIRD-PARTY DOCUMENTS ACCEPTABLE EXCEPT BILL OF EXCHANGE AND
+    INVOICE" gets attributed to the clause about cartons & country-of-
+    origin, producing a false-positive finding.
+    """
     if not text or len(text.strip()) < 10:
         return []
 
-    # First try numbered splitting
-    numbered = re.split(r"(?:^|\n)\s*\d+[.)]\s", text)
+    # Numbered: try inline + newline forms together. The pattern matches
+    # "1) ", "1. ", "(1) " at either the start of the string, after a
+    # newline, OR after a sentence-terminal (``.`` / ``;`` / ``,`` +
+    # whitespace) — which is how LLM extractors typically return them.
+    numbered = re.split(
+        r"(?:^|\n|(?<=[.;,])\s+)(?:\(?\d+\)?[.)])\s+",
+        text,
+    )
     numbered = [c.strip() for c in numbered if c and c.strip() and len(c.strip()) > 10]
     if len(numbered) > 1:
         return numbered
 
-    # Try parenthesized numbers: (1) ... (2) ...
-    parens = re.split(r"(?:^|\n)\s*\(\d+\)\s*", text)
-    parens = [c.strip() for c in parens if c and c.strip() and len(c.strip()) > 10]
-    if len(parens) > 1:
-        return parens
-
-    # Try uppercase letter bullets: A) ... B) ...
-    letters = re.split(r"(?:^|\n)\s*[A-Z][.)]\s", text)
+    # Letter bullets: A) ... B) ..., same extended separator rules.
+    letters = re.split(
+        r"(?:^|\n|(?<=[.;,])\s+)[A-Z][.)]\s+",
+        text,
+    )
     letters = [c.strip() for c in letters if c and c.strip() and len(c.strip()) > 10]
     if len(letters) > 1:
         return letters
 
-    # Try "+PLUS" / "AND" separators between doc blocks
+    # "+PLUS" / "AND" separators between doc blocks (newline-delimited
+    # only; these tokens are too ambiguous inline).
     plus_split = re.split(r"\n\s*(?:\+|PLUS)\s*\n", text, flags=re.I)
     plus_split = [c.strip() for c in plus_split if c and c.strip() and len(c.strip()) > 10]
     if len(plus_split) > 1:
@@ -313,23 +328,36 @@ def parse_lc_clauses(
             clause_idx += 1
 
     # --- 47A: Additional Conditions ---
-    for i, cond_text in enumerate(additional_conditions or []):
+    # Like 46A, 47A often arrives as a single concatenated string with
+    # numbered sub-clauses. Scanning the whole blob at once produces
+    # catastrophic false-positive targeting: e.g. "THIRD-PARTY DOCUMENTS
+    # ACCEPTABLE EXCEPT BILL OF EXCHANGE AND INVOICE" in clause 3 makes
+    # detect_document_type return "commercial_invoice", then the
+    # country-of-origin requirement from clause 4 ("PRINTED ON ALL
+    # CARTONS IN INDELIBLE INK") gets attached to the invoice, and the
+    # validator raises "Country of Origin present on Commercial Invoice"
+    # even though the clause was about cartons. Split first, then detect.
+    sub_clause_idx = 0
+    for cond_text in (additional_conditions or []):
         if not cond_text or len(cond_text.strip()) < 5:
             continue
 
-        # 47A conditions can also reference specific doc types
-        doc_type = detect_document_type(cond_text)
-        req_fields = extract_required_fields(cond_text)
-        conditions = extract_conditions(cond_text)
+        for sub_text in _split_concatenated_clauses(cond_text):
+            if not sub_text or len(sub_text.strip()) < 5:
+                continue
+            doc_type = detect_document_type(sub_text)
+            req_fields = extract_required_fields(sub_text)
+            conditions = extract_conditions(sub_text)
 
-        clauses.append(ParsedClause(
-            raw_text=cond_text,
-            source_field="47A",
-            clause_index=i,
-            document_type=doc_type,
-            required_fields=req_fields,
-            conditions=conditions,
-        ))
+            clauses.append(ParsedClause(
+                raw_text=sub_text,
+                source_field="47A",
+                clause_index=sub_clause_idx,
+                document_type=doc_type,
+                required_fields=req_fields,
+                conditions=conditions,
+            ))
+            sub_clause_idx += 1
 
     logger.info(
         "Parsed %d clauses from LC (46A: %d, 47A: %d), %d with detected doc types",

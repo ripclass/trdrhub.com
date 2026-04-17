@@ -147,6 +147,69 @@ def _is_field_value_present(val: Any) -> bool:
     return True
 
 
+# Verbs that signal a clause requirement is satisfied by a text statement
+# on the document. An inspection certificate that says "Quantity confirmed."
+# satisfies an LC clause "CONFIRMING ... QUANTITY" even when the extractor
+# didn't carve out a dedicated ``quantity`` field — the qty is embedded in
+# the finding statement, not stored as a separate scalar. Without this
+# fallback we fire "Quantity not found on document" on a perfectly valid
+# inspection cert and look broken to the operator.
+_CONFIRMATION_VERB_RE = re.compile(
+    r"\b(?:"
+    r"confirm(?:ed|ing|s)?|certify(?:ing|ies|ied)?|verif(?:y|ied|ying|ies)|"
+    r"stat(?:e|ed|ing|es)|attest(?:ed|ing|s)?|declar(?:ed|ing|es)|"
+    r"find(?:ing|ings)?|satisfactory|found\s+to\s+be|ok|correct"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _clause_satisfied_by_text_evidence(
+    canonical_field: str,
+    extracted_fields: Dict[str, Any],
+) -> bool:
+    """Scan string values on a document for a confirmation statement about
+    the canonical field. Returns True if the document's text clearly states
+    the field's condition was satisfied — which is how inspection certs,
+    beneficiary certs, and quality reports usually report on the items the
+    LC asks them to confirm.
+
+    We deliberately accept fairly loose phrasing ("Quality confirmed.",
+    "Quantity confirmed.", "Packing confirmed to export standard.") because
+    this is what real documents look like. False positives here would be
+    clauses satisfied when they're not; in practice the opposite — firing
+    a "not found" finding on a cert that clearly stated the fact — is the
+    noisier failure mode.
+    """
+    if not canonical_field or not isinstance(extracted_fields, dict):
+        return False
+
+    field_human = canonical_field.replace("_", " ").strip()
+    if not field_human:
+        return False
+    # Regex: field word(s) within ~40 chars of a confirmation verb, either order.
+    pattern = re.compile(
+        rf"(?:\b{re.escape(field_human)}\b[\s\S]{{0,40}}{_CONFIRMATION_VERB_RE.pattern}"
+        rf"|{_CONFIRMATION_VERB_RE.pattern}[\s\S]{{0,40}}\b{re.escape(field_human)}\b)",
+        re.IGNORECASE,
+    )
+
+    def _scan(val: Any) -> bool:
+        if isinstance(val, str):
+            return bool(pattern.search(val))
+        if isinstance(val, list):
+            return any(_scan(item) for item in val)
+        if isinstance(val, dict):
+            # Check the 'value' first (common confidence-wrap shape), then
+            # recursively scan nested dict values for multi-line cert text.
+            if "value" in val and _scan(val["value"]):
+                return True
+            return any(_scan(v) for v in val.values())
+        return False
+
+    return _scan(extracted_fields)
+
+
 def _find_field_value(
     extracted_fields: Dict[str, Any],
     canonical_name: str,
@@ -346,6 +409,22 @@ def match_clauses_to_documents(
                 value = _find_field_value(fields, req_field)
 
                 if value is None:
+                    # Before raising "not found", check whether the document
+                    # *verbally confirms* the field. Inspection certs and
+                    # beneficiary certs routinely satisfy clauses like
+                    # "CERTIFICATE CONFIRMING QUALITY, QUANTITY & PACKING"
+                    # via a free-text finding statement ("Quantity confirmed.")
+                    # rather than a structured scalar field. Skip the finding
+                    # when such a statement is clearly present — otherwise
+                    # we fire false positives on clean inspection / beneficiary
+                    # docs and the operator stops trusting the tool.
+                    if _clause_satisfied_by_text_evidence(req_field, fields):
+                        logger.debug(
+                            "Clause requirement %s on %s satisfied by text evidence",
+                            req_field, clause.document_type,
+                        )
+                        continue
+
                     findings.append(Finding(
                         severity="discrepancy",
                         document=clause.document_type,
@@ -920,6 +999,32 @@ def _extract_goods_keywords(text: str) -> Set[str]:
     return {t for t in tokens if len(t) > 2 and t not in _GOODS_STOPWORDS}
 
 
+# HS codes are 6 to 10 digits. Matching all LC HS codes on the invoice is
+# the most authoritative correspondence signal UCP600 Art 18(c) recognises
+# — the description doesn't have to be word-for-word, but it must not
+# conflict, and matching classification codes is about as unambiguous as it
+# gets. Quantity numbers (e.g. 30,000) are a strong secondary signal.
+_HS_CODE_RE = re.compile(r"\b(\d{6,10})\b")
+_QUANTITY_RE = re.compile(r"\b(\d{1,3}(?:,\d{3})+|\d{4,})\b")  # 3,000 / 30,000 / 12000
+
+
+def _extract_hs_codes(text: str) -> Set[str]:
+    """Pull all HS-code-shaped numbers out of a goods description."""
+    if not text:
+        return set()
+    # Accept HS codes with separators too: "6109.1000", "6109 1000"
+    normalized = re.sub(r"[.\s]+", "", text)
+    return set(_HS_CODE_RE.findall(normalized))
+
+
+def _extract_quantities(text: str) -> Set[str]:
+    """Pull quantity-shaped numbers (normalized without thousands separators)."""
+    if not text:
+        return set()
+    raw = _QUANTITY_RE.findall(text)
+    return {q.replace(",", "") for q in raw}
+
+
 def check_goods_description_correspondence(
     lc_fields: Dict[str, Any],
     extracted_documents: List[Dict[str, Any]],
@@ -941,7 +1046,9 @@ def check_goods_description_correspondence(
         return []
 
     lc_keywords = _extract_goods_keywords(lc_goods)
-    if len(lc_keywords) < 2:
+    lc_hs_codes = _extract_hs_codes(lc_goods)
+    lc_quantities = _extract_quantities(lc_goods)
+    if len(lc_keywords) < 2 and not lc_hs_codes:
         return []
 
     findings: List[Finding] = []
@@ -950,32 +1057,71 @@ def check_goods_description_correspondence(
         dt = doc.get("document_type") or doc.get("doc_type") or ""
         fields = doc.get("extracted_fields") or doc.get("fields") or {}
 
-        doc_goods = _normalize_text(
-            _find_field_value(fields, "goods_description")
-        )
+        # Build a joined text blob of the fields that plausibly carry goods
+        # info on this doc (description + line-item arrays + HS/quantity
+        # scalars). This way we correspond on what's actually printed, not
+        # on whether the extractor happened to nail the exact key name.
+        doc_goods_parts: List[str] = []
+        primary = _normalize_text(_find_field_value(fields, "goods_description"))
+        if primary:
+            doc_goods_parts.append(primary)
+        for key in ("hs_code", "hs_codes", "quantity", "total_quantity",
+                    "line_items", "goods_items", "items", "inspected_goods"):
+            v = fields.get(key)
+            if v is None:
+                continue
+            if isinstance(v, (list, tuple)):
+                doc_goods_parts.append(" ".join(str(x) for x in v))
+            elif isinstance(v, dict):
+                doc_goods_parts.append(json.dumps(v, default=str))
+            else:
+                doc_goods_parts.append(str(v))
+        doc_goods = " ".join(doc_goods_parts).upper() if doc_goods_parts else None
         if not doc_goods:
             continue
 
         doc_keywords = _extract_goods_keywords(doc_goods)
-        if not doc_keywords:
-            continue
+        doc_hs_codes = _extract_hs_codes(doc_goods)
+        doc_quantities = _extract_quantities(doc_goods)
 
-        # Overlap ratio: what fraction of LC keywords appear in the doc
+        # Overlap ratio (secondary signal, now used only when HS/qty are absent)
         overlap = len(lc_keywords & doc_keywords)
         lc_coverage = overlap / len(lc_keywords) if lc_keywords else 0
 
+        # Authoritative signals (UCP600 Art 18(c) — "correspond to"):
+        #   1. If the LC lists HS codes and the invoice lists them all, the
+        #      goods are classified the same and the description corresponds
+        #      in the sense the regulation cares about.
+        #   2. If the LC lists quantities and the invoice shows them all,
+        #      strong secondary confirmation of the same goods.
+        #   3. Otherwise fall back to keyword overlap, but at a realistic
+        #      threshold (25% for an invoice, not 40%) — LC text contains
+        #      packaging/marking prose the invoice legitimately omits.
+        hs_match = bool(lc_hs_codes) and lc_hs_codes.issubset(doc_hs_codes)
+        qty_match = bool(lc_quantities) and lc_quantities.issubset(doc_quantities)
+
         if dt == "commercial_invoice":
-            # Invoice must correspond to LC description — stricter threshold
-            if lc_coverage < 0.40:
+            # If HS codes all match OR (HS + qty) both match, it
+            # corresponds — no finding regardless of keyword overlap.
+            if hs_match or (lc_hs_codes and lc_quantities and hs_match and qty_match):
+                continue
+            # Fallback keyword threshold — lowered from 40% to 25%.
+            if lc_coverage < 0.25:
                 missing_kw = lc_keywords - doc_keywords
                 sample = ", ".join(sorted(missing_kw)[:5])
+                expected = "Invoice goods description must correspond to LC"
+                if lc_hs_codes:
+                    expected += f" (LC HS codes: {', '.join(sorted(lc_hs_codes))})"
                 findings.append(Finding(
-                    severity="discrepancy",
+                    severity="advisory" if lc_coverage >= 0.15 else "discrepancy",
                     document=dt,
                     field="goods_description",
                     lc_clause="LC Field 45A (Goods Description)",
-                    expected=f"Invoice goods description must correspond to LC. LC keywords: {', '.join(sorted(lc_keywords)[:8])}",
-                    found=f"Invoice keywords overlap {overlap}/{len(lc_keywords)} ({lc_coverage:.0%}). Missing: {sample}",
+                    expected=expected,
+                    found=(
+                        f"Invoice keywords overlap {overlap}/{len(lc_keywords)} "
+                        f"({lc_coverage:.0%}). Missing: {sample}"
+                    ),
                     rule="UCP600 Art 18(c)",
                     explanation="The description of goods in the commercial invoice must correspond to the description in the credit. "
                                 "Key product terms from the LC are not reflected in the invoice.",
