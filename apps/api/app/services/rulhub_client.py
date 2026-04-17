@@ -434,7 +434,7 @@ class RulHubRulesAdapter:
             try:
                 logger.info(
                     "RulHub raw response: %s",
-                    json.dumps(result, default=str)[:5000],
+                    json.dumps(result, default=str)[:20000],
                 )
             except Exception:  # json.dumps should never fail here; be defensive
                 logger.info("RulHub raw response (non-serializable): %r", result)

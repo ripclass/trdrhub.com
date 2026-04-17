@@ -1933,7 +1933,16 @@ async def execute_validation_pipeline(
                         }
 
                     _disc = _rulhub_result.get("discrepancies") or []
-                    _cross = _rulhub_result.get("cross_doc_issues") or []
+                    # RulHub's live /v1/validate/set response uses
+                    # ``cross_document_discrepancies`` (not the legacy
+                    # ``cross_doc_issues`` name that lives in older
+                    # server builds and the reference memo). Read both
+                    # so trdrhub tolerates either.
+                    _cross = (
+                        _rulhub_result.get("cross_document_discrepancies")
+                        or _rulhub_result.get("cross_doc_issues")
+                        or []
+                    )
                     _raw_findings = [
                         _normalize_rulhub_finding(r) for r in (list(_disc) + list(_cross))
                     ]
