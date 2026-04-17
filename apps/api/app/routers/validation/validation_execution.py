@@ -1602,37 +1602,117 @@ async def execute_validation_pipeline(
                             if _val is None and v2_baseline is not None:
                                 _val = getattr(v2_baseline, _k, None)
                             _lc_fields[_k] = _jsonable_value(_val)
+                    # RulHub's crossdoc rules reference fields as
+                    # `<doc-type-prefix>.<field-name>` (e.g. `bl.port_of_loading`,
+                    # `invoice.total_amount`, `coo.country_of_origin`). The
+                    # `<doc-type-prefix>` is whatever we pass as `type` —
+                    # it is NOT passed through DOC_TYPE_ALIASES on the
+                    # multi-doc endpoint. So we must send the rule-engine
+                    # prefix verbatim or no rule will fire.
+                    #
+                    # Prefixes in the rule catalog (from a grep of every
+                    # condition path across Data/crossdoc/*.json):
+                    #   lc, invoice, bl, coo, insurance, packing_list, draft,
+                    #   document (any-doc), presentation (any-doc)
+                    _TYPE_MAP = {
+                        "invoice": "invoice",
+                        "commercial_invoice": "invoice",
+                        "bill_of_lading": "bl",
+                        "bl": "bl",
+                        "packing_list": "packing_list",
+                        "certificate_of_origin": "coo",
+                        "coo": "coo",
+                        "insurance_certificate": "insurance",
+                        "insurance_policy": "insurance",
+                        "insurance": "insurance",
+                        "inspection_certificate": "inspection_certificate",
+                        "beneficiary_certificate": "beneficiary_certificate",
+                        "draft": "draft",
+                    }
+
+                    # Per-doc field aliases — extraction canonical names →
+                    # RulHub rule-reference names. If the extractor emits
+                    # ``shipped_on_board_date`` but every RulHub BL rule
+                    # says ``shipment_date``, no rule fires. We duplicate
+                    # the value under the RulHub-expected key (keeping the
+                    # original too, so non-RulHub consumers still work).
+                    _FIELD_ALIASES_FOR_RULHUB = {
+                        "lc": {
+                            "incoterm": "incoterms",
+                            "latest_shipment": "latest_shipment_date",
+                        },
+                        "invoice": {
+                            "invoice_date": "date",
+                            "seller": "issuer",
+                            "invoice_amount": "total_amount",
+                            "amount": "total_amount",
+                            "incoterm": "incoterms",
+                        },
+                        "bl": {
+                            "shipped_on_board_date": "shipment_date",
+                            "on_board_date": "shipment_date",
+                            "bl_date": "shipment_date",
+                            "freight": "freight_terms",
+                            "transshipment": "transhipment",
+                        },
+                        "coo": {
+                            "issuing_authority": "issuer",
+                            "certifying_authority": "issuer",
+                            "hs_codes": "hs_code",
+                        },
+                        "insurance": {
+                            "issue_date": "effective_date",
+                            "risks": "risks_covered",
+                        },
+                        "packing_list": {
+                            "total_packages": "total_cartons",
+                            "number_of_packages": "total_cartons",
+                            "packages": "total_cartons",
+                        },
+                    }
+
+                    def _apply_rulhub_aliases(rulhub_type: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+                        aliases = _FIELD_ALIASES_FOR_RULHUB.get(rulhub_type, {})
+                        if not aliases:
+                            return fields
+                        enriched = dict(fields)
+                        for src, dst in aliases.items():
+                            if src in enriched and dst not in enriched:
+                                enriched[dst] = enriched[src]
+                        return enriched
+
+                    # Re-apply the alias map to the LC fields we built above.
+                    _lc_fields = _apply_rulhub_aliases("lc", _lc_fields)
                     _rulhub_docs.append({
                         "type": "lc",
                         "fields": _lc_fields,
                     })
 
-                    # Map trdrhub's doc-type keys to RulHub's canonical
-                    # document_type vocabulary. Dedupe insurance sources:
-                    # trdrhub may populate both `insurance` and
-                    # `insurance_certificate` from different paths; RulHub
-                    # treats them as the same doc kind, so we pick the
-                    # first non-empty dict.
+                    # Supporting docs, with dedupe across insurance sources.
                     _seen_types: set = set()
-                    for _src_key, _rulhub_type in (
-                        ("invoice", "invoice"),
-                        ("bill_of_lading", "bill_of_lading"),
-                        ("packing_list", "packing_list"),
-                        ("certificate_of_origin", "certificate_of_origin"),
-                        ("insurance_certificate", "insurance_certificate"),
-                        ("insurance", "insurance_certificate"),
-                        ("inspection_certificate", "inspection_certificate"),
-                        ("beneficiary_certificate", "beneficiary_certificate"),
-                        ("draft", "draft"),
+                    _seen_types.add("lc")
+                    for _src_key in (
+                        "invoice",
+                        "bill_of_lading",
+                        "packing_list",
+                        "certificate_of_origin",
+                        "insurance_certificate",
+                        "insurance",
+                        "inspection_certificate",
+                        "beneficiary_certificate",
+                        "draft",
                     ):
+                        _rulhub_type = _TYPE_MAP.get(_src_key, _src_key)
                         if _rulhub_type in _seen_types:
                             continue
                         _doc_raw = payload.get(_src_key)
                         if not isinstance(_doc_raw, dict) or not _doc_raw:
                             continue
+                        _fields = _flatten_doc_fields(_doc_raw)
+                        _fields = _apply_rulhub_aliases(_rulhub_type, _fields)
                         _rulhub_docs.append({
                             "type": _rulhub_type,
-                            "fields": _flatten_doc_fields(_doc_raw),
+                            "fields": _fields,
                         })
                         _seen_types.add(_rulhub_type)
 
