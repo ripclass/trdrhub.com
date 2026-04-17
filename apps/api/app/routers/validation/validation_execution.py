@@ -1986,8 +1986,57 @@ async def execute_validation_pipeline(
                         or _rulhub_result.get("cross_doc_issues")
                         or []
                     )
+
+                    # ---- Pre-veto filter: RulHub rule-engine errors ------
+                    # RulHub's condition evaluators occasionally return an
+                    # error message as a "finding" when a rule threw during
+                    # evaluation — e.g. ``"Unknown condition type: X"``,
+                    # ``"One or both values are not numeric"``,
+                    # ``"presentation_period requires max_days/value"``.
+                    # These are infrastructure errors on the rule engine
+                    # side, NOT LC discrepancies. They have null
+                    # ``field_a``/``field_b`` because the rule never
+                    # produced concrete path/value evidence. They pollute
+                    # the veto input (Opus has nothing to verify against),
+                    # and they never belong in the user-visible list.
+                    # Filter them out before normalisation + veto.
+                    def _is_rule_engine_error(r: Dict[str, Any]) -> bool:
+                        if not isinstance(r, dict):
+                            return False
+                        if r.get("field_a") or r.get("field_b"):
+                            return False  # has path evidence → real
+                        if r.get("value_a") is not None or r.get("value_b") is not None:
+                            return False
+                        msg = str(r.get("finding") or r.get("message") or "").lower()
+                        engine_error_phrases = (
+                            "unknown condition type",
+                            "one or both values are not numeric",
+                            "requires max_days",
+                            "requires max_days/value",
+                            "presentation_period requires",
+                            "cannot evaluate",
+                            "insufficient_data",
+                        )
+                        return any(p in msg for p in engine_error_phrases)
+
+                    _all_rulhub_findings = list(_disc) + list(_cross)
+                    _engine_errors = [
+                        r for r in _all_rulhub_findings if _is_rule_engine_error(r)
+                    ]
+                    _real_findings = [
+                        r for r in _all_rulhub_findings if not _is_rule_engine_error(r)
+                    ]
+                    if _engine_errors:
+                        logger.info(
+                            "RulHub rule-engine-error findings filtered pre-veto: %d (%s)",
+                            len(_engine_errors),
+                            ", ".join(
+                                str(e.get("rule_id") or "?")[:25]
+                                for e in _engine_errors[:8]
+                            ),
+                        )
                     _raw_findings = [
-                        _normalize_rulhub_finding(r) for r in (list(_disc) + list(_cross))
+                        _normalize_rulhub_finding(r) for r in _real_findings
                     ]
                     # Dedup across lc/credit and bl/bill_of_lading duplicate
                     # submissions. Same rule firing on duplicate prefix
@@ -2084,19 +2133,15 @@ async def execute_validation_pipeline(
 
         # =================================================================
         # OPUS VETO — final review of AI + deterministic findings.
-        # SKIPPED when RulHub is authoritative: RulHub findings cite real
-        # rule_ids and are deterministic. Having an LLM silently delete
-        # rule-backed findings erases legitimate discrepancies. Opus veto
-        # is meant to filter LLM hallucinations — not rule output.
+        # This is the design-intended third stage: deterministic engine
+        # (RulHub or local) raises findings, AI supplement adds semantic
+        # findings, Opus veto confirms/drops/modifies. The veto is the
+        # examiner of record, not a per-layer noise filter.
         # =================================================================
         try:
             from app.config import settings as _veto_settings
             _veto_enabled = bool(getattr(_veto_settings, "VALIDATION_OPUS_VETO_ENABLED", False))
-            if _use_rulhub:
-                logger.info(
-                    "Opus veto SKIPPED (USE_RULHUB_API=True) — RulHub findings are deterministic."
-                )
-            elif _veto_enabled and (ai_issues or db_rule_issues):
+            if _veto_enabled and (ai_issues or db_rule_issues):
                 from app.services.validation.tiered_validation import _run_opus_veto_pass
                 import asyncio as _asyncio
                 _veto_timeout = float(getattr(_veto_settings, "VALIDATION_VETO_TIMEOUT_SECONDS", 90))
