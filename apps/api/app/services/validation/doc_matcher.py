@@ -46,7 +46,7 @@ _CANONICAL_ALIASES: Dict[str, List[str]] = {
     "notify_party": ["notify", "notify_name", "notify_applicant"],
     # Cross-transaction references
     "lc_number": ["lc_no", "lc_reference", "lc_ref", "credit_number", "letter_of_credit_number", "reference_lc_no"],
-    "buyer_purchase_order_number": ["buyer_po_number", "purchase_order_number", "po_number", "po_no", "order_reference", "order_ref", "buyer_purchase_order_no"],
+    "buyer_purchase_order_number": ["buyer_po_number", "purchase_order_number", "purchase_order_no", "po_number", "po_no", "order_reference", "order_ref", "buyer_purchase_order_no", "reference_to_po", "po_reference"],
     "exporter_bin": ["exporter_bin_number", "bin_number", "bin", "bin_no", "seller_bin"],
     "exporter_tin": ["exporter_tin_number", "tin_number", "tin", "tin_no", "seller_tin"],
     # Transport / BL
@@ -58,7 +58,11 @@ _CANONICAL_ALIASES: Dict[str, List[str]] = {
     "port_of_loading": ["loading_port", "pol"],
     "port_of_discharge": ["discharge_port", "pod", "destination_port"],
     "on_board_date": ["shipped_on_board_date", "onboard_date"],
-    "freight_status": ["freight", "freight_prepaid", "freight_collect"],
+    # freight_terms is the canonical BL-schema key the multimodal extractor
+    # emits (see multimodal_document_extractor DOC_TYPE_SCHEMAS). Without
+    # this alias, every BL with "FREIGHT COLLECT"/"FREIGHT PREPAID" clauses
+    # produced a Cluster-B false-positive "Freight Status missing" finding.
+    "freight_status": ["freight", "freight_prepaid", "freight_collect", "freight_terms", "freight_payment"],
     "carrier_name": ["carrier", "shipping_line"],
     "gross_weight": ["gross_wt", "total_gross_weight"],
     "net_weight": ["net_wt", "total_net_weight"],
@@ -67,7 +71,7 @@ _CANONICAL_ALIASES: Dict[str, List[str]] = {
     "goods_description": ["description_of_goods", "goods", "merchandise"],
     "total_amount": ["invoice_amount", "total_value", "amount"],
     "unit_price": ["price_per_unit", "rate"],
-    "quantity": ["qty", "total_quantity"],
+    "quantity": ["qty", "total_quantity", "quantities", "total_qty"],
     "hs_code": ["hs_codes", "tariff_code"],
     # Insurance
     "coverage_percentage": ["insurance_coverage", "coverage"],
@@ -90,6 +94,58 @@ _CANONICAL_ALIASES: Dict[str, List[str]] = {
 }
 
 
+# Arrays the LLM uses to hold per-line-item structure on multi-SKU docs
+# (commercial invoice with 3 HS codes, inspection cert with 3 quantities,
+# packing list with per-carton rows, …). When a canonical field is absent
+# at the top level but every row of one of these arrays carries it, treat
+# the field as "present" — otherwise a clean invoice with line items
+# produces false-positive "quantity not found" / "hs_code not found" rows.
+_LINE_ITEM_KEYS: Tuple[str, ...] = (
+    "line_items",
+    "goods_items",
+    "items",
+    "shipment_items",
+    "invoice_items",
+    "product_items",
+)
+
+# Fields that legitimately live per-row on multi-SKU docs. Drilling into
+# line_items for `beneficiary` or `port_of_loading` would be nonsense, so
+# the array scan only fires for these.
+_PER_ROW_FIELDS: Set[str] = {
+    "quantity",
+    "unit_price",
+    "hs_code",
+    "hs_codes",
+    "goods_description",
+    "total_amount",
+    "gross_weight",
+    "net_weight",
+    "item_description",
+    "measurement_value",
+}
+
+
+def _is_field_value_present(val: Any) -> bool:
+    """A field is considered present only if it's not empty. Confidence-wrapped
+    dicts (``{"value": "...", "confidence": 0.9}``) count as present when the
+    inner ``value`` is non-empty."""
+    if val is None:
+        return False
+    if isinstance(val, str):
+        return val.strip() != ""
+    if isinstance(val, (list, tuple, set)):
+        return len(val) > 0
+    if isinstance(val, dict):
+        if not val:
+            return False
+        # confidence-wrapper pattern: {"value": ..., "confidence": ...}
+        if "value" in val and "confidence" in val:
+            return _is_field_value_present(val.get("value"))
+        return True
+    return True
+
+
 def _find_field_value(
     extracted_fields: Dict[str, Any],
     canonical_name: str,
@@ -97,19 +153,59 @@ def _find_field_value(
     """
     Look up a field in extracted_fields by canonical name, then aliases.
 
+    Search order:
+      1. Direct lookup on canonical name.
+      2. Direct lookup on each known alias.
+      3. Case-insensitive lookup over all keys (catches ``Freight_Terms``
+         vs ``freight_terms`` drift between extractor output shapes).
+      4. For per-row fields (``quantity``, ``hs_code``, ``unit_price``, …),
+         drill into ``line_items`` / ``goods_items`` / ``items`` arrays
+         and return the collected per-row values if present.
+
     Returns the value if found and non-empty, else None.
     """
-    # Direct canonical lookup
-    val = extracted_fields.get(canonical_name)
-    if val is not None and val != "" and val != []:
-        return val
+    if not isinstance(extracted_fields, dict):
+        return None
 
-    # Alias lookup
     aliases = _CANONICAL_ALIASES.get(canonical_name, [])
-    for alias in aliases:
-        val = extracted_fields.get(alias)
-        if val is not None and val != "" and val != []:
+    candidate_keys = (canonical_name, *aliases)
+
+    # 1 + 2. Exact-case direct lookups on canonical + aliases.
+    for key in candidate_keys:
+        if key in extracted_fields:
+            val = extracted_fields[key]
+            if _is_field_value_present(val):
+                return val
+
+    # 3. Case-insensitive lookup over all extractor keys. Multiple extractor
+    # paths (MT700 regex, multimodal LLM, ai_first text) normalize casing
+    # differently, so the validator shouldn't care about it either.
+    lowered = {str(k).lower(): v for k, v in extracted_fields.items()}
+    for key in candidate_keys:
+        val = lowered.get(key.lower())
+        if _is_field_value_present(val):
             return val
+
+    # 4. Drill into line-item arrays for per-row fields.
+    if canonical_name in _PER_ROW_FIELDS:
+        for li_key in _LINE_ITEM_KEYS:
+            items = extracted_fields.get(li_key) or lowered.get(li_key)
+            if not isinstance(items, list) or not items:
+                continue
+            collected: List[Any] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                item_lower = {str(k).lower(): v for k, v in item.items()}
+                for key in candidate_keys:
+                    candidate = item.get(key)
+                    if not _is_field_value_present(candidate):
+                        candidate = item_lower.get(key.lower())
+                    if _is_field_value_present(candidate):
+                        collected.append(candidate)
+                        break
+            if collected:
+                return collected
 
     return None
 
