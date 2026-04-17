@@ -1651,22 +1651,28 @@ async def execute_validation_pipeline(
                             "applicant": "applicant_name",
                             "beneficiary": "beneficiary_name",
                             "currency": "currency_code",
+                            "goods": "goods_description",
                         },
                         "invoice": {
                             "invoice_date": "date",
-                            "seller": "issuer",
+                            "seller": ["issuer", "issuer_name"],
                             "seller_name": "issuer_name",
                             "invoice_amount": "total_amount",
                             "amount": "total_amount",
                             "incoterm": "incoterms",
-                            "buyer": "buyer_name",
+                            # Invoice buyer → both buyer_name AND applicant_name
+                            # (UCP600-18 compares invoice.applicant_name vs
+                            # credit.applicant_name; extractors emit `buyer`).
+                            "buyer": ["buyer_name", "applicant_name"],
                             "issuer": "issuer_name",
                             "applicant": "applicant_name",
                             "beneficiary": "beneficiary_name",
                             "currency": "currency_code",
+                            "goods": "goods_description",
+                            "line_total_sum": "line_items_sum",
                         },
                         "bl": {
-                            "shipped_on_board_date": "shipment_date",
+                            "shipped_on_board_date": ["shipment_date", "on_board_date"],
                             "on_board_date": "shipment_date",
                             "bl_date": "shipment_date",
                             "freight": "freight_terms",
@@ -1691,6 +1697,12 @@ async def execute_validation_pipeline(
                             "currency": "currency_code",
                             "issuer": "issuer_name",
                             "insurer": "insurer_name",
+                            # RulHub insurance rules key off `insured_amount`
+                            # (UCP600-28E). Extractors emit any of:
+                            # `insured_amount` (preferred), `coverage_amount`,
+                            # bare `amount`. Alias all to `insured_amount`.
+                            "amount": "insured_amount",
+                            "coverage_amount": "insured_amount",
                         },
                         "packing_list": {
                             "total_packages": "total_cartons",
@@ -1709,11 +1721,15 @@ async def execute_validation_pipeline(
                             return fields
                         enriched = dict(fields)
                         for src, dst in aliases.items():
-                            if src in enriched and dst not in enriched:
-                                _v = enriched[src]
-                                if _v is None or _v == "" or _v == []:
-                                    continue
-                                enriched[dst] = _v
+                            if src not in enriched:
+                                continue
+                            _v = enriched[src]
+                            if _v is None or _v == "" or _v == []:
+                                continue
+                            dsts = dst if isinstance(dst, (list, tuple)) else (dst,)
+                            for _d in dsts:
+                                if _d not in enriched:
+                                    enriched[_d] = _v
                         return enriched
 
                     # ---- Derived booleans ---------------------------------
@@ -1819,6 +1835,47 @@ async def execute_validation_pipeline(
                             derived["full_set_required"] = lc_derived["full_set_required"]
                         return derived
 
+                    # ---- Semantic / conditional precomputations -----------
+                    # UCP600-18D asks for ``invoice.goods_description_matches_lc``
+                    # as a precomputed boolean. Compute via lightweight token
+                    # overlap against the LC goods_description. Emit only when
+                    # both sides have values (otherwise leave null so the
+                    # rule silently passes rather than falsely fails).
+                    def _normalize_tokens(text: Any) -> set:
+                        if not text:
+                            return set()
+                        import re as _re
+                        s = str(text).lower()
+                        s = _re.sub(r"[^a-z0-9\s/.-]", " ", s)
+                        toks = [t for t in s.split() if len(t) >= 3]
+                        return set(toks)
+
+                    def _goods_match_boolean(lc_goods: Any, inv_goods: Any) -> Optional[bool]:
+                        a = _normalize_tokens(lc_goods)
+                        b = _normalize_tokens(inv_goods)
+                        if not a or not b:
+                            return None
+                        # UCP600 Art 18(c): invoice description must
+                        # "correspond" to LC description. We accept if the
+                        # smaller token set is ≥60% contained in the larger.
+                        overlap = len(a & b)
+                        smaller = min(len(a), len(b))
+                        return (overlap / smaller) >= 0.6 if smaller else None
+
+                    # UCP600-28E uses ``invoice.cif_amount`` — only meaningful
+                    # when LC shipment terms are CIF/CIP (seller responsible
+                    # for insurance + freight). Compute a boolean flag we can
+                    # use when emitting the invoice doc.
+                    _lc_incoterm_raw = (
+                        _lc_fields.get("incoterm")
+                        or _lc_fields.get("incoterms")
+                        or ""
+                    )
+                    _lc_incoterm_upper = str(_lc_incoterm_raw).upper()
+                    _lc_is_cif_or_cip = any(
+                        term in _lc_incoterm_upper for term in ("CIF", "CIP")
+                    )
+
                     # Compute LC booleans once — shared between lc & credit entries
                     # and also propagated to BL/invoice rules that reference them.
                     _lc_booleans = _derive_lc_booleans(_lc_fields)
@@ -1859,6 +1916,23 @@ async def execute_validation_pipeline(
                         # Doc-type-specific boolean derivation
                         if _short == "bl":
                             _fields.update(_derive_bl_booleans(_fields, _raw_text, _lc_booleans))
+                        if _short == "invoice":
+                            # Semantic goods-match against the LC
+                            _gm = _goods_match_boolean(
+                                _lc_fields.get("goods_description"),
+                                _fields.get("goods_description") or _fields.get("goods"),
+                            )
+                            if _gm is not None:
+                                _fields["goods_description_matches_lc"] = _gm
+                            # Conditional CIF amount (UCP600-28E)
+                            if _lc_is_cif_or_cip:
+                                _inv_amt = (
+                                    _fields.get("total_amount")
+                                    or _fields.get("amount")
+                                    or _fields.get("invoice_amount")
+                                )
+                                if _inv_amt not in (None, "", []):
+                                    _fields.setdefault("cif_amount", _inv_amt)
                         _fields = _apply_rulhub_aliases(_short, _fields)
                         _rulhub_docs.append({"type": _short, "fields": _fields})
                         _seen_short.add(_short)
