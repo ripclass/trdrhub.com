@@ -2083,14 +2083,20 @@ async def execute_validation_pipeline(
             }
 
         # =================================================================
-        # OPUS VETO — final review of AI + deterministic findings
-        # Runs regardless of whether RulHub or DB rules produced the
-        # deterministic findings. Can confirm/drop/modify/add findings.
+        # OPUS VETO — final review of AI + deterministic findings.
+        # SKIPPED when RulHub is authoritative: RulHub findings cite real
+        # rule_ids and are deterministic. Having an LLM silently delete
+        # rule-backed findings erases legitimate discrepancies. Opus veto
+        # is meant to filter LLM hallucinations — not rule output.
         # =================================================================
         try:
             from app.config import settings as _veto_settings
             _veto_enabled = bool(getattr(_veto_settings, "VALIDATION_OPUS_VETO_ENABLED", False))
-            if _veto_enabled and (ai_issues or db_rule_issues):
+            if _use_rulhub:
+                logger.info(
+                    "Opus veto SKIPPED (USE_RULHUB_API=True) — RulHub findings are deterministic."
+                )
+            elif _veto_enabled and (ai_issues or db_rule_issues):
                 from app.services.validation.tiered_validation import _run_opus_veto_pass
                 import asyncio as _asyncio
                 _veto_timeout = float(getattr(_veto_settings, "VALIDATION_VETO_TIMEOUT_SECONDS", 90))
