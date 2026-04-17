@@ -48,6 +48,17 @@ interface VerdictTabProps {
   /** Amendments available from the validation result */
   amendmentsCount?: number;
   amendmentsFee?: string;
+  /**
+   * Readiness label computed by overview truth. Drives the verdict
+   * card when there are zero backend findings but manual review items
+   * still sit on the checklist (e.g. a required document whose
+   * extraction needs a human look). Keeps the green CLEAN card from
+   * contradicting the yellow REVIEW banner in the top strip.
+   */
+  readinessLabel?: 'Ready' | 'Review needed' | 'Blocked';
+  readinessSummary?: string;
+  /** Number of checklist items still flagged for manual review. */
+  reviewRequiredCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,7 +74,14 @@ function normSeverity(s: string | undefined): Severity {
   return 'minor';
 }
 
-function deriveVerdict(critical: number, major: number, minor: number) {
+function deriveVerdict(
+  critical: number,
+  major: number,
+  minor: number,
+  readinessLabel?: 'Ready' | 'Review needed' | 'Blocked',
+  readinessSummary?: string,
+  reviewRequiredCount?: number,
+) {
   if (critical > 0)
     return {
       level: 'reject' as const,
@@ -84,6 +102,39 @@ function deriveVerdict(critical: number, major: number, minor: number) {
       iconColor: 'text-amber-500',
       Icon: AlertTriangle,
     };
+  // No backend findings — defer to the readiness label so the card
+  // stays in sync with the top strip banner. Manual-review items from
+  // the requirement checklist keep the verdict in REVIEW until cleared.
+  if (readinessLabel === 'Blocked')
+    return {
+      level: 'reject' as const,
+      label: 'BLOCKED',
+      headline: 'Presentation is blocked',
+      sublabel:
+        readinessSummary ??
+        'Required documents or blocked checklist items remain unresolved.',
+      color: 'bg-red-500/10 border-red-500/40 text-red-400',
+      iconColor: 'text-red-500',
+      Icon: XCircle,
+    };
+  if (readinessLabel === 'Review needed') {
+    const count = reviewRequiredCount ?? 0;
+    const headline =
+      count > 0
+        ? `${count} manual review ${count === 1 ? 'item needs' : 'items need'} attention`
+        : 'Manual review items need attention';
+    return {
+      level: 'review' as const,
+      label: 'REVIEW',
+      headline,
+      sublabel:
+        readinessSummary ??
+        'No rule-cited discrepancies, but open checklist items still need human review before presentation.',
+      color: 'bg-amber-500/10 border-amber-500/40 text-amber-400',
+      iconColor: 'text-amber-500',
+      Icon: AlertTriangle,
+    };
+  }
   if (minor > 0)
     return {
       level: 'pass' as const,
@@ -143,6 +194,9 @@ export function VerdictTab({
   bankProfile,
   amendmentsCount,
   amendmentsFee,
+  readinessLabel,
+  readinessSummary,
+  reviewRequiredCount,
 }: VerdictTabProps) {
   const dedupedIssues = useMemo(() => deduplicateIssues(issueCards), [issueCards]);
 
@@ -158,8 +212,16 @@ export function VerdictTab({
   }, [dedupedIssues]);
 
   const verdict = useMemo(
-    () => deriveVerdict(counts.critical, counts.major, counts.minor),
-    [counts],
+    () =>
+      deriveVerdict(
+        counts.critical,
+        counts.major,
+        counts.minor,
+        readinessLabel,
+        readinessSummary,
+        reviewRequiredCount,
+      ),
+    [counts, readinessLabel, readinessSummary, reviewRequiredCount],
   );
 
   const actionItems = useMemo(() => {

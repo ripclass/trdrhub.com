@@ -3585,6 +3585,12 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
               } : null}
               amendmentsCount={(structuredResult?.amendments_available as any)?.count ?? 0}
               amendmentsFee={(structuredResult?.amendments_available as any)?.estimated_total_fee ? `USD ${(structuredResult.amendments_available as any).estimated_total_fee}` : undefined}
+              readinessLabel={overviewTruth.readinessLabel as 'Ready' | 'Review needed' | 'Blocked' | undefined}
+              readinessSummary={overviewTruth.readinessSummary}
+              reviewRequiredCount={
+                (requirementChecklistSummary.needsReview ?? 0) +
+                (requirementChecklistSummary.partial ?? 0)
+              }
             />
 
           </TabsContent>
