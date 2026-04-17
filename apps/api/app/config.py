@@ -197,13 +197,6 @@ class Settings(BaseSettings):
     # channel (C3 of the consolidation plan). Off by default; enable if
     # you want the raw signals surfaced in the findings list for debugging.
     VALIDATION_L3_ANOMALY_REVIEW_ENABLED: bool = False
-    # LLM-driven clause graph (C2 spinal change). When on, the LC's own
-    # 46A/47A text is parsed by an LLM into a structured RichClause list
-    # drawn from a closed condition / value_constraint vocabulary. The
-    # deterministic rich matcher then produces findings — every finding
-    # cites the exact clause it came from. Fallback to regex clause_parser
-    # on any failure.
-    VALIDATION_LLM_CLAUSE_GRAPH_ENABLED: bool = True
     LLM_PROVIDER: str = "openrouter"  # openrouter|openai|anthropic|gemini
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
