@@ -16,6 +16,7 @@ Extraction (Part 1) is a blind transcriber. This module is the examiner.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -725,66 +726,165 @@ def _parse_coverage_percentage(val: Any) -> Optional[float]:
 
 
 def _parse_insured_amount(fields: Dict[str, Any]) -> Optional[float]:
-    """Extract the insured/coverage amount from insurance fields."""
+    """Backwards-compatible wrapper around ``_parse_insured_amount_raw``
+    that drops the raw form and returns only the numeric value.
+    """
+    parsed = _parse_insured_amount_raw(fields)
+    return parsed[1] if parsed else None
+
+
+def _parse_insured_amount_raw(fields: Dict[str, Any]) -> Optional[Tuple[Any, float]]:
+    """Extract the insured/coverage amount from insurance fields, returning
+    both the **raw** source value and its numeric form so callers can decide
+    whether the value is actually dollars or a percentage mis-stored in an
+    amount field.
+    """
     for key in ("insured_amount", "coverage_amount", "sum_insured", "insured_value", "amount"):
         val = fields.get(key)
         if val is None:
             continue
+        raw = val
         if isinstance(val, dict):
             val = val.get("value") or val.get("amount")
+            raw = val
         if isinstance(val, (int, float)):
-            return float(val)
+            return raw, float(val)
         if isinstance(val, str):
             try:
                 cleaned = val.replace(",", "").replace(" ", "")
                 cleaned = re.sub(r"^[A-Z]{3}\s*", "", cleaned)
-                return float(cleaned)
+                return raw, float(cleaned)
             except (ValueError, TypeError):
                 pass
     return None
 
 
-# Incoterms under which the BUYER arranges insurance. When the LC uses one
-# of these, UCP600 Art 28 doesn't require the seller to present insurance —
-# the seller-side insurance-coverage check is a no-op, not a discrepancy.
-# (Art 28 only governs "insurance documents when required by the credit".)
-_BUYER_ARRANGES_INSURANCE_INCOTERMS: Set[str] = {
-    "FOB", "FCA", "EXW", "FAS",   # buyer arranges carriage + insurance
-    "CFR", "CPT",                  # seller arranges carriage but NOT insurance
-}
+# Words that, when they appear in 46A `documents_required` or 47A
+# `additional_conditions`, signal that the credit calls for an insurance
+# document and therefore UCP600 Art 28 coverage rules apply. The list is
+# trade-finance vocabulary, not jurisdictional hardcoding — any LC that
+# requires insurance will use one of these phrases somewhere.
+_INSURANCE_REQUIREMENT_KEYWORDS = re.compile(
+    r"\b("
+    r"insurance|marine\s+insurance|cargo\s+insurance|"
+    r"insurance\s+(?:certificate|policy|document)|"
+    r"all[\s-]*risks?|war\s+risks?|strikes?\s+clause|"
+    r"institute\s+cargo\s+clauses|icc\s*\([abc]\)|"
+    r"wa\b|fpa\b"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
-def _extract_incoterm(lc_fields: Dict[str, Any]) -> Optional[str]:
-    """Pull the Incoterm abbreviation out of the LC. Accepts the field under
-    multiple common keys; handles free-text forms like 'FOB Chittagong' by
-    taking the 3-letter prefix.
+def _flatten_clause_text(val: Any) -> str:
+    """Flatten an arbitrary LC clause value (string / list of strings / list
+    of dicts / dict) to a single searchable text blob."""
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, list):
+        parts: List[str] = []
+        for item in val:
+            if isinstance(item, dict):
+                # Prefer the raw clause text when the extractor wraps clauses.
+                parts.append(
+                    str(item.get("text") or item.get("clause") or item.get("value") or "")
+                )
+                # Also include the whole dict as a fallback so nothing is lost.
+                parts.append(json.dumps(item, default=str))
+            else:
+                parts.append(str(item))
+        return " ".join(p for p in parts if p)
+    if isinstance(val, dict):
+        return json.dumps(val, default=str)
+    return str(val)
+
+
+def _lc_requires_insurance(lc_fields: Dict[str, Any]) -> bool:
+    """Does this LC require an insurance document?
+
+    Per UCP600 Art 28(a) the coverage check only applies when the credit
+    calls for an insurance document. Per Art 14(g), a document presented
+    but not required by the credit is disregarded. So the right gate is
+    "does 46A / 47A / the requirements graph mention insurance?" — NOT
+    the Incoterm (which is only a correlated signal).
+
+    Returns True when any of:
+      - 46A ``documents_required`` clause mentions an insurance keyword.
+      - 47A ``additional_conditions`` clause mentions an insurance keyword.
+      - ``requirements_graph_v1.required_document_types`` includes an
+        insurance family.
     """
     if not isinstance(lc_fields, dict):
-        return None
-    for key in ("incoterm", "terms_of_delivery", "delivery_terms", "trade_terms"):
-        val = lc_fields.get(key)
-        if val is None:
-            continue
-        if isinstance(val, dict):
-            val = val.get("value") or val.get("code") or ""
-        text = str(val).strip().upper()
-        if not text:
-            continue
-        m = re.match(r"(FOB|FCA|EXW|FAS|CFR|CPT|CIF|CIP|DAP|DPU|DDP)\b", text)
-        if m:
-            return m.group(1)
-        return text  # return raw when we can't pattern-match — caller handles
-    return None
+        return False
+
+    # Structured clause fields (46A / 47A and their aliases).
+    for key in (
+        "documents_required",
+        "documents_required_detailed",
+        "additional_conditions",
+        "46A", "47A",
+    ):
+        text = _flatten_clause_text(lc_fields.get(key))
+        if text and _INSURANCE_REQUIREMENT_KEYWORDS.search(text):
+            return True
+
+    # Fact-graph signal: the requirements graph carries normalized doc
+    # families extracted from the clauses. If it contains any insurance
+    # family, the LC requires an insurance document.
+    graph = lc_fields.get("requirements_graph_v1") or lc_fields.get("requirementsGraphV1")
+    if isinstance(graph, dict):
+        required_types = graph.get("required_document_types") or []
+        if isinstance(required_types, list):
+            for dt in required_types:
+                token = str(dt or "").strip().lower()
+                if "insurance" in token:
+                    return True
+        # Some graph builds nest the list under required_documents[].
+        for entry in graph.get("required_documents") or []:
+            if isinstance(entry, dict):
+                entry_type = str(entry.get("document_type") or "").lower()
+                if "insurance" in entry_type:
+                    return True
+            elif isinstance(entry, str) and "insurance" in entry.lower():
+                return True
+
+    return False
 
 
-# A coverage/insured amount below this floor is treated as unit-less (almost
-# certainly the percentage value mis-stored in the amount slot: "Coverage:
-# 110% of invoice value" → LLM wrote 110 into coverage_amount). Small real-
-# world insurance amounts exist (e.g. courier policies) but in the LC trade-
-# finance context the insured amount is always at least invoice-sized. If
-# the LC amount is under 1 000 we don't apply this heuristic at all — the
-# test set might be a unit test or a malformed extraction.
-_INSURED_AMOUNT_UNITLESS_FLOOR = 1000.0
+def _value_is_dollar_amount(raw: Any, numeric: float, lc_amount: float) -> bool:
+    """Tell apart a dollar amount from a percentage value mis-stored in
+    an amount field.
+
+    Signals (in order of authority, no absolute thresholds):
+      1. The raw textual form contains a ``%`` sign → it's a percentage.
+      2. The raw textual form carries a currency code (USD, EUR, …) or
+         typical numeric formatting (thousands separator) → it's dollars.
+      3. Falling back to magnitude comparison against the LC amount:
+         genuine insured amounts on an LC are at least 1% of the LC
+         amount (usually 100%+). A naked small number that's < 1% of the
+         LC amount is almost certainly the percentage mis-stored in the
+         amount slot.
+    """
+    if isinstance(raw, str):
+        text = raw.strip()
+        if "%" in text:
+            return False
+        if re.search(r"\b[A-Z]{3}\b", text.upper()):
+            return True
+        # A string with thousands separators or a decimal point almost
+        # always came off an amount field on a real document.
+        if "," in text or re.search(r"\d+\.\d{2}\b", text):
+            return True
+
+    # Magnitude-based fallback: proportion against the LC amount.
+    if lc_amount > 0:
+        ratio = abs(numeric) / lc_amount
+        if ratio < 0.01:   # value is < 1% of LC amount
+            return False   # almost certainly a percentage, not dollars
+
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -914,26 +1014,41 @@ def check_insurance_coverage(
 ) -> List[Finding]:
     """
     Verify insurance covers at least 110% of CIF/CIP value.
-    UCP600 Art 28(f)(ii): If no percentage is specified in the credit,
-    insurance must cover at least 110% of the CIF or CIP value.
 
-    Skipped entirely when the LC's Incoterm (FOB / FCA / EXW / FAS / CFR /
-    CPT) leaves insurance to the buyer — UCP600 Art 28 only governs
-    insurance documents the credit calls for, and none of these Incoterms
-    require the seller to present one.
+    UCP600 Art 28(a) + Art 14(g):
+      - The coverage check only applies when the credit calls for an
+        insurance document. If 46A / 47A / the requirements graph don't
+        ask for one, any insurance cert in the presentation is
+        disregarded (Art 14(g)) — so firing a coverage finding against
+        it would be noise.
+
+    UCP600 Art 28(f)(ii):
+      - When the credit does call for insurance and no percentage is
+        specified, coverage must be >= 110% of the CIF or CIP value.
+
+    Two layers of truth:
+      1. If the certificate states a coverage percentage, that's
+         authoritative per Art 28(f)(ii) — don't fall through to the
+         amount-based check (the amount field on a percentage-denominated
+         certificate is often the percent itself mis-stored).
+      2. Otherwise, check insured amount vs 110% of the LC amount — but
+         only if the value genuinely looks like dollars, not a percentage
+         that landed in an amount slot.
     """
     lc_amount = _extract_amount(lc_fields)
     if lc_amount is None or lc_amount <= 0:
         return []
 
-    # Short-circuit on buyer-arranges-insurance Incoterms. Firing this check
-    # against an FOB LC used to produce a MAJOR false-positive that read
-    # "insured amount 110.00" on a certificate the LC never required.
-    incoterm = _extract_incoterm(lc_fields)
-    if incoterm and incoterm.upper() in _BUYER_ARRANGES_INSURANCE_INCOTERMS:
+    # Art 28(a) gate: does the credit require an insurance document at all?
+    # Driven by the LC text (46A / 47A / requirements graph), not by the
+    # Incoterm. An FOB LC that explicitly asks for an insurance certificate
+    # still needs the coverage check; a CIF LC that doesn't mention
+    # insurance (vanishingly rare but possible) doesn't.
+    if not _lc_requires_insurance(lc_fields):
         logger.info(
-            "Skipping insurance coverage check — LC Incoterm %s leaves insurance to buyer.",
-            incoterm,
+            "Skipping insurance coverage check — LC does not require an "
+            "insurance document (46A/47A silent, requirements graph has no "
+            "insurance family). Per UCP600 Art 14(g), extra docs are disregarded."
         )
         return []
 
@@ -946,11 +1061,7 @@ def check_insurance_coverage(
 
         fields = doc.get("extracted_fields") or doc.get("fields") or {}
 
-        # Check via explicit coverage percentage. When a percentage is
-        # stated on the certificate that IS the authoritative answer
-        # per UCP600 Art 28(f)(ii); never fall through to the amount
-        # check for the same document — the amount field on a percentage-
-        # denominated certificate is often the percent itself mis-stored.
+        # Layer 1 — percentage is authoritative per Art 28(f)(ii).
         coverage_pct = _parse_coverage_percentage(
             _find_field_value(fields, "coverage_percentage")
         )
@@ -970,29 +1081,26 @@ def check_insurance_coverage(
                     impact="Bank will reject. Insurance coverage below minimum 110%.",
                     source_layer="crossdoc_matcher",
                 ))
-            # Percentage is authoritative — skip the amount-based check.
+            # Percentage is authoritative — don't also fire on the amount.
             continue
 
-        # Check via insured amount vs LC amount.
-        insured_amount = _parse_insured_amount(fields)
-        if insured_amount is None or lc_amount <= 0:
+        # Layer 2 — amount-based check. Only meaningful if the extracted
+        # value IS a dollar amount, not a percentage mis-stored in the
+        # amount slot. The classifier looks at the raw form (%, currency
+        # code, formatting) AND compares magnitude to the LC amount, so
+        # there's no absolute threshold: a tiny insured amount on a large
+        # LC is recognised as unit-less regardless of the LC size.
+        parsed = _parse_insured_amount_raw(fields)
+        if parsed is None:
             continue
+        raw_value, insured_amount = parsed
 
-        # Detect the percent-in-amount-slot trap. If the certificate reads
-        # "Coverage: 110% of invoice value" and the LLM stored the 110 in
-        # coverage_amount instead of coverage_percentage, treating it as
-        # dollars compares $110 to $504 625 and fires a garbage finding.
-        # Heuristic: an insured amount far below any realistic insurance
-        # figure (< $1 000), on an LC that is clearly commercial-scale,
-        # is almost certainly the percentage value misplaced.
-        if (
-            insured_amount < _INSURED_AMOUNT_UNITLESS_FLOOR
-            and lc_amount >= _INSURED_AMOUNT_UNITLESS_FLOOR
-        ):
+        if not _value_is_dollar_amount(raw_value, insured_amount, lc_amount):
             logger.info(
-                "Skipping insurance amount check — value %.2f on %s looks like "
-                "a percentage mis-stored in the amount slot (LC amount %.2f).",
-                insured_amount, dt, lc_amount,
+                "Skipping insurance amount check — value %r on %s doesn't "
+                "classify as a dollar amount (likely a percentage in the "
+                "amount slot). LC amount %.2f.",
+                raw_value, dt, lc_amount,
             )
             continue
 
