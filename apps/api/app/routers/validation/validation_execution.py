@@ -1108,67 +1108,86 @@ async def execute_validation_pipeline(
 
         # =================================================================
         # CLAUSE-BASED DOCUMENT MATCHING (46A/47A → per-doc fields)
-        # Reads the LC clauses and checks each document's fields.
-        # This is the deterministic core of Part 2 validation.
+        #
+        # This is the LOCAL deterministic engine — `doc_matcher` +
+        # `crossdoc_validator` running UCP rules in-process. It exists as
+        # a fallback for when RulHub isn't available.
+        #
+        # RulHub (api.rulhub.com, 7800+ rules across UCP / ISBP / URDG /
+        # ISP98 / sanctions / country / bank / TBML) is the authoritative
+        # source of deterministic findings. When USE_RULHUB_API=True the
+        # RulHub path below at `_use_rulhub` produces the findings and
+        # this local engine is skipped — running both merges a worse,
+        # less-complete duplicate on top of the real answer.
         # =================================================================
-        try:
-            from app.services.validation.clause_parser import parse_lc_clauses
-            from app.services.validation.doc_matcher import (
-                match_clauses_to_documents,
-                check_cross_document_consistency,
-            )
+        from app.config import settings as _local_engine_settings
+        _rulhub_primary = bool(
+            getattr(_local_engine_settings, "USE_RULHUB_API", False)
+        ) and bool(getattr(_local_engine_settings, "RULHUB_API_KEY", ""))
 
-            lc_docs_required = (
-                lc_context.get("documents_required")
-                or lc_context.get("documents_required_detailed")
-                or (extracted_context.get("lc") or {}).get("documents_required")
-                or []
-            )
-            lc_addl_conditions = (
-                lc_context.get("additional_conditions")
-                or (extracted_context.get("lc") or {}).get("additional_conditions")
-                or []
-            )
-
-            parsed_clauses = parse_lc_clauses(lc_docs_required, lc_addl_conditions)
-
-            all_extracted_docs = (
-                extracted_context.get("documents")
-                or payload.get("documents")
-                or []
-            )
-
-            clause_findings = match_clauses_to_documents(parsed_clauses, all_extracted_docs)
-            crossdoc_findings = check_cross_document_consistency(
-                lc_context or {},
-                all_extracted_docs,
-            )
-
-            # Convert findings to issue dicts compatible with the existing pipeline
-            for finding in clause_findings + crossdoc_findings:
-                v2_issues.append({
-                    "id": f"{finding.source_layer}_{finding.document}_{finding.field}",
-                    "title": f"{finding.expected}",
-                    "severity": finding.severity,
-                    "documents": [finding.document],
-                    "expected": finding.expected,
-                    "found": finding.found,
-                    "suggested_fix": finding.suggested_fix,
-                    "description": finding.explanation,
-                    "reference": finding.rule,
-                    "ucp_reference": finding.rule,
-                    "lc_clause": finding.lc_clause,
-                    "impact": finding.impact,
-                    "source_layer": finding.source_layer,
-                    "field_name": finding.field,
-                })
-
+        if _rulhub_primary:
             logger.info(
-                "Clause matcher: %d clause findings + %d crossdoc findings added to v2_issues",
-                len(clause_findings), len(crossdoc_findings),
+                "Local doc_matcher + crossdoc_validator SKIPPED (USE_RULHUB_API=True). "
+                "Findings will come from RulHub's /v1/validate/set."
             )
-        except Exception:
-            logger.exception("Clause-based document matching failed — continuing without")
+        else:
+            try:
+                from app.services.validation.clause_parser import parse_lc_clauses
+                from app.services.validation.doc_matcher import (
+                    match_clauses_to_documents,
+                    check_cross_document_consistency,
+                )
+
+                lc_docs_required = (
+                    lc_context.get("documents_required")
+                    or lc_context.get("documents_required_detailed")
+                    or (extracted_context.get("lc") or {}).get("documents_required")
+                    or []
+                )
+                lc_addl_conditions = (
+                    lc_context.get("additional_conditions")
+                    or (extracted_context.get("lc") or {}).get("additional_conditions")
+                    or []
+                )
+
+                parsed_clauses = parse_lc_clauses(lc_docs_required, lc_addl_conditions)
+
+                all_extracted_docs = (
+                    extracted_context.get("documents")
+                    or payload.get("documents")
+                    or []
+                )
+
+                clause_findings = match_clauses_to_documents(parsed_clauses, all_extracted_docs)
+                crossdoc_findings = check_cross_document_consistency(
+                    lc_context or {},
+                    all_extracted_docs,
+                )
+
+                for finding in clause_findings + crossdoc_findings:
+                    v2_issues.append({
+                        "id": f"{finding.source_layer}_{finding.document}_{finding.field}",
+                        "title": f"{finding.expected}",
+                        "severity": finding.severity,
+                        "documents": [finding.document],
+                        "expected": finding.expected,
+                        "found": finding.found,
+                        "suggested_fix": finding.suggested_fix,
+                        "description": finding.explanation,
+                        "reference": finding.rule,
+                        "ucp_reference": finding.rule,
+                        "lc_clause": finding.lc_clause,
+                        "impact": finding.impact,
+                        "source_layer": finding.source_layer,
+                        "field_name": finding.field,
+                    })
+
+                logger.info(
+                    "Local clause matcher (fallback): %d clause findings + %d crossdoc findings",
+                    len(clause_findings), len(crossdoc_findings),
+                )
+            except Exception:
+                logger.exception("Local clause-based matching failed — continuing without")
 
         workflow_stage_hint = _should_defer_final_validation(
             payload.get("documents") or extracted_context.get("documents") or []
@@ -1267,16 +1286,35 @@ async def execute_validation_pipeline(
         )
         logger.info(f"AI Validation: {len(documents_for_ai)} documents to check")
 
-        (ai_issues, ai_metadata), ai_validation_timed_out = await _await_with_timeout(
-            "AI validation",
-            run_ai_validation(
-                lc_data=lc_data_for_ai,
-                documents=documents_for_ai,
-                extracted_context=extracted_context,
-            ),
-            AI_VALIDATION_TIMEOUT_SECONDS,
-            ([], {"timed_out": True}),
-        )
+        # Skip ai_validator when RulHub is primary — its deterministic
+        # checks (packing-list size breakdown, BL field validation,
+        # document completeness) are subsets of what RulHub's rule
+        # inventory already covers via /v1/validate/set. Running both
+        # duplicates the same check from two engines with different
+        # wordings and mismatches on overlap.
+        from app.config import settings as _ai_gate_settings
+        _skip_ai_validator = bool(
+            getattr(_ai_gate_settings, "USE_RULHUB_API", False)
+        ) and bool(getattr(_ai_gate_settings, "RULHUB_API_KEY", ""))
+
+        if _skip_ai_validator:
+            logger.info(
+                "ai_validator SKIPPED (USE_RULHUB_API=True). "
+                "Document completeness / BL / PL checks come from RulHub."
+            )
+            ai_issues, ai_metadata = [], {"skipped_for_rulhub": True}
+            ai_validation_timed_out = False
+        else:
+            (ai_issues, ai_metadata), ai_validation_timed_out = await _await_with_timeout(
+                "AI validation",
+                run_ai_validation(
+                    lc_data=lc_data_for_ai,
+                    documents=documents_for_ai,
+                    extracted_context=extracted_context,
+                ),
+                AI_VALIDATION_TIMEOUT_SECONDS,
+                ([], {"timed_out": True}),
+            )
         if not isinstance(ai_metadata, dict):
             ai_metadata = {}
 
@@ -1500,11 +1538,17 @@ async def execute_validation_pipeline(
             if _use_rulhub:
                 try:
                     from app.services.rulhub_client import RulHubRulesAdapter
-                    import json as _json
 
-                    # Serialize db_rule_payload to plain JSON-safe types.
-                    # v2_baseline fields are FieldResult objects that aren't
-                    # JSON serializable — extract .value from them.
+                    # ---------------------------------------------------------
+                    # PROPER multi-doc validation via POST /v1/validate/set.
+                    # RulHub has 7800+ rules across UCP/ISBP/URDG/sanctions/
+                    # country/bank profiles. The /v1/validate/set endpoint
+                    # runs cross-doc consistency checks against the merged
+                    # doc namespace (lc.amount, invoice.total_amount, bl.pol,
+                    # etc.) — doing this properly means sending EACH doc as
+                    # its own entry, not folding everything into a single
+                    # "lc" blob like the old single-doc /validate call did.
+                    # ---------------------------------------------------------
                     def _jsonable_value(v):
                         if v is None:
                             return None
@@ -1514,23 +1558,145 @@ async def execute_validation_pipeline(
                             return v.model_dump()
                         return v
 
-                    _rulhub_payload = dict(db_rule_payload)
-                    for _k in ('lc_number', 'amount', 'currency', 'expiry_date'):
-                        if _k in _rulhub_payload:
-                            _rulhub_payload[_k] = _jsonable_value(_rulhub_payload[_k])
+                    def _flatten_doc_fields(raw: Any) -> Dict[str, Any]:
+                        """Collapse confidence-wrapped or nested dicts into a
+                        flat scalar dict RulHub can evaluate on."""
+                        if not isinstance(raw, dict):
+                            return {}
+                        flat: Dict[str, Any] = {}
+                        for k, v in raw.items():
+                            if k.startswith("_") or k in {
+                                "raw_text", "extraction_artifacts_v1",
+                                "fact_graph_v1", "factGraphV1",
+                                "rawText", "extractionArtifactsV1",
+                                "requirements_graph_v1",
+                            }:
+                                continue
+                            v = _jsonable_value(v)
+                            if isinstance(v, dict):
+                                # confidence-wrap {"value": ..., "confidence": ...}
+                                if "value" in v and "confidence" in v:
+                                    flat[k] = v.get("value")
+                                else:
+                                    # keep structured dict for rules that use dotted paths
+                                    flat[k] = v
+                            else:
+                                flat[k] = v
+                        return flat
 
-                    _rulhub = RulHubRulesAdapter()
-                    _rulhub_result = await _rulhub.evaluate_rules(
-                        rules=[],
-                        input_context={
-                            "document_type": primary_doc_type,
-                            "jurisdiction": primary_jurisdiction,
-                            "rules": "ucp600",
-                            "fields": _rulhub_payload,
-                        },
+                    # Build the document list in RulHub's expected shape.
+                    # Include the LC first (its canonical fields feed every
+                    # cross-doc rule), then each supporting doc under its
+                    # canonical document_type.
+                    _rulhub_docs: List[Dict[str, Any]] = []
+
+                    _lc_fields = _flatten_doc_fields(lc_ctx) if isinstance(lc_ctx, dict) else {}
+                    # Make sure the spine fields the rules key off are present
+                    for _k in ("lc_number", "amount", "currency", "expiry_date",
+                               "issue_date", "latest_shipment_date",
+                               "port_of_loading", "port_of_discharge",
+                               "beneficiary", "applicant", "incoterm",
+                               "goods_description"):
+                        if _k not in _lc_fields:
+                            _val = lc_ctx.get(_k) if isinstance(lc_ctx, dict) else None
+                            if _val is None and v2_baseline is not None:
+                                _val = getattr(v2_baseline, _k, None)
+                            _lc_fields[_k] = _jsonable_value(_val)
+                    _rulhub_docs.append({
+                        "document_type": "lc",
+                        "fields": _lc_fields,
+                    })
+
+                    for _dt_key in ("invoice", "bill_of_lading", "packing_list",
+                                    "certificate_of_origin", "insurance",
+                                    "insurance_certificate",
+                                    "inspection_certificate",
+                                    "beneficiary_certificate", "draft"):
+                        _doc_raw = payload.get(_dt_key)
+                        if not isinstance(_doc_raw, dict) or not _doc_raw:
+                            continue
+                        _rulhub_docs.append({
+                            "document_type": (
+                                "insurance" if _dt_key == "insurance_certificate"
+                                else _dt_key
+                            ),
+                            "fields": _flatten_doc_fields(_doc_raw),
+                        })
+
+                    logger.info(
+                        "RulHub /v1/validate/set — %d docs: %s (jurisdiction=%s)",
+                        len(_rulhub_docs),
+                        [d["document_type"] for d in _rulhub_docs],
+                        primary_jurisdiction,
                     )
-                    db_rule_issues = _rulhub_result.get("outcomes", [])
-                    logger.info("RulHub API returned %d findings", len(db_rule_issues))
+
+                    _rulhub_adapter = RulHubRulesAdapter()
+                    _rulhub_result = await _rulhub_adapter.validate_document_set(
+                        documents=_rulhub_docs,
+                        jurisdiction=primary_jurisdiction,
+                    )
+
+                    # /v1/validate/set returns { discrepancies: [...], cross_doc_issues: [...] }.
+                    # RulHub's shape differs from the UI mapper's expectations:
+                    #   RulHub            → UI mapper expects
+                    #   rule_id           → rule
+                    #   finding           → title / message
+                    #   field_a/value_a   → expected ("<field_a> = <value_a>")
+                    #   field_b/value_b   → found    ("<field_b> = <value_b>")
+                    #   recommendation    → suggested_fix / suggestion
+                    #   documents_involved → documents
+                    # Normalise here so downstream code doesn't need to know
+                    # which engine produced the finding.
+                    def _normalize_rulhub_finding(r: Dict[str, Any]) -> Dict[str, Any]:
+                        if not isinstance(r, dict):
+                            return {}
+                        rule_id = r.get("rule_id") or r.get("rule") or "RULHUB"
+                        finding = r.get("finding") or r.get("message") or ""
+                        field_a = r.get("field_a")
+                        value_a = r.get("value_a")
+                        field_b = r.get("field_b")
+                        value_b = r.get("value_b")
+                        expected = r.get("expected")
+                        found = r.get("found") or r.get("actual")
+                        if not expected:
+                            if field_a and value_a is not None:
+                                expected = f"{field_a} = {value_a}"
+                            elif field_a:
+                                expected = str(field_a)
+                        if not found:
+                            if field_b and value_b is not None:
+                                found = f"{field_b} = {value_b}"
+                            elif field_b:
+                                found = str(field_b)
+                        return {
+                            "rule": rule_id,
+                            "rule_id": rule_id,
+                            "title": finding or str(rule_id),
+                            "severity": (r.get("severity") or "major"),
+                            "message": finding,
+                            "expected": expected or "",
+                            "found": found or "",
+                            "suggestion": r.get("recommendation") or r.get("suggestion") or "",
+                            "suggested_fix": r.get("recommendation") or r.get("suggested_fix") or "",
+                            "documents": r.get("documents_involved") or r.get("documents") or [],
+                            "document_names": r.get("documents_involved") or r.get("documents") or [],
+                            "ucp_reference": r.get("ucp_reference") or r.get("ucp_article"),
+                            "isbp_reference": r.get("isbp_reference") or r.get("isbp_paragraph"),
+                            "source_layer": "rulhub",
+                            "ruleset_domain": r.get("ruleset_domain") or "rulhub.com",
+                            "passed": False,
+                            "display_card": True,
+                        }
+
+                    _disc = _rulhub_result.get("discrepancies") or []
+                    _cross = _rulhub_result.get("cross_doc_issues") or []
+                    db_rule_issues = [
+                        _normalize_rulhub_finding(r) for r in (list(_disc) + list(_cross))
+                    ]
+                    logger.info(
+                        "RulHub /v1/validate/set → %d discrepancies + %d crossdoc = %d findings",
+                        len(_disc), len(_cross), len(db_rule_issues),
+                    )
                 except Exception as _rulhub_err:
                     logger.warning("RulHub API failed, falling back to DB rules: %s", _rulhub_err)
                     _use_rulhub = False  # fall through to DB path below
