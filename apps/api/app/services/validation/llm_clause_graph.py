@@ -161,9 +161,23 @@ _SYSTEM_PROMPT = (
     "doesn't say it, it doesn't belong in the output. This is an audit-grade "
     "transcription task, not a compliance review.\n\n"
     "You emit requirements using a CLOSED vocabulary. If a clause says "
-    "something outside the vocabulary, express it as a "
-    "`statement_includes` condition carrying the verbatim phrase the "
+    "something outside the vocabulary AND that something is a document-level "
+    "requirement (a thing that must appear on a presented document), express "
+    "it as a `statement_includes` condition carrying the verbatim phrase the "
     "document must bear — never invent a new condition kind.\n\n"
+    "CRITICAL — what is NOT a document requirement:\n"
+    "- Process rules (courier / handling timing, who pays fees, penalty "
+    "  amounts, bank-to-bank routing). These don't go on any document; they "
+    "  govern the transaction workflow. OMIT them entirely.\n"
+    "- Prohibitions on the transaction itself (\"no Israeli flag vessels\", "
+    "  \"inspection must happen before shipment\"). These aren't document "
+    "  fields either. OMIT them.\n"
+    "- Tolerances and bank charges.\n"
+    "- Anything that describes HOW the transaction happens, rather than what "
+    "  the DOCUMENT must contain, be issued by, or be signed as.\n\n"
+    "CRITICAL — never target the Letter of Credit (document_type='letter_"
+    "of_credit') with conditions or value_constraints. The LC is the rulebook; "
+    "it is not a presented document to be checked.\n\n"
     "Each requirement MUST include the verbatim source_text it came from, "
     "so the caller can verify the requirement is actually in the LC."
 )
@@ -374,6 +388,17 @@ def _validate_and_build_clause(
             # clause's conditions / value_constraints can still fire if
             # they're doc-agnostic.
             document_type = None
+    # The LC itself is the rulebook, not a presented document. A clause
+    # targeting 'letter_of_credit' would produce "LC must be signed /
+    # dated / carry cross-refs" junk findings. Demote to None so any
+    # doc-agnostic conditions on the clause can still fire against the
+    # presentation set.
+    if document_type == "letter_of_credit":
+        logger.info(
+            "Demoting LLM-emitted clause targeting letter_of_credit to doc-agnostic: %r",
+            raw_text[:80],
+        )
+        document_type = None
 
     document_must_exist = bool(entry.get("document_must_exist", False))
 
