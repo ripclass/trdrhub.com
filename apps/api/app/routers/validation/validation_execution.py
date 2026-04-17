@@ -1602,15 +1602,15 @@ async def execute_validation_pipeline(
                             if _val is None and v2_baseline is not None:
                                 _val = getattr(v2_baseline, _k, None)
                             _lc_fields[_k] = _jsonable_value(_val)
-                    # RulHub rule paths come in two shapes we must feed:
-                    #   Short prefix  (crossdoc/*.json):  bl, coo, invoice,
-                    #      lc, insurance, packing_list, draft
-                    #   Long prefix   (icc_core UCP600):  bill_of_lading,
-                    #      insurance_doc, credit (as well as lc), invoice
-                    # We submit every doc under BOTH prefixes where they
-                    # differ, duplicating the field payload so every rule
-                    # can resolve its path.
-                    _SHORT_PREFIX_MAP = {
+                    # Canonical doc-type map → the exact key RulHub wants
+                    # in the ``documents[]`` envelope. RulHub server (post
+                    # commits eaa5605f + ae6c8004, 2026-04-17) resolves rule
+                    # dialects transparently: ``credit.*`` ↔ ``lc.*``,
+                    # ``commercial_invoice.*`` ↔ ``invoice.*``,
+                    # ``marine_bl.*`` ↔ ``bl.*``, etc. So trdrhub sends
+                    # each doc ONCE under its canonical key. Do not retrofit
+                    # dialect permutations.
+                    _CANONICAL_PREFIX_MAP = {
                         "invoice": "invoice",
                         "commercial_invoice": "invoice",
                         "bill_of_lading": "bl",
@@ -1618,32 +1618,20 @@ async def execute_validation_pipeline(
                         "packing_list": "packing_list",
                         "certificate_of_origin": "coo",
                         "coo": "coo",
-                        "insurance_certificate": "insurance",
-                        "insurance_policy": "insurance",
-                        "insurance": "insurance",
+                        "insurance_certificate": "insurance_doc",
+                        "insurance_policy": "insurance_doc",
+                        "insurance_doc": "insurance_doc",
+                        "insurance": "insurance_doc",
                         "inspection_certificate": "inspection_certificate",
                         "beneficiary_certificate": "beneficiary_certificate",
                         "draft": "draft",
                     }
-                    # Long-prefix duplicates for rule families that use the
-                    # canonical document_type name (UCP600 core rules).
-                    _LONG_PREFIX_ALIAS = {
-                        "bl": "bill_of_lading",
-                        "insurance": "insurance_doc",
-                    }
 
-                    # Per-doc field aliases — extraction canonical names →
-                    # RulHub rule-reference names. If the extractor emits
-                    # ``shipped_on_board_date`` but every RulHub BL rule
-                    # says ``shipment_date``, no rule fires. We duplicate
-                    # the value under the RulHub-expected key (keeping the
-                    # original too, so non-RulHub consumers still work).
-                    #
-                    # Party fields expose a ``<party>_name`` variant because
-                    # UCP600 core rules key off ``invoice.issuer_name``,
-                    # ``lc.applicant_name`` etc. (see UCP600-18A/B/C).
-                    # Currency fields expose a ``currency_code`` variant
-                    # for the same reason.
+                    # Extractor-to-canonical field renames. Only rename where
+                    # trdrhub's extractor uses a non-canonical name for a
+                    # canonical concept (e.g., ``seller`` → ``issuer_name``,
+                    # ``shipped_on_board_date`` → ``on_board_date``). Do NOT
+                    # add dialect-permutation aliases; server handles those.
                     _FIELD_ALIASES_FOR_RULHUB = {
                         "lc": {
                             "incoterm": "incoterms",
@@ -1655,16 +1643,11 @@ async def execute_validation_pipeline(
                         },
                         "invoice": {
                             "invoice_date": "date",
-                            "seller": ["issuer", "issuer_name"],
-                            "seller_name": "issuer_name",
-                            "invoice_amount": "total_amount",
-                            "amount": "total_amount",
+                            "seller": "issuer_name",
+                            "invoice_amount": "amount",
+                            "total_amount": "amount",
                             "incoterm": "incoterms",
-                            # Invoice buyer → both buyer_name AND applicant_name
-                            # (UCP600-18 compares invoice.applicant_name vs
-                            # credit.applicant_name; extractors emit `buyer`).
-                            "buyer": ["buyer_name", "applicant_name"],
-                            "issuer": "issuer_name",
+                            "buyer": "buyer_name",
                             "applicant": "applicant_name",
                             "beneficiary": "beneficiary_name",
                             "currency": "currency_code",
@@ -1672,9 +1655,9 @@ async def execute_validation_pipeline(
                             "line_total_sum": "line_items_sum",
                         },
                         "bl": {
-                            "shipped_on_board_date": ["shipment_date", "on_board_date"],
-                            "on_board_date": "shipment_date",
-                            "bl_date": "shipment_date",
+                            "shipped_on_board_date": "on_board_date",
+                            "bl_date": "on_board_date",
+                            "shipment_date": "on_board_date",
                             "freight": "freight_terms",
                             "transshipment": "transhipment",
                             "shipper": "shipper_name",
@@ -1683,24 +1666,18 @@ async def execute_validation_pipeline(
                             "carrier": "carrier_name",
                         },
                         "coo": {
-                            "issuing_authority": "issuer",
-                            "certifying_authority": "issuer",
+                            "issuing_authority": "issuer_name",
+                            "certifying_authority": "issuer_name",
                             "hs_codes": "hs_code",
-                            "issuer": "issuer_name",
                             "consignee": "consignee_name",
                             "exporter": "exporter_name",
                             "importer": "importer_name",
                         },
-                        "insurance": {
+                        "insurance_doc": {
                             "issue_date": "effective_date",
                             "risks": "risks_covered",
                             "currency": "currency_code",
-                            "issuer": "issuer_name",
                             "insurer": "insurer_name",
-                            # RulHub insurance rules key off `insured_amount`
-                            # (UCP600-28E). Extractors emit any of:
-                            # `insured_amount` (preferred), `coverage_amount`,
-                            # bare `amount`. Alias all to `insured_amount`.
                             "amount": "insured_amount",
                             "coverage_amount": "insured_amount",
                         },
@@ -1708,7 +1685,6 @@ async def execute_validation_pipeline(
                             "total_packages": "total_cartons",
                             "number_of_packages": "total_cartons",
                             "packages": "total_cartons",
-                            "issuer": "issuer_name",
                         },
                         "draft": {
                             "drawee": "drawee_name",
@@ -1726,10 +1702,8 @@ async def execute_validation_pipeline(
                             _v = enriched[src]
                             if _v is None or _v == "" or _v == []:
                                 continue
-                            dsts = dst if isinstance(dst, (list, tuple)) else (dst,)
-                            for _d in dsts:
-                                if _d not in enriched:
-                                    enriched[_d] = _v
+                            if dst not in enriched:
+                                enriched[dst] = _v
                         return enriched
 
                     # ---- Derived booleans ---------------------------------
@@ -1876,24 +1850,23 @@ async def execute_validation_pipeline(
                         term in _lc_incoterm_upper for term in ("CIF", "CIP")
                     )
 
-                    # Compute LC booleans once — shared between lc & credit entries
-                    # and also propagated to BL/invoice rules that reference them.
+                    # Compute LC booleans once — propagated to BL-side rules
+                    # that reference them via transhipment_allowed / full_set.
                     _lc_booleans = _derive_lc_booleans(_lc_fields)
                     _lc_fields.update(_lc_booleans)
 
                     # Re-apply the alias map to the LC fields we built above.
                     _lc_fields = _apply_rulhub_aliases("lc", _lc_fields)
 
-                    # ---- Emit LC under both `lc` and `credit` prefixes ----
-                    # Different UCP600 rule families reference one or the
-                    # other. Sending identical payloads under both lets
-                    # every rule resolve its path.
+                    # ---- Emit each doc ONCE under its canonical key ------
+                    # RulHub server (post eaa5605f + ae6c8004) aliases
+                    # credit.* / bill_of_lading.* / insurance.* / marine_bl.*
+                    # server-side. Dialect permutations we used to emit are
+                    # no-ops now; canonical-only is the contract.
                     _rulhub_docs.append({"type": "lc", "fields": _lc_fields})
-                    _rulhub_docs.append({"type": "credit", "fields": dict(_lc_fields)})
 
-                    # ---- Emit supporting docs with dual prefixes ----------
-                    _seen_short: set = set()
-                    _seen_short.add("lc")
+                    _seen_canon: set = set()
+                    _seen_canon.add("lc")
                     for _src_key in (
                         "invoice",
                         "bill_of_lading",
@@ -1905,8 +1878,8 @@ async def execute_validation_pipeline(
                         "beneficiary_certificate",
                         "draft",
                     ):
-                        _short = _SHORT_PREFIX_MAP.get(_src_key, _src_key)
-                        if _short in _seen_short:
+                        _canon = _CANONICAL_PREFIX_MAP.get(_src_key, _src_key)
+                        if _canon in _seen_canon:
                             continue
                         _doc_raw = payload.get(_src_key)
                         if not isinstance(_doc_raw, dict) or not _doc_raw:
@@ -1914,10 +1887,10 @@ async def execute_validation_pipeline(
                         _raw_text = _doc_raw.get("raw_text") or ""
                         _fields = _flatten_doc_fields(_doc_raw)
                         # Doc-type-specific boolean derivation
-                        if _short == "bl":
+                        if _canon == "bl":
                             _fields.update(_derive_bl_booleans(_fields, _raw_text, _lc_booleans))
-                        if _short == "invoice":
-                            # Semantic goods-match against the LC
+                        if _canon == "invoice":
+                            # Semantic goods-match against the LC (UCP600-18D)
                             _gm = _goods_match_boolean(
                                 _lc_fields.get("goods_description"),
                                 _fields.get("goods_description") or _fields.get("goods"),
@@ -1927,19 +1900,15 @@ async def execute_validation_pipeline(
                             # Conditional CIF amount (UCP600-28E)
                             if _lc_is_cif_or_cip:
                                 _inv_amt = (
-                                    _fields.get("total_amount")
-                                    or _fields.get("amount")
+                                    _fields.get("amount")
+                                    or _fields.get("total_amount")
                                     or _fields.get("invoice_amount")
                                 )
                                 if _inv_amt not in (None, "", []):
                                     _fields.setdefault("cif_amount", _inv_amt)
-                        _fields = _apply_rulhub_aliases(_short, _fields)
-                        _rulhub_docs.append({"type": _short, "fields": _fields})
-                        _seen_short.add(_short)
-                        # Long-prefix duplicate (bill_of_lading, insurance_doc)
-                        _long = _LONG_PREFIX_ALIAS.get(_short)
-                        if _long:
-                            _rulhub_docs.append({"type": _long, "fields": dict(_fields)})
+                        _fields = _apply_rulhub_aliases(_canon, _fields)
+                        _rulhub_docs.append({"type": _canon, "fields": _fields})
+                        _seen_canon.add(_canon)
 
                     logger.info(
                         "RulHub /v1/validate/set — %d docs: %s (jurisdiction=%s)",
