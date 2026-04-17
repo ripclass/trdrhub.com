@@ -1603,30 +1603,43 @@ async def execute_validation_pipeline(
                                 _val = getattr(v2_baseline, _k, None)
                             _lc_fields[_k] = _jsonable_value(_val)
                     _rulhub_docs.append({
-                        "document_type": "lc",
+                        "type": "lc",
                         "fields": _lc_fields,
                     })
 
-                    for _dt_key in ("invoice", "bill_of_lading", "packing_list",
-                                    "certificate_of_origin", "insurance",
-                                    "insurance_certificate",
-                                    "inspection_certificate",
-                                    "beneficiary_certificate", "draft"):
-                        _doc_raw = payload.get(_dt_key)
+                    # Map trdrhub's doc-type keys to RulHub's canonical
+                    # document_type vocabulary. Dedupe insurance sources:
+                    # trdrhub may populate both `insurance` and
+                    # `insurance_certificate` from different paths; RulHub
+                    # treats them as the same doc kind, so we pick the
+                    # first non-empty dict.
+                    _seen_types: set = set()
+                    for _src_key, _rulhub_type in (
+                        ("invoice", "invoice"),
+                        ("bill_of_lading", "bill_of_lading"),
+                        ("packing_list", "packing_list"),
+                        ("certificate_of_origin", "certificate_of_origin"),
+                        ("insurance_certificate", "insurance_certificate"),
+                        ("insurance", "insurance_certificate"),
+                        ("inspection_certificate", "inspection_certificate"),
+                        ("beneficiary_certificate", "beneficiary_certificate"),
+                        ("draft", "draft"),
+                    ):
+                        if _rulhub_type in _seen_types:
+                            continue
+                        _doc_raw = payload.get(_src_key)
                         if not isinstance(_doc_raw, dict) or not _doc_raw:
                             continue
                         _rulhub_docs.append({
-                            "document_type": (
-                                "insurance" if _dt_key == "insurance_certificate"
-                                else _dt_key
-                            ),
+                            "type": _rulhub_type,
                             "fields": _flatten_doc_fields(_doc_raw),
                         })
+                        _seen_types.add(_rulhub_type)
 
                     logger.info(
                         "RulHub /v1/validate/set — %d docs: %s (jurisdiction=%s)",
                         len(_rulhub_docs),
-                        [d["document_type"] for d in _rulhub_docs],
+                        [d["type"] for d in _rulhub_docs],
                         primary_jurisdiction,
                     )
 

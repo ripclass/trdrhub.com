@@ -159,20 +159,34 @@ class RulHubClient:
         """
         POST /v1/validate/set — multi-document cross-validation.
 
-        Each document in the list should have:
-            {"document_type": "...", "fields": {...}}
+        Each document in the list may be passed as either:
+            {"type": "...", "fields": {...}}           (API shape)
+            {"document_type": "...", "fields": {...}}  (caller convenience)
+
+        The server's V1DocumentInput schema requires ``type`` — we normalise
+        either key into ``type`` before the POST so callers don't silently 422.
 
         Returns:
             {
-                "data": {
-                    "discrepancies": [...],
-                    "cross_doc_issues": [...],
-                    ...
-                }
+                "discrepancies": [...],
+                "cross_doc_issues": [...],
+                ...
             }
         """
+        normalised: List[Dict[str, Any]] = []
+        for doc in documents or []:
+            if not isinstance(doc, dict):
+                continue
+            doc_type = doc.get("type") or doc.get("document_type") or doc.get("doc_type")
+            if not doc_type:
+                continue
+            normalised.append({
+                "type": str(doc_type),
+                "fields": doc.get("fields") or {},
+            })
+
         payload = {
-            "documents": documents,
+            "documents": normalised,
             "jurisdiction": jurisdiction,
         }
         result = await self._request("POST", "/v1/validate/set", json=payload)
@@ -408,11 +422,20 @@ class RulHubRulesAdapter:
 
         This is the new capability — RulHub does cross-doc matching
         (amount consistency, party names, dates, ports, goods).
+
+        Raises RulHubAPIError / RulHubRateLimited on failure so the caller
+        can fall back to the local engine. Previously this swallowed errors
+        into ``{"discrepancies": [], "cross_doc_issues": [], "_error": ...}``
+        which silently returned 0 findings on a 422 payload mismatch.
         """
         try:
             return await self.client.validate_document_set(documents, jurisdiction)
+        except RulHubRateLimited:
+            logger.warning("RulHub rate limited during validate_document_set")
+            raise
         except RulHubAPIError as exc:
             logger.error("RulHub validate_document_set failed: %s", exc)
+            raise
             return {"discrepancies": [], "cross_doc_issues": [], "_error": str(exc)}
 
 
