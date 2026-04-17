@@ -336,7 +336,7 @@ def check_cross_document_consistency(
             doc_pol = _normalize_text(_find_field_value(fields, "port_of_loading"))
             doc_pod = _normalize_text(_find_field_value(fields, "port_of_discharge"))
 
-            if lc_pol and doc_pol and not _fuzzy_match(lc_pol, doc_pol):
+            if lc_pol and doc_pol and not _ports_equivalent(lc_pol, doc_pol):
                 findings.append(Finding(
                     severity="discrepancy",
                     document=dt,
@@ -351,7 +351,7 @@ def check_cross_document_consistency(
                     source_layer="crossdoc_matcher",
                 ))
 
-            if lc_pod and doc_pod and not _fuzzy_match(lc_pod, doc_pod):
+            if lc_pod and doc_pod and not _ports_equivalent(lc_pod, doc_pod):
                 findings.append(Finding(
                     severity="discrepancy",
                     document=dt,
@@ -475,6 +475,57 @@ def _fuzzy_match(a: str, b: str) -> bool:
         return False
     overlap = len(a_tokens & b_tokens) / max(len(a_tokens), len(b_tokens))
     return overlap >= 0.75
+
+
+def _strip_port_noise(port: str) -> str:
+    """Strip country suffix and port qualifiers before UN/LOCODE resolution.
+
+    Real-world extracted values look like ``"CHITTAGONG SEA PORT, BANGLADESH"``
+    or ``"Port of Chattogram, Bangladesh"``. The UN/LOCODE resolver needs just
+    the city token (``"Chittagong"`` / ``"Chattogram"``) — the surrounding
+    country + qualifier words block alias matching.
+    """
+    if not port:
+        return ""
+    text = port.strip()
+    # Drop everything after the first comma — usually the country name.
+    if "," in text:
+        text = text.split(",", 1)[0].strip()
+    # Strip trailing port-qualifier words (order matters: multi-word first).
+    text = re.sub(
+        r"\s*\b(?:SEA\s*PORT|CONTAINER\s*PORT|AIRPORT|HARBOU?R|SEAPORT|PORT)\b\s*$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+    # Strip leading "Port of " prefix.
+    text = re.sub(r"^\s*PORT\s+OF\s+", "", text, flags=re.IGNORECASE).strip()
+    return text
+
+
+def _ports_equivalent(port_a: Optional[str], port_b: Optional[str]) -> bool:
+    """True when two extracted port strings refer to the same UN/LOCODE port.
+
+    Tries the cheap fuzzy match first (handles simple spelling variants and
+    substring cases), then falls back to the UN/LOCODE registry with noise
+    stripped off both sides so aliases like ``CHITTAGONG`` / ``CHATTOGRAM`` and
+    qualified forms like ``"CHITTAGONG SEA PORT, BANGLADESH"`` resolve
+    correctly. Doing this inside ``doc_matcher`` means the crossdoc port
+    checks no longer raise MAJOR/ADVISORY discrepancies for Bangladesh's 2018
+    renaming (or any other registry alias).
+    """
+    if not port_a or not port_b:
+        return False
+    if _fuzzy_match(port_a, port_b):
+        return True
+    try:
+        from app.reference_data.ports import get_port_registry
+        registry = get_port_registry()
+        if registry.same_port(_strip_port_noise(port_a), _strip_port_noise(port_b)):
+            return True
+    except Exception:  # noqa: BLE001 — never let the registry fail the validator
+        logger.debug("Port registry lookup failed for %r vs %r", port_a, port_b, exc_info=True)
+    return False
 
 
 # ---------------------------------------------------------------------------
