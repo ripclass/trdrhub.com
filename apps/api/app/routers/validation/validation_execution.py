@@ -1115,6 +1115,7 @@ async def execute_validation_pipeline(
             from app.services.validation.clause_parser import parse_lc_clauses
             from app.services.validation.doc_matcher import (
                 match_clauses_to_documents,
+                match_rich_clauses_to_documents,
                 check_cross_document_consistency,
             )
 
@@ -1130,19 +1131,64 @@ async def execute_validation_pipeline(
                 or []
             )
 
-            parsed_clauses = parse_lc_clauses(lc_docs_required, lc_addl_conditions)
-
             all_extracted_docs = (
                 extracted_context.get("documents")
                 or payload.get("documents")
                 or []
             )
 
-            clause_findings = match_clauses_to_documents(parsed_clauses, all_extracted_docs)
-            crossdoc_findings = check_cross_document_consistency(
-                lc_context or {},
-                all_extracted_docs,
+            # --- LLM-FIRST CLAUSE PARSE --------------------------------
+            # The spinal change in C2: ask an LLM to transcribe THIS LC's
+            # 46A/47A into a structured requirement graph drawn from a
+            # closed vocabulary (llm_clause_graph.py). Every requirement
+            # carries its source_text verbatim and is validated against
+            # the LC we actually shipped to the model, so the LLM cannot
+            # invent UCP600 rules from training data.
+            #
+            # The deterministic rich-clause matcher then walks those
+            # requirements and produces one Finding per unmet condition /
+            # missing field / failed cross-doc value-constraint — each
+            # citing the exact clause it came from.
+            #
+            # If the LLM parse fails for any reason, we fall back to the
+            # regex-based clause_parser + match_clauses_to_documents so
+            # the pipeline never silently drops validation.
+            from app.config import settings as _spine_settings
+            _use_llm_clauses = bool(
+                getattr(_spine_settings, "VALIDATION_LLM_CLAUSE_GRAPH_ENABLED", True)
             )
+            rich_clauses = []
+            llm_clause_meta: Dict[str, Any] = {}
+            if _use_llm_clauses:
+                try:
+                    from app.services.validation.llm_clause_graph import llm_parse_lc_clauses
+                    rich_clauses, llm_clause_meta = await llm_parse_lc_clauses(
+                        lc_docs_required, lc_addl_conditions
+                    )
+                except Exception as _llm_exc:
+                    logger.warning("LLM clause parse failed, falling back to regex: %s", _llm_exc)
+                    llm_clause_meta = {"error": str(_llm_exc)}
+                    rich_clauses = []
+
+            if rich_clauses:
+                logger.info(
+                    "LLM clause graph: using %d rich clauses (meta=%s)",
+                    len(rich_clauses), {k: v for k, v in llm_clause_meta.items() if k != "dropped_samples"},
+                )
+                clause_findings = match_rich_clauses_to_documents(
+                    rich_clauses, all_extracted_docs, lc_context or {},
+                )
+                crossdoc_findings = []  # rich matcher already handles cross-doc via value_constraints
+            else:
+                logger.info(
+                    "LLM clause graph unavailable or empty, using regex fallback. meta=%s",
+                    llm_clause_meta,
+                )
+                parsed_clauses = parse_lc_clauses(lc_docs_required, lc_addl_conditions)
+                clause_findings = match_clauses_to_documents(parsed_clauses, all_extracted_docs)
+                crossdoc_findings = check_cross_document_consistency(
+                    lc_context or {}, all_extracted_docs,
+                )
 
             # Convert findings to issue dicts compatible with the existing pipeline
             for finding in clause_findings + crossdoc_findings:

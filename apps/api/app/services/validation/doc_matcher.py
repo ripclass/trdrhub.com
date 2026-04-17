@@ -1465,3 +1465,699 @@ def check_date_compliance(
             ))
 
     return findings
+
+
+# ===========================================================================
+# Rich-clause matcher — closed-vocabulary deterministic engine
+#
+# The LLM-driven llm_clause_graph.py produces RichClause objects that
+# transcribe the LC's 46A/47A into structured requirements drawn from a
+# closed vocabulary. This function walks those clauses and emits one
+# Finding per unmet requirement. Every finding cites the exact clause
+# it came from (source_field + clause_index + raw_text), so the user can
+# see which line of the LC drove it.
+#
+# The regex-based `match_clauses_to_documents` above remains as a
+# fallback when the LLM parser is disabled or fails.
+# ===========================================================================
+
+
+def _all_string_values(fields: Dict[str, Any]) -> str:
+    """Flatten every string value on a doc into one blob for text-scan
+    checks like 'is the word CLEAN present on the BL?'."""
+    if not isinstance(fields, dict):
+        return ""
+    parts: List[str] = []
+
+    def _walk(val: Any) -> None:
+        if isinstance(val, str):
+            parts.append(val)
+        elif isinstance(val, list):
+            for item in val:
+                _walk(item)
+        elif isinstance(val, dict):
+            for v in val.values():
+                _walk(v)
+    _walk(fields)
+    return " \n ".join(parts)
+
+
+def _doc_has_signature_indication(fields: Dict[str, Any]) -> bool:
+    """True if the doc shows any real signature / stamp / seal — blank
+    signature-line placeholders (underscores) do NOT count."""
+    if not isinstance(fields, dict):
+        return False
+    for key in ("signed", "signature", "stamp", "seal"):
+        v = fields.get(key)
+        if isinstance(v, bool) and v:
+            return True
+        if isinstance(v, str) and v.strip() and not re.fullmatch(r"[_\s\-]+", v.strip()):
+            return True
+        if isinstance(v, dict) and v:
+            vv = v.get("value")
+            if isinstance(vv, bool) and vv:
+                return True
+            if isinstance(vv, str) and vv.strip() and not re.fullmatch(r"[_\s\-]+", vv.strip()):
+                return True
+    for key in ("signatory", "signed_by", "authorized_signatory",
+                "issuer_signature", "stamp_text", "seal_text"):
+        v = fields.get(key)
+        if isinstance(v, str) and v.strip() and not re.fullmatch(r"[_\s\-]+", v.strip()):
+            return True
+    text = _all_string_values(fields)
+    if not text:
+        return False
+    m = re.search(
+        r"\b(?:signed\s+by|authorized\s+signatory|authorised\s+signatory|"
+        r"signature\s*[:\-]|stamp\s*[:\-]|company\s+seal\s*[:\-])\s*"
+        r"([A-Za-z0-9][^\n_]{2,})",
+        text,
+        re.IGNORECASE,
+    )
+    return bool(m)
+
+
+def _doc_text_matches(fields: Dict[str, Any], pattern: str, flags: int = re.IGNORECASE) -> bool:
+    text = _all_string_values(fields)
+    return bool(re.search(pattern, text, flags)) if text else False
+
+
+def _doc_any_date(fields: Dict[str, Any]) -> Optional[date]:
+    if not isinstance(fields, dict):
+        return None
+    for key in ("issue_date", "invoice_date", "document_date", "date",
+                "bl_date", "shipment_date", "on_board_date", "shipped_on_board_date",
+                "inspection_date", "certificate_date"):
+        v = fields.get(key)
+        parsed = _parse_date(v)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _parse_amount_loose(val: Any) -> Optional[float]:
+    """Parse a number that may arrive as int/float/string with commas/units."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, dict):
+        return _parse_amount_loose(val.get("value") or val.get("amount") or val.get("quantity"))
+    if isinstance(val, str):
+        cleaned = re.sub(r"[A-Za-z]+\s*", "", val).replace(",", "").strip()
+        m = re.search(r"-?\d+(?:\.\d+)?", cleaned)
+        if m:
+            try:
+                return float(m.group(0))
+            except ValueError:
+                return None
+    return None
+
+
+def _rich_finding(
+    clause: Any,
+    document_type: str,
+    field_name: str,
+    expected: str,
+    found: str,
+    rule: str,
+    explanation: str,
+    suggested_fix: str,
+    severity: str = "discrepancy",
+) -> Finding:
+    return Finding(
+        severity=severity,
+        document=document_type or "letter_of_credit",
+        field=field_name,
+        lc_clause=_truncate(getattr(clause, "raw_text", ""), 200),
+        expected=expected,
+        found=found,
+        rule=rule,
+        explanation=explanation,
+        suggested_fix=suggested_fix,
+        impact=f"Bank may reject — LC {clause.source_field} clause #{clause.clause_index + 1} not satisfied.",
+        source_layer="rich_clause_matcher",
+    )
+
+
+def _check_condition(
+    condition: Any,
+    clause: Any,
+    doc: Optional[Dict[str, Any]],
+    lc_fields: Dict[str, Any],
+) -> Optional[Finding]:
+    kind = condition.kind
+    doc_type = clause.document_type or (
+        doc.get("document_type") if isinstance(doc, dict) else "letter_of_credit"
+    )
+    fields = (doc.get("extracted_fields") or doc.get("fields") or {}) if isinstance(doc, dict) else {}
+
+    if kind == "signed":
+        if _doc_has_signature_indication(fields):
+            return None
+        return _rich_finding(
+            clause, doc_type, "signature",
+            expected=f"{_humanize(doc_type)} must be signed",
+            found="No signature / stamp indication on the extracted document",
+            rule="UCP600 Art 14",
+            explanation="The LC clause mandates this document carry the beneficiary's signature, stamp, or seal.",
+            suggested_fix=f"Re-issue the {_humanize(doc_type)} with an authorised signature and stamp.",
+        )
+
+    if kind == "clean_on_board":
+        has_clean = _doc_text_matches(fields, r"\bCLEAN\b")
+        has_on_board = _doc_text_matches(fields, r"\bON[\s\-]?BOARD\b") or bool(_find_field_value(fields, "on_board_date"))
+        if has_clean and has_on_board:
+            return None
+        missing = []
+        if not has_clean:
+            missing.append("'clean' notation")
+        if not has_on_board:
+            missing.append("'on board' notation / on-board date")
+        return _rich_finding(
+            clause, doc_type, "clean_on_board",
+            expected="Bill of lading must state CLEAN ON-BOARD",
+            found=f"Missing: {', '.join(missing)}",
+            rule="UCP600 Art 20(a)(ii) / Art 27",
+            explanation="A clean on-board bill of lading is required — the BL must state both 'clean' and 'on board'.",
+            suggested_fix="Obtain an amended BL that states CLEAN ON-BOARD with the on-board date.",
+        )
+
+    if kind == "full_set":
+        has_full_set = (
+            _doc_text_matches(fields, r"\bFULL\s+SET\b")
+            or _doc_text_matches(fields, r"\b[1-9][0-9]?\s*/\s*[1-9][0-9]?\b")
+            or _doc_text_matches(fields, r"\b(?:IN\s+)?(?:TRIPLICATE|DUPLICATE|TWO|THREE)\s+ORIGINAL")
+        )
+        if has_full_set:
+            return None
+        return _rich_finding(
+            clause, doc_type, "full_set",
+            expected="Full set of original bills of lading",
+            found="No 'full set' / 'N/N originals' notation on the extracted document",
+            rule="UCP600 Art 20(a)(iv)",
+            explanation="A full set BL means all originals issued by the carrier must be presented.",
+            suggested_fix="Present the full set of original bills of lading (typically 3/3).",
+        )
+
+    if kind == "copies":
+        n = condition.value
+        return _rich_finding(
+            clause, doc_type, "copies",
+            expected=f"{n} copies of {_humanize(doc_type)} presented",
+            found="Copy count not verifiable from digital upload",
+            rule="Presentation checklist",
+            explanation="The LC requires a specific number of physical copies. Digital upload cannot confirm this.",
+            suggested_fix=f"Ensure {n} copies are included in the physical presentation.",
+            severity="advisory",
+        )
+
+    if kind == "originals":
+        n = condition.value
+        return _rich_finding(
+            clause, doc_type, "originals",
+            expected=f"{n} originals of {_humanize(doc_type)} presented",
+            found="Original count not verifiable from digital upload",
+            rule="Presentation checklist",
+            explanation="The LC requires a specific number of originals. Digital upload cannot confirm this.",
+            suggested_fix=f"Ensure {n} originals are included in the physical presentation.",
+            severity="advisory",
+        )
+
+    if kind == "dated_within_lc_validity":
+        if not isinstance(doc, dict):
+            return None
+        doc_date = _doc_any_date(fields)
+        lc_issue = _parse_date(lc_fields.get("issue_date") or lc_fields.get("lc_issue_date"))
+        if doc_date is None:
+            return _rich_finding(
+                clause, doc_type, "issue_date",
+                expected=f"{_humanize(doc_type)} must carry an issue/document date",
+                found="No date field on the extracted document",
+                rule="UCP600 Art 14 / 47A dating clause",
+                explanation="Documents must be dated so the examiner can verify they weren't dated earlier than LC issue.",
+                suggested_fix=f"Issue a dated version of the {_humanize(doc_type)}.",
+            )
+        if lc_issue and doc_date < lc_issue:
+            return _rich_finding(
+                clause, doc_type, "issue_date",
+                expected=f"Document date >= LC issue date ({lc_issue.isoformat()})",
+                found=f"Document dated {doc_date.isoformat()} (before LC issue)",
+                rule="UCP600 Art 14 / 47A dating clause",
+                explanation="Documents dated earlier than LC issue date are not acceptable.",
+                suggested_fix=f"Re-issue with a date on or after {lc_issue.isoformat()}.",
+            )
+        return None
+
+    if kind == "issued_by":
+        target = str(condition.value or "").strip().upper()
+        if not target:
+            return None
+        issuer = _find_field_value(fields, "issuing_authority") or _find_field_value(fields, "issuer")
+        if target in str(issuer or "").upper() or _doc_text_matches(fields, re.escape(target)):
+            return None
+        return _rich_finding(
+            clause, doc_type, "issuing_authority",
+            expected=f"{_humanize(doc_type)} issued by {condition.value}",
+            found=f"Issuer: {issuer or '(not extracted)'}",
+            rule="UCP600 Art 14(f)",
+            explanation=f"The LC mandates this document be issued by {condition.value}.",
+            suggested_fix=f"Obtain a {_humanize(doc_type)} issued by {condition.value}.",
+        )
+
+    if kind == "consigned_to_order_of":
+        target = str(condition.value or "").strip().upper()
+        consignee = _find_field_value(fields, "consignee") or ""
+        if target and (target in str(consignee).upper() or _doc_text_matches(fields, re.escape(target))):
+            return None
+        return _rich_finding(
+            clause, doc_type, "consignee",
+            expected=f"Consigned to order of {condition.value}",
+            found=f"Consignee: {consignee or '(not extracted)'}",
+            rule="UCP600 Art 20(a)",
+            explanation=f"The LC requires this document consigned to order of {condition.value}.",
+            suggested_fix=f"Re-issue with consignee = 'to order of {condition.value}'.",
+        )
+
+    if kind == "freight":
+        target = str(condition.value or "").strip().upper()
+        if target not in ("PREPAID", "COLLECT") or target == "ANY":
+            return None
+        freight = _find_field_value(fields, "freight_status") or _find_field_value(fields, "freight")
+        if target in str(freight or "").upper():
+            return None
+        return _rich_finding(
+            clause, doc_type, "freight_status",
+            expected=f"Freight {condition.value}",
+            found=f"Freight: {freight or '(not extracted)'}",
+            rule="UCP600 Art 26",
+            explanation=f"The LC requires freight {condition.value}.",
+            suggested_fix=f"Ensure the BL is marked 'FREIGHT {condition.value.upper()}'.",
+        )
+
+    if kind == "notify_party":
+        target = str(condition.value or "").strip().upper()
+        if not target:
+            return None
+        notify = _find_field_value(fields, "notify_party") or ""
+        if target in str(notify).upper() or _doc_text_matches(fields, re.escape(target)):
+            return None
+        return _rich_finding(
+            clause, doc_type, "notify_party",
+            expected=f"Notify party: {condition.value}",
+            found=f"Notify: {notify or '(not extracted)'}",
+            rule="UCP600 Art 20(a)",
+            explanation="The LC specifies a required notify party that the BL must show.",
+            suggested_fix=f"Update BL notify party to {condition.value}.",
+        )
+
+    if kind == "cross_refs_required":
+        missing = []
+        for ref in ("lc_number", "buyer_purchase_order_number", "exporter_bin", "exporter_tin"):
+            if _find_field_value(fields, ref) is None and not _clause_satisfied_by_text_evidence(ref, fields):
+                missing.append(_humanize(ref))
+        if not missing:
+            return None
+        return _rich_finding(
+            clause, doc_type, "cross_refs",
+            expected=f"{_humanize(doc_type)} must carry LC Number / PO / BIN / TIN",
+            found=f"Missing: {', '.join(missing)}",
+            rule="LC 46A / 47A cross-reference clause",
+            explanation="The LC requires cross-reference identifiers on all documents.",
+            suggested_fix=f"Re-issue the {_humanize(doc_type)} showing the missing identifiers.",
+        )
+
+    if kind == "statement_includes":
+        phrase = str(condition.value or "").strip()
+        if not phrase or _doc_text_matches(fields, re.escape(phrase)):
+            return None
+        return _rich_finding(
+            clause, doc_type, "statement",
+            expected=f"{_humanize(doc_type)} must state: {phrase[:120]}",
+            found="Statement not found on the extracted document",
+            rule="LC clause (free-text statement requirement)",
+            explanation=f"The LC requires this document carry the statement: {phrase}",
+            suggested_fix=f"Amend the {_humanize(doc_type)} to include the required statement.",
+            severity=condition.severity,
+        )
+
+    if kind == "field_equals":
+        if not condition.field:
+            return None
+        expected_val = str(condition.value or "").strip().upper()
+        actual = _find_field_value(fields, condition.field)
+        if expected_val and expected_val in str(actual or "").upper():
+            return None
+        return _rich_finding(
+            clause, doc_type, condition.field,
+            expected=f"{_humanize(condition.field)} = {condition.value}",
+            found=f"{_humanize(condition.field)}: {actual or '(not found)'}",
+            rule="LC clause (value equality)",
+            explanation=f"The LC requires {_humanize(condition.field)} to equal {condition.value}.",
+            suggested_fix=f"Update {_humanize(condition.field)} on the {_humanize(doc_type)}.",
+        )
+
+    if kind == "field_matches_pattern":
+        if not condition.field or not condition.pattern:
+            return None
+        actual = _find_field_value(fields, condition.field)
+        if actual is None:
+            return None
+        try:
+            if re.search(condition.pattern, str(actual)):
+                return None
+        except re.error:
+            return None
+        return _rich_finding(
+            clause, doc_type, condition.field,
+            expected=f"{_humanize(condition.field)} matches pattern {condition.pattern}",
+            found=f"{_humanize(condition.field)}: {actual}",
+            rule="LC clause (format requirement)",
+            explanation=f"The LC requires {_humanize(condition.field)} to match the specified format.",
+            suggested_fix=f"Correct {_humanize(condition.field)} on the {_humanize(doc_type)}.",
+        )
+
+    logger.debug("Unknown condition kind %r — ignoring", kind)
+    return None
+
+
+def _check_value_constraint(
+    vc: Any,
+    clause: Any,
+    lc_fields: Dict[str, Any],
+    extracted_documents: List[Dict[str, Any]],
+) -> List[Finding]:
+    kind = vc.kind
+    findings: List[Finding] = []
+
+    lc_amount = _extract_amount(lc_fields)
+    lc_currency = str(lc_fields.get("currency") or "").strip().upper()
+    lc_pol = _normalize_text(lc_fields.get("port_of_loading"))
+    lc_pod = _normalize_text(lc_fields.get("port_of_discharge"))
+    lc_latest_shipment = _parse_date(lc_fields.get("latest_shipment") or lc_fields.get("latest_shipment_date"))
+    lc_beneficiary = _normalize_party(lc_fields.get("beneficiary"))
+    lc_applicant = _normalize_party(lc_fields.get("applicant"))
+    lc_hs_codes = _extract_hs_codes(str(lc_fields.get("goods_description") or ""))
+
+    for doc in (extracted_documents or []):
+        dt = doc.get("document_type") or doc.get("doc_type") or ""
+        fields = doc.get("extracted_fields") or doc.get("fields") or {}
+
+        if kind == "amount_matches_lc" and dt == "commercial_invoice":
+            inv_amount = _extract_amount(fields)
+            if inv_amount is not None and lc_amount is not None and abs(inv_amount - lc_amount) > 0.01:
+                findings.append(_rich_finding(
+                    clause, dt, "amount",
+                    expected=f"Invoice amount = LC amount ({lc_amount:,.2f})",
+                    found=f"Invoice amount: {inv_amount:,.2f}",
+                    rule="UCP600 Art 18(b)",
+                    explanation="Invoice amount must equal LC amount.",
+                    suggested_fix="Amend the invoice to match the LC amount.",
+                ))
+
+        elif kind == "amount_not_exceed_lc" and dt == "commercial_invoice":
+            inv_amount = _extract_amount(fields)
+            if inv_amount is not None and lc_amount is not None and inv_amount > lc_amount + 0.01:
+                findings.append(_rich_finding(
+                    clause, dt, "amount",
+                    expected=f"Invoice amount <= LC amount ({lc_amount:,.2f})",
+                    found=f"Invoice amount: {inv_amount:,.2f}",
+                    rule="UCP600 Art 18(b)",
+                    explanation="Invoice amount must not exceed the LC amount.",
+                    suggested_fix="Amend the invoice to not exceed the LC amount.",
+                ))
+
+        elif kind == "currency_matches_lc" and dt == "commercial_invoice":
+            inv_currency = str(fields.get("currency") or "").strip().upper()
+            if lc_currency and inv_currency and lc_currency != inv_currency:
+                findings.append(_rich_finding(
+                    clause, dt, "currency",
+                    expected=f"Currency = {lc_currency}",
+                    found=f"Invoice currency: {inv_currency}",
+                    rule="UCP600 Art 18(b)",
+                    explanation="Invoice currency must match LC currency.",
+                    suggested_fix="Re-issue the invoice in the LC currency.",
+                ))
+
+        elif kind == "hs_codes_match_lc" and dt == "commercial_invoice":
+            if not lc_hs_codes:
+                continue
+            doc_hs = _extract_hs_codes(
+                str(_find_field_value(fields, "hs_code") or "") + " " + str(_find_field_value(fields, "goods_description") or "")
+            )
+            if not lc_hs_codes.issubset(doc_hs):
+                missing = lc_hs_codes - doc_hs
+                findings.append(_rich_finding(
+                    clause, dt, "hs_code",
+                    expected=f"Invoice HS codes include LC HS codes: {', '.join(sorted(lc_hs_codes))}",
+                    found=f"Missing from invoice: {', '.join(sorted(missing))}",
+                    rule="UCP600 Art 18(c)",
+                    explanation="Invoice goods classification must correspond to the LC.",
+                    suggested_fix="Add the missing HS codes to the invoice line items.",
+                ))
+
+        elif kind == "port_of_loading_matches_lc" and dt == "bill_of_lading":
+            doc_pol = _normalize_text(_find_field_value(fields, "port_of_loading"))
+            if lc_pol and doc_pol and not _ports_equivalent(lc_pol, doc_pol):
+                findings.append(_rich_finding(
+                    clause, dt, "port_of_loading",
+                    expected=f"Port of loading = {lc_pol}",
+                    found=f"BL shows: {doc_pol}",
+                    rule="UCP600 Art 20(a)(ii)",
+                    explanation="BL port of loading must match the LC stipulation.",
+                    suggested_fix="Obtain an amended BL with the correct port of loading.",
+                ))
+
+        elif kind == "port_of_discharge_matches_lc" and dt == "bill_of_lading":
+            doc_pod = _normalize_text(_find_field_value(fields, "port_of_discharge"))
+            if lc_pod and doc_pod and not _ports_equivalent(lc_pod, doc_pod):
+                findings.append(_rich_finding(
+                    clause, dt, "port_of_discharge",
+                    expected=f"Port of discharge = {lc_pod}",
+                    found=f"BL shows: {doc_pod}",
+                    rule="UCP600 Art 20(a)(ii)",
+                    explanation="BL port of discharge must match the LC stipulation.",
+                    suggested_fix="Obtain an amended BL with the correct port of discharge.",
+                ))
+
+        elif kind == "latest_shipment_not_exceeded" and dt == "bill_of_lading":
+            bl_date = _parse_date(
+                _find_field_value(fields, "on_board_date")
+                or _find_field_value(fields, "shipment_date")
+                or _find_field_value(fields, "shipped_on_board_date")
+            )
+            if bl_date is not None and lc_latest_shipment is not None and bl_date > lc_latest_shipment:
+                findings.append(_rich_finding(
+                    clause, dt, "on_board_date",
+                    expected=f"On-board date on or before {lc_latest_shipment.isoformat()}",
+                    found=f"BL shipped on {bl_date.isoformat()} (past latest shipment)",
+                    rule="UCP600 Art 6(e) / Art 44",
+                    explanation="Shipment date must not exceed the LC's latest shipment date.",
+                    suggested_fix="Contact the bank for amendment or re-ship within window.",
+                ))
+
+        elif kind == "beneficiary_matches_lc":
+            doc_bene = _normalize_party(
+                _find_field_value(fields, "beneficiary")
+                or _find_field_value(fields, "seller")
+                or _find_field_value(fields, "exporter")
+                or _find_field_value(fields, "shipper")
+            )
+            if lc_beneficiary and doc_bene and not _fuzzy_match(lc_beneficiary, doc_bene):
+                findings.append(_rich_finding(
+                    clause, dt, "beneficiary",
+                    expected=f"Beneficiary = {lc_beneficiary}",
+                    found=f"Document shows: {doc_bene}",
+                    rule="UCP600 Art 14(d)",
+                    explanation="Beneficiary name must be consistent across documents.",
+                    suggested_fix="Verify beneficiary name matches the LC.",
+                    severity="advisory",
+                ))
+
+        elif kind == "applicant_matches_lc":
+            doc_app = _normalize_party(
+                _find_field_value(fields, "applicant")
+                or _find_field_value(fields, "buyer")
+                or _find_field_value(fields, "importer")
+                or _find_field_value(fields, "notify_party")
+            )
+            if lc_applicant and doc_app and not _fuzzy_match(lc_applicant, doc_app):
+                findings.append(_rich_finding(
+                    clause, dt, "applicant",
+                    expected=f"Applicant = {lc_applicant}",
+                    found=f"Document shows: {doc_app}",
+                    rule="UCP600 Art 14(d)",
+                    explanation="Applicant name must be consistent across documents.",
+                    suggested_fix="Verify applicant name matches the LC.",
+                    severity="advisory",
+                ))
+
+        elif kind == "arithmetic_consistency" and dt == "commercial_invoice":
+            items = fields.get("line_items") or fields.get("items") or fields.get("goods_items")
+            total = _extract_amount(fields)
+            if not isinstance(items, list) or total is None or total <= 0:
+                # Also try to reconstruct line items from parallel scalar arrays
+                qtys_raw = _find_field_value(fields, "quantity")
+                ups_raw = _find_field_value(fields, "unit_price")
+                qtys = [_parse_amount_loose(x) for x in qtys_raw] if isinstance(qtys_raw, list) else []
+                ups = [_parse_amount_loose(x) for x in ups_raw] if isinstance(ups_raw, list) else []
+                if not (qtys and ups and len(qtys) == len(ups) and total and total > 0):
+                    continue
+                subtotal = sum(q * u for q, u in zip(qtys, ups) if q is not None and u is not None)
+                if abs(subtotal - total) > max(1.0, total * 0.005):
+                    findings.append(_rich_finding(
+                        clause, dt, "arithmetic",
+                        expected=f"Line-item sum = invoice total ({total:,.2f})",
+                        found=f"Line items sum to {subtotal:,.2f} — gap of {abs(total - subtotal):,.2f}",
+                        rule="UCP600 Art 18(b)",
+                        explanation="Invoice arithmetic must be internally consistent.",
+                        suggested_fix="Correct invoice arithmetic or break out the difference as a separate line item.",
+                        severity="advisory",
+                    ))
+                continue
+            subtotal = 0.0
+            got_any = False
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                qty = _parse_amount_loose(item.get("quantity") or item.get("qty"))
+                up = _parse_amount_loose(item.get("unit_price") or item.get("rate"))
+                if qty is not None and up is not None:
+                    subtotal += qty * up
+                    got_any = True
+            if got_any and abs(subtotal - total) > max(1.0, total * 0.005):
+                findings.append(_rich_finding(
+                    clause, dt, "arithmetic",
+                    expected=f"Line-item sum = invoice total ({total:,.2f})",
+                    found=f"Line items sum to {subtotal:,.2f} — gap of {abs(total - subtotal):,.2f}",
+                    rule="UCP600 Art 18(b)",
+                    explanation="Invoice arithmetic must be internally consistent.",
+                    suggested_fix="Correct invoice arithmetic or break out the difference as a separate line item.",
+                    severity="advisory",
+                ))
+
+        elif kind == "weight_consistency" and dt == "bill_of_lading":
+            bl_gross = _parse_weight(_find_field_value(fields, "gross_weight"))
+            if bl_gross is None:
+                continue
+            for other_doc in extracted_documents or []:
+                if (other_doc.get("document_type") or "") != "packing_list":
+                    continue
+                pl_fields = other_doc.get("extracted_fields") or other_doc.get("fields") or {}
+                pl_gross = _parse_weight(_find_field_value(pl_fields, "gross_weight"))
+                if pl_gross is not None and abs(bl_gross - pl_gross) > max(1.0, pl_gross * 0.01):
+                    findings.append(_rich_finding(
+                        clause, dt, "gross_weight",
+                        expected=f"BL gross weight = Packing List gross weight ({pl_gross:,.2f} kg)",
+                        found=f"BL: {bl_gross:,.2f} kg (gap {abs(bl_gross - pl_gross):,.2f} kg)",
+                        rule="ISBP745 L4",
+                        explanation="Gross weight on BL must match the packing list.",
+                        suggested_fix="Reconcile weights across BL and Packing List.",
+                    ))
+
+    return findings
+
+
+def match_rich_clauses_to_documents(
+    clauses: List[Any],
+    extracted_documents: List[Dict[str, Any]],
+    lc_fields: Dict[str, Any],
+) -> List[Finding]:
+    """Walk RichClause objects (from llm_clause_graph) and produce
+    clause-cited findings. No LC-specific rules; only the closed
+    condition / value_constraint vocabulary.
+    """
+    if not clauses:
+        return []
+
+    docs_by_type: Dict[str, List[Dict[str, Any]]] = {}
+    for doc in extracted_documents or []:
+        dt = doc.get("document_type") or doc.get("doc_type") or ""
+        if dt:
+            docs_by_type.setdefault(dt, []).append(doc)
+
+    findings: List[Finding] = []
+
+    for clause in clauses:
+        clause_doc_type = getattr(clause, "document_type", None)
+        clause_must_exist = bool(getattr(clause, "document_must_exist", False))
+
+        # 1. Required document missing
+        if clause_doc_type and clause_must_exist and not docs_by_type.get(clause_doc_type):
+            findings.append(Finding(
+                severity="discrepancy",
+                document=clause_doc_type,
+                field="",
+                lc_clause=_truncate(getattr(clause, "raw_text", ""), 200),
+                expected=f"{_humanize(clause_doc_type)} required by LC",
+                found="Document not submitted",
+                rule=_UCP_RULES.get(clause_doc_type, "UCP600 Art 14"),
+                explanation=f"The LC {clause.source_field} clause requires a {_humanize(clause_doc_type)} but none was found.",
+                suggested_fix=f"Obtain and submit the required {_humanize(clause_doc_type)}.",
+                impact="Bank will reject — required document missing.",
+                source_layer="rich_clause_matcher",
+            ))
+            continue
+
+        if clause_doc_type:
+            matching_docs = docs_by_type.get(clause_doc_type, [])
+        else:
+            # Doc-agnostic clause fans out across every submitted doc
+            matching_docs = list(extracted_documents or [])
+
+        # 2. Required fields
+        for req_field in getattr(clause, "required_fields", []) or []:
+            for doc in matching_docs:
+                fields = doc.get("extracted_fields") or doc.get("fields") or {}
+                if _find_field_value(fields, req_field) is not None:
+                    continue
+                if _clause_satisfied_by_text_evidence(req_field, fields):
+                    continue
+                dt = doc.get("document_type") or doc.get("doc_type") or clause_doc_type or ""
+                findings.append(Finding(
+                    severity="discrepancy",
+                    document=dt,
+                    field=req_field,
+                    lc_clause=_truncate(getattr(clause, "raw_text", ""), 200),
+                    expected=f"{_humanize(req_field)} present on {_humanize(dt)}",
+                    found="Not found on document",
+                    rule=_UCP_RULES.get(dt, "UCP600 Art 14"),
+                    explanation=_FIELD_EXPLANATIONS.get(
+                        req_field,
+                        f"The LC requires {_humanize(req_field)} on the {_humanize(dt)}."
+                    ),
+                    suggested_fix=f"Obtain an amended {_humanize(dt)} showing the {_humanize(req_field)}.",
+                    impact=f"Bank may reject — LC {clause.source_field} clause #{clause.clause_index + 1} field requirement missing.",
+                    source_layer="rich_clause_matcher",
+                ))
+
+        # 3. Conditions
+        for cond in getattr(clause, "conditions", []) or []:
+            if matching_docs:
+                for doc in matching_docs:
+                    f = _check_condition(cond, clause, doc, lc_fields)
+                    if f is not None:
+                        findings.append(f)
+            else:
+                f = _check_condition(cond, clause, None, lc_fields)
+                if f is not None:
+                    findings.append(f)
+
+        # 4. Cross-doc value constraints
+        for vc in getattr(clause, "value_constraints", []) or []:
+            findings.extend(_check_value_constraint(vc, clause, lc_fields, extracted_documents))
+
+    # Deduplicate on (doc, field, rule, expected-prefix)
+    seen = set()
+    unique: List[Finding] = []
+    for f in findings:
+        key = (f.document, f.field, f.rule, (f.expected or "")[:50])
+        if key not in seen:
+            seen.add(key)
+            unique.append(f)
+
+    logger.info(
+        "Rich-clause matcher: %d clauses → %d findings (%d before dedup)",
+        len(clauses), len(unique), len(findings),
+    )
+    return unique
