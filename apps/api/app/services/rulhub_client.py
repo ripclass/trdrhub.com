@@ -7,6 +7,7 @@ Hard rules:
 3. Cache reference data (schemas, country data) 24h. Never cache validation/screening.
 """
 
+import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -429,14 +430,21 @@ class RulHubRulesAdapter:
         which silently returned 0 findings on a 422 payload mismatch.
         """
         try:
-            return await self.client.validate_document_set(documents, jurisdiction)
+            result = await self.client.validate_document_set(documents, jurisdiction)
+            try:
+                logger.info(
+                    "RulHub raw response: %s",
+                    json.dumps(result, default=str)[:5000],
+                )
+            except Exception:  # json.dumps should never fail here; be defensive
+                logger.info("RulHub raw response (non-serializable): %r", result)
+            return result
         except RulHubRateLimited:
             logger.warning("RulHub rate limited during validate_document_set")
             raise
         except RulHubAPIError as exc:
             logger.error("RulHub validate_document_set failed: %s", exc)
             raise
-            return {"discrepancies": [], "cross_doc_issues": [], "_error": str(exc)}
 
 
 # ---------------------------------------------------------------------------
