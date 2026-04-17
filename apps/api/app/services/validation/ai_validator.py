@@ -1260,7 +1260,7 @@ def _examiner_finding_to_issue(f: Dict[str, Any]) -> AIValidationIssue:
 
 async def run_ai_examiner(
     lc_text: str,
-    documents: List[Dict[str, Any]],
+    docs_by_type: Dict[str, str],
     timeout_seconds: float = 60.0,
 ) -> Tuple[List[AIValidationIssue], Dict[str, Any]]:
     """Primary per-LC examiner. Reads the full LC + all supporting doc
@@ -1283,31 +1283,9 @@ async def run_ai_examiner(
         "examiner_survivors": 0,
         "examiner_error": None,
     }
-    if not lc_text or not documents:
+    if not lc_text or not docs_by_type:
         meta["examiner_called"] = False
-        meta["examiner_error"] = "missing lc_text or documents"
-        return [], meta
-
-    # Build doc-type → raw_text map from the documents list. This is the
-    # only source that reliably carries raw text per the pipeline's shape.
-    docs_by_type: Dict[str, str] = {}
-    for d in documents:
-        if not isinstance(d, dict):
-            continue
-        dt = _normalize_document_type(d.get("document_type") or d.get("type"))
-        if not dt or dt in docs_by_type:
-            continue
-        raw = d.get("raw_text")
-        if not raw:
-            ed = d.get("extracted_data") or d.get("extracted_fields")
-            if isinstance(ed, dict):
-                raw = ed.get("raw_text")
-        if raw:
-            docs_by_type[dt] = str(raw)
-
-    if not docs_by_type:
-        meta["examiner_called"] = False
-        meta["examiner_error"] = "no per-doc raw_text available"
+        meta["examiner_error"] = "missing lc_text or empty docs_by_type"
         return [], meta
 
     # Build the user prompt.
@@ -1336,6 +1314,12 @@ async def run_ai_examiner(
         from app.services.llm_provider import LLMProviderFactory
         import asyncio as _asyncio
 
+        # Explicitly pin to Sonnet 4.5 on OpenRouter. The L2 env fallback
+        # chain can default to gpt-4o-mini if nothing is configured, which
+        # is too weak for this task. AI_EXAMINER_MODEL env lets ops
+        # override without redeploying.
+        import os
+        _examiner_model = os.getenv("AI_EXAMINER_MODEL") or "anthropic/claude-sonnet-4.5"
         result_tuple = await _asyncio.wait_for(
             LLMProviderFactory.generate_with_fallback(
                 prompt=user_prompt,
@@ -1343,6 +1327,7 @@ async def run_ai_examiner(
                 router_layer="L2",
                 temperature=0.1,
                 max_tokens=4000,
+                model_override=_examiner_model,
             ),
             timeout=timeout_seconds,
         )
@@ -1475,27 +1460,6 @@ async def run_ai_validation(
         logger.info("Step 2: No critical documents to check (Inspection/Beneficiary Cert not required)")
         metadata["missing_critical_docs"] = 0
     
-    # =================================================================
-    # 3. AI EXAMINER — PRIMARY per-LC reasoning pass
-    # Reads the full LC + all supporting docs, emits clause-cited
-    # findings. Replaces the narrow hardcoded B/L-field and
-    # packing-list checks that couldn't generalise across LC templates.
-    # =================================================================
-    logger.info("Step 3: Running AI examiner...")
-    metadata["checks_performed"].append("ai_examiner")
-    examiner_issues, examiner_meta = await run_ai_examiner(
-        lc_text=lc_text,
-        documents=documents or [],
-    )
-    all_issues.extend(examiner_issues)
-    metadata.update(examiner_meta)
-    logger.info(
-        "Step 3: AI examiner produced %d findings (dropped %d via verification)",
-        len(examiner_issues),
-        examiner_meta.get("examiner_dropped_citations", 0)
-        + examiner_meta.get("examiner_dropped_contradictions", 0),
-    )
-
     # Build a doc-type → data lookup. Prefer the raw ``documents`` list
     # (which carries raw_text per uploaded file) and fall back to the
     # structured ``extracted_context[doc_type]`` dict. Either side is
@@ -1536,6 +1500,49 @@ async def run_ai_validation(
                 if k not in merged:
                     merged[k] = v
         return merged
+
+    # =================================================================
+    # 3. AI EXAMINER — PRIMARY per-LC reasoning pass
+    # Reads the full LC + all supporting docs, emits clause-cited
+    # findings. Replaces the narrow hardcoded B/L-field and
+    # packing-list checks that couldn't generalise across LC templates.
+    # =================================================================
+    examiner_docs: Dict[str, str] = {}
+    for _dt_key in (
+        "invoice",
+        "bill_of_lading",
+        "packing_list",
+        "certificate_of_origin",
+        "insurance_certificate",
+        "insurance",
+        "inspection_certificate",
+        "beneficiary_certificate",
+        "draft",
+    ):
+        merged = _merged_doc_data(_dt_key)
+        raw = merged.get("raw_text")
+        canonical = _normalize_document_type(_dt_key)
+        if raw and canonical and canonical not in examiner_docs:
+            examiner_docs[canonical] = str(raw)
+
+    logger.info(
+        "Step 3: AI examiner — %d doc types have raw_text: %s",
+        len(examiner_docs),
+        list(examiner_docs.keys()),
+    )
+    metadata["checks_performed"].append("ai_examiner")
+    examiner_issues, examiner_meta = await run_ai_examiner(
+        lc_text=lc_text,
+        docs_by_type=examiner_docs,
+    )
+    all_issues.extend(examiner_issues)
+    metadata.update(examiner_meta)
+    logger.info(
+        "Step 3: AI examiner produced %d findings (dropped %d via verification)",
+        len(examiner_issues),
+        examiner_meta.get("examiner_dropped_citations", 0)
+        + examiner_meta.get("examiner_dropped_contradictions", 0),
+    )
 
     # =================================================================
     # 4. DETERMINISTIC ARITHMETIC BACKSTOP
