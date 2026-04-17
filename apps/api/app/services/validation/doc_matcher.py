@@ -710,7 +710,14 @@ def _parse_coverage_percentage(val: Any) -> Optional[float]:
         return float(val)
     if isinstance(val, dict):
         val = val.get("value") or val.get("percentage") or ""
-    text = str(val).strip().rstrip("%")
+    text = str(val).strip().rstrip("%").strip()
+    # Handle "110% of invoice value" free-text form.
+    m = re.search(r"(\d+(?:\.\d+)?)\s*%", str(val))
+    if m:
+        try:
+            return float(m.group(1))
+        except ValueError:
+            pass
     try:
         return float(text)
     except ValueError:
@@ -735,6 +742,49 @@ def _parse_insured_amount(fields: Dict[str, Any]) -> Optional[float]:
             except (ValueError, TypeError):
                 pass
     return None
+
+
+# Incoterms under which the BUYER arranges insurance. When the LC uses one
+# of these, UCP600 Art 28 doesn't require the seller to present insurance —
+# the seller-side insurance-coverage check is a no-op, not a discrepancy.
+# (Art 28 only governs "insurance documents when required by the credit".)
+_BUYER_ARRANGES_INSURANCE_INCOTERMS: Set[str] = {
+    "FOB", "FCA", "EXW", "FAS",   # buyer arranges carriage + insurance
+    "CFR", "CPT",                  # seller arranges carriage but NOT insurance
+}
+
+
+def _extract_incoterm(lc_fields: Dict[str, Any]) -> Optional[str]:
+    """Pull the Incoterm abbreviation out of the LC. Accepts the field under
+    multiple common keys; handles free-text forms like 'FOB Chittagong' by
+    taking the 3-letter prefix.
+    """
+    if not isinstance(lc_fields, dict):
+        return None
+    for key in ("incoterm", "terms_of_delivery", "delivery_terms", "trade_terms"):
+        val = lc_fields.get(key)
+        if val is None:
+            continue
+        if isinstance(val, dict):
+            val = val.get("value") or val.get("code") or ""
+        text = str(val).strip().upper()
+        if not text:
+            continue
+        m = re.match(r"(FOB|FCA|EXW|FAS|CFR|CPT|CIF|CIP|DAP|DPU|DDP)\b", text)
+        if m:
+            return m.group(1)
+        return text  # return raw when we can't pattern-match — caller handles
+    return None
+
+
+# A coverage/insured amount below this floor is treated as unit-less (almost
+# certainly the percentage value mis-stored in the amount slot: "Coverage:
+# 110% of invoice value" → LLM wrote 110 into coverage_amount). Small real-
+# world insurance amounts exist (e.g. courier policies) but in the LC trade-
+# finance context the insured amount is always at least invoice-sized. If
+# the LC amount is under 1 000 we don't apply this heuristic at all — the
+# test set might be a unit test or a malformed extraction.
+_INSURED_AMOUNT_UNITLESS_FLOOR = 1000.0
 
 
 # ---------------------------------------------------------------------------
@@ -866,9 +916,25 @@ def check_insurance_coverage(
     Verify insurance covers at least 110% of CIF/CIP value.
     UCP600 Art 28(f)(ii): If no percentage is specified in the credit,
     insurance must cover at least 110% of the CIF or CIP value.
+
+    Skipped entirely when the LC's Incoterm (FOB / FCA / EXW / FAS / CFR /
+    CPT) leaves insurance to the buyer — UCP600 Art 28 only governs
+    insurance documents the credit calls for, and none of these Incoterms
+    require the seller to present one.
     """
     lc_amount = _extract_amount(lc_fields)
     if lc_amount is None or lc_amount <= 0:
+        return []
+
+    # Short-circuit on buyer-arranges-insurance Incoterms. Firing this check
+    # against an FOB LC used to produce a MAJOR false-positive that read
+    # "insured amount 110.00" on a certificate the LC never required.
+    incoterm = _extract_incoterm(lc_fields)
+    if incoterm and incoterm.upper() in _BUYER_ARRANGES_INSURANCE_INCOTERMS:
+        logger.info(
+            "Skipping insurance coverage check — LC Incoterm %s leaves insurance to buyer.",
+            incoterm,
+        )
         return []
 
     findings: List[Finding] = []
@@ -880,46 +946,72 @@ def check_insurance_coverage(
 
         fields = doc.get("extracted_fields") or doc.get("fields") or {}
 
-        # Check via explicit coverage percentage
+        # Check via explicit coverage percentage. When a percentage is
+        # stated on the certificate that IS the authoritative answer
+        # per UCP600 Art 28(f)(ii); never fall through to the amount
+        # check for the same document — the amount field on a percentage-
+        # denominated certificate is often the percent itself mis-stored.
         coverage_pct = _parse_coverage_percentage(
             _find_field_value(fields, "coverage_percentage")
         )
-        if coverage_pct is not None and coverage_pct < 110:
-            findings.append(Finding(
-                severity="discrepancy",
-                document=dt,
-                field="coverage_percentage",
-                lc_clause="UCP600 Art 28(f)(ii)",
-                expected="Insurance coverage >= 110% of CIF/CIP value",
-                found=f"Coverage: {coverage_pct}%",
-                rule="UCP600 Art 28(f)(ii)",
-                explanation="Insurance must cover at least 110% of the CIF or CIP value of the goods. "
-                            "If the credit does not specify a percentage, 110% is the minimum.",
-                suggested_fix=f"Obtain amended insurance with coverage of at least 110% (i.e., {lc_amount * 1.1:,.2f}).",
-                impact="Bank will reject. Insurance coverage below minimum 110%.",
-                source_layer="crossdoc_matcher",
-            ))
-            continue
-
-        # Check via insured amount vs LC amount
-        insured_amount = _parse_insured_amount(fields)
-        if insured_amount is not None and lc_amount > 0:
-            min_required = lc_amount * 1.10
-            if insured_amount < min_required:
-                actual_pct = (insured_amount / lc_amount) * 100
+        if coverage_pct is not None:
+            if coverage_pct < 110:
                 findings.append(Finding(
                     severity="discrepancy",
                     document=dt,
-                    field="insured_amount",
+                    field="coverage_percentage",
                     lc_clause="UCP600 Art 28(f)(ii)",
-                    expected=f"Insured amount >= {min_required:,.2f} (110% of LC amount {lc_amount:,.2f})",
-                    found=f"Insured amount: {insured_amount:,.2f} ({actual_pct:.1f}% of LC amount)",
+                    expected="Insurance coverage >= 110% of CIF/CIP value",
+                    found=f"Coverage: {coverage_pct}%",
                     rule="UCP600 Art 28(f)(ii)",
-                    explanation="The insured amount must be at least 110% of the CIF or CIP value.",
-                    suggested_fix=f"Obtain amended insurance covering at least {min_required:,.2f}.",
-                    impact="Bank will reject. Insured amount below 110% of credit value.",
+                    explanation="Insurance must cover at least 110% of the CIF or CIP value of the goods. "
+                                "If the credit does not specify a percentage, 110% is the minimum.",
+                    suggested_fix=f"Obtain amended insurance with coverage of at least 110% (i.e., {lc_amount * 1.1:,.2f}).",
+                    impact="Bank will reject. Insurance coverage below minimum 110%.",
                     source_layer="crossdoc_matcher",
                 ))
+            # Percentage is authoritative — skip the amount-based check.
+            continue
+
+        # Check via insured amount vs LC amount.
+        insured_amount = _parse_insured_amount(fields)
+        if insured_amount is None or lc_amount <= 0:
+            continue
+
+        # Detect the percent-in-amount-slot trap. If the certificate reads
+        # "Coverage: 110% of invoice value" and the LLM stored the 110 in
+        # coverage_amount instead of coverage_percentage, treating it as
+        # dollars compares $110 to $504 625 and fires a garbage finding.
+        # Heuristic: an insured amount far below any realistic insurance
+        # figure (< $1 000), on an LC that is clearly commercial-scale,
+        # is almost certainly the percentage value misplaced.
+        if (
+            insured_amount < _INSURED_AMOUNT_UNITLESS_FLOOR
+            and lc_amount >= _INSURED_AMOUNT_UNITLESS_FLOOR
+        ):
+            logger.info(
+                "Skipping insurance amount check — value %.2f on %s looks like "
+                "a percentage mis-stored in the amount slot (LC amount %.2f).",
+                insured_amount, dt, lc_amount,
+            )
+            continue
+
+        min_required = lc_amount * 1.10
+        if insured_amount < min_required:
+            actual_pct = (insured_amount / lc_amount) * 100
+            findings.append(Finding(
+                severity="discrepancy",
+                document=dt,
+                field="insured_amount",
+                lc_clause="UCP600 Art 28(f)(ii)",
+                expected=f"Insured amount >= {min_required:,.2f} (110% of LC amount {lc_amount:,.2f})",
+                found=f"Insured amount: {insured_amount:,.2f} ({actual_pct:.1f}% of LC amount)",
+                rule="UCP600 Art 28(f)(ii)",
+                explanation="The insured amount must be at least 110% of the CIF or CIP value.",
+                suggested_fix=f"Obtain amended insurance covering at least {min_required:,.2f}.",
+                impact="Bank will reject. Insured amount below 110% of credit value.",
+                source_layer="crossdoc_matcher",
+            ))
 
     return findings
 
