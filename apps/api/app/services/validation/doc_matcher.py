@@ -2058,28 +2058,6 @@ def _check_value_constraint(
     return findings
 
 
-# Conditions that should NEVER fan out across every submitted doc when
-# the LLM emits them on a doc-agnostic clause. Firing them N times
-# (once per doc in the submission) produces noise without substance
-# since the check result is the same regardless of which doc is tested.
-# Fire once per clause and list affected docs in the finding body instead.
-_AGGREGATE_WHEN_DOC_AGNOSTIC: frozenset = frozenset({
-    "statement_includes",
-    "cross_refs_required",
-})
-
-# Condition kinds that are meaningful only on presented documents, not on
-# the LC itself. The LC is the rulebook; checking whether IT is signed /
-# dated / carries cross-refs is a category error that produced dozens of
-# junk findings in earlier live runs.
-_SKIP_ON_LC = frozenset({
-    "signed", "clean_on_board", "full_set", "copies", "originals",
-    "dated_within_lc_validity", "issued_by", "consigned_to_order_of",
-    "freight", "notify_party", "cross_refs_required", "statement_includes",
-    "field_equals", "field_matches_pattern",
-})
-
-
 def match_rich_clauses_to_documents(
     clauses: List[Any],
     extracted_documents: List[Dict[str, Any]],
@@ -2088,19 +2066,6 @@ def match_rich_clauses_to_documents(
     """Walk RichClause objects (from llm_clause_graph) and produce
     clause-cited findings. No LC-specific rules; only the closed
     condition / value_constraint vocabulary.
-
-    Three fan-out guards keep this usable at scale:
-
-    1. Conditions on ``document_type='letter_of_credit'`` are skipped —
-       the LC is the rulebook, not a presented document.
-    2. Doc-agnostic clauses (``document_type=None``) with aggregating
-       kinds (``statement_includes`` / ``cross_refs_required``) fire
-       ONCE against the most relevant doc family, not once per doc in
-       the presentation. Produces one aggregated finding with the
-       affected doc list.
-    3. Dedup key includes source_field + clause_index so two different
-       clauses targeting the same field/doc don't collapse into each
-       other, but two runs of the same clause across a doc fan-out do.
     """
     if not clauses:
         return []
@@ -2108,27 +2073,14 @@ def match_rich_clauses_to_documents(
     docs_by_type: Dict[str, List[Dict[str, Any]]] = {}
     for doc in extracted_documents or []:
         dt = doc.get("document_type") or doc.get("doc_type") or ""
-        if dt and dt != "letter_of_credit":
+        if dt:
             docs_by_type.setdefault(dt, []).append(doc)
-    # Presentation-set doc list excludes the LC itself.
-    presentation_docs = [
-        d for d in (extracted_documents or [])
-        if (d.get("document_type") or d.get("doc_type") or "") != "letter_of_credit"
-    ]
 
     findings: List[Finding] = []
 
     for clause in clauses:
         clause_doc_type = getattr(clause, "document_type", None)
         clause_must_exist = bool(getattr(clause, "document_must_exist", False))
-
-        # Guard: never check the LC itself — category error.
-        if clause_doc_type == "letter_of_credit":
-            logger.debug(
-                "Rich-matcher: skipping clause targeting the LC itself (%s#%d)",
-                getattr(clause, "source_field", "?"), getattr(clause, "clause_index", -1),
-            )
-            continue
 
         # 1. Required document missing
         if clause_doc_type and clause_must_exist and not docs_by_type.get(clause_doc_type):
@@ -2150,11 +2102,10 @@ def match_rich_clauses_to_documents(
         if clause_doc_type:
             matching_docs = docs_by_type.get(clause_doc_type, [])
         else:
-            matching_docs = list(presentation_docs)
+            # Doc-agnostic clause fans out across every submitted doc
+            matching_docs = list(extracted_documents or [])
 
-        # 2. Required fields — only fire per doc the clause is actually
-        #    targeted at. For doc-agnostic clauses (no doc_type), fire
-        #    against each presentation doc.
+        # 2. Required fields
         for req_field in getattr(clause, "required_fields", []) or []:
             for doc in matching_docs:
                 fields = doc.get("extracted_fields") or doc.get("fields") or {}
@@ -2180,71 +2131,27 @@ def match_rich_clauses_to_documents(
                     source_layer="rich_clause_matcher",
                 ))
 
-        # 3. Conditions — with aggregation for doc-agnostic + aggregating kinds.
+        # 3. Conditions
         for cond in getattr(clause, "conditions", []) or []:
-            if clause_doc_type == "letter_of_credit" or cond.kind in _SKIP_ON_LC and clause_doc_type == "letter_of_credit":
-                continue  # belt-and-suspenders, already guarded above
-
-            if clause_doc_type is None and cond.kind in _AGGREGATE_WHEN_DOC_AGNOSTIC:
-                # Aggregate: test the condition against each doc, but emit
-                # ONE finding listing the set of docs that failed.
-                failed_docs = []
+            if matching_docs:
                 for doc in matching_docs:
                     f = _check_condition(cond, clause, doc, lc_fields)
                     if f is not None:
-                        failed_docs.append(doc.get("document_type") or doc.get("doc_type") or "")
-                if failed_docs:
-                    findings.append(Finding(
-                        severity=cond.severity,
-                        document="(all required docs)",
-                        field=cond.kind,
-                        lc_clause=_truncate(getattr(clause, "raw_text", ""), 200),
-                        expected=(
-                            f"Every presented document must carry: {cond.value}"
-                            if cond.kind == "statement_includes" and cond.value
-                            else f"Every presented document must carry LC No / PO / BIN / TIN"
-                        ),
-                        found=(
-                            "Missing on: " + ", ".join(_humanize(d) for d in sorted(set(failed_docs)))
-                        ),
-                        rule=f"LC {clause.source_field} clause #{clause.clause_index + 1}",
-                        explanation=(
-                            f"This LC clause requires the same condition to hold across every "
-                            f"presented document."
-                        ),
-                        suggested_fix=(
-                            "Re-issue the listed documents to satisfy the clause."
-                        ),
-                        impact=f"Bank may reject — LC {clause.source_field} clause #{clause.clause_index + 1} not satisfied on one or more documents.",
-                        source_layer="rich_clause_matcher",
-                    ))
-            else:
-                # Non-aggregating kinds fire per doc as before.
-                if matching_docs:
-                    for doc in matching_docs:
-                        f = _check_condition(cond, clause, doc, lc_fields)
-                        if f is not None:
-                            findings.append(f)
-                else:
-                    f = _check_condition(cond, clause, None, lc_fields)
-                    if f is not None:
                         findings.append(f)
+            else:
+                f = _check_condition(cond, clause, None, lc_fields)
+                if f is not None:
+                    findings.append(f)
 
         # 4. Cross-doc value constraints
         for vc in getattr(clause, "value_constraints", []) or []:
             findings.extend(_check_value_constraint(vc, clause, lc_fields, extracted_documents))
 
-    # Dedup. Key includes clause source_field+index so two different
-    # clauses targeting the same (doc, field) don't collapse, but the
-    # same clause firing across a fan-out is aggregated.
+    # Deduplicate on (doc, field, rule, expected-prefix)
     seen = set()
     unique: List[Finding] = []
     for f in findings:
-        # Extract the clause source from `impact` — the formatted string
-        # embeds it; fall back to (doc, field, rule) if not matched.
-        m = re.search(r"clause #(\d+)", f.impact or "")
-        clause_key = m.group(1) if m else ""
-        key = (f.document, f.field, f.rule, (f.expected or "")[:60], clause_key)
+        key = (f.document, f.field, f.rule, (f.expected or "")[:50])
         if key not in seen:
             seen.add(key)
             unique.append(f)
