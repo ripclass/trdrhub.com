@@ -1,116 +1,149 @@
-# Next Session Prompt — RulHub payload rewrite
+# Next Session Prompt — verify AI Examiner live after OpenRouter top-up
 
 Paste to start a fresh Claude session. Self-contained, assumes zero memory of 2026-04-17 evening.
 
 ---
 
-## Read first (3 min, in this order)
+## TL;DR (30 seconds)
 
-1. `memory/project_rulhub_payload_audit_2026_04_17_evening.md` — **★★ THE DEFINITIVE DIAGNOSIS.** Four layered problems, full UCP600 path inventory, example payload. This is your specification for the fix.
-2. `memory/project_rulhub_is_the_engine.md` — why RulHub is the engine, trdrhub the consumer.
-3. `memory/feedback_dont_reinvent_rulhub.md` — do not write local validators.
-4. `memory/feedback_scope_trdrhub_only.md` — do not touch `J:\Enso Intelligence\ICC Rule Engine`.
-5. `memory/reference_rulhub_api_conventions.md` — endpoint shapes + prefix rules.
+- The validation pipeline's middle layer is now an **AI Examiner** — a constrained Sonnet 4.6 call that reads the full LC + all supporting docs and emits findings with verbatim-quote citations.
+- Live on Render as of commit **`4febcd1c`**.
+- Prototype (`scripts/examiner_prototype.py`) validated the design — surfaced 7 findings (5 real) on IDEAL SAMPLE, 0 hallucinated citations, 0 self-contradictions.
+- **Blocked on OpenRouter credit top-up.** Ripon ran out mid-session. When topped up, re-run IDEAL SAMPLE and confirm the 5-7 real findings surface.
+
+## Read first (5 min, in this order)
+
+1. `memory/project_session_2026_04_17_ai_examiner.md` — ★★ the full story of why hardcoded checks were wrong and the examiner is right
+2. `memory/feedback_no_hardcoded_validators.md` — ★ the rule going forward
+3. `memory/reference_ai_examiner_design.md` — ★ how `run_ai_examiner` works + debugging cheatsheet
+4. `CLAUDE.md` "Current Focus" section — live pipeline state
+5. `scripts/examiner_prototype.py` — standalone replica for prompt iteration
 
 ## Live state
 
-- master tip: `df5bb357`. `USE_RULHUB_API=True`. RULHUB_API_KEY set on Render.
-- IDEAL SAMPLE (`.playwright-mcp/ideal-sample/*.pdf`) returns COMPLIANT / 77% / **0 findings**.
-- Zero findings is wrong — real discrepancies exist (invoice arithmetic $61,700, port literal conflict, BL missing CLEAN ON-BOARD, LC "UCP LATEST VERSION" ambiguity, missing dates, missing signature).
+- master tip: `4febcd1c`
+- Render deploy: `srv-d41dio8dl3ps73db8gpg` (trdrhub-api) — live
+- RulHub API: live (`USE_RULHUB_API=True` + `RULHUB_API_KEY` set)
+- OpenRouter: **credits out as of 2026-04-17 ~15:30 UTC**. Examiner returns empty until topped up. Arithmetic backstop still produces the invoice $61,700 finding.
 
-## Why 0 findings (authoritative from RulHub-side Claude's source-code dump)
+## Architecture as live
 
-**My fixable problems (trdrhub side):**
+```
+run_ai_validation()
+  ├─ Step 3: run_ai_examiner(lc_text, docs_by_type)      ← primary
+  │     └─ Sonnet 4.6 via OpenRouter (model_override)
+  │     └─ Substring citation filter + self-contradict filter
+  └─ Step 4: validate_invoice_arithmetic()               ← math backstop
 
-1. **Prefix mismatch.** Rules use BOTH short (`bl.*`, `coo.*`, `insurance.*`) AND long (`bill_of_lading.*`, `insurance_doc.*`) prefixes. `lc.*` AND `credit.*` coexist too. My yesterday's payload sent short prefixes only. Every long-prefix rule silently passed.
-2. **Suffix mismatch.** UCP600 rules want `issuer_name`, `buyer_name`, `applicant_name`, `beneficiary_name`, `currency_code`. My alias map sends bare `issuer`, `buyer`, etc.
-3. **Missing derived booleans.** Rules expect `lc.is_transferred`, `lc.partial_shipments_permitted`, `bill_of_lading.on_board_notation_present`, `bill_of_lading.full_set_required`, `invoice.goods_description_matches_lc`, etc. — computed fields trdrhub must derive from existing extractions.
+Parallel: RulHub /v1/validate/set (generic UCP rules)
 
-**NOT my problem (Ripon is fixing on RulHub side):**
-
-4. ISBP 821 deep rules (60+) have 0 conditions — skeletons. Backfill in progress by RulHub-Claude.
-5. RulHub `null == null → is_valid=True` silent-pass bug. Can't fix from trdrhub. Workaround: ensure every referenced path has a non-null value.
-
-## The work — in order
-
-### Commit 1: Rewrite the RulHub doc-list builder
-
-File: `apps/api/app/routers/validation/validation_execution.py` lines ~1590-1725.
-
-Changes:
-- Emit each doc under BOTH prefixes where they differ (`bl` + `bill_of_lading`; `insurance` + `insurance_doc`). Same field payload, two entries in the `documents[]` list.
-- Duplicate LC data under both `lc` and `credit` type entries.
-- Expand `_FIELD_ALIASES_FOR_RULHUB`:
-  - party fields: `issuer` → `issuer` + `issuer_name`; same for `buyer`, `applicant`, `beneficiary`.
-  - currency: `currency` → `currency` + `currency_code`.
-- Add derived boolean computation helper. From existing extracted fields:
-  - `lc.partial_shipments_permitted = (lc.partial_shipments == "ALLOWED")`
-  - `lc.transhipment_prohibited = (lc.transshipment == "NOT ALLOWED")`
-  - `lc.irrevocable = (lc.form_of_documentary_credit in {"IRREVOCABLE", ...})`
-  - `lc.subject_to_ucp = ("UCP" in lc.applicable_rules)`
-  - `lc.is_transferred = (lc.form_of_documentary_credit contains "TRANSFER")`
-  - `bill_of_lading.on_board_notation_present = (bool(bl.on_board_date) or "ON BOARD" in bl text)`
-  - `bill_of_lading.full_set_required = True` (LC 46A #2 says "FULL SET" — derive from LC or hardcode)
-  - `bill_of_lading.transhipment_allowed = not lc.transhipment_prohibited`
-
-Full path inventory (LC / invoice / BL / insurance / credit) is in `project_rulhub_payload_audit_2026_04_17_evening.md`. Emit every one you can derive. Null-leave the rest (null==null silent-pass bug works in our favor for fields we can't compute).
-
-### Commit 2: Raw response logging
-
-File: `apps/api/app/services/rulhub_client.py` `validate_document_set`.
-
-Add `logger.info("RulHub raw response: %s", json.dumps(result, default=str)[:5000])` right before returning. We need to SEE the full response.
-
-Key unknown: the RulHub validation_logs showed `70 discrepancies` on a 06:51 crossdoc call but trdrhub UI showed 0. Either the 70 was a different tenant/call, OR my `_normalize_rulhub_finding` is eating them. Raw log will tell us.
-
-### Commit 3: Live test + cross-check
-
-Deploy. Run IDEAL SAMPLE via Playwright. Grep logs:
-```bash
-render logs -r srv-d41dio8dl3ps73db8gpg --limit 200 --text "RulHub raw response,RulHub /v1/validate/set"
+Downstream (validation_execution.py):
+  ├─ Engine-error filter (drops RulHub "Unknown condition type" noise)
+  ├─ Auto-confirm pre-pass (skips LLM on concrete value mismatches)
+  └─ Opus veto (L3) — final arbiter, drops/confirms/modifies
 ```
 
-Look for:
-- `rules_checked: N` — target N ≥ 50 (some rules firing).
-- Actual discrepancy count and content.
-- Cross-check each surviving finding against raw PDFs (per `feedback_cross_check_findings_against_docs.md`).
+## First action in the new session
 
-## Definition of done
+1. **Verify OpenRouter credits**. If Ripon has topped up:
+   ```bash
+   # Refresh auth
+   curl -sX POST "https://nnmmhgnriisfsncphipd.supabase.co/auth/v1/token?grant_type=password" \
+     -H "apikey: sb_publishable_db40L4wNiQX0jOTCRJi-8g_9p-PWmN3" \
+     -H "Content-Type: application/json" \
+     -d '{"email":"imran@iec.com","password":"ripc0722"}' \
+     -o /tmp/auth.json
 
-- IDEAL SAMPLE returns ≥ 4 legitimate findings, each cited to a specific RulHub rule_id.
-- Findings include at least 2 of: invoice arithmetic mismatch, port literal conflict (Chittagong vs Chattogram), missing CLEAN ON-BOARD, missing invoice/COO dates.
-- Compliance score reflects rule evaluation (not "insufficient_data masquerading as pass").
-- No duplicate findings across `lc`/`credit` or `bl`/`bill_of_lading` submissions — dedupe in `_normalize_rulhub_finding` if needed.
+   # Run IDEAL SAMPLE
+   # (full recipe in memory/reference_curl_validate_orchestration.md)
+   ```
 
-## Rules (still in force)
+2. **Grep Render logs** for examiner output:
+   ```bash
+   render logs -r srv-d41dio8dl3ps73db8gpg --text "examiner" -o text --limit 50
+   ```
 
-- **Do not rebuild RulHub inside trdrhub.** `apps/api/app/services/validation/` local validators are dormant behind `USE_RULHUB_API` gates. Don't re-enable them.
-- **Do not touch** `J:\Enso Intelligence\ICC Rule Engine\` — separate Claude workspace. ISBP 821 backfill is Ripon's / RulHub-Claude's job.
-- **Do not prompt-engineer to IDEAL SAMPLE.** All field names + derivations must be general — any LC with similar structure should benefit.
-- **Do not re-introduce an LLM enforcement layer.** C2-spine was reverted for a reason. Read `project_session_2026_04_17_rulhub_pivot.md` "failure modes" section.
-- **Keep C1 kill switches** (`5bcc50a3`). Don't re-enable local doc_matcher / ai_validator / CrossDocValidator / L3 anomaly review.
+   Expected markers:
+   - `Step 3: AI examiner — N doc types have raw_text: [...]` (should show ≥ 6 types)
+   - `AI examiner: M raw → K survivors (dropped C citation + D contradiction)`
+   - `AI examiner overall: <one-sentence summary>`
 
-## First commands
+## Expected findings on IDEAL SAMPLE (from prototype)
+
+If the pipeline is healthy, UI should show ~5-7 findings. Prototype produced these verbatim:
+
+| # | Severity | Doc | Finding |
+|---|---|---|---|
+| 1 | critical | invoice | Invoice total does not match sum of line items ($397,050 vs $458,750, gap $61,700) |
+| 2 | critical | invoice | Invoice not signed as required |
+| 3 | critical | bill_of_lading | Bill of Lading missing CLEAN ON-BOARD notation |
+| 4 | critical | inspection_certificate | Inspection certificate shipment date (2026-04-20) conflicts with BL shipment date (2026-09-24) |
+| 5 | major | packing_list | Packing list lacks carton-wise breakdown of sizes |
+| 6 | minor | insurance_certificate | Insurance certificate extraneous under FOB |
+| 7 | major (over-strict, veto may drop) | invoice | Unit price per piece labeling |
+
+If UI shows 0 or 1 findings after credit top-up → examiner not firing. Check logs for error type. Most likely causes:
+- `AI examiner failed (type=HTTPError, ...)` — model id or credits
+- `Step 3: AI examiner — 0 doc types have raw_text` — extraction pipeline changed, `_merged_doc_data` broken
+
+## Rules (still in force from prior sessions)
+
+- **No hardcoded discrepancy validators.** Add to the examiner prompt or filters, not new Python functions. Only exception is `validate_invoice_arithmetic` (math backstop). See `memory/feedback_no_hardcoded_validators.md`.
+- **Do not touch `J:\Enso Intelligence\ICC Rule Engine\`** — separate Claude workspace. If RulHub needs a new rule, surface to Ripon.
+- **Do not skip the Opus veto when RulHub is on** (see reverted commit `c6e05d1c`). The veto is the final examiner, not a noise filter over LLM hallucinations.
+- **Do not re-add LLM enforcement loops** (C2-spine pattern, reverted). The examiner is bounded by substring-verified evidence; don't unbound it.
+
+## When examiner prompt needs tuning
+
+Use the prototype — it's faster than redeploying.
 
 ```bash
-cd H:\.openclaw\workspace\trdrhub.com
-git log --oneline -5
-git status --short
-
-# Read the audit memory FIRST
-cat "C:\Users\User\.claude\projects\H---openclaw-workspace-trdrhub-com\memory\project_rulhub_payload_audit_2026_04_17_evening.md"
-
-# Then open the target file
-code apps/api/app/routers/validation/validation_execution.py
-# Navigate to the `_FIELD_ALIASES_FOR_RULHUB` block around line 1639.
+cd H:/.openclaw/workspace/trdrhub.com
+python scripts/examiner_prototype.py "anthropic/claude-sonnet-4.6"
 ```
 
-Do NOT edit code until you've read the audit memory. The spec is already written there — don't reinvent it.
+Prompt lives in `apps/api/app/services/validation/ai_validator.py` as `_EXAMINER_SYSTEM_PROMPT`. Filters in `_verify_examiner_finding` + `_EXAMINER_SELF_CONTRADICTING_PHRASES`. Model pinned via `AI_EXAMINER_MODEL` env.
+
+## What NOT to do
+
+- Don't write `validate_X_Y()` Python functions for specific discrepancy classes.
+- Don't widen the auto-confirm pre-pass criteria (currently two-sided concrete value mismatches only — narrow by design).
+- Don't skip the veto when USE_RULHUB_API=True.
+- Don't fetch the RulHub repo or edit seed rules.
 
 ## Credentials + test infra
 
 - Supabase login: `imran@iec.com` / `ripc0722`
-- Upload URL: https://trdrhub.com/lcopilot/exporter-dashboard?section=upload
+- OpenRouter publishable key (extractable from bundle): `sb_publishable_db40L4wNiQX0jOTCRJi-8g_9p-PWmN3`
 - IDEAL SAMPLE docs: `.playwright-mcp/ideal-sample/*.pdf` (LC + 7 supporting)
-- Render backend: `srv-d41dio8dl3ps73db8gpg` (trdrhub-api)
-- Render RulHub: `srv-d35ovhndiees738g995g` (icc-rule-engine — READ-ONLY from this session)
+- Render service: `srv-d41dio8dl3ps73db8gpg` (trdrhub-api)
+- Stress corpus: `apps/api/tests/stress_corpus/` (gitignored, 27 labeled sets)
+
+## Today's commits (chronological)
+
+Extraction: unchanged.
+
+Payload alignment (morning 2026-04-17):
+- `0a438978` `f66811a7` `1fb94792` `1d284fa0` `fe0bd036` — RulHub dual-prefix, `_name`/`_code` suffixes, derived booleans, canonical envelope
+- `c6e05d1c` — reverted (skip-veto-when-RulHub-on)
+- `5b999b1c` — veto restored + pre-veto engine-error filter
+
+UI alignment (afternoon):
+- `5cb8e79b` `949a9eda` — VerdictTab + Findings tab count consistency
+
+Middle-AI + examiner (evening):
+- `0efab19c` — middle AI unconditional + rule-based first-pass before Opus
+- `de3483be` — AI findings actually reach Opus (dataclass coercion)
+- `e737ee7e` — merged-data lookup for raw_text
+- `11891fa1` — three hardcoded checks (invoice arith, BL clean-on-board, signature presence) — *partially superseded by examiner, invoice arithmetic kept as backstop*
+
+AI Examiner ship:
+- `c33ef01e` — primary ship
+- `ff0d354c` — fix docs_by_type build + pin Sonnet 4.5
+- `dd44ed2d` — correct model id to 4.6
+- `4febcd1c` — raw_text via extraction_artifacts_v1 + richer error logs
+
+## Summary of pipeline today
+
+- 0 findings (start of day) → 70 findings after payload alignment → 2 after filters → 1 stuck at arithmetic (examiner blocked on credits)
+- With credits restored: should surface 5-7 real findings in UI, verdict REJECT, correct bank_verdict summary

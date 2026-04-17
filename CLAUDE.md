@@ -251,14 +251,31 @@ GET  /api/exporter/banks                     # Available banks
 
 ## Current Focus
 
-**Part 2 — Validation pivoted to RulHub-primary on 2026-04-17.** Extraction hardening is complete (Part 1). Part 3 is still frozen.
+**Part 2 — Three-layer pipeline live: AI Examiner + Deterministic (RulHub + arithmetic) + Opus Veto.** Extraction hardening is complete (Part 1). Part 3 still frozen.
 
-**2026-04-17 end-of-day status (architectural pivot shipped):**
-- **Validation source of truth is now api.rulhub.com** (Ripon's separate product — repo at `J:\Enso Intelligence\ICC Rule Engine`, 7,804 rules across UCP/ISBP/URDG/sanctions/country/bank/TBML). trdrhub's role is now *extract → POST /v1/validate/set → render*. The full story is in `memory/project_rulhub_is_the_engine.md`.
-- **Active production commits**: `5bcc50a3` (C1 kill switches — turned off 4 duplicate engines) → `5ff5a861` (RulHub-primary pivot, local engines skipped behind `USE_RULHUB_API=True`) → `0f8fba32` (422 fix: `document_type`→`type`, surface errors) → `5921c84e` (doc-type prefixes aligned: `bl`/`coo`/..., field aliases: `shipment_date`/`issuer`/`total_cartons`/`incoterms`-plural/`transhipment`-single-s).
-- **Reverted on 2026-04-17**: `50fe761a` + `60d259f3` (C2-spine LLM enforcement — the wrong move, produced 83 findings on a clean package because the LLM was asked to enforce every 46A/47A clause). Revert commits: `10745d56`, `64bcc03d`. These are cautionary — **do not re-attempt this pattern**.
-- **Live state**: `USE_RULHUB_API=True` + `RULHUB_API_KEY` set on Render. `RulHub /v1/validate/set` returns 200 OK. Current IDEAL SAMPLE result is **COMPLIANT 77% · 0 findings** — which is misleading. Most RulHub rules return `insufficient_data` (silent pass) because the extracted field names don't exactly match the paths the rules reference. See `memory/reference_rulhub_api_conventions.md` for the contracts.
-- **#1 priority next session: field-name coverage audit.** Grep every condition path in `J:\Enso Intelligence\ICC Rule Engine\Data\crossdoc\*.json` + icc_core + sanctions, extend `_FIELD_ALIASES_FOR_RULHUB` in `validation_execution.py` to cover all of them. Plus add extraction of fields rules expect but we don't emit (`bl.clauses`, `invoice.date`, `coo.consignee`, `packing_list.shipping_marks`, etc.).
+**2026-04-17 end-of-day status — AI Examiner shipped (live, awaiting credit top-up to verify e2e):**
+
+The validation pipeline now follows Ripon's original AI-first → deterministic → veto sequence, restored after a mid-day pivot away from hardcoded-validator band-aids. The AI layer reads the LC as its only rulebook and reasons like a human examiner.
+
+**Live flow** (`run_ai_validation` in `apps/api/app/services/validation/ai_validator.py`):
+1. **`run_ai_examiner(lc_text, docs_by_type)`** — Sonnet 4.6 via OpenRouter. Reads full LC + every supporting doc's raw text (pulled from `documents[i].extraction_artifacts_v1.raw_text`). Produces findings with `clause_cited` (verbatim LC substring) + `found_evidence` (verbatim doc substring or "ABSENT"). Two deterministic post-filters: substring citation verification + self-contradict filter. See `memory/reference_ai_examiner_design.md`.
+2. **`validate_invoice_arithmetic`** — deterministic backstop for Σ(qty × unit_price) vs stated total. LLMs wobble on math; this catches the invoice arithmetic gap even when the examiner is down. Dedup'd if examiner already raised "ARITHMETIC".
+3. **RulHub** runs in parallel (`_use_rulhub=True`) — generic UCP600 rules against the dual-prefix payload.
+4. **Engine-error pre-filter** drops RulHub "Unknown condition type" noise.
+5. **Auto-confirm pre-pass** bypasses LLM on concrete two-sided value mismatches (e.g. USD ≠ EUR).
+6. **Opus veto (L3)** — final arbiter over the combined finding set. Scope framed as "full presentation set" so findings about any supporting doc are in scope.
+
+**Key environment:** `AI_EXAMINER_MODEL` env var on Render controls the examiner's model (default `anthropic/claude-sonnet-4.6`). Pipeline degrades gracefully if the examiner fails — returns empty, arithmetic backstop still runs, RulHub + veto still run.
+
+**Active production commits (examiner pivot)**: `c33ef01e` (initial wire-in) → `ff0d354c` (merged-data + Sonnet pin) → `dd44ed2d` (model id 4.6 not 4.5) → `4febcd1c` (raw_text via extraction_artifacts_v1 + richer error logs). Pre-pivot commits still live: `e737ee7e` merged-data lookup, `de3483be` AI findings reach veto, `0efab19c` middle-AI unconditional, `5b999b1c` veto engine-error filter, `5cb8e79b` VerdictTab alignment, `949a9eda` Findings count alignment, `fe0bd036` canonical envelope.
+
+**Reverted / deprecated**: `c6e05d1c` (skip-veto-when-RulHub-on — wrong, violated the three-stage design). `50fe761a`/`60d259f3` (C2-spine LLM enforcement — produced 83 findings on a clean package, reverted earlier 2026-04-17). Do not re-attempt either pattern.
+
+**The hardcoded-validator rule** (see `memory/feedback_no_hardcoded_validators.md`): do not write Python functions per discrepancy class. The examiner handles these via prompt + verification filters. Only exception kept is `validate_invoice_arithmetic` (deterministic math backstop).
+
+**Prototype at `scripts/examiner_prototype.py`** — standalone script for prompt iteration without redeploying. Reads IDEAL SAMPLE via pdftotext, calls Sonnet directly through OpenRouter, applies the same filters. Use this when tuning the examiner.
+
+**Current blocker**: OpenRouter credits ran out mid-session. Once topped up, IDEAL SAMPLE should surface ~5-7 real findings (invoice arithmetic $61,700, BL missing CLEAN ON-BOARD, invoice unsigned, inspection-cert shipment date mismatch, PL carton-wise breakdown, insurance extraneous under FOB) that the prototype validated.
 
 **Architectural rule now in force — do not rebuild RulHub inside trdrhub.** Before writing any UCP/ISBP/crossdoc/sanctions validator in `apps/api/app/services/validation/`, open `J:\Enso Intelligence\ICC Rule Engine\CLAUDE.md` and check if RulHub already covers it. See `memory/feedback_dont_reinvent_rulhub.md`.
 
