@@ -170,12 +170,11 @@ def _build_ai_validation_prompt(
     document_type: str,
 ) -> str:
     """Build the user prompt for the tiered AI validation call."""
-    # Trim very large payloads — we only need the key fields, not raw text.
-    safe_payload = _trim_document_data_for_prompt(document_data)
+    sections = _render_document_sections_for_prompt(document_data)
     return (
         f"You are reviewing the following extracted document data for an LC "
         f"validation. The primary document being evaluated is: {document_type}.\n\n"
-        f"Document set (JSON):\n```json\n{json.dumps(safe_payload, indent=2, default=str)[:12000]}\n```\n\n"
+        f"{sections}\n\n"
         "Identify compliance issues with these documents. For each issue you "
         "find, return a JSON object with these fields:\n"
         "- title: short headline (one sentence, plain English)\n"
@@ -189,6 +188,10 @@ def _build_ai_validation_prompt(
         "Only flag issues you are confident about. If you are unsure, lower "
         "the confidence rather than skipping the finding. Do not flag stylistic "
         "differences that would not cause a bank to discrepancy the documents.\n\n"
+        "If a section below says \"(not submitted)\" then that document type is "
+        "genuinely missing from the presentation. If a section contains data, the "
+        "document IS present — never respond with phrases like 'no X available to "
+        "verify' or 'verify upon receipt' for a document that appears here.\n\n"
         "Return a JSON object with shape:\n"
         "{\n"
         "  \"findings\": [ ... ],\n"
@@ -199,22 +202,62 @@ def _build_ai_validation_prompt(
     )
 
 
+# Keys the prompt renderer treats as distinct documents. Each gets its own
+# labeled section with its own char budget so one doc (typically the LC)
+# can never truncate the others off the end of the prompt.
+_PROMPT_DOCUMENT_KEYS: Tuple[str, ...] = (
+    "lc",
+    "invoice",
+    "bill_of_lading",
+    "insurance",
+    "certificate_of_origin",
+    "packing_list",
+    "inspection_certificate",
+    "beneficiary_certificate",
+    "draft",
+)
+
+# Top-level duplicates / large internal blobs that were silently eating the
+# prompt budget. Dropping them does NOT lose information: `credit` duplicates
+# `lc`; `insurance_doc` duplicates `insurance`; `extracted_context` re-nests
+# every document we already render as its own section; `requirements_graph_v1`
+# comes along inside the LC context already.
+_PROMPT_DROP_TOP_LEVEL: frozenset = frozenset({
+    "credit",
+    "insurance_doc",
+    "extracted_context",
+    "requirements_graph_v1",
+    "requirementsGraphV1",
+})
+
+# Per-field keys stripped recursively before serialization.
+_PROMPT_DROP_NESTED: frozenset = frozenset({
+    "_field_details",
+    "_status_counts",
+    "_semantic",
+    "raw_text",
+    "extraction_artifacts_v1",
+    "rawText",
+    "extractionArtifactsV1",
+    "fact_graph_v1",
+    "factGraphV1",
+})
+
+# Per-doc budgets (chars of pretty-printed JSON). The LC is bigger because it
+# carries 46A/47A clauses. Supporting docs are a few KB each of extracted
+# fields. 9 docs × 3500 + LC 6000 ≈ 37.5 KB ≈ 9K tokens — well under any
+# frontier-model context.
+_PROMPT_LC_CHAR_BUDGET = 6000
+_PROMPT_DOC_CHAR_BUDGET = 3500
+
+
 def _trim_document_data_for_prompt(document_data: Dict[str, Any]) -> Dict[str, Any]:
     """Strip large/internal fields before sending to the LLM."""
     if not isinstance(document_data, dict):
         return {}
-    drop_keys = {
-        "_field_details",
-        "_status_counts",
-        "_semantic",
-        "raw_text",
-        "extraction_artifacts_v1",
-        "rawText",
-        "extractionArtifactsV1",
-    }
     cleaned: Dict[str, Any] = {}
     for key, value in document_data.items():
-        if key in drop_keys:
+        if key in _PROMPT_DROP_NESTED:
             continue
         if key.startswith("_"):
             continue
@@ -228,6 +271,74 @@ def _trim_document_data_for_prompt(document_data: Dict[str, Any]) -> Dict[str, A
         else:
             cleaned[key] = value
     return cleaned
+
+
+def _render_document_sections_for_prompt(document_data: Dict[str, Any]) -> str:
+    """Render the document set as explicit per-doc sections with per-doc budgets.
+
+    Each document type gets its own labeled ```json``` block. Missing doc types
+    are rendered as "(not submitted)" so the LLM can tell the difference between
+    "absent from the presentation" and "silently truncated off the prompt" — the
+    latter used to happen with a single big-blob ``[:10000]`` slice and produced
+    false-positive "no X available to verify" findings on docs that were in
+    fact fully extracted.
+    """
+    if not isinstance(document_data, dict):
+        document_data = {}
+
+    sections: List[str] = []
+
+    # LC first, with a larger budget (46A/47A clauses can be verbose).
+    lc_payload = document_data.get("lc") if isinstance(document_data.get("lc"), dict) else None
+    lc_trimmed = _trim_document_data_for_prompt(lc_payload) if lc_payload else None
+    sections.append(_format_doc_section(
+        "lc",
+        lc_trimmed,
+        _PROMPT_LC_CHAR_BUDGET,
+    ))
+
+    # Each supporting doc type gets its own section.
+    for key in _PROMPT_DOCUMENT_KEYS:
+        if key == "lc":
+            continue
+        raw_doc = document_data.get(key)
+        doc_trimmed = _trim_document_data_for_prompt(raw_doc) if isinstance(raw_doc, dict) else None
+        sections.append(_format_doc_section(key, doc_trimmed, _PROMPT_DOC_CHAR_BUDGET))
+
+    # Anything else (e.g. lc_number / amount / currency scalars at top level,
+    # jurisdiction, domain) gets a compact "misc" block so rule-targeting
+    # context is preserved.
+    misc: Dict[str, Any] = {}
+    for key, value in document_data.items():
+        if key in _PROMPT_DOCUMENT_KEYS:
+            continue
+        if key in _PROMPT_DROP_TOP_LEVEL:
+            continue
+        if key in _PROMPT_DROP_NESTED or key.startswith("_"):
+            continue
+        if isinstance(value, dict):
+            misc[key] = _trim_document_data_for_prompt(value)
+        elif isinstance(value, list):
+            misc[key] = [
+                _trim_document_data_for_prompt(item) if isinstance(item, dict) else item
+                for item in value[:20]
+            ]
+        else:
+            misc[key] = value
+    if misc:
+        sections.append(_format_doc_section("context", misc, _PROMPT_DOC_CHAR_BUDGET))
+
+    return "\n\n".join(sections)
+
+
+def _format_doc_section(label: str, payload: Optional[Dict[str, Any]], char_budget: int) -> str:
+    pretty_label = label.replace("_", " ").upper()
+    if not payload:
+        return f"### {pretty_label}\n(not submitted)"
+    body = json.dumps(payload, indent=2, default=str)
+    if len(body) > char_budget:
+        body = body[:char_budget] + "\n… [truncated]"
+    return f"### {pretty_label}\n```json\n{body}\n```"
 
 
 async def _run_tiered_ai_validation_pass(
@@ -362,7 +473,7 @@ def _build_opus_veto_prompt(
     ai_findings: List[Dict[str, Any]],
     deterministic_findings: List[Dict[str, Any]],
 ) -> str:
-    safe_payload = _trim_document_data_for_prompt(document_data)
+    doc_sections = _render_document_sections_for_prompt(document_data)
     ai_summary = [
         {
             "title": f.get("title"),
@@ -387,7 +498,7 @@ def _build_opus_veto_prompt(
     ]
     return (
         f"Document type under review: {document_type}\n\n"
-        f"Extracted document set (JSON):\n```json\n{json.dumps(safe_payload, indent=2, default=str)[:10000]}\n```\n\n"
+        f"{doc_sections}\n\n"
         f"AI examiner findings ({len(ai_summary)}):\n```json\n{json.dumps(ai_summary, indent=2)[:6000]}\n```\n\n"
         f"Deterministic rule findings ({len(det_summary)}):\n```json\n{json.dumps(det_summary, indent=2)[:6000]}\n```\n\n"
         "Review these and return JSON with this exact shape:\n"
@@ -406,7 +517,10 @@ def _build_opus_veto_prompt(
         "- \"drop\" means delete it (false positive). Always include a reason.\n"
         "- \"modify\" means keep but adjust title/severity. Include updated_title and/or updated_severity.\n"
         "- Anomalies are NEW findings you raise that the previous layers missed.\n"
-        "- Be conservative: only drop a finding if you are confident it's a false positive.\n\n"
+        "- Be conservative: only drop a finding if you are confident it's a false positive.\n"
+        "- If a document section above contains data, that document IS present. Do not\n"
+        "  raise a new anomaly whose 'found' text claims the document is missing or\n"
+        "  unavailable — that was a known false-positive pattern and will be suppressed.\n\n"
         "Return JSON only, no prose."
     )
 

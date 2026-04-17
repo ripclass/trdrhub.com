@@ -149,7 +149,12 @@ _FALSE_POSITIVE_MISSING_PATTERNS = re.compile(
     r"(?:not\s+(?:available|provided|submitted|found|included|present|uploaded))"
     r"|(?:missing\s+(?:required\s+)?document)"
     r"|(?:document\s+(?:not|missing|absent))"
-    r"|(?:no\s+\w+\s+(?:was|has been)\s+(?:provided|submitted|uploaded))",
+    r"|(?:no\s+\w+\s+(?:was|has been)\s+(?:provided|submitted|uploaded))"
+    # "No commercial invoice available to verify", "no packing list provided for review"
+    # — observed Opus-veto anomaly phrasings that slipped past the earlier patterns.
+    r"|(?:no\s+(?:\w+\s+){1,4}(?:available|provided|submitted|present|uploaded|found|attached)\s+(?:to\s+(?:verify|review|check|confirm)|for\s+(?:verification|review)))"
+    r"|(?:unable\s+to\s+(?:verify|review|check|confirm).*(?:upon\s+receipt|not\s+(?:yet\s+)?(?:provided|submitted|available)))"
+    r"|(?:verify\s+upon\s+receipt)",
     re.IGNORECASE,
 )
 
