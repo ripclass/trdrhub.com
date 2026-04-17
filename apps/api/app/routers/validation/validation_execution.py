@@ -2154,17 +2154,37 @@ async def execute_validation_pipeline(
                 return False
             return exp_val.lower() != found_val.lower()
 
+        def _coerce_finding_to_dict(f: Any) -> Optional[Dict[str, Any]]:
+            """AI findings are AIValidationIssue dataclasses; deterministic
+            findings are plain dicts. Normalise to dict so the veto (and
+            our partitioner) can inspect either shape."""
+            if isinstance(f, dict):
+                return f
+            if hasattr(f, "to_dict") and callable(f.to_dict):
+                try:
+                    d = f.to_dict()
+                    if isinstance(d, dict):
+                        return d
+                except Exception:
+                    return None
+            return None
+
         try:
             from app.config import settings as _veto_settings
             _veto_enabled = bool(getattr(_veto_settings, "VALIDATION_OPUS_VETO_ENABLED", False))
 
-            _ai_list = [i for i in (ai_issues or []) if isinstance(i, dict)]
-            _det_list = [i for i in (db_rule_issues or []) if isinstance(i, dict)]
+            _ai_dict_list: List[Dict[str, Any]] = []
+            for _raw in (ai_issues or []):
+                _coerced = _coerce_finding_to_dict(_raw)
+                if _coerced is not None:
+                    _ai_dict_list.append(_coerced)
+            _det_dict_list = [i for i in (db_rule_issues or []) if isinstance(i, dict)]
+
             _auto_confirm = [
-                f for f in (_ai_list + _det_list) if _has_concrete_value_mismatch(f)
+                f for f in (_ai_dict_list + _det_dict_list) if _has_concrete_value_mismatch(f)
             ]
-            _ai_for_veto = [f for f in _ai_list if not _has_concrete_value_mismatch(f)]
-            _det_for_veto = [f for f in _det_list if not _has_concrete_value_mismatch(f)]
+            _ai_for_veto = [f for f in _ai_dict_list if not _has_concrete_value_mismatch(f)]
+            _det_for_veto = [f for f in _det_dict_list if not _has_concrete_value_mismatch(f)]
 
             if _auto_confirm:
                 logger.info(
@@ -2176,6 +2196,13 @@ async def execute_validation_pipeline(
                 from app.services.validation.tiered_validation import _run_opus_veto_pass
                 import asyncio as _asyncio
                 _veto_timeout = float(getattr(_veto_settings, "VALIDATION_VETO_TIMEOUT_SECONDS", 90))
+                # Tag each entry with its origin layer so we can split the
+                # flat return list back into ai/det buckets. _run_opus_veto_pass
+                # returns ``[*ai_survivors, *det_survivors]`` concatenated.
+                for _f in _ai_for_veto:
+                    _f["_origin_layer"] = "ai"
+                for _f in _det_for_veto:
+                    _f["_origin_layer"] = "deterministic"
                 try:
                     vetted_findings = await _asyncio.wait_for(
                         _run_opus_veto_pass(
@@ -2193,14 +2220,28 @@ async def execute_validation_pipeline(
                     vetted_findings = _filter_ai_false_positive_missing_docs(
                         vetted_findings, documents_for_ai, extracted_context,
                     )
-                    # Merge: auto-confirmed (bypassed LLM) + veto survivors.
-                    db_rule_issues = list(_auto_confirm) + list(vetted_findings)
+                    # Split survivors back into ai / det via the origin tag.
+                    ai_survivors = [
+                        f for f in vetted_findings
+                        if isinstance(f, dict) and f.get("_origin_layer") == "ai"
+                    ]
+                    det_survivors = [
+                        f for f in vetted_findings
+                        if isinstance(f, dict) and f.get("_origin_layer") != "ai"
+                    ]
+                    # ai_issues replaced with survivors (overrides the raw
+                    # dataclass list at line 2326 that used to bypass veto).
+                    # Auto-confirmed items are treated as det by convention.
+                    ai_issues = ai_survivors
+                    db_rule_issues = list(_auto_confirm) + list(det_survivors)
                     logger.info(
-                        "Opus veto completed: %d ambiguous → %d survivors (+ %d auto-confirmed = %d total)",
+                        "Opus veto completed: %d ambiguous → %d survivors "
+                        "(ai=%d, det=%d) + %d auto-confirmed",
                         len(_ai_for_veto) + len(_det_for_veto),
                         len(vetted_findings),
+                        len(ai_survivors),
+                        len(det_survivors),
                         len(_auto_confirm),
-                        len(db_rule_issues),
                     )
                 except _asyncio.TimeoutError:
                     logger.warning("Opus veto timed out after %ss — keeping unvetted findings", _veto_timeout)
@@ -2208,6 +2249,7 @@ async def execute_validation_pipeline(
                     logger.warning("Opus veto failed — keeping unvetted findings: %s", _veto_exc)
             elif _veto_enabled:
                 # Veto enabled but nothing ambiguous to review.
+                ai_issues = []
                 db_rule_issues = list(_auto_confirm)
                 if _auto_confirm:
                     logger.info(
