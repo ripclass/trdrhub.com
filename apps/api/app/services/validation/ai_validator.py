@@ -1044,6 +1044,367 @@ def validate_bl_clean_on_board(
 
 
 # =============================================================================
+# AI EXAMINER — the primary per-LC reasoning pass
+# =============================================================================
+
+_EXAMINER_SYSTEM_PROMPT = """You are a senior trade-finance examiner reviewing a documentary credit presentation.
+Your job is to identify discrepancies that would cause a bank to reject or query the submission.
+
+THE RULEBOOK
+============
+The Letter of Credit text is your ONLY rulebook. Every compliance-bearing clause applies —
+amounts, dates, ports, parties, shipment terms, tolerances, goods descriptions, documents
+required, additional conditions, presentation period, and any other field present.
+
+You CANNOT cite UCP600 articles from memory. You CANNOT reference rules you recall from training.
+Every finding must be grounded in this specific LC's verbatim text.
+
+THINK LIKE AN EXAMINER, NOT A CHECKLIST
+========================================
+
+1. SUBSTANCE OVER FORM.
+   Bank examiners reject on substantive discrepancies (wrong amount, missing party, missing
+   notation the LC demands, wrong port, unsigned signature block). They do NOT reject on
+   physical-presentation artifacts that cannot be verified from extracted text:
+     - "in N copies" — copy counts are a physical-handling concern, not evidenced in extracted text
+     - Paper original vs electronic original — not evidenced in extracted text
+     - Whether non-negotiable copies were couriered to the applicant within N days — a future
+       process step, not a discrepancy in the present submission
+   Skip clauses whose satisfaction cannot be judged from the document text you have.
+
+2. READ FOR INTENT, NOT KEYWORD-MATCH.
+   "USD 7.20" on a line showing "30,000 pcs" unambiguously means per piece — don't flag it as
+   "unit price not clear". Well-known port aliases (e.g. Chittagong ↔ Chattogram, Bombay ↔
+   Mumbai) refer to the same place — flag only if the examiner would treat it as a real
+   mismatch. Use common sense. A human examiner would let small cosmetic variance pass.
+
+3. DO THE ARITHMETIC.
+   When the invoice has line items with quantity and unit price, compute Σ(quantity × unit
+   price) and compare to the stated total. Any gap beyond a rounding floor is a major
+   discrepancy. Do the same for weights across BL / packing list, totals across multiple
+   invoices, tolerance ranges on quantities. Compute; don't just assert.
+
+4. CHECK DATES AND CHRONOLOGY.
+   Every document date should fit the window the LC defines (issue date through expiry, with
+   latest-shipment-date as a key cutoff). Dates referenced across documents (e.g. BL shipment
+   date vs inspection cert shipment date) should be consistent. Flag actual date conflicts,
+   not formatting differences.
+
+5. BE INTERNALLY CONSISTENT. READ YOUR OWN REASONING BEFORE EMITTING.
+   A finding's reasoning must CONFIRM the discrepancy, not walk it back.
+   BEFORE adding any finding to the output, ask yourself: "Does my reasoning say the document
+   is compliant, fine, consistent, or within limits?" If yes — DELETE the finding entirely.
+   Do not emit it with a contradictory reasoning.
+
+   FORBIDDEN PATTERNS in your reasoning field (drop the finding if you find yourself writing
+   any of these):
+     - "so this is compliant"
+     - "is compliant"
+     - "appears compliant"
+     - "this is fine"
+     - "no discrepancy"
+     - "within the allowed"
+     - "is consistent"
+     - "is within"
+
+   A finding is only valid if its reasoning clearly ESTABLISHES the problem. If after thinking
+   it through the document is actually fine, that is a successful examination — silence, not
+   a finding. You are not rewarded for finding count; you are rewarded for accuracy.
+
+6. EVIDENCE IS MANDATORY.
+   Every finding must cite:
+     - `clause_cited`: verbatim substring from the LC establishing the requirement (longer is
+       better — prefer 10+ tokens of context).
+     - `found_evidence`: verbatim substring from the specific supporting document showing the
+       problem, OR the exact string "ABSENT" when the expected item is not present at all.
+   No citation, no finding. If you cannot quote the LC clause verbatim, silence is correct.
+
+7. WHEN IN DOUBT, SKIP.
+   A false positive costs more than a silent miss — it trains the operator to distrust the
+   system. Only raise a finding when a reasonable examiner would raise it. If you're unsure
+   whether a clause applies, or whether the document text supports the finding, do not emit it.
+
+SEVERITY
+========
+- `critical`: blocking — bank will reject on sight (wrong amount, missing required document
+  entirely, wrong parties, dates outside LC window, BL missing essential clean-on-board
+  notation, unsigned document that the LC requires signed).
+- `major`: likely query — examiner will raise a discrepancy note (arithmetic gap, missing
+  specific wording the LC demands, cross-doc data conflict, missing carton-wise detail when
+  LC explicitly requires it).
+- `minor`: advisory — document acceptable but noteworthy (known port-name aliases, extraneous
+  documents not required by this LC, minor formatting).
+
+OUTPUT SCHEMA
+=============
+{
+  "findings": [
+    {
+      "rule_id": "EXAMINER-<short-slug>",
+      "severity": "critical" | "major" | "minor",
+      "document": "<doc_type from the supporting-docs set>",
+      "title": "<one-line summary of the discrepancy>",
+      "clause_cited": "<verbatim LC substring establishing the requirement>",
+      "expected": "<plain-language description of what the LC requires>",
+      "found_evidence": "<verbatim doc substring showing the problem, or 'ABSENT'>",
+      "reasoning": "<one sentence explaining why this is a discrepancy; must not contradict the title>"
+    }
+  ],
+  "overall_assessment": "<one-sentence summary>"
+}
+
+Return JSON only, no prose.
+"""
+
+
+_EXAMINER_SELF_CONTRADICTING_PHRASES = (
+    "so this is compliant",
+    "is compliant",
+    "appears compliant",
+    "this is fine",
+    "no discrepancy",
+    "within the allowed",
+    " is consistent",
+    "is within the",
+    "is compliant with",
+    "no issue",
+    "this is acceptable",
+    "no violation",
+)
+
+
+def _examiner_normalize_whitespace(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip()).lower()
+
+
+def _is_examiner_finding_self_contradicting(finding: Dict[str, Any]) -> bool:
+    reasoning = str(finding.get("reasoning") or "").lower()
+    if not reasoning:
+        return False
+    return any(p in reasoning for p in _EXAMINER_SELF_CONTRADICTING_PHRASES)
+
+
+def _safe_parse_examiner_json(text: str) -> Optional[Dict[str, Any]]:
+    if not text:
+        return None
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?", "", text).strip()
+        text = re.sub(r"```$", "", text).strip()
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        pass
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _verify_examiner_finding(
+    finding: Dict[str, Any],
+    lc_norm: str,
+    docs_norm: Dict[str, str],
+) -> Optional[str]:
+    """Return a drop-reason string if the finding fails verification, None if valid."""
+    if not isinstance(finding, dict):
+        return "not a dict"
+    clause = finding.get("clause_cited") or ""
+    if not clause:
+        return "no clause_cited"
+    clause_norm = _examiner_normalize_whitespace(clause)
+    if clause_norm not in lc_norm:
+        return f"clause_cited not in LC: {clause[:80]!r}"
+    found_ev = str(finding.get("found_evidence") or "").strip()
+    doc_type = finding.get("document") or ""
+    if found_ev.upper() != "ABSENT":
+        ev_norm = _examiner_normalize_whitespace(found_ev)
+        doc_norm = docs_norm.get(doc_type)
+        if doc_norm is None:
+            return f"unknown document: {doc_type!r}"
+        if not ev_norm or ev_norm not in doc_norm:
+            return f"found_evidence not in {doc_type}: {found_ev[:80]!r}"
+    if _is_examiner_finding_self_contradicting(finding):
+        return f"self-contradicting reasoning: {(finding.get('reasoning') or '')[:100]!r}"
+    return None
+
+
+def _examiner_finding_to_issue(f: Dict[str, Any]) -> AIValidationIssue:
+    sev_raw = str(f.get("severity") or "major").lower()
+    sev = {
+        "critical": IssueSeverity.CRITICAL,
+        "major": IssueSeverity.MAJOR,
+        "minor": IssueSeverity.MINOR,
+    }.get(sev_raw, IssueSeverity.MAJOR)
+    doc_type = f.get("document") or ""
+    label = _L3_DOCUMENT_LABELS.get(
+        _normalize_document_type(doc_type),
+        doc_type.replace("_", " ").title() or "Document",
+    )
+    return AIValidationIssue(
+        rule_id=str(f.get("rule_id") or "EXAMINER-UNKNOWN"),
+        title=str(f.get("title") or "Discrepancy"),
+        severity=sev,
+        message=str(f.get("reasoning") or f.get("title") or ""),
+        expected=str(f.get("expected") or f.get("clause_cited") or ""),
+        found=str(f.get("found_evidence") or ""),
+        suggestion=str(f.get("reasoning") or ""),
+        documents=[label] if label else [],
+        ucp_reference=None,
+        isbp_reference=None,
+    )
+
+
+async def run_ai_examiner(
+    lc_text: str,
+    documents: List[Dict[str, Any]],
+    timeout_seconds: float = 60.0,
+) -> Tuple[List[AIValidationIssue], Dict[str, Any]]:
+    """Primary per-LC examiner. Reads the full LC + all supporting doc
+    texts and emits findings anchored to verbatim LC clause citations.
+
+    Post-filters:
+      1. Substring verification — clause_cited must be a real LC substring;
+         found_evidence must be a real doc substring (or "ABSENT").
+      2. Self-contradiction filter — reasoning must not walk back the title.
+
+    Returns (issues, metadata). Returns ([], {...}) on any failure so the
+    caller can continue without the examiner.
+    """
+    meta: Dict[str, Any] = {
+        "examiner_called": True,
+        "examiner_model": None,
+        "examiner_raw_findings": 0,
+        "examiner_dropped_citations": 0,
+        "examiner_dropped_contradictions": 0,
+        "examiner_survivors": 0,
+        "examiner_error": None,
+    }
+    if not lc_text or not documents:
+        meta["examiner_called"] = False
+        meta["examiner_error"] = "missing lc_text or documents"
+        return [], meta
+
+    # Build doc-type → raw_text map from the documents list. This is the
+    # only source that reliably carries raw text per the pipeline's shape.
+    docs_by_type: Dict[str, str] = {}
+    for d in documents:
+        if not isinstance(d, dict):
+            continue
+        dt = _normalize_document_type(d.get("document_type") or d.get("type"))
+        if not dt or dt in docs_by_type:
+            continue
+        raw = d.get("raw_text")
+        if not raw:
+            ed = d.get("extracted_data") or d.get("extracted_fields")
+            if isinstance(ed, dict):
+                raw = ed.get("raw_text")
+        if raw:
+            docs_by_type[dt] = str(raw)
+
+    if not docs_by_type:
+        meta["examiner_called"] = False
+        meta["examiner_error"] = "no per-doc raw_text available"
+        return [], meta
+
+    # Build the user prompt.
+    prompt_parts = [
+        "## LETTER OF CREDIT (full text — your rulebook)",
+        "```",
+        lc_text.strip(),
+        "```",
+        "",
+        "## SUPPORTING DOCUMENTS",
+    ]
+    for dt, text in docs_by_type.items():
+        prompt_parts.append(f"\n### {dt}")
+        prompt_parts.append("```")
+        prompt_parts.append(text.strip())
+        prompt_parts.append("```")
+    prompt_parts.append(
+        "\n\nExamine every supporting document against every compliance-bearing LC field. "
+        "List discrepancies."
+    )
+    user_prompt = "\n".join(prompt_parts)
+
+    # Invoke L2 (Sonnet) via the shared LLM factory so provider / model
+    # routing stays centralised.
+    try:
+        from app.services.llm_provider import LLMProviderFactory
+        import asyncio as _asyncio
+
+        result_tuple = await _asyncio.wait_for(
+            LLMProviderFactory.generate_with_fallback(
+                prompt=user_prompt,
+                system_prompt=_EXAMINER_SYSTEM_PROMPT,
+                router_layer="L2",
+                temperature=0.1,
+                max_tokens=4000,
+            ),
+            timeout=timeout_seconds,
+        )
+        response_text = result_tuple[0] if isinstance(result_tuple, tuple) else str(result_tuple)
+        if isinstance(result_tuple, tuple) and len(result_tuple) >= 4:
+            meta["examiner_model"] = result_tuple[3]
+    except _asyncio.TimeoutError:
+        logger.warning("AI examiner timed out after %ss", timeout_seconds)
+        meta["examiner_error"] = f"timeout {timeout_seconds}s"
+        return [], meta
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("AI examiner failed: %s", exc)
+        meta["examiner_error"] = str(exc)
+        return [], meta
+
+    parsed = _safe_parse_examiner_json(response_text)
+    if not isinstance(parsed, dict):
+        logger.warning("AI examiner: could not parse JSON response")
+        meta["examiner_error"] = "invalid json"
+        return [], meta
+
+    raw_findings = parsed.get("findings") or []
+    if not isinstance(raw_findings, list):
+        raw_findings = []
+    meta["examiner_raw_findings"] = len(raw_findings)
+
+    # Apply verification filters.
+    lc_norm = _examiner_normalize_whitespace(lc_text)
+    docs_norm = {dt: _examiner_normalize_whitespace(t) for dt, t in docs_by_type.items()}
+
+    survivors: List[AIValidationIssue] = []
+    for f in raw_findings:
+        drop_reason = _verify_examiner_finding(f, lc_norm, docs_norm)
+        if drop_reason:
+            if "self-contradicting" in drop_reason:
+                meta["examiner_dropped_contradictions"] += 1
+            else:
+                meta["examiner_dropped_citations"] += 1
+            logger.info(
+                "AI examiner DROPPED %s: %s",
+                f.get("rule_id", "?"),
+                drop_reason,
+            )
+            continue
+        survivors.append(_examiner_finding_to_issue(f))
+
+    meta["examiner_survivors"] = len(survivors)
+    overall = parsed.get("overall_assessment")
+    if overall:
+        meta["examiner_overall_assessment"] = str(overall)[:500]
+        logger.info("AI examiner overall: %s", str(overall)[:300])
+    logger.info(
+        "AI examiner: %d raw → %d survivors (dropped %d citation + %d contradiction)",
+        meta["examiner_raw_findings"],
+        meta["examiner_survivors"],
+        meta["examiner_dropped_citations"],
+        meta["examiner_dropped_contradictions"],
+    )
+    return survivors, meta
+
+
+# =============================================================================
 # MAIN AI VALIDATION ORCHESTRATOR
 # =============================================================================
 
@@ -1115,38 +1476,25 @@ async def run_ai_validation(
         metadata["missing_critical_docs"] = 0
     
     # =================================================================
-    # 3. VALIDATE B/L FIELDS
+    # 3. AI EXAMINER — PRIMARY per-LC reasoning pass
+    # Reads the full LC + all supporting docs, emits clause-cited
+    # findings. Replaces the narrow hardcoded B/L-field and
+    # packing-list checks that couldn't generalise across LC templates.
     # =================================================================
-    if bl_must_show:
-        logger.info(f"Step 3: Validating B/L has required fields: {bl_must_show}")
-        metadata["checks_performed"].append("bl_field_validation")
-        
-        # Get B/L extracted data
-        bl_data = extracted_context.get("bill_of_lading") or {}
-        
-        bl_issues = validate_bl_fields(bl_must_show, bl_data)
-        all_issues.extend(bl_issues)
-        
-        metadata["bl_missing_fields"] = len(bl_issues)
-    else:
-        logger.info("Step 3: No specific B/L field requirements detected")
-        metadata["bl_missing_fields"] = 0
-    
-    # =================================================================
-    # 4. VALIDATE PACKING LIST (Size breakdown)
-    # =================================================================
-    packing_list_data = extracted_context.get("packing_list") or {}
-    if packing_list_data:
-        logger.info("Step 4: Validating packing list requirements...")
-        metadata["checks_performed"].append("packing_list_validation")
-
-        pl_issues = validate_packing_list(lc_text, packing_list_data)
-        all_issues.extend(pl_issues)
-
-        metadata["packing_list_issues"] = len(pl_issues)
-    else:
-        logger.info("Step 4: No packing list data to validate")
-        metadata["packing_list_issues"] = 0
+    logger.info("Step 3: Running AI examiner...")
+    metadata["checks_performed"].append("ai_examiner")
+    examiner_issues, examiner_meta = await run_ai_examiner(
+        lc_text=lc_text,
+        documents=documents or [],
+    )
+    all_issues.extend(examiner_issues)
+    metadata.update(examiner_meta)
+    logger.info(
+        "Step 3: AI examiner produced %d findings (dropped %d via verification)",
+        len(examiner_issues),
+        examiner_meta.get("examiner_dropped_citations", 0)
+        + examiner_meta.get("examiner_dropped_contradictions", 0),
+    )
 
     # Build a doc-type → data lookup. Prefer the raw ``documents`` list
     # (which carries raw_text per uploaded file) and fall back to the
@@ -1190,64 +1538,25 @@ async def run_ai_validation(
         return merged
 
     # =================================================================
-    # 4a. INVOICE ARITHMETIC (Σ line items vs stated total)
-    # UCP600 Art 18(c). RulHub's generic rules can't easily check
-    # this — line item data is structural and per-invoice.
+    # 4. DETERMINISTIC ARITHMETIC BACKSTOP
+    # Kept only for invoice arithmetic — LLMs can miscompute numbers.
+    # Other narrow checks (clean-on-board, signatures, PL sizes, BL
+    # fields) are now handled by the AI examiner in step 3.
+    # Dedup: if the examiner already raised an ARITHMETIC finding, skip.
     # =================================================================
     invoice_merged = _merged_doc_data("invoice")
-    if invoice_merged:
-        logger.info(
-            "Step 4a: Validating invoice arithmetic... (raw_text=%d chars, "
-            "line_items=%s, total=%s)",
-            len(str(invoice_merged.get("raw_text") or "")),
-            "yes" if invoice_merged.get("line_items") else "no",
-            invoice_merged.get("total_amount")
-            or invoice_merged.get("amount")
-            or invoice_merged.get("invoice_amount"),
-        )
-        metadata["checks_performed"].append("invoice_arithmetic")
+    examiner_has_arithmetic = any(
+        isinstance(i, AIValidationIssue) and "ARITHMETIC" in (i.rule_id or "").upper()
+        for i in examiner_issues
+    )
+    if invoice_merged and not examiner_has_arithmetic:
+        logger.info("Step 4: Deterministic invoice arithmetic backstop...")
+        metadata["checks_performed"].append("invoice_arithmetic_backstop")
         inv_arith_issues = validate_invoice_arithmetic(invoice_merged)
         all_issues.extend(inv_arith_issues)
-        metadata["invoice_arithmetic_issues"] = len(inv_arith_issues)
-
-    # =================================================================
-    # 4b. CLEAN ON-BOARD NOTATION ON BL (UCP600 Art 20)
-    # =================================================================
-    bl_merged = _merged_doc_data("bill_of_lading")
-    if bl_merged:
-        logger.info(
-            "Step 4b: Validating BL clean on-board notation... (raw_text=%d chars)",
-            len(str(bl_merged.get("raw_text") or "")),
-        )
-        metadata["checks_performed"].append("bl_clean_on_board")
-        clean_issues = validate_bl_clean_on_board(lc_text, bl_merged)
-        all_issues.extend(clean_issues)
-        metadata["bl_clean_on_board_issues"] = len(clean_issues)
-
-    # =================================================================
-    # 4c. SIGNATURE / STAMP PRESENCE — docs with placeholder underscores
-    # can't be presented. Inspection + beneficiary certs most common.
-    # =================================================================
-    logger.info("Step 4c: Validating signature/stamp presence...")
-    metadata["checks_performed"].append("signature_presence")
-    sig_count = 0
-    for _dt_key in (
-        "inspection_certificate",
-        "beneficiary_certificate",
-        "invoice",
-        "certificate_of_origin",
-    ):
-        _dt_merged = _merged_doc_data(_dt_key)
-        if not _dt_merged:
-            continue
-        raw_len = len(str(_dt_merged.get("raw_text") or ""))
-        logger.info(
-            "Step 4c: %s signature check (raw_text=%d chars)", _dt_key, raw_len,
-        )
-        _sig_issues = validate_signature_presence(_dt_key, _dt_merged)
-        all_issues.extend(_sig_issues)
-        sig_count += len(_sig_issues)
-    metadata["signature_presence_issues"] = sig_count
+        metadata["invoice_arithmetic_backstop_issues"] = len(inv_arith_issues)
+    elif examiner_has_arithmetic:
+        logger.info("Step 4: Arithmetic backstop skipped (examiner already found it)")
     
     # =================================================================
     # 5. ADVANCED ANOMALY REVIEW (L3) — gated OFF by default in C1 of the
