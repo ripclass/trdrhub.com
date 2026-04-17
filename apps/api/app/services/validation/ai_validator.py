@@ -779,6 +779,270 @@ def validate_packing_list(
     return issues
 
 
+def _coerce_number(raw: Any) -> Optional[float]:
+    """Parse a number out of a string that may have currency symbols,
+    commas, ``USD`` prefixes etc. Returns None if not numeric."""
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    s = str(raw).strip()
+    if not s:
+        return None
+    s = re.sub(r"[A-Za-z$€£¥,]", "", s).strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def validate_invoice_arithmetic(
+    invoice_data: Dict[str, Any],
+) -> List[AIValidationIssue]:
+    """Check that invoice line items sum to the stated total.
+
+    UCP600 Art 18(c): the invoice must be internally consistent. A gap
+    between ``Σ qty × unit_price`` and ``total`` is a documentary
+    discrepancy the bank will reject on.
+    """
+    issues: List[AIValidationIssue] = []
+    if not isinstance(invoice_data, dict) or not invoice_data:
+        return issues
+
+    total = _coerce_number(
+        invoice_data.get("total_amount")
+        or invoice_data.get("amount")
+        or invoice_data.get("invoice_amount")
+        or invoice_data.get("grand_total")
+    )
+    if total is None or total <= 0:
+        return issues  # no stated total to reconcile against
+
+    # Preferred: structured line items.
+    line_items = (
+        invoice_data.get("line_items")
+        or invoice_data.get("items")
+        or invoice_data.get("goods_items")
+    )
+    summed: Optional[float] = None
+    if isinstance(line_items, list) and line_items:
+        running = 0.0
+        any_counted = False
+        for li in line_items:
+            if not isinstance(li, dict):
+                continue
+            qty = _coerce_number(
+                li.get("quantity") or li.get("qty") or li.get("units")
+            )
+            unit = _coerce_number(
+                li.get("unit_price") or li.get("price") or li.get("rate")
+            )
+            line_total = _coerce_number(
+                li.get("line_total") or li.get("amount") or li.get("total")
+            )
+            if line_total is not None:
+                running += line_total
+                any_counted = True
+            elif qty is not None and unit is not None:
+                running += qty * unit
+                any_counted = True
+        if any_counted:
+            summed = running
+
+    # Fallback: parse "N pcs × USD P" / "N × P" lines from raw text.
+    if summed is None:
+        raw = str(invoice_data.get("raw_text") or "")
+        if raw:
+            running = 0.0
+            any_counted = False
+            # Pattern: qty (optional "pcs" or "units") then a price
+            # ``30,000 pcs - USD 7.20`` or ``30000 x 7.20``.
+            for m in re.finditer(
+                r"(\d[\d,]*)\s*(?:pcs|units?|x|×)?\s*[-–—]?\s*(?:USD|EUR|GBP|USD\s)?\s*([\d,]+\.\d{1,2})",
+                raw,
+                flags=re.IGNORECASE,
+            ):
+                qty = _coerce_number(m.group(1))
+                unit = _coerce_number(m.group(2))
+                if qty is None or unit is None:
+                    continue
+                # Skip matches where "qty" is actually a year or an LC
+                # reference that isn't a real line-item quantity.
+                if qty < 10:
+                    continue
+                running += qty * unit
+                any_counted = True
+            if any_counted:
+                summed = running
+
+    if summed is None or summed <= 0:
+        return issues
+
+    # UCP600 Art 30(b) allows 5% quantity tolerance by default — but that
+    # applies to quantity, not stated value. For arithmetic check we
+    # expect near-exact equality. Use a $1 absolute floor for rounding.
+    gap = abs(summed - total)
+    if gap < 1.0:
+        return issues
+
+    issues.append(
+        AIValidationIssue(
+            rule_id="AI-INV-ARITHMETIC",
+            title="Invoice line items do not sum to stated total",
+            severity=IssueSeverity.MAJOR,
+            message=(
+                f"Invoice line items sum to {summed:,.2f}, but the stated "
+                f"total is {total:,.2f}. Gap of {gap:,.2f}."
+            ),
+            expected=f"line_items_sum = {total:,.2f}",
+            found=f"line_items_sum = {summed:,.2f}",
+            suggestion=(
+                "Reconcile invoice arithmetic before presentation. Verify "
+                "each line's quantity × unit price and compare against the "
+                "stated total. The bank will reject on an unexplained gap."
+            ),
+            documents=["Commercial Invoice"],
+            ucp_reference="UCP600 Article 18(c)",
+        )
+    )
+    return issues
+
+
+def validate_signature_presence(
+    doc_type: str,
+    doc_data: Dict[str, Any],
+) -> List[AIValidationIssue]:
+    """Flag documents that require signature/stamp but have only
+    placeholder underscores. Operator presentation will be rejected.
+
+    Applied to documents that conventionally require authentication:
+    inspection certificate, beneficiary certificate, commercial invoice,
+    certificate of origin.
+    """
+    issues: List[AIValidationIssue] = []
+    if not isinstance(doc_data, dict):
+        return issues
+    raw = str(doc_data.get("raw_text") or "")
+    if not raw:
+        return issues
+
+    # Case 1: "Signature: __________" pattern — the doc DOES have a
+    # signature line, but it's unfilled.
+    placeholder_labels = [
+        "signature",
+        "authorized signature",
+        "inspector signature",
+        "seal",
+        "company seal",
+        "inspection agency stamp",
+        "stamp",
+    ]
+    unfilled_slots: List[str] = []
+    for label in placeholder_labels:
+        # "Label: ______" or "Label - _____" (5+ underscores).
+        pattern = rf"{re.escape(label)}\s*[:\-]\s*_{{5,}}"
+        if re.search(pattern, raw, flags=re.IGNORECASE):
+            unfilled_slots.append(label)
+
+    if not unfilled_slots:
+        return issues
+
+    # Deduplicate logically-equivalent labels for display.
+    dedup: List[str] = []
+    seen: Set[str] = set()
+    for s in unfilled_slots:
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(s)
+
+    label_display = _L3_DOCUMENT_LABELS.get(
+        _normalize_document_type(doc_type), doc_type.replace("_", " ").title()
+    )
+    joined = ", ".join(dedup)
+
+    issues.append(
+        AIValidationIssue(
+            rule_id=f"AI-{_normalize_document_type(doc_type).upper()}-UNSIGNED",
+            title=f"{label_display} is unsigned / unstamped",
+            severity=IssueSeverity.MAJOR,
+            message=(
+                f"The {label_display.lower()} shows placeholder underscores "
+                f"for: {joined}. An unsigned/unstamped document cannot be "
+                "presented."
+            ),
+            expected=f"Authenticated {label_display.lower()} (signed + stamped)",
+            found=f"Placeholder underscores on: {joined}",
+            suggestion=(
+                f"Obtain a properly signed and stamped {label_display.lower()} "
+                "from the issuing party before presentation."
+            ),
+            documents=[label_display],
+        )
+    )
+    return issues
+
+
+def validate_bl_clean_on_board(
+    lc_text: str,
+    bl_data: Dict[str, Any],
+) -> List[AIValidationIssue]:
+    """When the LC requires a CLEAN ON-BOARD BL, verify the BL raw
+    text carries both 'CLEAN' and 'ON BOARD' wording (UCP600 Art 20).
+
+    An on-board date alone does not satisfy the clause — the literal
+    wording is what the bank examiner looks for.
+    """
+    issues: List[AIValidationIssue] = []
+    if not lc_text or not isinstance(bl_data, dict) or not bl_data:
+        return issues
+
+    lc_upper = lc_text.upper()
+    if "CLEAN ON-BOARD" not in lc_upper and "CLEAN ON BOARD" not in lc_upper:
+        return issues
+
+    raw = str(bl_data.get("raw_text") or "").upper()
+    if not raw:
+        return issues
+
+    has_clean = "CLEAN" in raw
+    has_onboard = "ON BOARD" in raw or "ON-BOARD" in raw or "SHIPPED ON BOARD" in raw
+    if has_clean and has_onboard:
+        return issues
+
+    missing_parts = []
+    if not has_clean:
+        missing_parts.append('"CLEAN"')
+    if not has_onboard:
+        missing_parts.append('"ON BOARD"')
+    missing = " and ".join(missing_parts)
+
+    issues.append(
+        AIValidationIssue(
+            rule_id="AI-BL-CLEAN-ONBOARD",
+            title="Bill of Lading missing CLEAN ON-BOARD notation",
+            severity=IssueSeverity.MAJOR,
+            message=(
+                "LC clause 46A requires a clean on-board bill of lading. "
+                f"The BL does not carry {missing} wording."
+            ),
+            expected='"CLEAN ON BOARD" notation on the bill of lading',
+            found=f"Missing {missing}",
+            suggestion=(
+                "Return the BL to the carrier for a CLEAN ON-BOARD notation. "
+                "An on-board date alone does not satisfy UCP600 Art 20 — the "
+                "literal wording is required."
+            ),
+            documents=["Bill of Lading"],
+            ucp_reference="UCP600 Article 20",
+        )
+    )
+    return issues
+
+
 # =============================================================================
 # MAIN AI VALIDATION ORCHESTRATOR
 # =============================================================================
@@ -875,14 +1139,59 @@ async def run_ai_validation(
     if packing_list_data:
         logger.info("Step 4: Validating packing list requirements...")
         metadata["checks_performed"].append("packing_list_validation")
-        
+
         pl_issues = validate_packing_list(lc_text, packing_list_data)
         all_issues.extend(pl_issues)
-        
+
         metadata["packing_list_issues"] = len(pl_issues)
     else:
         logger.info("Step 4: No packing list data to validate")
         metadata["packing_list_issues"] = 0
+
+    # =================================================================
+    # 4a. INVOICE ARITHMETIC (Σ line items vs stated total)
+    # UCP600 Art 18(c). RulHub's generic rules can't easily check
+    # this — line item data is structural and per-invoice.
+    # =================================================================
+    invoice_data = extracted_context.get("invoice") or {}
+    if invoice_data:
+        logger.info("Step 4a: Validating invoice arithmetic...")
+        metadata["checks_performed"].append("invoice_arithmetic")
+        inv_arith_issues = validate_invoice_arithmetic(invoice_data)
+        all_issues.extend(inv_arith_issues)
+        metadata["invoice_arithmetic_issues"] = len(inv_arith_issues)
+
+    # =================================================================
+    # 4b. CLEAN ON-BOARD NOTATION ON BL (UCP600 Art 20)
+    # =================================================================
+    bl_data = extracted_context.get("bill_of_lading") or {}
+    if bl_data:
+        logger.info("Step 4b: Validating BL clean on-board notation...")
+        metadata["checks_performed"].append("bl_clean_on_board")
+        clean_issues = validate_bl_clean_on_board(lc_text, bl_data)
+        all_issues.extend(clean_issues)
+        metadata["bl_clean_on_board_issues"] = len(clean_issues)
+
+    # =================================================================
+    # 4c. SIGNATURE / STAMP PRESENCE — docs with placeholder underscores
+    # can't be presented. Inspection + beneficiary certs most common.
+    # =================================================================
+    logger.info("Step 4c: Validating signature/stamp presence...")
+    metadata["checks_performed"].append("signature_presence")
+    sig_count = 0
+    for _dt_key, _dt_label in (
+        ("inspection_certificate", "inspection_certificate"),
+        ("beneficiary_certificate", "beneficiary_certificate"),
+        ("invoice", "invoice"),
+        ("certificate_of_origin", "certificate_of_origin"),
+    ):
+        _dt_data = extracted_context.get(_dt_key) or {}
+        if not _dt_data:
+            continue
+        _sig_issues = validate_signature_presence(_dt_label, _dt_data)
+        all_issues.extend(_sig_issues)
+        sig_count += len(_sig_issues)
+    metadata["signature_presence_issues"] = sig_count
     
     # =================================================================
     # 5. ADVANCED ANOMALY REVIEW (L3) — gated OFF by default in C1 of the
