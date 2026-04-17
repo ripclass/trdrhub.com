@@ -1602,19 +1602,15 @@ async def execute_validation_pipeline(
                             if _val is None and v2_baseline is not None:
                                 _val = getattr(v2_baseline, _k, None)
                             _lc_fields[_k] = _jsonable_value(_val)
-                    # RulHub's crossdoc rules reference fields as
-                    # `<doc-type-prefix>.<field-name>` (e.g. `bl.port_of_loading`,
-                    # `invoice.total_amount`, `coo.country_of_origin`). The
-                    # `<doc-type-prefix>` is whatever we pass as `type` —
-                    # it is NOT passed through DOC_TYPE_ALIASES on the
-                    # multi-doc endpoint. So we must send the rule-engine
-                    # prefix verbatim or no rule will fire.
-                    #
-                    # Prefixes in the rule catalog (from a grep of every
-                    # condition path across Data/crossdoc/*.json):
-                    #   lc, invoice, bl, coo, insurance, packing_list, draft,
-                    #   document (any-doc), presentation (any-doc)
-                    _TYPE_MAP = {
+                    # RulHub rule paths come in two shapes we must feed:
+                    #   Short prefix  (crossdoc/*.json):  bl, coo, invoice,
+                    #      lc, insurance, packing_list, draft
+                    #   Long prefix   (icc_core UCP600):  bill_of_lading,
+                    #      insurance_doc, credit (as well as lc), invoice
+                    # We submit every doc under BOTH prefixes where they
+                    # differ, duplicating the field payload so every rule
+                    # can resolve its path.
+                    _SHORT_PREFIX_MAP = {
                         "invoice": "invoice",
                         "commercial_invoice": "invoice",
                         "bill_of_lading": "bl",
@@ -1629,6 +1625,12 @@ async def execute_validation_pipeline(
                         "beneficiary_certificate": "beneficiary_certificate",
                         "draft": "draft",
                     }
+                    # Long-prefix duplicates for rule families that use the
+                    # canonical document_type name (UCP600 core rules).
+                    _LONG_PREFIX_ALIAS = {
+                        "bl": "bill_of_lading",
+                        "insurance": "insurance_doc",
+                    }
 
                     # Per-doc field aliases — extraction canonical names →
                     # RulHub rule-reference names. If the extractor emits
@@ -1636,17 +1638,32 @@ async def execute_validation_pipeline(
                     # says ``shipment_date``, no rule fires. We duplicate
                     # the value under the RulHub-expected key (keeping the
                     # original too, so non-RulHub consumers still work).
+                    #
+                    # Party fields expose a ``<party>_name`` variant because
+                    # UCP600 core rules key off ``invoice.issuer_name``,
+                    # ``lc.applicant_name`` etc. (see UCP600-18A/B/C).
+                    # Currency fields expose a ``currency_code`` variant
+                    # for the same reason.
                     _FIELD_ALIASES_FOR_RULHUB = {
                         "lc": {
                             "incoterm": "incoterms",
                             "latest_shipment": "latest_shipment_date",
+                            "applicant": "applicant_name",
+                            "beneficiary": "beneficiary_name",
+                            "currency": "currency_code",
                         },
                         "invoice": {
                             "invoice_date": "date",
                             "seller": "issuer",
+                            "seller_name": "issuer_name",
                             "invoice_amount": "total_amount",
                             "amount": "total_amount",
                             "incoterm": "incoterms",
+                            "buyer": "buyer_name",
+                            "issuer": "issuer_name",
+                            "applicant": "applicant_name",
+                            "beneficiary": "beneficiary_name",
+                            "currency": "currency_code",
                         },
                         "bl": {
                             "shipped_on_board_date": "shipment_date",
@@ -1654,20 +1671,35 @@ async def execute_validation_pipeline(
                             "bl_date": "shipment_date",
                             "freight": "freight_terms",
                             "transshipment": "transhipment",
+                            "shipper": "shipper_name",
+                            "consignee": "consignee_name",
+                            "notify_party": "notify_party_name",
+                            "carrier": "carrier_name",
                         },
                         "coo": {
                             "issuing_authority": "issuer",
                             "certifying_authority": "issuer",
                             "hs_codes": "hs_code",
+                            "issuer": "issuer_name",
+                            "consignee": "consignee_name",
+                            "exporter": "exporter_name",
+                            "importer": "importer_name",
                         },
                         "insurance": {
                             "issue_date": "effective_date",
                             "risks": "risks_covered",
+                            "currency": "currency_code",
+                            "issuer": "issuer_name",
+                            "insurer": "insurer_name",
                         },
                         "packing_list": {
                             "total_packages": "total_cartons",
                             "number_of_packages": "total_cartons",
                             "packages": "total_cartons",
+                            "issuer": "issuer_name",
+                        },
+                        "draft": {
+                            "drawee": "drawee_name",
                         },
                     }
 
@@ -1678,19 +1710,133 @@ async def execute_validation_pipeline(
                         enriched = dict(fields)
                         for src, dst in aliases.items():
                             if src in enriched and dst not in enriched:
-                                enriched[dst] = enriched[src]
+                                _v = enriched[src]
+                                if _v is None or _v == "" or _v == []:
+                                    continue
+                                enriched[dst] = _v
                         return enriched
+
+                    # ---- Derived booleans ---------------------------------
+                    # UCP600 rules key off booleans that no extractor emits
+                    # directly (lc.is_transferred, lc.partial_shipments_permitted,
+                    # bill_of_lading.on_board_notation_present, ...). Derive
+                    # them from the raw extracted fields we already have.
+                    #
+                    # RulHub has a silent-pass bug where null paths are
+                    # treated as matching null → every rule touching an
+                    # undefined boolean silently awards its weight. Sending
+                    # a real True/False kicks the rule into firing properly.
+                    def _str_contains(val: Any, *needles: str) -> bool:
+                        if val is None:
+                            return False
+                        s = str(val).upper()
+                        return any(n.upper() in s for n in needles)
+
+                    def _derive_lc_booleans(lc_fields: Dict[str, Any]) -> Dict[str, Any]:
+                        derived: Dict[str, Any] = {}
+                        partial = lc_fields.get("partial_shipments")
+                        if partial is not None:
+                            derived["partial_shipments_permitted"] = (
+                                _str_contains(partial, "ALLOWED", "PERMITTED")
+                                and not _str_contains(partial, "NOT ALLOWED", "NOT PERMITTED", "PROHIB")
+                            )
+                        trans = lc_fields.get("transshipment") or lc_fields.get("transhipment")
+                        if trans is not None:
+                            prohibited = _str_contains(
+                                trans, "NOT ALLOWED", "NOT PERMITTED", "PROHIB"
+                            )
+                            derived["transhipment_prohibited"] = prohibited
+                            derived["transhipment_allowed"] = not prohibited
+                        form = lc_fields.get("form_of_documentary_credit") or lc_fields.get("form_of_doc_credit")
+                        if form is not None:
+                            derived["irrevocable"] = _str_contains(form, "IRREVOCABLE")
+                            derived["is_transferred"] = _str_contains(form, "TRANSFER")
+                        rules_txt = lc_fields.get("applicable_rules") or lc_fields.get("ucp_reference")
+                        if rules_txt is not None:
+                            derived["subject_to_ucp"] = _str_contains(rules_txt, "UCP")
+                        # Full-set-of-originals requirement is a 46A property
+                        # ("FULL SET OF CLEAN ON BOARD OCEAN BILLS OF LADING").
+                        docs_req = lc_fields.get("documents_required")
+                        addl = lc_fields.get("additional_conditions")
+                        blob_parts: List[str] = []
+                        if isinstance(docs_req, (list, tuple)):
+                            blob_parts.extend(str(x) for x in docs_req if x)
+                        elif docs_req:
+                            blob_parts.append(str(docs_req))
+                        if isinstance(addl, (list, tuple)):
+                            blob_parts.extend(str(x) for x in addl if x)
+                        elif addl:
+                            blob_parts.append(str(addl))
+                        blob = " ".join(blob_parts).upper()
+                        if blob:
+                            derived["full_set_required"] = "FULL SET" in blob
+                            derived["insurance_all_risks_required"] = (
+                                "ALL RISKS" in blob or "ALL-RISKS" in blob
+                            )
+                            derived["insurance_prohibited"] = False
+                        return derived
+
+                    def _derive_bl_booleans(
+                        bl_fields: Dict[str, Any],
+                        bl_raw_text: str,
+                        lc_derived: Dict[str, Any],
+                    ) -> Dict[str, Any]:
+                        derived: Dict[str, Any] = {}
+                        # "On board" notation is present when we captured a
+                        # shipped-on-board date OR the raw text literally
+                        # contains the ON BOARD wording. Absence of both is
+                        # a real discrepancy we want RulHub to flag.
+                        onboard_date = (
+                            bl_fields.get("shipped_on_board_date")
+                            or bl_fields.get("on_board_date")
+                            or bl_fields.get("shipment_date")
+                        )
+                        raw_text = bl_raw_text or ""
+                        derived["on_board_notation_present"] = bool(onboard_date) or (
+                            "ON BOARD" in str(raw_text).upper()
+                        )
+                        # Carrier identification — either an explicit carrier
+                        # field or "CARRIER" in the signature block.
+                        derived["carrier_identified"] = bool(
+                            bl_fields.get("carrier")
+                            or bl_fields.get("carrier_name")
+                        ) or ("CARRIER" in str(raw_text).upper())
+                        # Clean-on-board / clean BL — a truly "claused" BL
+                        # would have defect wording we don't extract yet; so
+                        # default to clean when on_board is present and no
+                        # "CLAUSED" / "DIRTY" hit in raw text.
+                        clean_signal = ("CLEAN" in str(raw_text).upper()) or derived["on_board_notation_present"]
+                        dirty_signal = _str_contains(raw_text, "CLAUSED", "DIRTY")
+                        if clean_signal or dirty_signal:
+                            derived["clean_on_board"] = clean_signal and not dirty_signal
+                        # Propagate LC transhipment posture so BL-side rules
+                        # can compare against it without re-walking the LC.
+                        if "transhipment_allowed" in lc_derived:
+                            derived.setdefault("transhipment_allowed", lc_derived["transhipment_allowed"])
+                        # Full set is an LC-imposed requirement — mirror so
+                        # BL-prefixed rules see it.
+                        if "full_set_required" in lc_derived:
+                            derived["full_set_required"] = lc_derived["full_set_required"]
+                        return derived
+
+                    # Compute LC booleans once — shared between lc & credit entries
+                    # and also propagated to BL/invoice rules that reference them.
+                    _lc_booleans = _derive_lc_booleans(_lc_fields)
+                    _lc_fields.update(_lc_booleans)
 
                     # Re-apply the alias map to the LC fields we built above.
                     _lc_fields = _apply_rulhub_aliases("lc", _lc_fields)
-                    _rulhub_docs.append({
-                        "type": "lc",
-                        "fields": _lc_fields,
-                    })
 
-                    # Supporting docs, with dedupe across insurance sources.
-                    _seen_types: set = set()
-                    _seen_types.add("lc")
+                    # ---- Emit LC under both `lc` and `credit` prefixes ----
+                    # Different UCP600 rule families reference one or the
+                    # other. Sending identical payloads under both lets
+                    # every rule resolve its path.
+                    _rulhub_docs.append({"type": "lc", "fields": _lc_fields})
+                    _rulhub_docs.append({"type": "credit", "fields": dict(_lc_fields)})
+
+                    # ---- Emit supporting docs with dual prefixes ----------
+                    _seen_short: set = set()
+                    _seen_short.add("lc")
                     for _src_key in (
                         "invoice",
                         "bill_of_lading",
@@ -1702,19 +1848,24 @@ async def execute_validation_pipeline(
                         "beneficiary_certificate",
                         "draft",
                     ):
-                        _rulhub_type = _TYPE_MAP.get(_src_key, _src_key)
-                        if _rulhub_type in _seen_types:
+                        _short = _SHORT_PREFIX_MAP.get(_src_key, _src_key)
+                        if _short in _seen_short:
                             continue
                         _doc_raw = payload.get(_src_key)
                         if not isinstance(_doc_raw, dict) or not _doc_raw:
                             continue
+                        _raw_text = _doc_raw.get("raw_text") or ""
                         _fields = _flatten_doc_fields(_doc_raw)
-                        _fields = _apply_rulhub_aliases(_rulhub_type, _fields)
-                        _rulhub_docs.append({
-                            "type": _rulhub_type,
-                            "fields": _fields,
-                        })
-                        _seen_types.add(_rulhub_type)
+                        # Doc-type-specific boolean derivation
+                        if _short == "bl":
+                            _fields.update(_derive_bl_booleans(_fields, _raw_text, _lc_booleans))
+                        _fields = _apply_rulhub_aliases(_short, _fields)
+                        _rulhub_docs.append({"type": _short, "fields": _fields})
+                        _seen_short.add(_short)
+                        # Long-prefix duplicate (bill_of_lading, insurance_doc)
+                        _long = _LONG_PREFIX_ALIAS.get(_short)
+                        if _long:
+                            _rulhub_docs.append({"type": _long, "fields": dict(_fields)})
 
                     logger.info(
                         "RulHub /v1/validate/set — %d docs: %s (jurisdiction=%s)",
@@ -1783,12 +1934,30 @@ async def execute_validation_pipeline(
 
                     _disc = _rulhub_result.get("discrepancies") or []
                     _cross = _rulhub_result.get("cross_doc_issues") or []
-                    db_rule_issues = [
+                    _raw_findings = [
                         _normalize_rulhub_finding(r) for r in (list(_disc) + list(_cross))
                     ]
+                    # Dedup across lc/credit and bl/bill_of_lading duplicate
+                    # submissions. Same rule firing on duplicate prefix
+                    # entries lands with identical rule_id + expected/found.
+                    _seen_keys: set = set()
+                    db_rule_issues: List[Dict[str, Any]] = []
+                    for _f in _raw_findings:
+                        if not _f:
+                            continue
+                        _key = (
+                            _f.get("rule_id") or _f.get("rule") or "",
+                            _f.get("title") or "",
+                            _f.get("expected") or "",
+                            _f.get("found") or "",
+                        )
+                        if _key in _seen_keys:
+                            continue
+                        _seen_keys.add(_key)
+                        db_rule_issues.append(_f)
                     logger.info(
-                        "RulHub /v1/validate/set → %d discrepancies + %d crossdoc = %d findings",
-                        len(_disc), len(_cross), len(db_rule_issues),
+                        "RulHub /v1/validate/set → %d discrepancies + %d crossdoc = %d findings (deduped from %d)",
+                        len(_disc), len(_cross), len(db_rule_issues), len(_raw_findings),
                     )
                 except Exception as _rulhub_err:
                     logger.warning("RulHub API failed, falling back to DB rules: %s", _rulhub_err)
