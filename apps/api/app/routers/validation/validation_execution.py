@@ -1292,29 +1292,21 @@ async def execute_validation_pipeline(
         # inventory already covers via /v1/validate/set. Running both
         # duplicates the same check from two engines with different
         # wordings and mismatches on overlap.
-        from app.config import settings as _ai_gate_settings
-        _skip_ai_validator = bool(
-            getattr(_ai_gate_settings, "USE_RULHUB_API", False)
-        ) and bool(getattr(_ai_gate_settings, "RULHUB_API_KEY", ""))
-
-        if _skip_ai_validator:
-            logger.info(
-                "ai_validator SKIPPED (USE_RULHUB_API=True). "
-                "Document completeness / BL / PL checks come from RulHub."
-            )
-            ai_issues, ai_metadata = [], {"skipped_for_rulhub": True}
-            ai_validation_timed_out = False
-        else:
-            (ai_issues, ai_metadata), ai_validation_timed_out = await _await_with_timeout(
-                "AI validation",
-                run_ai_validation(
-                    lc_data=lc_data_for_ai,
-                    documents=documents_for_ai,
-                    extracted_context=extracted_context,
-                ),
-                AI_VALIDATION_TIMEOUT_SECONDS,
-                ([], {"timed_out": True}),
-            )
+        # Middle-layer AI runs regardless of USE_RULHUB_API status.
+        # RulHub enforces generic UCP600 rules; the AI layer enforces
+        # THIS-LC's own 46A/47A clauses (BL field requirements per the
+        # LC, per-LC document completeness, packing-list size breakdown)
+        # that RulHub cannot know about. Complementary, not redundant.
+        (ai_issues, ai_metadata), ai_validation_timed_out = await _await_with_timeout(
+            "AI validation",
+            run_ai_validation(
+                lc_data=lc_data_for_ai,
+                documents=documents_for_ai,
+                extracted_context=extracted_context,
+            ),
+            AI_VALIDATION_TIMEOUT_SECONDS,
+            ([], {"timed_out": True}),
+        )
         if not isinstance(ai_metadata, dict):
             ai_metadata = {}
 
@@ -2133,15 +2125,54 @@ async def execute_validation_pipeline(
 
         # =================================================================
         # OPUS VETO — final review of AI + deterministic findings.
-        # This is the design-intended third stage: deterministic engine
-        # (RulHub or local) raises findings, AI supplement adds semantic
-        # findings, Opus veto confirms/drops/modifies. The veto is the
-        # examiner of record, not a per-layer noise filter.
+        # Design-intended third stage: deterministic engine (RulHub or
+        # local) raises findings, AI supplement adds per-LC-clause
+        # findings, Opus veto confirms/drops/modifies as the examiner
+        # of record.
+        #
+        # First-pass pre-partition: findings with concrete two-sided
+        # value mismatches (e.g. invoice.currency_code=USD vs
+        # lc.currency_code=EUR) are deterministic facts — no judgment
+        # needed. Auto-confirm those and skip the LLM for them.
+        # Everything else (missing-field claims, one-sided assertions,
+        # cross-doc semantic comparisons) goes to Opus.
         # =================================================================
+        def _has_concrete_value_mismatch(f: Dict[str, Any]) -> bool:
+            if not isinstance(f, dict):
+                return False
+            exp = str(f.get("expected") or "").strip()
+            found = str(f.get("found") or f.get("actual") or "").strip()
+            # Require the ``<path> = <value>`` shape that
+            # _normalize_rulhub_finding emits when both sides have
+            # concrete values. Bare paths without "=" are missing-field
+            # findings and need the examiner's judgment.
+            if "=" not in exp or "=" not in found:
+                return False
+            exp_val = exp.split("=", 1)[1].strip()
+            found_val = found.split("=", 1)[1].strip()
+            if not exp_val or not found_val:
+                return False
+            return exp_val.lower() != found_val.lower()
+
         try:
             from app.config import settings as _veto_settings
             _veto_enabled = bool(getattr(_veto_settings, "VALIDATION_OPUS_VETO_ENABLED", False))
-            if _veto_enabled and (ai_issues or db_rule_issues):
+
+            _ai_list = [i for i in (ai_issues or []) if isinstance(i, dict)]
+            _det_list = [i for i in (db_rule_issues or []) if isinstance(i, dict)]
+            _auto_confirm = [
+                f for f in (_ai_list + _det_list) if _has_concrete_value_mismatch(f)
+            ]
+            _ai_for_veto = [f for f in _ai_list if not _has_concrete_value_mismatch(f)]
+            _det_for_veto = [f for f in _det_list if not _has_concrete_value_mismatch(f)]
+
+            if _auto_confirm:
+                logger.info(
+                    "Veto pre-pass: auto-confirmed %d findings with concrete value mismatch",
+                    len(_auto_confirm),
+                )
+
+            if _veto_enabled and (_ai_for_veto or _det_for_veto):
                 from app.services.validation.tiered_validation import _run_opus_veto_pass
                 import asyncio as _asyncio
                 _veto_timeout = float(getattr(_veto_settings, "VALIDATION_VETO_TIMEOUT_SECONDS", 90))
@@ -2150,8 +2181,8 @@ async def execute_validation_pipeline(
                         _run_opus_veto_pass(
                             document_data=db_rule_payload if 'db_rule_payload' in dir() else {},
                             document_type=primary_doc_type if 'primary_doc_type' in dir() else "letter_of_credit",
-                            ai_findings=[i for i in (ai_issues or []) if isinstance(i, dict)],
-                            deterministic_findings=[i for i in (db_rule_issues or []) if isinstance(i, dict)],
+                            ai_findings=_ai_for_veto,
+                            deterministic_findings=_det_for_veto,
                         ),
                         timeout=_veto_timeout,
                     )
@@ -2162,13 +2193,27 @@ async def execute_validation_pipeline(
                     vetted_findings = _filter_ai_false_positive_missing_docs(
                         vetted_findings, documents_for_ai, extracted_context,
                     )
-                    # Replace db_rule_issues with vetted findings (Opus has final say)
-                    db_rule_issues = vetted_findings
-                    logger.info("Opus veto completed: %d findings after review", len(vetted_findings))
+                    # Merge: auto-confirmed (bypassed LLM) + veto survivors.
+                    db_rule_issues = list(_auto_confirm) + list(vetted_findings)
+                    logger.info(
+                        "Opus veto completed: %d ambiguous → %d survivors (+ %d auto-confirmed = %d total)",
+                        len(_ai_for_veto) + len(_det_for_veto),
+                        len(vetted_findings),
+                        len(_auto_confirm),
+                        len(db_rule_issues),
+                    )
                 except _asyncio.TimeoutError:
                     logger.warning("Opus veto timed out after %ss — keeping unvetted findings", _veto_timeout)
                 except Exception as _veto_exc:
                     logger.warning("Opus veto failed — keeping unvetted findings: %s", _veto_exc)
+            elif _veto_enabled:
+                # Veto enabled but nothing ambiguous to review.
+                db_rule_issues = list(_auto_confirm)
+                if _auto_confirm:
+                    logger.info(
+                        "Opus veto skipped: %d auto-confirmed, 0 ambiguous",
+                        len(_auto_confirm),
+                    )
         except Exception:
             pass  # Veto is advisory — never block the pipeline
 
