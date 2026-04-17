@@ -1319,7 +1319,7 @@ async def run_ai_examiner(
         # is too weak for this task. AI_EXAMINER_MODEL env lets ops
         # override without redeploying.
         import os
-        _examiner_model = os.getenv("AI_EXAMINER_MODEL") or "anthropic/claude-sonnet-4.5"
+        _examiner_model = os.getenv("AI_EXAMINER_MODEL") or "anthropic/claude-sonnet-4.6"
         result_tuple = await _asyncio.wait_for(
             LLMProviderFactory.generate_with_fallback(
                 prompt=user_prompt,
