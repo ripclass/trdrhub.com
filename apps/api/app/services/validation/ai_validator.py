@@ -1339,8 +1339,16 @@ async def run_ai_examiner(
         meta["examiner_error"] = f"timeout {timeout_seconds}s"
         return [], meta
     except Exception as exc:  # noqa: BLE001
-        logger.warning("AI examiner failed: %s", exc)
-        meta["examiner_error"] = str(exc)
+        # Log exception with type + repr so we can diagnose "All LLM
+        # providers failed" — the message alone doesn't tell us whether
+        # the problem is model ID, credits, key, or network.
+        logger.warning(
+            "AI examiner failed (type=%s, model=%s): %r",
+            type(exc).__name__,
+            _examiner_model,
+            exc,
+        )
+        meta["examiner_error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
         return [], meta
 
     parsed = _safe_parse_examiner_json(response_text)
@@ -1483,9 +1491,19 @@ async def run_ai_validation(
             merged.update(ctx)
         list_entry = docs_by_type.get(canonical) or docs_by_type.get(doc_type_key)
         if isinstance(list_entry, dict):
-            # documents list takes priority for raw_text (where it lives)
-            if list_entry.get("raw_text") and not merged.get("raw_text"):
-                merged["raw_text"] = list_entry["raw_text"]
+            # raw_text is stored in extraction_artifacts_v1.raw_text by
+            # the extraction pipeline (not at the documents[] top level,
+            # not in extracted_fields). Check there before giving up.
+            if not merged.get("raw_text"):
+                for candidate_path in (
+                    list_entry.get("raw_text"),
+                    (list_entry.get("extracted_data") or {}).get("raw_text") if isinstance(list_entry.get("extracted_data"), dict) else None,
+                    (list_entry.get("extracted_fields") or {}).get("raw_text") if isinstance(list_entry.get("extracted_fields"), dict) else None,
+                    (list_entry.get("extraction_artifacts_v1") or {}).get("raw_text") if isinstance(list_entry.get("extraction_artifacts_v1"), dict) else None,
+                ):
+                    if candidate_path:
+                        merged["raw_text"] = str(candidate_path)
+                        break
             # absorb extracted_data / extracted_fields payloads
             for sub_key in ("extracted_data", "extracted_fields", "fields"):
                 sub = list_entry.get(sub_key)
@@ -1495,7 +1513,7 @@ async def run_ai_validation(
                             merged[k] = v
             # any scalar fields on the list entry (filename, status, etc)
             for k, v in list_entry.items():
-                if k in ("raw_text", "extracted_data", "extracted_fields", "fields"):
+                if k in ("raw_text", "extracted_data", "extracted_fields", "fields", "extraction_artifacts_v1"):
                     continue
                 if k not in merged:
                     merged[k] = v
