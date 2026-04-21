@@ -2094,6 +2094,29 @@ async def execute_validation_pipeline(
                     # Dedup across lc/credit and bl/bill_of_lading duplicate
                     # submissions. Same rule firing on duplicate prefix
                     # entries lands with identical rule_id + expected/found.
+                    #
+                    # The key uses prefix-normalized ``expected`` / ``found``
+                    # strings so that the same rule firing once on
+                    # ``lc.amount = X`` and once on ``credit.amount = X``
+                    # collapses to a single finding. Same for bl vs
+                    # bill_of_lading and insurance vs insurance_doc.
+                    _DUAL_PREFIX_PAIRS = (
+                        ("credit.", "lc."),            # prefer lc as canonical
+                        ("bl.", "bill_of_lading."),    # prefer long as canonical
+                        ("insurance.", "insurance_doc."),
+                    )
+
+                    def _canonicalize_prefix(text: str) -> str:
+                        """Collapse dual-prefix field paths so lc/credit etc. dedup together."""
+                        if not text:
+                            return ""
+                        out = text
+                        for src, dst in _DUAL_PREFIX_PAIRS:
+                            # Replace both the exact prefix AND within composite strings
+                            # (e.g. 'credit.amount = 100' → 'lc.amount = 100').
+                            out = out.replace(src, dst)
+                        return out
+
                     _seen_keys: set = set()
                     db_rule_issues: List[Dict[str, Any]] = []
                     for _f in _raw_findings:
@@ -2101,9 +2124,9 @@ async def execute_validation_pipeline(
                             continue
                         _key = (
                             _f.get("rule_id") or _f.get("rule") or "",
-                            _f.get("title") or "",
-                            _f.get("expected") or "",
-                            _f.get("found") or "",
+                            _canonicalize_prefix(_f.get("title") or ""),
+                            _canonicalize_prefix(_f.get("expected") or ""),
+                            _canonicalize_prefix(_f.get("found") or ""),
                         )
                         if _key in _seen_keys:
                             continue
