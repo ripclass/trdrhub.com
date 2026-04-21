@@ -431,6 +431,24 @@ class RulHubRulesAdapter:
         """
         try:
             result = await self.client.validate_document_set(documents, jurisdiction)
+            # One-line summary before the full raw dump — easy to grep
+            # through Render logs without scrolling the 20KB body.
+            try:
+                _crossdoc = (
+                    result.get("cross_document_discrepancies")
+                    or result.get("cross_doc_issues")
+                    or []
+                )
+                logger.info(
+                    "RulHub summary: rules_checked=%s discrepancies=%d crossdoc=%d score=%.4f compliant=%s",
+                    result.get("rules_checked", "?"),
+                    len(result.get("discrepancies") or []),
+                    len(_crossdoc),
+                    float(result.get("score") or 0.0),
+                    result.get("compliant"),
+                )
+            except Exception:  # defensive — never block on logging
+                logger.info("RulHub summary log skipped (unexpected shape)")
             try:
                 logger.info(
                     "RulHub raw response: %s",

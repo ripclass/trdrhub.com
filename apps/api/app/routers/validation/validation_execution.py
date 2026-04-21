@@ -1926,6 +1926,42 @@ async def execute_validation_pipeline(
                     #   documents_involved → documents
                     # Normalise here so downstream code doesn't need to know
                     # which engine produced the finding.
+                    # RulHub sometimes returns a finding whose ``finding`` field
+                    # is a stringified Python dict of the rule config instead
+                    # of a rendered sentence — happens for
+                    # ``conditional_logic`` and ``computed_amount_comparison``
+                    # rule types when the rule doesn't carry a message
+                    # template. When ``field_a`` / ``field_b`` DO carry
+                    # evidence, the finding is real and actionable — we just
+                    # need to rewrite the title so it doesn't leak the spec.
+                    _SPEC_DUMP_PREFIXES = (
+                        "conditional_logic: {",
+                        "computed_amount_comparison: {",
+                    )
+
+                    def _is_spec_dump(msg: str) -> bool:
+                        return msg.lstrip().lower().startswith(_SPEC_DUMP_PREFIXES)
+
+                    def _synthesize_title_from_evidence(
+                        rule_id: str,
+                        field_a: Any,
+                        value_a: Any,
+                        field_b: Any,
+                        value_b: Any,
+                    ) -> str:
+                        parts: List[str] = []
+                        if field_a and value_a is not None:
+                            parts.append(f"{field_a} = {value_a}")
+                        elif field_a:
+                            parts.append(str(field_a))
+                        if field_b and value_b is not None:
+                            parts.append(f"{field_b} = {value_b}")
+                        elif field_b:
+                            parts.append(str(field_b))
+                        if parts:
+                            return f"Rule {rule_id} fired on: " + " vs ".join(parts)
+                        return f"Rule {rule_id} fired without concrete evidence"
+
                     def _normalize_rulhub_finding(r: Dict[str, Any]) -> Dict[str, Any]:
                         if not isinstance(r, dict):
                             return {}
@@ -1937,6 +1973,16 @@ async def execute_validation_pipeline(
                         value_b = r.get("value_b")
                         expected = r.get("expected")
                         found = r.get("found") or r.get("actual")
+                        # Rewrite spec-dump finding text into a human title.
+                        # The raw finding stays in ``message`` for audit, but
+                        # the ``title`` (user-facing card heading) is synthesized
+                        # from rule_id + field/value evidence.
+                        if _is_spec_dump(str(finding)):
+                            title = _synthesize_title_from_evidence(
+                                str(rule_id), field_a, value_a, field_b, value_b,
+                            )
+                        else:
+                            title = finding or str(rule_id)
                         if not expected:
                             if field_a and value_a is not None:
                                 expected = f"{field_a} = {value_a}"
@@ -1950,7 +1996,7 @@ async def execute_validation_pipeline(
                         return {
                             "rule": rule_id,
                             "rule_id": rule_id,
-                            "title": finding or str(rule_id),
+                            "title": title,
                             "severity": (r.get("severity") or "major"),
                             "message": finding,
                             "expected": expected or "",
@@ -1985,6 +2031,19 @@ async def execute_validation_pipeline(
                     # evaluation — e.g. ``"Unknown condition type: X"``,
                     # ``"One or both values are not numeric"``,
                     # ``"presentation_period requires max_days/value"``.
+                    #
+                    # As of 2026-04-21 RulHub also emits spec-dump findings
+                    # when `conditional_logic` / `computed_amount_comparison`
+                    # rules fire without a render-able message template —
+                    # the ``finding`` field literally begins with
+                    # ``"conditional_logic: {"`` or
+                    # ``"computed_amount_comparison: {"`` followed by the
+                    # rule config JSON. When these fire with NO concrete
+                    # evidence (null field_a + field_b + values), they are
+                    # rule-engine infrastructure noise. When they DO carry
+                    # evidence, ``_normalize_rulhub_finding`` rewrites the
+                    # message to a human-readable form (see that function).
+                    #
                     # These are infrastructure errors on the rule engine
                     # side, NOT LC discrepancies. They have null
                     # ``field_a``/``field_b`` because the rule never
@@ -2008,6 +2067,8 @@ async def execute_validation_pipeline(
                             "presentation_period requires",
                             "cannot evaluate",
                             "insufficient_data",
+                            "conditional_logic: {",
+                            "computed_amount_comparison: {",
                         )
                         return any(p in msg for p in engine_error_phrases)
 
