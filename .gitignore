@@ -266,6 +266,9 @@ uploads/
 *.xls
 *.xlsx
 
+# Allow committed test fixtures (corpus PDFs for importer Playwright tests)
+!apps/web/tests/fixtures/**/*.pdf
+
 # Local test files
 # -----------------
 sample.*
