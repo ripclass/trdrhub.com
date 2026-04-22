@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import ExporterResults from '@/pages/ExporterResults';
-import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
+import { buildValidationResponse } from '@/lib/lcopilot/resultsMapper';
 import { renderWithProviders } from './testUtils';
 import { buildValidationResults, mockValidationResults } from './fixtures/lcopilot';
 

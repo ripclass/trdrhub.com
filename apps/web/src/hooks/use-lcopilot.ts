@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
-import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
+import { buildValidationResponse } from '@/lib/lcopilot/resultsMapper';
 import { logger } from '@/lib/logger';
 import type {
   ValidationResults,

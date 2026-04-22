@@ -1,5 +1,5 @@
 import optionEFixture from './__fixtures__/results.optione.json';
-import { buildValidationResponse } from '@/lib/exporter/resultsMapper';
+import { buildValidationResponse } from '@/lib/lcopilot/resultsMapper';
 import { buildValidationResults } from './fixtures/lcopilot';
 
 describe('results mapper - option e payload', () => {
