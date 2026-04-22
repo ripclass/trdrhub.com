@@ -13,7 +13,12 @@ services:
     rootDir: apps/api
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    postDeployCommand: alembic upgrade head
+    # preDeployCommand runs BEFORE the new container goes live. If the
+    # migration fails (or applies to the wrong DB), the deploy aborts and
+    # the previous container keeps serving — no broken-schema window.
+    # Was postDeployCommand, but that runs AFTER traffic switches over,
+    # which let the 2026-04-22 workflow_type drift hit prod for hours.
+    preDeployCommand: alembic upgrade head
     autoDeploy: true
     healthCheckPath: /healthz
     envVars:

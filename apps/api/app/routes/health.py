@@ -8,14 +8,25 @@ import asyncio
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from ..database import get_db
+from ..database import Base, get_db
 from ..middleware.logging import get_request_logger
 from ..utils.logger import log_external_service_call
+
+# Tables whose column shape we explicitly verify on /health/db-schema.
+# Adding a critical table here means a missing or extra column on it will
+# fail the schema-drift check and surface immediately. Keep this list to
+# tables that drive request handling — leak detection is the goal, not
+# wholesale schema validation.
+SCHEMA_CHECK_TABLES = (
+    "validation_sessions",
+    "users",
+    "companies",
+)
 
 
 class HealthStatus(BaseModel):
@@ -47,6 +58,73 @@ class HealthChecker:
     def get_uptime_seconds(self) -> int:
         """Get application uptime in seconds."""
         return int(time.time() - self.start_time)
+
+    async def check_db_schema(self, db: Session, logger) -> Dict[str, Any]:
+        """Compare ORM-declared columns against information_schema.
+
+        Catches drift like the 2026-04-22 ``workflow_type`` incident — an
+        Alembic migration is committed but the DDL never lands on the
+        database the app actually queries. The check introspects each
+        table in ``SCHEMA_CHECK_TABLES`` from SQLAlchemy's metadata,
+        compares against ``information_schema.columns``, and reports
+        every column the ORM expects but the DB lacks.
+
+        Returns ``status: ok`` only when every checked table has every
+        expected column. Otherwise ``status: drift`` with per-table
+        ``missing_columns`` lists.
+        """
+        start = time.time()
+        try:
+            drift: Dict[str, list] = {}
+            checked: Dict[str, int] = {}
+            for table_name in SCHEMA_CHECK_TABLES:
+                table = Base.metadata.tables.get(table_name)
+                if table is None:
+                    drift.setdefault("_meta", []).append(
+                        f"table {table_name!r} not registered in ORM metadata"
+                    )
+                    continue
+                expected = {c.name for c in table.columns}
+                rows = db.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = :t"
+                    ),
+                    {"t": table_name},
+                ).fetchall()
+                actual = {r[0] for r in rows}
+                missing = sorted(expected - actual)
+                checked[table_name] = len(expected)
+                if missing:
+                    drift[table_name] = missing
+            duration_ms = round((time.time() - start) * 1000, 2)
+            if drift:
+                logger.error(
+                    "Schema drift detected: %s (checked %d tables in %sms)",
+                    drift,
+                    len(checked),
+                    duration_ms,
+                )
+                return {
+                    "status": "drift",
+                    "response_time_ms": duration_ms,
+                    "tables_checked": checked,
+                    "missing_columns": drift,
+                }
+            return {
+                "status": "ok",
+                "response_time_ms": duration_ms,
+                "tables_checked": checked,
+                "missing_columns": {},
+            }
+        except Exception as e:
+            duration_ms = round((time.time() - start) * 1000, 2)
+            logger.error("Schema check raised: %s", e)
+            return {
+                "status": "error",
+                "response_time_ms": duration_ms,
+                "message": f"Schema check failed: {e}",
+            }
 
     async def check_database(self, db: Session, logger) -> Dict[str, Any]:
         """Check database connectivity and health."""
@@ -380,6 +458,31 @@ async def readiness_check(request: Request, db: Session = Depends(get_db)):
             checks=checks,  # Return whatever checks completed
             overall_healthy=False
         )
+
+
+@router.get("/db-schema")
+async def db_schema_check(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """Schema-drift check.
+
+    Returns 200 ``{"status":"ok",...}`` when every column the ORM expects
+    exists on the database the app is connected to. Returns 503
+    ``{"status":"drift",...,"missing_columns":{...}}`` when a column is
+    missing, including the per-table list. Use this for monitoring +
+    alerting; do not wire it into the rolling-deploy healthcheck (a
+    transient miss would tank the whole service).
+    """
+    logger = get_request_logger(request, "health")
+    result = await health_checker.check_db_schema(db, logger)
+    if result.get("status") != "ok":
+        response.status_code = 503
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **result,
+    }
 
 
 @router.get("/info")
