@@ -1,13 +1,33 @@
-// ImporterSidebar - Navigation component for Importer Dashboard
-import { Upload, History, Bell, BarChart3, Settings, HelpCircle, Package, FolderKanban, FileText, CreditCard, Sparkles, Library, Calendar, LogOut, ArrowLeft } from "lucide-react";
-import { useLocation, Link } from "react-router-dom";
+// ImporterSidebar — Phase 4/2 rewrite.
+//
+// Slimmed from 14 items to a 5-item minimum that matches the exporter
+// skeleton shape:
+//   Dashboard · Draft LC Review · Supplier Doc Review · Billing · Settings
+//
+// Dropped items (reachable elsewhere):
+//   * Workspace / Templates / Analytics / Notifications / AI Assistance /
+//     Content Library / Shipment Timeline — folded into the dashboard
+//     recent-activity + stats surfaces per Phase 4/4
+//   * Help → moved to top-bar (future polish)
+//   * Legacy routes still resolve via the ?section= redirect layer in
+//     Phase 4/6, so bookmarks keep working.
+import {
+  BarChart3,
+  FileText,
+  ShieldCheck,
+  Settings,
+  Building2,
+  CreditCard,
+  LogOut,
+  ArrowLeft,
+} from "lucide-react";
+import { Link } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -16,35 +36,33 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 
-type ImporterSection =
+export type ImporterSidebarSection =
   | "dashboard"
-  | "workspace"
-  | "templates"
-  | "upload"
-  | "reviews"
-  | "analytics"
-  | "notifications"
+  | "draft-lc"
+  | "supplier-docs"
   | "billing"
-  | "billing-usage"
-  | "ai-assistance"
-  | "content-library"
-  | "shipment-timeline"
-  | "settings"
-  | "help";
+  | "settings";
 
 interface ImporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
-  activeSection: ImporterSection;
-  onSectionChange: (section: ImporterSection) => void;
+  activeSection: ImporterSidebarSection;
+  onSectionChange: (section: ImporterSidebarSection) => void;
+  user?: { name?: string; email?: string; id?: string; role?: string };
 }
 
-export function ImporterSidebar({ activeSection, onSectionChange, ...props }: ImporterSidebarProps) {
-  const location = useLocation();
-  const { user, logout } = useAuth();
-  const displayName = user?.full_name || user?.username || user?.email;
-  
-  const isActive = (matcher: string) => location.pathname === matcher;
+export function ImporterSidebar({
+  activeSection,
+  onSectionChange,
+  user: propUser,
+  ...props
+}: ImporterSidebarProps) {
+  const { user: authUser, logout } = useAuth();
+  const user = propUser || authUser;
+  const displayName =
+    propUser?.name || authUser?.full_name || authUser?.username || user?.email;
 
-  const handleLogout = async () => {
+  const handleLogout = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     await logout();
   };
 
@@ -52,8 +70,8 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <div className="px-2 pt-2">
-          <Link 
-            to="/hub" 
+          <Link
+            to="/hub"
             className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
           >
             <ArrowLeft className="h-3 w-3" />
@@ -65,27 +83,29 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
             <SidebarMenuButton size="lg" asChild>
               <div className="flex items-center gap-3">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-importer/10 text-importer">
-                  <Package className="size-4" />
+                  <Building2 className="size-4" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold">LCopilot</span>
-                  <span className="text-xs text-muted-foreground">Importer Portal</span>
+                  <span className="text-xs text-muted-foreground">
+                    Importer Portal
+                  </span>
                 </div>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      
+
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Main Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={activeSection === "dashboard" || isActive("/lcopilot/importer-dashboard")}
+                  isActive={activeSection === "dashboard"}
                   onClick={() => onSectionChange("dashboard")}
+                  tooltip="Dashboard"
                 >
                   <BarChart3 />
                   <span>Dashboard</span>
@@ -93,70 +113,29 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={activeSection === "templates"}
-                  onClick={() => onSectionChange("templates")}
-                  tooltip="Templates"
+                  isActive={activeSection === "draft-lc"}
+                  onClick={() => onSectionChange("draft-lc")}
+                  tooltip="Draft LC Review"
                 >
                   <FileText />
-                  <span>Templates</span>
+                  <span>Draft LC Review</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={activeSection === "upload"}
-                  onClick={() => onSectionChange("upload")}
-                  tooltip="Upload LC"
+                  isActive={activeSection === "supplier-docs"}
+                  onClick={() => onSectionChange("supplier-docs")}
+                  tooltip="Supplier Doc Review"
                 >
-                  <Upload />
-                  <span>Upload LC</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "reviews"}
-                  onClick={() => onSectionChange("reviews")}
-                  tooltip="Review Results"
-                >
-                  <History />
-                  <span>Review Results</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "workspace"}
-                  onClick={() => onSectionChange("workspace")}
-                  tooltip="LC Workspace"
-                >
-                  <FolderKanban />
-                  <span>LC Workspace</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "analytics"}
-                  onClick={() => onSectionChange("analytics")}
-                  tooltip="Analytics"
-                >
-                  <BarChart3 />
-                  <span>Analytics</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "notifications"}
-                  onClick={() => onSectionChange("notifications")}
-                  tooltip="Notifications"
-                >
-                  <Bell />
-                  <span>Notifications</span>
+                  <ShieldCheck />
+                  <span>Supplier Doc Review</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        
-        <SidebarGroup>
-          <SidebarGroupLabel>Billing & Finance</SidebarGroupLabel>
+
+        <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -169,51 +148,6 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
                   <span>Billing</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        
-        <SidebarGroup>
-          <SidebarGroupLabel>AI & Tools</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "ai-assistance"}
-                  onClick={() => onSectionChange("ai-assistance")}
-                  tooltip="AI Assistance"
-                >
-                  <Sparkles />
-                  <span>AI Assistance</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "content-library"}
-                  onClick={() => onSectionChange("content-library")}
-                  tooltip="Content Library"
-                >
-                  <Library />
-                  <span>Content Library</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "shipment-timeline"}
-                  onClick={() => onSectionChange("shipment-timeline")}
-                  tooltip="Shipment Timeline"
-                >
-                  <Calendar />
-                  <span>Shipment Timeline</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupContent>
-            <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={activeSection === "settings"}
@@ -224,32 +158,28 @@ export function ImporterSidebar({ activeSection, onSectionChange, ...props }: Im
                   <span>Settings</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "help"}
-                  onClick={() => onSectionChange("help")}
-                  tooltip="Help"
-                >
-                  <HelpCircle />
-                  <span>Help</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      
+
       <SidebarFooter>
         {user && (
           <SidebarMenu>
             <SidebarMenuItem>
               <div className="flex items-center gap-2 px-2 py-1.5 w-full">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  {displayName?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+                  {displayName?.charAt(0).toUpperCase() ||
+                    user.email?.charAt(0).toUpperCase() ||
+                    "U"}
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none flex-1 min-w-0">
-                  <span className="truncate font-medium text-sm">{displayName || user.email}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{user.role === 'admin' ? 'Admin' : 'Importer'}</span>
+                  <span className="truncate font-medium text-sm">
+                    {displayName || user.email}
+                  </span>
+                  <span className="text-xs text-muted-foreground capitalize">
+                    {user.role === "admin" ? "Admin" : "Importer"}
+                  </span>
                 </div>
                 <Button
                   variant="ghost"
