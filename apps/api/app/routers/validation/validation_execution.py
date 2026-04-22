@@ -1773,6 +1773,23 @@ async def execute_validation_pipeline(
                                     "CARTON-BY-CARTON",
                                 )
                             )
+                        # RulHub vocab for credit.type is the UCP600 Article 1
+                        # enum: documentary_credit / standby_credit. SWIFT MT700
+                        # Field 40A spells the same concept as IRREVOCABLE /
+                        # IRREVOCABLE TRANSFERABLE / IRREVOCABLE STANDBY.
+                        # Translate to RulHub vocab so UCP600-1 actually
+                        # confirms instead of silent-passing.
+                        form_for_type = (
+                            lc_fields.get("form_of_documentary_credit")
+                            or lc_fields.get("form_of_doc_credit")
+                            or lc_fields.get("lc_type")
+                        )
+                        if form_for_type:
+                            form_upper = str(form_for_type).upper()
+                            if "STANDBY" in form_upper:
+                                derived["type"] = "standby_credit"
+                            else:
+                                derived["type"] = "documentary_credit"
                         return derived
 
                     def _derive_bl_booleans(
@@ -2051,6 +2068,54 @@ async def execute_validation_pipeline(
                             _fields.update(_derive_bl_booleans(_fields, _raw_text, _lc_booleans))
                         if _canon == "packing_list":
                             _fields.update(_derive_packing_per_carton(_raw_text))
+                        if _canon == "insurance_doc":
+                            # Ask C #23: split company name from issuer_type
+                            # enum. RulHub renamed insurance_doc.issuer to
+                            # insurance_doc.issuer_type and the rule now
+                            # expects an enum value, not the company name.
+                            # Derive from the issuer text we already have.
+                            _issuer_text = (
+                                _fields.get("issuer")
+                                or _fields.get("insurer")
+                                or _fields.get("issuer_name")
+                                or _fields.get("insurer_name")
+                            )
+                            if _issuer_text:
+                                _s = str(_issuer_text).upper()
+                                if "BROKER" in _s:
+                                    _fields.setdefault("issuer_type", "broker")
+                                elif "AGENT" in _s:
+                                    _fields.setdefault("issuer_type", "agent")
+                                else:
+                                    _fields.setdefault("issuer_type", "insurer")
+                            # UCP600-28: insurance must cover at least 110%
+                            # of invoice value (or CIF/CIP value) per UCP600
+                            # Article 28(f). RulHub's rule is now
+                            # numeric_comparison(coverage_percentage, ">=", 110)
+                            # so derive coverage_percentage = (insured /
+                            # invoice_total) * 100 when both sides have a
+                            # number to work with.
+                            _inv_raw = payload.get("invoice") if isinstance(payload, dict) else None
+                            _inv_total: Optional[float] = None
+                            if isinstance(_inv_raw, dict):
+                                _inv_total = _coerce_to_number(
+                                    _inv_raw.get("total_amount")
+                                    or _inv_raw.get("amount")
+                                    or _inv_raw.get("invoice_amount")
+                                )
+                            _ins_amt = _coerce_to_number(
+                                _fields.get("insured_amount")
+                                or _fields.get("amount")
+                                or _fields.get("coverage_amount")
+                            )
+                            if (
+                                _ins_amt and _ins_amt > 0
+                                and _inv_total and _inv_total > 0
+                                and "coverage_percentage" not in _fields
+                            ):
+                                _fields["coverage_percentage"] = round(
+                                    (_ins_amt / _inv_total) * 100, 2,
+                                )
                         if _canon == "invoice":
                             # Semantic goods-match against the LC (UCP600-18D)
                             _gm = _goods_match_boolean(
