@@ -1,139 +1,174 @@
-# Next Session Prompt — 2026-04-21 (evening)
+# Next Session Prompt — 2026-04-22 (evening)
 
 Paste to start a fresh Claude session. Self-contained, assumes zero memory of prior conversations.
 
-## Current live state
+## Current live state (verify before assuming)
 
-- **master:** `9940ccb8` (no trdrhub commits this session — design/planning only)
-- **Backend (Render):** `4febcd1c` on `srv-d41dio8dl3ps73db8gpg` — stable
-- **OpenRouter credits:** still out. AI Examiner returns empty; arithmetic backstop + RulHub + Opus veto still run.
-- **RulHub (api.rulhub.com):** significantly improved tonight — see Stream B below
+- **master:** `7fed5178` — the corpus generator commit. Check with `git log --oneline origin/master -5`.
+- **Backend (Render):** `268726b8` live on `srv-d41dio8dl3ps73db8gpg` — stable. Deploy history: `render deploys list srv-d41dio8dl3ps73db8gpg -o json`.
+- **Frontend (Vercel):** `VITE_LCOPILOT_IMPORTER_V2=true` flipped on — new `/lcopilot/importer-dashboard/draft-lc` and `/supplier-docs` routes live.
+- **Database:** `validation_sessions.workflow_type` column added live 2026-04-22 via manual `alembic upgrade head` job. Verified 13 columns via `curl https://api.trdrhub.com/health/db-schema`.
+- **OpenRouter credits:** unknown — last verified out on 2026-04-17 evening. If examiner returns empty + arithmetic backstop runs alone, credits still out.
 
-## Two parallel work streams on the table
+## What shipped today (2026-04-22)
 
-### Stream A — Importer parity with exporter (BRAINSTORM + PLAN DONE, NOT EXECUTED)
+Importer parity refactor, all four phases, plus smoke verification + corpus generator.
 
-Full design + 4 execution plans written tonight. Ready to start Phase 1 whenever you give the go.
+### Timeline of commits
 
-**Documents to read first (in order):**
-- `docs/superpowers/specs/2026-04-21-importer-parity-design.md` — full design doc
-- `docs/superpowers/plans/2026-04-21-phase-1-shared-extraction.md` — 9 tasks, pure refactor
-- `docs/superpowers/plans/2026-04-21-phase-2-importer-flows.md` — 10 tasks, migration + routes + results rewrite
-- `docs/superpowers/plans/2026-04-21-phase-3-importer-actions.md` — 9 tasks, 4 action endpoints
-- `docs/superpowers/plans/2026-04-21-phase-4-shell-wireup.md` — 8 tasks, sidebars + dashboard wire-up + 5-second smoke
+| Phase | Commits | Effect |
+|---|---|---|
+| Phases 1-4 of importer parity | `02b58492..5aab9849` (27 commits) | Shared components, workflow_type enum, action endpoints, slim sidebars, dashboard auto-refresh |
+| Housekeeping | `395deb4e` | Plans/spec captured in-tree, gitignore fixed |
+| UX fixes | `71a61d9d` | Sidebar now shows on moment pages; "Upload Draft LC"/"Upload Supplier Docs" labels; Start New card dropped from dashboard |
+| Corpus generator | `7fed5178` | 36 PDFs across 4 trade corridors for Playwright fixtures; zero jurisdiction hardcoding |
 
-**Locked-in decisions (don't re-litigate):**
-- Sessions are **independent** (no Moment 1 ↔ Moment 2 linkage) — billing clarity + stale-LC protection
-- Two moments = two routes = two sidebar items (`/draft-lc`, `/supplier-docs`)
-- Shared home: `apps/web/src/components/lcopilot/`
-- Execution order: **extract-first** (refactor exporter into shared, THEN build importer on top)
-- `ValidationSession.workflow_type` enum: `exporter_presentation` / `importer_draft_lc` / `importer_supplier_docs`
-- Sidebars: **4 items exporter** (Dashboard · Upload · Billing · Settings), **5 items importer** (Dashboard · Draft LC Review · Supplier Doc Review · Billing · Settings)
-- Reviews page stays at `/reviews` but removed from sidebar (reach via "View all →" on dashboard)
-- Dashboard wire-up is the hard gate: **5-second smoke** (new session appears on dashboard within 5s of validation completing, no manual reload). Plan 4 Task 7.
+### Live state of importer flows
 
-**Execution mode chosen: INLINE** (not subagent-driven). Ripon has recurring bad experiences with subagents making mistakes. Inline carries full brainstorm context + memory rules forward.
+- `/lcopilot/importer-dashboard` → stats + recent activity + quota banner (Start New card removed)
+- `/lcopilot/importer-dashboard/draft-lc` → Moment 1 page, sidebar visible
+- `/lcopilot/importer-dashboard/supplier-docs` → Moment 2 page, sidebar visible
+- Sidebar: Dashboard / Upload Draft LC / Upload Supplier Docs / Billing / Settings
+- `workflow_type` persisted on session, echoed on response, drives ImportResults header copy and action slot (DraftLcActions / SupplierDocActions)
 
-**First action when resuming Stream A:** read the Phase 1 plan, confirm baseline exporter Playwright is green, start Task 0 (pre-flight recon).
+## Smoke-verified on live
 
-### Stream B — RulHub consumer-side follow-up (NEW WORK LIST)
+Both moments drove the full pipeline end-to-end on 2026-04-22:
 
-RulHub-side Claude shipped 5 big commits this evening. Probe jumped from **4 findings → 336 findings**, score 0.9468 → 0.6638, `rules_checked` now populated (744). Engine-error bugs gone. 1 expected finding surfaces cleanly (inspection-cert date mismatch); others need either trdrhub payload enrichment or RulHub msg-template fixes.
+| Moment | Extract | Resume | Outcome |
+|---|---|---|---|
+| importer_draft_lc (US-VN/DRAFT_CLEAN/LC.pdf) | HTTP 200, 13.1s | HTTP 200, 11.4s | 4 findings (1 critical, 2 minor, 1 info) |
+| importer_supplier_docs (US-VN/SHIPMENT_CLEAN/ × 7 files) | HTTP 200, 11.6s | HTTP 200, 4.4s | 1 critical |
 
-**Read first:**
-- `memory/project_rulhub_2026_04_21_breakthrough.md` — full analysis with payload enrichment checklist and consumer-code checklist
+Run again: `bash scripts/smoke_importer.sh`
 
-**RulHub commits (their side only; don't try to edit their repo):**
-- `b935d19b` — ISBP 821 skeleton supersession (62 rows)
-- `04ef35a4` — Validator fixes: numeric preflight silent-pass + reverse path alias + days alias
-- `8214aaa6` — CLAUDE.md docs update
-- `702d08e6` — `/v1/validate/set` refactor: nested envelope + multi-family fan-out + `rules_checked`
-- `1f15d5e1` — Category C: 4 new CROSSDOC rules + `computed_amount_comparison` validator + `conditional_logic` enhancement
+## Caveat — corpus generator layout bug
 
-**Probe scripts (ready to re-run, no OpenRouter credits needed):**
+`scripts/build_importer_corpus.py` + `scripts/importer_corpus/render.py`
+produce MT700 PDFs with the SWIFT tag in one table cell and value in
+another. Real MT700s are inline prose. Vision extractor handles inline
+fine, stumbles on split cells.
+
+Symptom: smoke flagged "Missing Currency" on a PDF that literally says
+`USD 412,500.00`.
+
+Fix scope: rewrite `_tag_pairs()` in `render.py` to emit inline-prose
+format (`32B Currency Code, Amount USD 412,500.00` on one line, not a
+table row). ~30 min. Regenerate with
+`python scripts/build_importer_corpus.py` and re-smoke.
+
+## Render migration gotcha — IMPORTANT
+
+CLAUDE.md claim "post-deploy runs `alembic upgrade head`" is **false**.
+Service has no pre/post-deploy command. After any backend deploy that
+adds/changes DB columns, run manually:
+
+```bash
+render jobs create srv-d41dio8dl3ps73db8gpg \
+  --start-command "alembic upgrade head" --confirm
 ```
-PYTHONIOENCODING=utf-8 RULHUB_API_KEY=<key> python scripts/rulhub_probe.py
-PYTHONIOENCODING=utf-8 RULHUB_API_KEY=<key> python scripts/rulhub_probe_sources.py
+
+Job may report "status: failed" even when the migration succeeded —
+verify via `curl https://api.trdrhub.com/health/db-schema` which returns
+per-table column counts.
+
+Permanent fix (needs explicit OK):
+```bash
+render services update srv-d41dio8dl3ps73db8gpg \
+  --pre-deploy-command "alembic upgrade head" --confirm
 ```
 
-Status note to RulHub Claude: `scripts/RULHUB_STATUS_NOTE.md` (from this session, summarizes the earlier 4-finding probe — now outdated but still a useful narrative).
+See `memory/reference_render_migrations.md` for full details.
 
-**Work list (trdrhub side only; RulHub has its own separate work list on their repo):**
+## Next-session candidate work (priority order)
 
-1. **Expand engine-error filter phrases** in `apps/api/app/routers/validation/validation_execution.py:_is_rule_engine_error` (~line 1995):
-   - Add `"conditional_logic: {"` and `"computed_amount_comparison: {"` — these are RulHub rule-spec dumps that appear as finding messages when the newer rule types fire but don't render human text. Gate on `null field_a AND null field_b` as before to avoid dropping legit findings.
+### 1. Fix corpus generator layout (frontend smoke unblocker)
 
-2. **Synthesize finding messages in `_normalize_rulhub_finding`** (~line 1929) when `finding` starts with a spec-dump marker. Use `field_a`/`field_b`/`rule_id` to build a human title. Example: CROSSDOC-INV-MATH-001 with `field_b: invoice.total_amount = 397050.0` → "Invoice arithmetic mismatch — stated total does not match computed total from quantity × unit_price".
+Path: `scripts/importer_corpus/render.py` → `_tag_pairs()` / `_lc_flow()`
+Change: render tag/value as inline paragraph, not two-column table
+Verify: regenerate, re-smoke. Expect "Missing Currency" false positive
+to disappear.
 
-3. **Enrich payload** in `validation_execution.py` dual-prefix builder (~line 1590-1870) and `_FIELD_ALIASES_FOR_RULHUB`. Needed new fields:
-   - `invoice.quantity`, `invoice.unit_price` (for INV-MATH — partially works, verify)
-   - `insurance_doc.currency_code`, `lc.incoterms` (for EXTRANEOUS-INSURANCE)
-   - `lc.packing_list_per_carton_required` (new derivation from 46A text)
-   - `packing_list.per_carton_detail` (new extractor field)
-   - `document.original_marking`, `document.signature` (for A31 invoice-signed)
-   - `bill_of_lading.clean_bl` (derive from `on_board_notation_present` + absence of "dirty" markers)
+### 2. Set preDeployCommand on Render (infra hardening)
 
-4. **Tighter dedup** — lc/credit duplicates + conditional_logic-dump variants. Current dedup key `(rule_id, title, expected, found)` won't catch variants with spec-dump titles. Consider `(rule_id, frozenset(documents_involved))` as a secondary key when msg is a spec dump.
+One-liner, needs explicit authorization from Ripon. Prevents the
+migration-skip gotcha forever.
 
-5. **Wire `rules_checked` into diagnostic logs** in `apps/api/app/services/rulhub_client.py:validate_document_set` (~line 435):
-   ```python
-   logger.info(
-       "RulHub %d rules_checked · %d discrepancies · %d crossdoc · score %.4f",
-       result.get("rules_checked", 0),
-       len(result.get("discrepancies", [])),
-       len(result.get("cross_document_discrepancies", result.get("cross_doc_issues", []))),
-       result.get("score", 0.0),
-   )
-   ```
+### 3. Write Playwright specs using the new fixtures
 
-6. **Filter "invalid value" noise on absent fields** — UCP600-2/3 rules report "'entity.role' has an invalid value" when trdrhub doesn't emit that field. Decide per field: populate with sensible default, or filter as noise. RulHub-should-fix too ("field missing" ≠ "invalid value"), but trdrhub may want a local filter in the meantime.
+Phase 2/8 + 4/7 from the parity plan were deferred for lack of
+fixtures. Fixtures exist now at `apps/web/tests/fixtures/importer-corpus/`.
+Three specs to write:
+- `tests/e2e/lcopilot/importer-draft-lc.spec.ts` — Moment 1 flow
+- `tests/e2e/lcopilot/importer-supplier-docs.spec.ts` — Moment 2 flow
+- `tests/e2e/lcopilot/dashboard-updates-on-new-session.spec.ts` — the
+  5-second smoke (must pass before Phase 4 is truly done per original plan)
 
-## RulHub engine bugs (THEIR side, surface but don't try to fix here)
+### 4. Secondary cleanup
 
-- `CROSSDOC-BL-LC-12`: rule references `bl.carrier_name` but field only lives in `bill_of_lading` schema — path mismatch.
-- conditional_logic + computed_amount_comparison rules dump their spec as the finding text.
-- UCP600-20D/20E sometimes report "inconsistent" when values match (e.g. CHITTAGONG == CHITTAGONG).
-- UCP600-2/3 fire "invalid value" on `None` — should fire "field missing" instead.
+- `apps/web/src/pages/ImporterAnalytics.tsx` — now unreachable (Phase 4/6
+  redirects away from `/importer-analytics`). Can be deleted plus
+  its route entry.
+- `apps/web/src/pages/ImportLCUpload.tsx` — semi-orphaned legacy upload
+  page, routes still point at it but new flow is V2 routes.
+- Legacy `api/importer.ts` types — may still reference old
+  BankPrecheckResponse shape from before Phase 3/4; worth a pass.
 
-Don't try to fix these in trdrhub — they're in `J:\Enso Intelligence\ICC Rule Engine`. Surface to RulHub Claude if it comes up.
+### 5. Expand corpus
 
-## Priority recommendation for next session
-
-**Start with Stream A — Importer Phase 1** unless you want RulHub findings surfacing on the live UI first.
-
-Why: Stream A is a pure refactor of exporter into shared components with zero behavior change. It unblocks all 4 phases of importer work. Stream B (RulHub consumer fixes) is a small set of targeted edits that can slot in later — doesn't block anything. Also Stream B is harder to verify end-to-end without OpenRouter credits (no Opus veto to validate the findings after filtering).
-
-If you want to see RulHub findings on the UI tonight: do a small Stream B slice — items 1 + 2 + 5 above. ~1-2 hours of work. Leave payload enrichment (3) + dedup (4) + noise filter (6) for later once credits are back.
+Currently 4 corridors (US-VN, UK-IN, DE-CN, BD-CN). More corridors =
+`corridors.py` dict additions, nothing else. Ripon asked for world
+scale — likely candidates: BR-MX, UAE-TR, AU-ID, MY-SG, TH-VN.
 
 ## Quick starter commands
 
-**Resume importer Phase 1:**
-```
-cat docs/superpowers/plans/2026-04-21-phase-1-shared-extraction.md
-cd apps/web && npm run type-check && npm run lint && npm run test
-cd apps/web && npx playwright test tests/e2e/lcopilot/exporter-validation.spec.ts --reporter=json > /tmp/phase1-baseline.json
+```bash
+# Pull latest state
+git log --oneline -10
+curl -s https://api.trdrhub.com/health/db-schema
+render deploys list srv-d41dio8dl3ps73db8gpg -o json | python -c "import json,sys; d=json.load(sys.stdin); print(d[0]['status'], d[0]['commit']['id'][:8], d[0]['commit']['message'].splitlines()[0])"
+
+# Re-run smoke
+bash scripts/smoke_importer.sh
+
+# Regenerate corpus
+python scripts/build_importer_corpus.py
+
+# If migration needed (backend commits with model changes):
+render jobs create srv-d41dio8dl3ps73db8gpg --start-command "alembic upgrade head" --confirm
+curl -s https://api.trdrhub.com/health/db-schema   # verify column count
 ```
 
-**Re-probe RulHub to confirm current state:**
-```
-PYTHONIOENCODING=utf-8 RULHUB_API_KEY=<key> python scripts/rulhub_probe.py
-```
+## Credentials (still valid from prior sessions)
 
-**Read the big picture memories:**
-```
-cat CLAUDE.md
-cat memory/project_importer_parity_brainstorm_2026_04_21.md
-cat memory/project_rulhub_2026_04_21_breakthrough.md
-cat memory/feedback_no_hardcoded_validators.md
-cat memory/feedback_dont_reinvent_rulhub.md
-```
+- Supabase login: `imran@iec.com` / `ripc0722`
+- Supabase project: `https://nnmmhgnriisfsncphipd.supabase.co`
+- Anon key: `sb_publishable_db40L4wNiQX0jOTCRJi-8g_9p-PWmN3`
 
-## Reminders (from memory, don't violate)
+## Standing rules (don't violate)
 
-- **Don't touch `J:\Enso Intelligence\ICC Rule Engine`** — separate Claude workspace, separate ball.
-- **No hardcoded Python validators for discrepancy classes** — use the AI Examiner. Only exception is `validate_invoice_arithmetic` deterministic backstop.
-- **Extraction is a blind transcriber** — no format validation at extraction time, no jurisdiction hardcoding.
-- **Don't skip Opus veto.**
-- **Don't re-add loops** (per the prior session's end state).
-- **Vercel plugin hook nags are false positives** — repo is Vite + FastAPI, not Next.js.
-- **Inline execution**, not subagents. Subagents make mistakes in this codebase.
+- **Don't touch `J:\Enso Intelligence\ICC Rule Engine\`** — separate
+  Claude workspace. If RulHub needs a change, surface to Ripon.
+- **No hardcoded Python validators** per discrepancy class — the AI
+  Examiner is the pattern. Only exception: `validate_invoice_arithmetic`
+  deterministic backstop.
+- **Extraction is a blind transcriber** — no format validation at
+  extraction time, no jurisdiction hardcoding.
+- **Don't skip Opus veto** when USE_RULHUB_API=True.
+- **Vercel plugin hook nags are false positives** — Vite + FastAPI
+  repo, not Next.js, not Workflow sandbox.
+- **TrdrHub is global** — no Bangladesh-specific defaults in UI, copy,
+  field extraction, or validators. If a fixture or test needs specific
+  geography, make it parametrized per corridor (see
+  `scripts/importer_corpus/corridors.py`).
+
+## Memory pointers (read first when touching importer-side code)
+
+- `memory/project_importer_parity_shipped_2026_04_22.md` — full record
+  of what's live, what's deferred, env vars to set
+- `memory/project_importer_parity_smoke_verified_2026_04_22.md` — live
+  verification results + UX fixes + corpus metadata
+- `memory/reference_render_migrations.md` — the post-deploy gotcha
+- `memory/project_importer_parity_brainstorm_2026_04_21.md` — original
+  4-phase design decisions (superseded by shipped entry but kept for
+  audit trail)
