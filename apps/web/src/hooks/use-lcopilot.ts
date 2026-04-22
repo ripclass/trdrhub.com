@@ -343,6 +343,7 @@ export const fetchValidationResults = async (jobId: string): Promise<ValidationR
 export const useValidate = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ValidationError | null>(null);
+  const queryClient = useQueryClient();
 
   const validate = useCallback(async (request: ValidationRequest): Promise<ValidationResponse> => {
     setIsLoading(true);
@@ -448,6 +449,11 @@ export const useValidate = () => {
       }
 
       lcopilotLogger.debug('Validation response received', { jobId: response.data?.jobId });
+
+      // Phase 4/3 — invalidate dashboard data so new sessions show up
+      // on Recent Activity within the 5-second window we promise.
+      void queryClient.invalidateQueries({ queryKey: ['user-sessions'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
 
       // 🔍 TIMING TELEMETRY - See where time is spent during validation
       if (response.data?.telemetry?.timings) {
@@ -572,6 +578,7 @@ export interface ResumeValidateRequest {
 export const useResumeValidate = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ValidationError | null>(null);
+  const queryClient = useQueryClient();
 
   const resumeValidate = useCallback(
     async (request: ResumeValidateRequest): Promise<any> => {
@@ -588,6 +595,10 @@ export const useResumeValidate = () => {
         const response = await api.post(`/api/validate/resume/${request.jobId}`, body, {
           headers: { 'Content-Type': 'application/json' },
         });
+        // Phase 4/3 — invalidate so the dashboard picks up the completed
+        // validation without a manual reload.
+        void queryClient.invalidateQueries({ queryKey: ['user-sessions'] });
+        void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
         return response.data;
       } catch (err: any) {
         const validationError: ValidationError = {
