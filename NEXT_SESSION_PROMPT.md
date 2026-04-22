@@ -57,28 +57,23 @@ format (`32B Currency Code, Amount USD 412,500.00` on one line, not a
 table row). ~30 min. Regenerate with
 `python scripts/build_importer_corpus.py` and re-smoke.
 
-## Render migration gotcha — IMPORTANT
+## Render migration gotcha — RESOLVED 2026-04-22 evening
 
-CLAUDE.md claim "post-deploy runs `alembic upgrade head`" is **false**.
-Service has no pre/post-deploy command. After any backend deploy that
-adds/changes DB columns, run manually:
+Earlier in the day CLAUDE.md's "post-deploy runs `alembic upgrade head`"
+claim was FALSE — service had no pre/post-deploy command, which is why
+the Phase 2 migration didn't land automatically and the smoke test
+initially 500'd.
 
-```bash
-render jobs create srv-d41dio8dl3ps73db8gpg \
-  --start-command "alembic upgrade head" --confirm
-```
+Resolved later the same day in commit `07f449a8` ("Add /health/db-schema
+check + move alembic to preDeployCommand") — preDeployCommand now runs
+migrations on every deploy. Future backend deploys migrate
+automatically.
 
-Job may report "status: failed" even when the migration succeeded —
-verify via `curl https://api.trdrhub.com/health/db-schema` which returns
-per-table column counts.
-
-Permanent fix (needs explicit OK):
-```bash
-render services update srv-d41dio8dl3ps73db8gpg \
-  --pre-deploy-command "alembic upgrade head" --confirm
-```
-
-See `memory/reference_render_migrations.md` for full details.
+Still useful: verify via `curl https://api.trdrhub.com/health/db-schema`
+after any backend deploy that touches the model. The endpoint returns
+per-table column counts and a `missing_columns` list. See
+`memory/reference_render_migrations.md` for the manual-run fallback if
+preDeploy ever fails.
 
 ## Next-session candidate work (priority order)
 
@@ -89,12 +84,7 @@ Change: render tag/value as inline paragraph, not two-column table
 Verify: regenerate, re-smoke. Expect "Missing Currency" false positive
 to disappear.
 
-### 2. Set preDeployCommand on Render (infra hardening)
-
-One-liner, needs explicit authorization from Ripon. Prevents the
-migration-skip gotcha forever.
-
-### 3. Write Playwright specs using the new fixtures
+### 2. Write Playwright specs using the new fixtures
 
 Phase 2/8 + 4/7 from the parity plan were deferred for lack of
 fixtures. Fixtures exist now at `apps/web/tests/fixtures/importer-corpus/`.
@@ -104,7 +94,7 @@ Three specs to write:
 - `tests/e2e/lcopilot/dashboard-updates-on-new-session.spec.ts` — the
   5-second smoke (must pass before Phase 4 is truly done per original plan)
 
-### 4. Secondary cleanup
+### 3. Secondary cleanup
 
 - `apps/web/src/pages/ImporterAnalytics.tsx` — now unreachable (Phase 4/6
   redirects away from `/importer-analytics`). Can be deleted plus
@@ -114,7 +104,7 @@ Three specs to write:
 - Legacy `api/importer.ts` types — may still reference old
   BankPrecheckResponse shape from before Phase 3/4; worth a pass.
 
-### 5. Expand corpus
+### 4. Expand corpus
 
 Currently 4 corridors (US-VN, UK-IN, DE-CN, BD-CN). More corridors =
 `corridors.py` dict additions, nothing else. Ripon asked for world
