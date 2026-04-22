@@ -23,7 +23,14 @@ export interface ValidationRequest {
   notes?: string;
   documentTags?: Record<string, string>; // Map of filename to document type
   userType?: string; // 'exporter' or 'importer' or 'bank'
-  workflowType?: string; // Specific workflow type
+  workflowType?: string; // Legacy telemetry label (e.g. "export-lc-upload")
+  /**
+   * WorkflowType enum the backend persists on ValidationSession. Distinct
+   * from the legacy `workflowType` telemetry string so callers don't have
+   * to choose between the two. When provided, sent as the ?workflow_type=
+   * URL query param, which the backend reads first.
+   */
+  workflowTypeEnum?: 'exporter_presentation' | 'importer_draft_lc' | 'importer_supplier_docs';
   metadata?: Record<string, any>; // Additional metadata (e.g., clientName, dateReceived)
   lcTypeOverride?: 'auto' | 'export' | 'import';
   intakeOnly?: boolean;
@@ -406,12 +413,16 @@ export const useValidate = () => {
         validateHeaders['X-Client-Request-ID'] = request.clientRequestId;
       }
 
+      const validateUrl = request.workflowTypeEnum
+        ? `/api/validate/?workflow_type=${encodeURIComponent(request.workflowTypeEnum)}`
+        : '/api/validate/';
+
       while (attempt < maxAttempts && !response) {
         attempt += 1;
         try {
           // Trailing slash avoids the Render 307 redirect to /api/validate/
           // which strips CORS headers and forces a retry.
-          response = await api.post('/api/validate/', formData, {
+          response = await api.post(validateUrl, formData, {
             headers: validateHeaders,
           });
         } catch (err: any) {
