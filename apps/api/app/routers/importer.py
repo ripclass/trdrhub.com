@@ -38,6 +38,51 @@ def require_importer_user(current_user: User = Depends(get_current_user)) -> Use
     return current_user
 
 
+def _upload_fix_pack_and_sign(
+    *,
+    session_id: UUID,
+    file_name: str,
+    zip_bytes: bytes,
+) -> str:
+    """Upload a fix-pack ZIP to S3 and return a 24-hour signed URL.
+
+    Falls back to the in-app /download route when S3 isn't configured
+    (missing boto3 setup, stub mode, etc.) so local dev keeps working
+    without cloud credentials.
+    """
+    import os
+
+    bucket = os.getenv("FIX_PACK_BUCKET") or os.getenv("S3_BUCKET_NAME")
+    if not bucket:
+        logger.info("FIX_PACK_BUCKET/S3_BUCKET_NAME unset — falling back to local download URL")
+        return f"/api/importer/supplier-fix-pack/{session_id}/download"
+
+    try:
+        import boto3  # type: ignore[import-not-found]
+
+        key = f"fix-packs/{session_id}/{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.zip"
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=zip_bytes,
+            ContentType="application/zip",
+            ContentDisposition=f'attachment; filename="{file_name}"',
+        )
+        signed_url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=86400,  # 24 hours
+        )
+        return signed_url
+    except Exception as exc:
+        # Never fail the whole request on S3 trouble — the fix-pack bytes
+        # still exist in the ZIP the caller generated. Fall back to the
+        # in-app download URL so the importer can still grab it.
+        logger.warning("Fix-pack S3 upload failed, falling back to local URL: %s", exc)
+        return f"/api/importer/supplier-fix-pack/{session_id}/download"
+
+
 # ===== Schemas =====
 
 class SupplierFixPackRequest(BaseModel):
@@ -193,13 +238,14 @@ Please address all issues before resubmitting.
         zip_buffer.seek(0)
         file_name = f"Supplier_Fix_Pack_{lc_number}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
 
-        # In production, upload to S3 and return signed URL
-        # For now, return a data URL or store in memory
-        # TODO: Upload to S3 and generate signed URL
-        download_url = f"/api/importer/supplier-fix-pack/{request.validation_session_id}/download"
-
-        # Store in session or temporary storage (for demo)
-        # In production, use S3 with signed URLs
+        # Upload to S3 and return a signed URL (24h expiry).
+        # Falls back to the existing /download endpoint when S3 isn't
+        # configured (local dev, USE_STUBS mode) so the API stays usable.
+        download_url = _upload_fix_pack_and_sign(
+            session_id=request.validation_session_id,
+            file_name=file_name,
+            zip_bytes=zip_buffer.getvalue(),
+        )
 
         # Audit log
         audit_service = AuditService(db)
