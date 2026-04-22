@@ -429,7 +429,8 @@ function App() {
         } />
         <Route path="/lcopilot/exporter-results" element={<LegacyExporterResultsRedirect />} />
         <Route path="/lcopilot/exporter-analytics" element={<RequireAuth><ExporterAnalytics /></RequireAuth>} />
-        <Route path="/lcopilot/importer-analytics" element={<RequireAuth><ImporterAnalytics /></RequireAuth>} />
+        {/* Phase 4/6: /importer-analytics folded into the dashboard stats strip */}
+        <Route path="/lcopilot/importer-analytics" element={<Navigate to="/lcopilot/importer-dashboard" replace />} />
         <Route path="/lcopilot/analytics" element={<RequireAuth><AnalyticsPage /></RequireAuth>} />
         <Route path="/lcopilot/analytics/exporter" element={<RequireAuth><ExporterAnalyticsPage /></RequireAuth>} />
         <Route path="/lcopilot/analytics/bank" element={<RequireAuth><BankAnalyticsPage /></RequireAuth>} />
