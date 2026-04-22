@@ -98,11 +98,12 @@ export function resultsTabToSection(tab: string): ExporterSection {
   }
 }
 
-// Sidebar section type — matches the 5-item ExporterSidebar
+// Sidebar section type — Phase 4/1 slimmed this to the 4-item minimum.
+// Reviews content is still reachable via the Recent Activity "View all →"
+// link on the dashboard, but it no longer has its own sidebar item.
 export type SidebarSection =
   | 'dashboard'
   | 'upload'
-  | 'reviews'
   | 'billing'
   | 'settings';
 
@@ -122,7 +123,10 @@ export function sectionToSidebar(section: ExporterSection): SidebarSection {
     case 'history':
     case 'analytics':
     case 'customs':
-      return 'reviews';
+      // Reviews-content surfaces render as part of the dashboard now;
+      // the sidebar highlight stays on Dashboard while any of them are
+      // the active content section.
+      return 'dashboard';
     default:
       return 'dashboard';
   }
@@ -137,8 +141,6 @@ export function sidebarToSection(sidebar: SidebarSection): ExporterSection | Sid
       return 'overview';
     case 'upload':
       return 'upload';
-    case 'reviews':
-      return 'reviews';
     // billing and settings are handled directly by the dashboard, not via ExporterSection
     case 'billing':
     case 'settings':

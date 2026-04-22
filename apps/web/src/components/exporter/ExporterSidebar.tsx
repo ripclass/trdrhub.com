@@ -1,5 +1,5 @@
 // ExporterSidebar - Navigation component for Exporter Dashboard
-import { Upload, Clock, BarChart3, Settings, Building2, CreditCard, LogOut, ArrowLeft } from "lucide-react";
+import { Upload, BarChart3, Settings, Building2, CreditCard, LogOut, ArrowLeft } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 import {
   Sidebar,
@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 export type ExporterSidebarSection =
   | "dashboard"
   | "upload"
-  | "reviews"
   | "billing"
   | "settings";
 
@@ -93,20 +92,10 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
                 <SidebarMenuButton
                   isActive={activeSection === "upload"}
                   onClick={() => onSectionChange("upload")}
-                  tooltip="New Validation"
+                  tooltip="Upload"
                 >
                   <Upload />
-                  <span>New Validation</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "reviews"}
-                  onClick={() => onSectionChange("reviews")}
-                  tooltip="Validations"
-                >
-                  <Clock />
-                  <span>Validations</span>
+                  <span>Upload</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
