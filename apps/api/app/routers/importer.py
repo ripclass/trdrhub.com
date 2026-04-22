@@ -124,12 +124,16 @@ class BankPrecheckRequest(BaseModel):
 
 
 class BankPrecheckResponse(BaseModel):
-    """Response for bank precheck request."""
+    """Response for bank precheck request — tightened verdict memo."""
     success: bool
     message: str
     request_id: str
     submitted_at: datetime
     bank_name: Optional[str] = None
+    # Tightened-threshold verdict + breakdown + one-page memo
+    precheck_verdict: Optional[str] = None  # approve | review | reject
+    counts: Optional[Dict[str, int]] = None
+    memo: Optional[str] = None
 
 
 class AmendmentRequestRequest(BaseModel):
@@ -542,25 +546,49 @@ async def request_bank_precheck(
                 detail="Validation session not found"
             )
 
-        # Check if there are any discrepancies (should be none for precheck)
-        discrepancy_count = db.query(Discrepancy).filter(
-            Discrepancy.validation_session_id == request.validation_session_id
-        ).count()
+        # Precheck no longer rejects sessions with outstanding discrepancies —
+        # the whole point is to evaluate the current presentation under
+        # stricter thresholds. Pull findings from validation_results first
+        # (richer examiner output), fall back to Discrepancy rows.
+        from ..services.importer.bank_precheck import compute_precheck_verdict, build_memo
 
-        if discrepancy_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot request bank precheck with {discrepancy_count} outstanding issues. Please resolve all issues first."
-            )
+        results_blob: Dict[str, Any] = session.validation_results or {}
+        structured_issues = (
+            results_blob.get("issues")
+            or results_blob.get("structured_result", {}).get("issues")
+            or []
+        )
+        findings: list = list(structured_issues) if isinstance(structured_issues, list) else []
+
+        if not findings:
+            rows = db.query(Discrepancy).filter(
+                Discrepancy.validation_session_id == session.id,
+                Discrepancy.deleted_at.is_(None),
+            ).all()
+            findings = [
+                {
+                    "severity": d.severity,
+                    "rule_id": d.rule_name,
+                    "title": d.description,
+                }
+                for d in rows
+            ]
+
+        verdict_payload = compute_precheck_verdict(findings)
+        memo = build_memo(session, verdict_payload, request.bank_name, request.notes)
 
         import hashlib
         request_id = hashlib.md5(
             f"{request.validation_session_id}{request.lc_number}{datetime.utcnow()}".encode()
         ).hexdigest()
 
-        # TODO: In production, integrate with bank API or notification system
-        # For now, simulate bank precheck request
-        logger.info(f"Bank precheck requested for LC {request.lc_number} by user {current_user.id}")
+        logger.info(
+            "Bank precheck verdict=%s counts=%s for LC %s by user %s",
+            verdict_payload["precheck_verdict"],
+            verdict_payload["counts"],
+            request.lc_number,
+            current_user.id,
+        )
 
         # Audit log
         audit_service = AuditService(db)
@@ -594,7 +622,10 @@ async def request_bank_precheck(
             message=f"Bank precheck review requested for LC {request.lc_number}",
             request_id=request_id,
             submitted_at=datetime.utcnow(),
-            bank_name=request.bank_name
+            bank_name=request.bank_name,
+            precheck_verdict=verdict_payload["precheck_verdict"],
+            counts=verdict_payload["counts"],
+            memo=memo,
         )
 
     except HTTPException:
