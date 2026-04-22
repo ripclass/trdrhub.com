@@ -289,3 +289,14 @@ trdrhub-suite/
 # Allow admin lib files
 !apps/web/src/lib/
 !apps/web/src/lib/**
+apps/api/tests/stress_corpus/
+
+# Screenshots + Playwright MCP at repo root (dev artifacts, not app assets)
+# ------------------------------------------------------------------------
+/*.png
+.playwright-mcp/
+
+# Repo-root tmp_* dev scratch (bundles, probe captures, chrome profile, tokens)
+# -----------------------------------------------------------------------------
+/tmp_*
+golden-corpus/
