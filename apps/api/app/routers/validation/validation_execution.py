@@ -1756,6 +1756,23 @@ async def execute_validation_pipeline(
                                 "ALL RISKS" in blob or "ALL-RISKS" in blob
                             )
                             derived["insurance_prohibited"] = False
+                            # CROSSDOC-PL-PER-CARTON-001 keys off this LC-side
+                            # boolean. 46A or 47A wording demanding a
+                            # carton-by-carton packing breakdown looks like
+                            # "PACKING LIST IN ... ORIGINALS SHOWING CARTONWISE
+                            # BREAKDOWN" or "PER CARTON DETAILS".
+                            derived["packing_list_per_carton_required"] = any(
+                                p in blob
+                                for p in (
+                                    "PER CARTON",
+                                    "PER-CARTON",
+                                    "CARTON-WISE",
+                                    "CARTONWISE",
+                                    "EACH CARTON",
+                                    "CARTON BY CARTON",
+                                    "CARTON-BY-CARTON",
+                                )
+                            )
                         return derived
 
                     def _derive_bl_booleans(
@@ -1791,6 +1808,10 @@ async def execute_validation_pipeline(
                         dirty_signal = _str_contains(raw_text, "CLAUSED", "DIRTY")
                         if clean_signal or dirty_signal:
                             derived["clean_on_board"] = clean_signal and not dirty_signal
+                            # RulHub rules use both ``clean_on_board`` and
+                            # ``clean_bl`` as field names. Mirror so either
+                            # path resolves.
+                            derived["clean_bl"] = derived["clean_on_board"]
                         # Propagate LC transhipment posture so BL-side rules
                         # can compare against it without re-walking the LC.
                         if "transhipment_allowed" in lc_derived:
@@ -1827,6 +1848,67 @@ async def execute_validation_pipeline(
                         overlap = len(a & b)
                         smaller = min(len(a), len(b))
                         return (overlap / smaller) >= 0.6 if smaller else None
+
+                    # ---- Per-doc ORIGINAL/COPY marking + signature presence -
+                    # ISBP821-A31 (invoice unsigned) and similar rules check
+                    # whether the presented document is marked ORIGINAL and
+                    # carries a visible signature block. Extraction is a blind
+                    # transcriber and doesn't emit these as discrete fields,
+                    # so we derive from raw_text in the RulHub builder.
+                    def _derive_doc_metadata(
+                        fields: Dict[str, Any],
+                        raw_text: str,
+                    ) -> Dict[str, Any]:
+                        derived: Dict[str, Any] = {}
+                        raw_upper = str(raw_text or "").upper()
+                        if not raw_upper:
+                            return derived
+                        # Markings live in headers/footers/stamps — sample
+                        # the first and last 600 chars to cut noise.
+                        head_tail = raw_upper[:600] + " " + raw_upper[-600:]
+                        if "ORIGINAL" in head_tail:
+                            derived["original_marking"] = "ORIGINAL"
+                        elif "DUPLICATE" in head_tail:
+                            derived["original_marking"] = "DUPLICATE"
+                        elif "TRIPLICATE" in head_tail:
+                            derived["original_marking"] = "TRIPLICATE"
+                        elif "COPY" in head_tail:
+                            derived["original_marking"] = "COPY"
+                        # Signature presence — only emit True when we see a
+                        # clear signature-block marker. Don't emit False on
+                        # absence (could just be that the marker phrase
+                        # isn't standard).
+                        sig_markers = (
+                            "AUTHORIZED SIGNATURE",
+                            "SIGNED FOR",
+                            "FOR AND ON BEHALF",
+                            "SIGNATURE OF",
+                            "DULY SIGNED",
+                            "AUTHORISED SIGNATURE",
+                        )
+                        if any(m in raw_upper for m in sig_markers):
+                            derived["signature"] = True
+                        return derived
+
+                    # ---- Packing list per-carton breakdown detection -------
+                    # CROSSDOC-PL-PER-CARTON-001 needs to know whether the
+                    # packing list itself contains a carton-by-carton table.
+                    # The structural flattener collapses ``size_breakdown``
+                    # into a SKU-level scalar, so we scan raw_text for
+                    # numbered-carton patterns directly.
+                    def _derive_packing_per_carton(raw_text: str) -> Dict[str, Any]:
+                        derived: Dict[str, Any] = {}
+                        raw_upper = str(raw_text or "").upper()
+                        if not raw_upper:
+                            return derived
+                        import re as _re
+                        carton_label = len(_re.findall(r"\bCARTON\s*[#]?\s*\d+\b", raw_upper))
+                        cn_range = len(_re.findall(r"\bC[/.]?N\s*[:.]?\s*\d+", raw_upper))
+                        ctn_no = len(_re.findall(r"\bCTN\s*[#.]?\s*NO\.?\s*\d+", raw_upper))
+                        derived["per_carton_detail"] = (
+                            carton_label >= 2 or cn_range >= 2 or ctn_no >= 2
+                        )
+                        return derived
 
                     # CROSSDOC-INV-MATH-001 wants ``invoice.line_items`` as a
                     # structured list so its computed_amount_comparison rule
@@ -1958,9 +2040,17 @@ async def execute_validation_pipeline(
                             continue
                         _raw_text = _doc_raw.get("raw_text") or ""
                         _fields = _flatten_doc_fields(_doc_raw)
+                        # Originality marking + signature presence apply to
+                        # every supporting doc — derive once before doc-type
+                        # specific work.
+                        _doc_meta = _derive_doc_metadata(_fields, _raw_text)
+                        for _mk, _mv in _doc_meta.items():
+                            _fields.setdefault(_mk, _mv)
                         # Doc-type-specific boolean derivation
                         if _canon == "bl":
                             _fields.update(_derive_bl_booleans(_fields, _raw_text, _lc_booleans))
+                        if _canon == "packing_list":
+                            _fields.update(_derive_packing_per_carton(_raw_text))
                         if _canon == "invoice":
                             # Semantic goods-match against the LC (UCP600-18D)
                             _gm = _goods_match_boolean(
