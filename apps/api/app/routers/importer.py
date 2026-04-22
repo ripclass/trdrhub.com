@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, EmailStr
 
 from ..database import get_db
 from ..core.security import get_current_user
-from ..models import User, UserRole, ValidationSession, Discrepancy, Document
+from ..models import User, UserRole, ValidationSession, Discrepancy, Document, WorkflowType
 from ..services.audit_service import AuditService
 from ..middleware.audit_middleware import create_audit_context
 from ..models.audit_log import AuditAction, AuditResult
@@ -85,6 +85,11 @@ class BankPrecheckResponse(BaseModel):
     request_id: str
     submitted_at: datetime
     bank_name: Optional[str] = None
+
+
+class AmendmentRequestRequest(BaseModel):
+    """Request to generate an amendment request PDF for Moment 1 (Draft LC Review)."""
+    validation_session_id: UUID
 
 
 # ===== Supplier Fix Pack Endpoints =====
@@ -511,4 +516,112 @@ async def request_bank_precheck(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to request bank precheck"
         )
+
+
+# ===== Amendment Request (Moment 1 — Draft LC Review) =====
+
+@router.post("/amendment-request")
+async def generate_amendment_request(
+    request: AmendmentRequestRequest,
+    current_user: User = Depends(require_importer_user),
+    db: Session = Depends(get_db),
+    http_request: Request = None,
+):
+    """Generate a PDF amendment request for a Draft LC Review session.
+
+    The response streams back application/pdf; the importer hands the PDF
+    to their issuing bank so the bank can amend the draft before issuance.
+    """
+    from ..services.importer.amendment_request import (
+        build_amendment_request_pdf,
+        extract_amendment_context,
+    )
+
+    session = db.query(ValidationSession).filter(
+        ValidationSession.id == request.validation_session_id
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Validation session not found",
+        )
+
+    if session.user_id != current_user.id and current_user.role != UserRole.TENANT_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this session",
+        )
+
+    # Amendment request is only meaningful for draft-LC reviews.
+    if session.workflow_type != WorkflowType.IMPORTER_DRAFT_LC.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Amendment requests are only available for importer_draft_lc sessions",
+        )
+
+    # Prefer the structured findings off validation_results (examiner output
+    # carries richer current/suggested text). Fall back to Discrepancy rows
+    # if the JSON blob is empty.
+    results_blob: Dict[str, Any] = session.validation_results or {}
+    structured_issues = (
+        results_blob.get("issues")
+        or results_blob.get("structured_result", {}).get("issues")
+        or []
+    )
+    findings: list = list(structured_issues) if isinstance(structured_issues, list) else []
+
+    if not findings:
+        rows = db.query(Discrepancy).filter(
+            Discrepancy.validation_session_id == session.id,
+            Discrepancy.deleted_at.is_(None),
+        ).all()
+        findings = [
+            {
+                "rule_id": d.rule_name,
+                "title": d.description,
+                "severity": d.severity,
+                "current_text": d.actual_value,
+                "suggested_text": d.expected_value,
+            }
+            for d in rows
+        ]
+
+    try:
+        context = extract_amendment_context(session, findings)
+        pdf_bytes = build_amendment_request_pdf(context)
+    except Exception as exc:
+        logger.error("Amendment-request PDF render failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate amendment request PDF",
+        )
+
+    try:
+        audit_service = AuditService(db)
+        audit_context = create_audit_context(http_request) if http_request else {}
+        audit_service.log_action(
+            action=AuditAction.CREATE,
+            user=current_user,
+            correlation_id=audit_context.get("correlation_id", ""),
+            resource_type="amendment_request",
+            resource_id=str(session.id),
+            details={
+                "lc_number": context.get("lc_number"),
+                "finding_count": len(context.get("findings") or []),
+            },
+            result=AuditResult.SUCCESS,
+        )
+    except Exception as exc:
+        # Audit failure shouldn't kill the download.
+        logger.warning("Amendment-request audit log failed: %s", exc)
+
+    filename = f'amendment-request-{context.get("lc_number", "LC")}.pdf'
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
