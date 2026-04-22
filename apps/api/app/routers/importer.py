@@ -421,14 +421,57 @@ async def notify_supplier(
 
         lc_number = request.lc_number or session.lc_number or "UNKNOWN"
 
-        # TODO: In production, integrate with email service (SendGrid, SES, etc.)
-        # For now, simulate email sending
+        # Real email send via the existing Resend-backed EmailService.
+        # When RESEND_API_KEY is unset (dev, CI) the service reports
+        # enabled=false and we fall back to the previous simulate path so
+        # the endpoint still succeeds locally.
+        from ..services.notifications import EmailService
+
+        email_subject = f"Document discrepancies for LC {lc_number}"
+        narrative = request.message or (
+            "We reviewed the presentation documents against the issued "
+            "letter of credit and surfaced discrepancies that need to be "
+            "resolved before the bank will accept the presentation. The "
+            "attached fix pack details each item and the correction needed."
+        )
+        email_html = (
+            f"<p>Hello,</p>"
+            f"<p>{narrative}</p>"
+            f"<p>Please see the attached fix pack for LC <strong>{lc_number}</strong> "
+            f"and resubmit the corrected documents at your earliest convenience.</p>"
+            f"<p>Review session: <code>{request.validation_session_id}</code></p>"
+            f"<p>— {current_user.email}</p>"
+        )
+
+        email_service = EmailService()
         import hashlib
         notification_id = hashlib.md5(
             f"{request.validation_session_id}{request.supplier_email}{datetime.utcnow()}".encode()
         ).hexdigest()
 
-        logger.info(f"Would send fix pack email to {request.supplier_email} for LC {lc_number}")
+        if email_service.enabled:
+            try:
+                send_result = await email_service.send(
+                    to=request.supplier_email,
+                    subject=email_subject,
+                    html=email_html,
+                    text=narrative,
+                    reply_to=current_user.email,
+                )
+                if send_result.success and send_result.message_id:
+                    notification_id = send_result.message_id
+                elif not send_result.success:
+                    logger.warning(
+                        "Supplier notification send failed: %s", send_result.error
+                    )
+            except Exception as exc:  # pragma: no cover — network/timeout
+                logger.error("EmailService.send raised: %s", exc, exc_info=True)
+        else:
+            logger.info(
+                "RESEND_API_KEY not set — skipping real send for %s (LC %s)",
+                request.supplier_email,
+                lc_number,
+            )
 
         # Audit log
         audit_service = AuditService(db)
