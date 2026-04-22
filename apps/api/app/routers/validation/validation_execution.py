@@ -2254,12 +2254,39 @@ async def execute_validation_pipeline(
                         )
                         return any(p in msg for p in engine_error_phrases)
 
+                    # ---- Pre-veto filter: invalid-value-on-absent-field ----
+                    # RulHub fires "'<field>' has an invalid value" warnings
+                    # against rule paths trdrhub never emits (entity.role,
+                    # credit.concept, credit.honour_method,
+                    # document.signature_method, issuer.qualification, ...).
+                    # The path is real (so field_a is populated) but
+                    # value_a/value_b are null because we sent no value to
+                    # judge. The correct semantics is "field missing", not
+                    # "invalid value" — RulHub is fixing this server-side
+                    # but we filter the noise locally in the meantime.
+                    def _is_invalid_value_on_absent_field(r: Dict[str, Any]) -> bool:
+                        if not isinstance(r, dict):
+                            return False
+                        msg = str(r.get("finding") or r.get("message") or "").lower()
+                        if "invalid value" not in msg:
+                            return False
+                        # Real value sent → real finding (e.g. enum mismatch).
+                        # value_a == 0 / False are legit values; keep those.
+                        if r.get("value_a") not in (None, ""):
+                            return False
+                        if r.get("value_b") not in (None, ""):
+                            return False
+                        return True
+
                     _all_rulhub_findings = list(_disc) + list(_cross)
                     _engine_errors = [
-                        r for r in _all_rulhub_findings if _is_rule_engine_error(r)
+                        r for r in _all_rulhub_findings
+                        if _is_rule_engine_error(r) or _is_invalid_value_on_absent_field(r)
                     ]
                     _real_findings = [
-                        r for r in _all_rulhub_findings if not _is_rule_engine_error(r)
+                        r for r in _all_rulhub_findings
+                        if not _is_rule_engine_error(r)
+                        and not _is_invalid_value_on_absent_field(r)
                     ]
                     if _engine_errors:
                         logger.info(
