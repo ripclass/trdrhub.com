@@ -165,10 +165,11 @@ INSURANCE_FIELDS = {
     # FOB Incoterm — insurance is extraneous (seller shouldn't arrange)
     "issuer": "Green Delta Insurance Co.",
     "issuer_name": "Green Delta Insurance Co.",
-    # Ask C #23: issuer_type is the enum (insurer/agent/broker), separate
-    # from the company name. trdrhub derives this in the insurance_doc
-    # branch of validation_execution.py.
-    "issuer_type": "insurer",
+    # Ask C #23: issuer_type is RulHub's UCP600-28 enum:
+    #   insurance_company, underwriter, agent_for_insurer, proxy_for_insurer.
+    # trdrhub derives this in the insurance_doc branch of
+    # validation_execution.py from the issuer text.
+    "issuer_type": "insurance_company",
     "insurer_name": "Green Delta Insurance Co.",
     "currency": "USD",
     "currency_code": "USD",

@@ -2082,12 +2082,19 @@ async def execute_validation_pipeline(
                             )
                             if _issuer_text:
                                 _s = str(_issuer_text).upper()
-                                if "BROKER" in _s:
-                                    _fields.setdefault("issuer_type", "broker")
-                                elif "AGENT" in _s:
-                                    _fields.setdefault("issuer_type", "agent")
+                                # RulHub's enum (per UCP600-28 probe):
+                                #   insurance_company, underwriter,
+                                #   agent_for_insurer, proxy_for_insurer
+                                # Brokers fold into agent_for_insurer — RulHub
+                                # doesn't carry a separate broker enum value.
+                                if "UNDERWRITER" in _s:
+                                    _fields.setdefault("issuer_type", "underwriter")
+                                elif "PROXY" in _s:
+                                    _fields.setdefault("issuer_type", "proxy_for_insurer")
+                                elif "AGENT" in _s or "BROKER" in _s:
+                                    _fields.setdefault("issuer_type", "agent_for_insurer")
                                 else:
-                                    _fields.setdefault("issuer_type", "insurer")
+                                    _fields.setdefault("issuer_type", "insurance_company")
                             # UCP600-28: insurance must cover at least 110%
                             # of invoice value (or CIF/CIP value) per UCP600
                             # Article 28(f). RulHub's rule is now
