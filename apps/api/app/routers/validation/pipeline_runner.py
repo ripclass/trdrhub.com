@@ -107,6 +107,15 @@ def _attach_pipeline_telemetry(
         telemetry.setdefault("job_id_source", runtime_context.get("job_id_source"))
     if request_id:
         telemetry.setdefault("request_id", request_id)
+
+    # Surface workflow_type at the top level so the frontend results shell
+    # can render moment-aware copy without re-fetching the session row.
+    if "workflow_type" not in result and isinstance(runtime_context, dict):
+        session_obj = runtime_context.get("validation_session")
+        wf = getattr(session_obj, "workflow_type", None) if session_obj is not None else None
+        if wf:
+            result["workflow_type"] = wf
+
     return result
 
 
@@ -126,6 +135,7 @@ async def run_validate_pipeline(
     audit_context,
     runtime_context,
     extract_only: bool = False,
+    workflow_type: str = "exporter_presentation",
 ):
     _set_pipeline_stage(runtime_context, "session_setup", timings)
     try:
@@ -139,6 +149,7 @@ async def run_validate_pipeline(
             checkpoint=checkpoint,
             start_time=start_time,
             runtime_context=runtime_context,
+            workflow_type=workflow_type,
         )
     except Exception as exc:
         raise _annotate_pipeline_failure(exc, "session_setup", timings, runtime_context)
@@ -583,6 +594,10 @@ def _build_extraction_only_response(*, setup_state: dict, payload: dict, db: Any
     lc_context = setup_state.get("lc_context") or {}
     missing_required_documents = _build_missing_required_documents(lc_context, documents)
 
+    workflow_type = (
+        getattr(validation_session, "workflow_type", None) if validation_session is not None else None
+    ) or "exporter_presentation"
+
     return {
         "status": "extraction_ready",
         "job_id": str(job_id) if job_id else None,
@@ -590,6 +605,7 @@ def _build_extraction_only_response(*, setup_state: dict, payload: dict, db: Any
         "documents": documents,
         "lc_context": lc_context,
         "lc_type": setup_state.get("lc_type"),
+        "workflow_type": workflow_type,
         "required_fields": required_fields,
         "missing_required_documents": missing_required_documents,
         "message": "Extraction complete. Review unresolved fields, then call /api/validate/resume/{job_id} to validate.",

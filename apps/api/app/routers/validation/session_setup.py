@@ -90,6 +90,7 @@ async def prepare_validation_session(
     checkpoint,
     start_time,
     runtime_context,
+    workflow_type: str = "exporter_presentation",
 ):
     # Build job context early so async extraction/two-stage telemetry always
     # emits a stable job_id sourced from server context (not request payload).
@@ -106,6 +107,7 @@ async def prepare_validation_session(
         if getattr(current_user, "company_id", None):
             validation_session.company_id = current_user.company_id
         validation_session.status = SessionStatus.PROCESSING.value
+        validation_session.workflow_type = workflow_type
         validation_session.processing_started_at = func.now()
         db.commit()
         job_id = str(validation_session.id)

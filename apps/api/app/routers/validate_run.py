@@ -132,6 +132,7 @@ def build_router(shared: Any) -> APIRouter:
                 doc_type=parsed_request.doc_type,
                 intake_only=parsed_request.intake_only,
                 extract_only=parsed_request.extract_only,
+                workflow_type=parsed_request.workflow_type,
                 start_time=start_time,
                 timings=timings,
                 checkpoint=checkpoint,

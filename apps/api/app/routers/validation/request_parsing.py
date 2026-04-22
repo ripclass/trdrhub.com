@@ -40,12 +40,37 @@ def bind_shared(shared: Any) -> None:
         )
 
 
+_VALID_WORKFLOW_TYPES = frozenset(
+    {"exporter_presentation", "importer_draft_lc", "importer_supplier_docs"}
+)
+
+
 class ParsedValidationRequest(NamedTuple):
     payload: dict[str, Any]
     files_list: list[Any]
     doc_type: str
     intake_only: bool
     extract_only: bool
+    workflow_type: str
+
+
+def _extract_workflow_type(request, payload: dict[str, Any]) -> str:
+    """Resolve the user-facing workflow — query param first, then payload.
+
+    Defaults to ``exporter_presentation`` so existing callers that never
+    send the field behave exactly like before.
+    """
+    raw = None
+    try:
+        raw = request.query_params.get("workflow_type")
+    except Exception:
+        raw = None
+    if not raw:
+        raw = payload.get("workflow_type") or payload.get("workflowType")
+    if not raw:
+        return "exporter_presentation"
+    normalized = str(raw).strip().lower()
+    return normalized if normalized in _VALID_WORKFLOW_TYPES else "exporter_presentation"
 
 
 def extract_request_user_type(payload: dict[str, Any]) -> str:
@@ -228,12 +253,16 @@ async def parse_validate_request(request: Request) -> ParsedValidationRequest:
     extract_only_raw = payload.get("extract_only") or payload.get("extractOnly")
     extract_only = bool(extract_only_raw) and str(extract_only_raw).strip().lower() not in {"false", "0", "no", ""}
 
+    workflow_type = _extract_workflow_type(request, payload)
+    payload["workflow_type"] = workflow_type
+
     return ParsedValidationRequest(
         payload=payload,
         files_list=files_list,
         doc_type=doc_type,
         intake_only=bool(intake_only),
         extract_only=bool(extract_only),
+        workflow_type=workflow_type,
     )
 
 
