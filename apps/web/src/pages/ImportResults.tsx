@@ -38,6 +38,8 @@ import {
   IssuesTab,
 } from "@/components/lcopilot/results/tabs";
 import SummaryStrip from "@/components/lcopilot/SummaryStrip";
+import { DraftLcActions } from "./importer/actions/DraftLcActions";
+import { SupplierDocActions } from "./importer/actions/SupplierDocActions";
 
 // ---------------------------------------------------------------------------
 // Props + types
@@ -133,10 +135,17 @@ export default function ImportResults({
   const jobFailed =
     jobStatus?.status === "failed" || jobStatus?.status === "error";
 
-  // Phase 3 wires <DraftLcActions /> / <SupplierDocActions /> into this slot.
-  // For Phase 2 we keep the slot undefined so VerdictTab renders its own
-  // default chrome without an action rail.
-  const actionSlot = undefined;
+  // Moment-aware action palette. The action endpoints are all live after
+  // Phase 3/1–3/4; these components wrap the use-importer-actions hooks.
+  const actionSlot =
+    workflowType === "importer_draft_lc" && rawJobId ? (
+      <DraftLcActions sessionId={rawJobId} lcNumber={lcNumber || undefined} />
+    ) : workflowType === "importer_supplier_docs" && rawJobId ? (
+      <SupplierDocActions
+        sessionId={rawJobId}
+        lcNumber={lcNumber || undefined}
+      />
+    ) : undefined;
 
   // -------------------------------------------------------------------------
   // Render
