@@ -94,6 +94,17 @@ class SessionStatus(str, Enum):
     FAILED = "failed"
 
 
+class WorkflowType(str, Enum):
+    """What the user is doing with this validation session.
+
+    Drives UI copy and post-validation action palette. Extraction +
+    validation pipelines are identical across all three.
+    """
+    EXPORTER_PRESENTATION = "exporter_presentation"
+    IMPORTER_DRAFT_LC = "importer_draft_lc"
+    IMPORTER_SUPPLIER_DOCS = "importer_supplier_docs"
+
+
 class DocumentType(str, Enum):
     """Document types for LC validation."""
     LETTER_OF_CREDIT = "letter_of_credit"
@@ -257,6 +268,12 @@ class ValidationSession(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True, index=True)
     status = Column(String(50), nullable=False, default=SessionStatus.CREATED.value)
+    workflow_type = Column(
+        String(50),
+        nullable=False,
+        default=WorkflowType.EXPORTER_PRESENTATION.value,
+        server_default=WorkflowType.EXPORTER_PRESENTATION.value,
+    )
     
     # Processing metadata
     ocr_provider = Column(String(50), nullable=True)

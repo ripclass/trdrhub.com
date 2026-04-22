@@ -35,6 +35,7 @@ UsageAction = _legacy.UsageAction  # type: ignore[attr-defined]
 
 UserRole = _legacy.UserRole  # type: ignore[attr-defined]
 SessionStatus = _legacy.SessionStatus  # type: ignore[attr-defined]
+WorkflowType = _legacy.WorkflowType  # type: ignore[attr-defined]
 DocumentType = _legacy.DocumentType  # type: ignore[attr-defined]
 DiscrepancyType = _legacy.DiscrepancyType  # type: ignore[attr-defined]
 DiscrepancySeverity = _legacy.DiscrepancySeverity  # type: ignore[attr-defined]
