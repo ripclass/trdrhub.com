@@ -25,7 +25,7 @@ import { useLcopilotQuota } from "@/hooks/use-lcopilot-quota";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { BlockedUploadModal } from "@/components/validation";
 import { QuotaLimitModal } from "@/components/billing/QuotaLimitModal";
-import { PreparationGuide } from "@/components/exporter/PreparationGuide";
+import { PreparationGuide } from "@/components/lcopilot/PreparationGuide";
 import { smeTemplatesApi } from "@/api/sme-templates";
 import { buildTemplateUploadPrefill } from "@/lib/exporter/templatePrefill";
 import {
