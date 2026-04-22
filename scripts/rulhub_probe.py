@@ -162,7 +162,13 @@ COO_FIELDS = {
 }
 
 INSURANCE_FIELDS = {
-    # FOB Incoterm — insurance is extraneous (seller shouldn't arrange)
+    # FOB Incoterm — insurance is extraneous (seller shouldn't arrange).
+    # CROSSDOC-INCOTERMS-EXTRANEOUS-INSURANCE-001 keys off
+    # insurance_doc.policy_number being present (real-world insurance
+    # certs always print POLICY NO. XXX). Without it the rule has nothing
+    # to flag as extraneous.
+    "policy_number": "GDI-2026-MAR-04471",
+    "certificate_number": "GDI-CERT-2026-04471",
     "issuer": "Green Delta Insurance Co.",
     "issuer_name": "Green Delta Insurance Co.",
     # Ask C #23: issuer_type is RulHub's UCP600-28 enum:
