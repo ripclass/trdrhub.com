@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { BarChart3, PieChart, TrendingUp, Sparkles } from "lucide-react";
-import { safeString } from "../utils";
+import { safeString } from "@/pages/exporter/results/utils";
 
 const StatusBadge = ({ 
   status, 

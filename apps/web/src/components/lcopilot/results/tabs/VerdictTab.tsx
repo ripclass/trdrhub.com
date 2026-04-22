@@ -8,7 +8,7 @@
  * - One sentence verdict, numbered action items, LC summary
  */
 
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -59,6 +59,12 @@ interface VerdictTabProps {
   readinessSummary?: string;
   /** Number of checklist items still flagged for manual review. */
   reviewRequiredCount?: number;
+  /**
+   * Optional moment-aware action palette rendered below the verdict card.
+   * Phase 2 importer flows inject <DraftLcActions /> or <SupplierDocActions />
+   * here; exporter passes nothing and the slot stays empty.
+   */
+  actionSlot?: ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +203,7 @@ export function VerdictTab({
   readinessLabel,
   readinessSummary,
   reviewRequiredCount,
+  actionSlot,
 }: VerdictTabProps) {
   const dedupedIssues = useMemo(() => deduplicateIssues(issueCards), [issueCards]);
 
@@ -448,6 +455,8 @@ export function VerdictTab({
           </CardContent>
         </Card>
       )}
+
+      {actionSlot}
     </div>
   );
 }

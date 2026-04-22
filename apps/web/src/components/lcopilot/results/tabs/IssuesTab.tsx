@@ -10,7 +10,7 @@ import { AlertTriangle, ShieldAlert, ShieldCheck, FileWarning } from "lucide-rea
 import { ExporterIssueCard } from "@/components/exporter/ExporterIssueCard";
 import { ReviewFindingCard, type ReviewFindingCardData } from "@/components/exporter/ReviewFindingCard";
 import { type EmailDraftContext } from "@/components/exporter/HowToFixSection";
-import { normalizeDiscrepancySeverity } from "../utils";
+import { normalizeDiscrepancySeverity } from "@/pages/exporter/results/utils";
 import type { IssueCard } from "@/types/lcopilot";
 
 interface SeverityCounts {

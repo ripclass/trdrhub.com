@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { IssueCard } from '@/types/lcopilot';
-import { BankProfileBadge } from '../BankProfileBadge';
+import { BankProfileBadge } from '@/pages/exporter/results/BankProfileBadge';
 
 // ---------------------------------------------------------------------------
 // Types

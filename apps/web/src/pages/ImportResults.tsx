@@ -31,7 +31,7 @@ import {
   type BankProfile,
   type BankVerdict,
 } from "./exporter/results";
-import { AnalyticsTab, IssuesTab } from "./exporter/results/tabs";
+import { AnalyticsTab, IssuesTab } from "@/components/lcopilot/results/tabs";
 import {
   FileText,
   Download,

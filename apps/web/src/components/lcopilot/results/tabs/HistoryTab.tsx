@@ -5,7 +5,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { History, Building2, Loader2 } from "lucide-react";
-import { SubmissionHistoryCard } from "../SubmissionHistoryCard";
+import { SubmissionHistoryCard } from "@/pages/exporter/results/SubmissionHistoryCard";
 import type { BankSubmissionRead } from "@/api/exporter";
 
 interface HistoryTabProps {

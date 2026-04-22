@@ -94,7 +94,7 @@ import {
   type AmendmentFieldChange,
   type ToleranceApplied,
 } from "./exporter/results";
-import { VerdictTab, DocumentsTab, FindingsTab, HistoryTab, AnalyticsTab, IssuesTab } from "./exporter/results/tabs";
+import { VerdictTab, DocumentsTab, FindingsTab, HistoryTab, AnalyticsTab, IssuesTab } from "@/components/lcopilot/results/tabs";
 import type { EmailDraftContext } from "@/components/exporter/HowToFixSection";
 import { EmailDraftDialog } from "@/components/exporter/EmailDraftDialog";
 import { DEFAULT_TAB, isResultsTab, type ResultsTab } from "@/components/lcopilot/dashboardTabs";
