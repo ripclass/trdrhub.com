@@ -1,6 +1,7 @@
 // ExporterDashboard - Section-based dashboard with embedded workflows
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, Link, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -457,55 +458,38 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
     loadAmendedLCs();
   }, [getAllAmendedLCs]);
 
-  // Load real validation sessions
+  // Load real validation sessions via react-query so useValidate /
+  // useResumeValidate invalidating ['user-sessions'] triggers an
+  // auto-refetch (Phase 4/3).
+  const sessionsQuery = useQuery({
+    queryKey: ['user-sessions'],
+    queryFn: async () => {
+      const data = await getUserSessions();
+      return hydrateSessionsWithStructuredResults(data || [], 8);
+    },
+    enabled: !isLoadingAuth && !!authUser,
+    staleTime: 5_000,
+  });
+
   useEffect(() => {
-    let active = true;
-
-    if (isLoadingAuth) {
-      return () => {
-        active = false;
-      };
-    }
-
     if (!authUser) {
       setSessions([]);
       setSessionsError(null);
       setIsLoadingSessions(false);
-      return () => {
-        active = false;
-      };
+      return;
     }
-
-    const loadSessions = async () => {
-      setIsLoadingSessions(true);
+    setIsLoadingSessions(sessionsQuery.isLoading);
+    if (sessionsQuery.error) {
+      console.error('Failed to load validation sessions:', sessionsQuery.error);
+      setSessions([]);
+      setSessionsError('Validation history is temporarily unavailable.');
+      return;
+    }
+    if (sessionsQuery.data) {
+      setSessions(sessionsQuery.data);
       setSessionsError(null);
-      try {
-        const data = await getUserSessions();
-        const hydratedSessions = await hydrateSessionsWithStructuredResults(data || [], 8);
-        if (!active) {
-          return;
-        }
-        setSessions(hydratedSessions);
-      } catch (error) {
-        console.error('Failed to load validation sessions:', error);
-        if (!active) {
-          return;
-        }
-        setSessions([]);
-        setSessionsError("Validation history is temporarily unavailable.");
-      } finally {
-        if (active) {
-          setIsLoadingSessions(false);
-        }
-      }
-    };
-
-    void loadSessions();
-
-    return () => {
-      active = false;
-    };
-  }, [authUser?.id, isLoadingAuth]);
+    }
+  }, [authUser, sessionsQuery.data, sessionsQuery.error, sessionsQuery.isLoading]);
 
   const handleDeleteDraft = (draftId: string) => {
     try {
@@ -793,14 +777,22 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
         {/* Main Content - Recent LC Validations */}
         <div className="lg:col-span-2">
           <Card className="shadow-soft border-0">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Recent LC Validations
-              </CardTitle>
-              <CardDescription>
-                Your latest document validation results
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Recent LC Validations
+                </CardTitle>
+                <CardDescription>
+                  Your latest document validation results
+                </CardDescription>
+              </div>
+              <Link
+                to="/reviews"
+                className="text-sm text-primary hover:underline flex-shrink-0"
+              >
+                View all →
+              </Link>
             </CardHeader>
             <CardContent>
               {isLoadingSessions ? (
