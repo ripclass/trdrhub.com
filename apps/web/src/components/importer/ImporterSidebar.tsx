@@ -115,20 +115,20 @@ export function ImporterSidebar({
                 <SidebarMenuButton
                   isActive={activeSection === "draft-lc"}
                   onClick={() => onSectionChange("draft-lc")}
-                  tooltip="Draft LC Review"
+                  tooltip="Upload Draft LC"
                 >
                   <FileText />
-                  <span>Draft LC Review</span>
+                  <span>Upload Draft LC</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={activeSection === "supplier-docs"}
                   onClick={() => onSectionChange("supplier-docs")}
-                  tooltip="Supplier Doc Review"
+                  tooltip="Upload Supplier Docs"
                 >
                   <ShieldCheck />
-                  <span>Supplier Doc Review</span>
+                  <span>Upload Supplier Docs</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

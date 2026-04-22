@@ -19,11 +19,8 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle,
-  FileText,
-  ShieldCheck,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -240,29 +237,6 @@ export default function ImporterDashboardV2() {
             </CardContent>
           </Card>
         </section>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Start New</CardTitle>
-            <CardDescription>
-              Pick the workflow that matches your current moment.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2">
-            <Button asChild size="lg">
-              <Link to="/lcopilot/importer-dashboard/draft-lc">
-                <FileText className="mr-2 h-5 w-5" />
-                Review Draft LC
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="secondary">
-              <Link to="/lcopilot/importer-dashboard/supplier-docs">
-                <ShieldCheck className="mr-2 h-5 w-5" />
-                Review Supplier Docs
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">

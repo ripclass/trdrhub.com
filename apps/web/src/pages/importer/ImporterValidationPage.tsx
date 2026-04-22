@@ -17,6 +17,11 @@ import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import { FileText, Upload, X } from "lucide-react";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import {
+  ImporterSidebar,
+  type ImporterSidebarSection,
+} from "@/components/importer/ImporterSidebar";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -107,8 +112,36 @@ export function ImporterValidationPage({ moment }: ImporterValidationPageProps) 
 
   const jobId = extractionPayload?.jobId || extractionPayload?.job_id;
 
+  const sidebarSection: ImporterSidebarSection =
+    moment === "draft_lc" ? "draft-lc" : "supplier-docs";
+
+  const handleSectionChange = useCallback(
+    (next: ImporterSidebarSection) => {
+      if (next === "dashboard") {
+        navigate("/lcopilot/importer-dashboard");
+      } else if (next === "draft-lc") {
+        navigate("/lcopilot/importer-dashboard/draft-lc");
+      } else if (next === "supplier-docs") {
+        navigate("/lcopilot/importer-dashboard/supplier-docs");
+      } else if (next === "billing") {
+        navigate("/lcopilot/importer-dashboard?section=billing");
+      } else if (next === "settings") {
+        navigate("/lcopilot/importer-dashboard?section=settings");
+      }
+    },
+    [navigate],
+  );
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <DashboardLayout
+      sidebar={
+        <ImporterSidebar
+          activeSection={sidebarSection}
+          onSectionChange={handleSectionChange}
+        />
+      }
+    >
+      <div className="container mx-auto p-6 space-y-6">
       <header>
         <h1 className="text-2xl font-bold">{config.pageTitle}</h1>
         <p className="text-muted-foreground">{config.pageDescription}</p>
@@ -188,6 +221,7 @@ export function ImporterValidationPage({ moment }: ImporterValidationPageProps) 
           onBackToUpload={onBackToUpload}
         />
       )}
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }
