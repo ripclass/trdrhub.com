@@ -1828,6 +1828,86 @@ async def execute_validation_pipeline(
                         smaller = min(len(a), len(b))
                         return (overlap / smaller) >= 0.6 if smaller else None
 
+                    # CROSSDOC-INV-MATH-001 wants ``invoice.line_items`` as a
+                    # structured list so its computed_amount_comparison rule
+                    # can validate Σ(qty × unit_price) == stated total. The
+                    # structural flattener in ai_first_extractor collapses
+                    # multi-line ``quantity`` arrays into a scalar sum and
+                    # multi-line ``unit_price`` lists into comma-joined
+                    # strings — neither usable by an arithmetic check.
+                    # Rebuild the line-item structure here from whichever
+                    # representation the extractor preserved.
+                    def _coerce_to_number(v: Any) -> Optional[float]:
+                        if v is None or isinstance(v, bool):
+                            return None
+                        if isinstance(v, (int, float)):
+                            return float(v)
+                        if isinstance(v, str):
+                            s = v.strip().replace(",", "").replace("$", "")
+                            try:
+                                return float(s)
+                            except ValueError:
+                                return None
+                        return None
+
+                    def _extract_invoice_line_items(
+                        invoice_raw: Dict[str, Any],
+                        invoice_fields: Dict[str, Any],
+                    ) -> Tuple[List[Dict[str, Any]], Optional[float]]:
+                        """Return (line_items, computed_total).
+
+                        Looks at ``line_items`` / ``items`` / ``goods_items``
+                        plural arrays first (skipped by structural flattener
+                        so they survive intact), then falls back to the
+                        ``quantity__items`` / ``amount__items`` sidecars.
+                        Each item is normalized to numeric
+                        ``{quantity, unit_price, line_total}`` with
+                        ``line_total`` derived from qty × unit_price when
+                        absent. ``computed_total`` is the sum of line_totals,
+                        ``None`` if no items had usable numerics.
+                        """
+                        candidates = (
+                            invoice_raw.get("line_items")
+                            or invoice_raw.get("items")
+                            or invoice_raw.get("goods_items")
+                            or invoice_fields.get("quantity__items")
+                            or invoice_fields.get("amount__items")
+                        )
+                        if not isinstance(candidates, list) or not candidates:
+                            return [], None
+                        cleaned: List[Dict[str, Any]] = []
+                        total = 0.0
+                        any_counted = False
+                        for li in candidates:
+                            if not isinstance(li, dict):
+                                continue
+                            qty = _coerce_to_number(
+                                li.get("quantity") or li.get("qty") or li.get("units")
+                            )
+                            unit = _coerce_to_number(
+                                li.get("unit_price") or li.get("price") or li.get("rate")
+                            )
+                            line_total = _coerce_to_number(
+                                li.get("line_total") or li.get("amount") or li.get("total")
+                            )
+                            if line_total is None and qty is not None and unit is not None:
+                                line_total = qty * unit
+                            item: Dict[str, Any] = {}
+                            if qty is not None:
+                                item["quantity"] = qty
+                            if unit is not None:
+                                item["unit_price"] = unit
+                            if line_total is not None:
+                                item["line_total"] = line_total
+                                total += line_total
+                                any_counted = True
+                            desc = li.get("description") or li.get("item") or li.get("name")
+                            if desc:
+                                item["description"] = str(desc)
+                            if item:
+                                cleaned.append(item)
+                        return cleaned, (total if any_counted else None)
+
                     # UCP600-28E uses ``invoice.cif_amount`` — only meaningful
                     # when LC shipment terms are CIF/CIP (seller responsible
                     # for insurance + freight). Compute a boolean flag we can
@@ -1898,6 +1978,18 @@ async def execute_validation_pipeline(
                                 )
                                 if _inv_amt not in (None, "", []):
                                     _fields.setdefault("cif_amount", _inv_amt)
+                            # Line items + computed total for
+                            # CROSSDOC-INV-MATH-001. We send line_items as
+                            # a List[Dict] (RulHub can iterate) AND a scalar
+                            # ``computed_total_from_lines`` (RulHub can
+                            # compare directly against ``total_amount``).
+                            _line_items, _computed_total = _extract_invoice_line_items(
+                                _doc_raw, _fields,
+                            )
+                            if _line_items:
+                                _fields["line_items"] = _line_items
+                            if _computed_total is not None:
+                                _fields["computed_total_from_lines"] = _computed_total
                         _fields = _apply_rulhub_aliases(_canon, _fields)
                         _rulhub_docs.append({"type": _canon, "fields": _fields})
                         _seen_canon.add(_canon)
