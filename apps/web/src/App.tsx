@@ -143,6 +143,8 @@ import CombinedDashboard from './pages/CombinedDashboard'
 import EnterpriseDashboard from './pages/EnterpriseDashboard'
 import { BankAuthProvider } from './lib/bank/auth'
 import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
+import { ImporterValidationPage } from './pages/importer/ImporterValidationPage'
+import { isImporterV2Enabled } from './lib/lcopilot/featureFlags'
 import { RequireAuth } from './components/lcopilot/RequireAuth'
 import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
 import { 
@@ -406,6 +408,20 @@ function App() {
             <ImporterDashboardV2 />
           </LcopilotBetaRoute>
         } />
+        {isImporterV2Enabled() && (
+          <>
+            <Route path="/lcopilot/importer-dashboard/draft-lc" element={
+              <LcopilotBetaRoute scope="importer">
+                <ImporterValidationPage moment="draft_lc" />
+              </LcopilotBetaRoute>
+            } />
+            <Route path="/lcopilot/importer-dashboard/supplier-docs" element={
+              <LcopilotBetaRoute scope="importer">
+                <ImporterValidationPage moment="supplier_docs" />
+              </LcopilotBetaRoute>
+            } />
+          </>
+        )}
         <Route path="/lcopilot/enterprise-dashboard" element={
           <LcopilotBetaRoute scope="enterprise">
             <EnterpriseDashboard />
