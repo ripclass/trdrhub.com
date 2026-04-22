@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate, parseExtractionResponse, type ValidationError } from "@/hooks/use-lcopilot";
+import { useExtractionPayloadStore } from "@/hooks/use-extraction-payload-store";
 import { ExtractionReview } from "@/components/lcopilot/ExtractionReview";
 import { useValidationProgress, type UseValidationProgressState } from "@/hooks/useValidationProgress";
 import { cn } from "@/lib/utils";
@@ -569,25 +570,7 @@ export default function ExportLCUpload({
   //
   // Persisted to sessionStorage so a mid-extraction 401 redirect
   // (Supabase JWT expiry) doesn't wipe the payload on login return.
-  const EXTRACTION_STORAGE_KEY = 'lcopilot_extraction_payload';
-  const [extractionPayload, setExtractionPayloadRaw] = useState<any>(() => {
-    try {
-      const stored = sessionStorage.getItem(EXTRACTION_STORAGE_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
-  const setExtractionPayload = (value: any) => {
-    setExtractionPayloadRaw(value);
-    try {
-      if (value) {
-        sessionStorage.setItem(EXTRACTION_STORAGE_KEY, JSON.stringify(value));
-      } else {
-        sessionStorage.removeItem(EXTRACTION_STORAGE_KEY);
-      }
-    } catch { /* storage full or unavailable — non-critical */ }
-  };
+  const [extractionPayload, setExtractionPayload] = useExtractionPayloadStore<any>();
   // When the user clicks "Back to Upload" from the review screen, we hide the
   // review but preserve extractionPayload for cache reuse on re-extraction.
   const [reviewHidden, setReviewHidden] = useState(false);
