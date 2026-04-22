@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useValidate, parseExtractionResponse, type ValidationError } from "@/hooks/use-lcopilot";
-import { ExtractionReview } from "@/pages/exporter/ExtractionReview";
+import { ExtractionReview } from "@/components/lcopilot/ExtractionReview";
 import { useValidationProgress, type UseValidationProgressState } from "@/hooks/useValidationProgress";
 import { cn } from "@/lib/utils";
 import { useDrafts, type FileMeta, type FileData } from "@/hooks/use-drafts";
