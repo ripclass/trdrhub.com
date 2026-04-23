@@ -109,7 +109,9 @@ const collected: RunResult[] = []
 
 describe('onboarding scenario matrix — new Day 2 shape', () => {
   it.each(NEW_SHAPE_SCENARIOS)('$label routes correctly', (s) => {
-    const user = buildUser({ role: s.userRole ?? s.activities[0] })
+    // Backend User.role only allows exporter/importer/tenant_admin/bank_*,
+    // so we use a simple default and let routing read activities from status.
+    const user = buildUser({ role: s.userRole ?? 'exporter' })
     const status = buildStatus(s.activities, s.country, s.tier)
     const decision = resolveLcopilotRoute({ user, onboardingStatus: status })
 
