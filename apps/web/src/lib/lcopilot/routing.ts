@@ -8,6 +8,7 @@ export type LcopilotBetaDestination =
   | '/admin'
   | '/lcopilot/exporter-dashboard'
   | '/lcopilot/importer-dashboard'
+  | '/lcopilot/agency-dashboard'
   | '/lcopilot/combined-dashboard'
   | '/lcopilot/enterprise-dashboard'
 
@@ -16,6 +17,7 @@ export type LcopilotBetaScope =
   | 'onboarding'
   | 'exporter'
   | 'importer'
+  | 'agency'
   | 'combined'
   | 'enterprise'
 
@@ -29,6 +31,7 @@ export interface LcopilotRouteDecision {
     | 'bank_parked'
     | 'enterprise'
     | 'combined'
+    | 'agency'
     | 'importer'
     | 'exporter'
 }
@@ -39,6 +42,7 @@ const DASHBOARD_DESTINATIONS: Record<
 > = {
   exporter: '/lcopilot/exporter-dashboard',
   importer: '/lcopilot/importer-dashboard',
+  agency: '/lcopilot/agency-dashboard',
   combined: '/lcopilot/combined-dashboard',
   enterprise: '/lcopilot/enterprise-dashboard',
 }
@@ -70,15 +74,21 @@ function normalizeBusinessTypes(details: OnboardingStatus['details']): string[] 
   return raw.map((value) => normalizeText(value)).filter(Boolean)
 }
 
-// Activity-keyed dashboard routing (Day 2 onboarding).
-// agent/services don't have dedicated dashboards yet — map to exporter as the
-// temporary landing page. Day 4 plans to create /lcopilot/agency-dashboard; at
-// that point, swap the `agent` mapping.
+// Activity-keyed dashboard routing.
+// `services` has no dedicated dashboard yet — exporter is the closest match.
+// Keep in sync with ACTIVITY_DASHBOARD in lib/lcopilot/activeWorkspace.ts.
 const ACTIVITY_DESTINATIONS: Record<string, LcopilotBetaDestination> = {
   exporter: '/lcopilot/exporter-dashboard',
   importer: '/lcopilot/importer-dashboard',
-  agent: '/lcopilot/exporter-dashboard',
+  agent: '/lcopilot/agency-dashboard',
   services: '/lcopilot/exporter-dashboard',
+}
+
+const ACTIVITY_REASONS: Record<string, LcopilotRouteDecision['reason']> = {
+  exporter: 'exporter',
+  importer: 'importer',
+  agent: 'agency',
+  services: 'exporter',
 }
 
 function destinationForPrimaryActivity(
@@ -87,9 +97,7 @@ function destinationForPrimaryActivity(
   for (const activity of activities) {
     const dest = ACTIVITY_DESTINATIONS[activity]
     if (dest) {
-      const reason: LcopilotRouteDecision['reason'] =
-        activity === 'importer' ? 'importer' : 'exporter'
-      return { destination: dest, reason }
+      return { destination: dest, reason: ACTIVITY_REASONS[activity] ?? 'exporter' }
     }
   }
   return null

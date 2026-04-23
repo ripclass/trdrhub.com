@@ -55,7 +55,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions, agency
 
 # V2 Pipeline removed - using V1 with enhanced features
 from app.routes.health import router as health_router
@@ -284,6 +284,7 @@ app.include_router(bank_tokens.router)  # Bank API tokens endpoints
 app.include_router(bank_webhooks.router)  # Bank webhooks endpoints
 app.include_router(bank_orgs.router)  # Bank organizations endpoints
 app.include_router(onboarding.router)   # Onboarding wizard endpoints
+app.include_router(agency.router)       # Agency workspace stub (GET /agency/suppliers)
 app.include_router(sme.router)          # SME workspace endpoints (LC Workspace, Drafts, Amendments)
 app.include_router(sme_templates.router)  # SME templates endpoints (LC and document templates with pre-fill)
 app.include_router(workspace_sharing.router)  # SME workspace sharing endpoints (team roles, invitations)

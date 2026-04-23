@@ -264,7 +264,7 @@ describe('resolveLcopilotRoute', () => {
     })
   })
 
-  it('Day 2 shape: agent activity temp-routes to exporter until Day 4 ships agency dashboard', () => {
+  it('Day 4: agent activity lands on agency dashboard', () => {
     const decision = resolveLcopilotRoute({
       user: buildUser(),
       onboardingStatus: buildOnboardingStatus({
@@ -276,8 +276,8 @@ describe('resolveLcopilotRoute', () => {
       }),
     })
     expect(decision).toEqual({
-      destination: '/lcopilot/exporter-dashboard',
-      reason: 'exporter',
+      destination: '/lcopilot/agency-dashboard',
+      reason: 'agency',
     })
   })
 
@@ -303,6 +303,7 @@ describe('matchesLcopilotScope', () => {
   it('matches only the canonical dashboard for each scope', () => {
     expect(matchesLcopilotScope('exporter', '/lcopilot/exporter-dashboard')).toBe(true)
     expect(matchesLcopilotScope('importer', '/lcopilot/importer-dashboard')).toBe(true)
+    expect(matchesLcopilotScope('agency', '/lcopilot/agency-dashboard')).toBe(true)
     expect(matchesLcopilotScope('combined', '/lcopilot/combined-dashboard')).toBe(true)
     expect(matchesLcopilotScope('enterprise', '/lcopilot/enterprise-dashboard')).toBe(true)
     expect(matchesLcopilotScope('exporter', '/lcopilot/importer-dashboard')).toBe(false)

@@ -27,10 +27,10 @@ const STORAGE_KEY = 'lcopilot.activeWorkspace'
 const ACTIVITY_DASHBOARD: Record<BusinessActivity, string> = {
   exporter: '/lcopilot/exporter-dashboard',
   importer: '/lcopilot/importer-dashboard',
-  // agent + services don't have dedicated dashboards yet — map to exporter
-  // until Day 4 ships /lcopilot/agency-dashboard. Keep in sync with
-  // ACTIVITY_DESTINATIONS in lib/lcopilot/routing.ts.
-  agent: '/lcopilot/exporter-dashboard',
+  agent: '/lcopilot/agency-dashboard',
+  // services has no dedicated dashboard yet — exporter is the closest match
+  // (services teams typically operate around exporter workflows). Keep in
+  // sync with ACTIVITY_DESTINATIONS in lib/lcopilot/routing.ts.
   services: '/lcopilot/exporter-dashboard',
 }
 

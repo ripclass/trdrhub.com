@@ -30,6 +30,7 @@ interface DashboardLayoutProps {
   actions?: ReactNode;
   topbar?: ReactNode; // Slot for topbar content (mode toggle, search, etc.)
   workspaceSwitcher?: ReactNode; // Multi-activity header switcher — renders null when not applicable
+  headerExtras?: ReactNode; // Additional header controls (tier-gated links, etc.) — self-hide when N/A
   children: ReactNode;
 }
 
@@ -40,6 +41,7 @@ export function DashboardLayout({
   actions,
   topbar,
   workspaceSwitcher,
+  headerExtras,
   children,
 }: DashboardLayoutProps) {
   return (
@@ -89,6 +91,13 @@ export function DashboardLayout({
             {workspaceSwitcher && (
               <div className="ml-3 flex items-center">
                 {workspaceSwitcher}
+              </div>
+            )}
+
+            {/* Header extras (enterprise-tier Group overview link, etc.) */}
+            {headerExtras && (
+              <div className="ml-2 flex items-center">
+                {headerExtras}
               </div>
             )}
 
