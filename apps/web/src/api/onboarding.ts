@@ -59,8 +59,15 @@ export const approveOnboarding = async (userId: string): Promise<OnboardingStatu
 // packages/shared-types/src/api.ts::OnboardingCompletePayloadSchema.
 // ---------------------------------------------------------------------------
 
-export type BusinessActivity = 'exporter' | 'importer' | 'agent' | 'services'
-export type BusinessTier = 'solo' | 'sme' | 'enterprise'
+// Re-exports — activity + tier constants live in @/lib/lcopilot/activities
+// so they can be imported without pulling the axios client + Supabase runtime
+// into unit tests.
+export {
+  ACTIVITY_PRIORITY,
+  sortActivitiesByPriority,
+  type BusinessActivity,
+  type BusinessTier,
+} from '@/lib/lcopilot/activities'
 
 export interface OnboardingCompletePayload {
   activities: BusinessActivity[]

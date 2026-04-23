@@ -7,7 +7,7 @@ syncs User.role from the primary activity for legacy readers.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,21 @@ _ACTIVITY_TO_LEGACY_ROLE = {
     "exporter": "exporter",
     "importer": "importer",
 }
+
+
+# Canonical activity priority — mirrored from
+# apps/web/src/api/onboarding.ts::ACTIVITY_PRIORITY. activities[0] drives
+# landing dashboard + default active workspace, so we sort here as a
+# belt-and-suspenders guard — even if a frontend caller forgets to sort,
+# the persisted array is deterministic. Keep in lockstep.
+_ACTIVITY_PRIORITY = ("agent", "exporter", "importer", "services")
+
+
+def _sort_activities_by_priority(activities: List[str]) -> List[str]:
+    rank = {value: idx for idx, value in enumerate(_ACTIVITY_PRIORITY)}
+    # Unknown values sort to the end (shouldn't happen — Pydantic validates —
+    # but leaves the array in a sane order if the validator is bypassed).
+    return sorted(activities, key=lambda a: rank.get(a, len(_ACTIVITY_PRIORITY)))
 
 
 def _ensure_company(db: Session, user: User, name_override: Optional[str]) -> Company:
@@ -54,15 +69,19 @@ def complete_onboarding(
     """
     company = _ensure_company(db, user, payload.company_name)
 
-    company.business_activities = list(payload.activities)
+    # Canonicalize activity order before persisting so landing dashboards are
+    # deterministic regardless of the order the user clicked checkboxes in.
+    sorted_activities = _sort_activities_by_priority(list(payload.activities))
+
+    company.business_activities = sorted_activities
     company.country = payload.country
     company.tier = payload.tier
 
     # Mirror the primary activity into event_metadata so legacy status-restore
     # path (routers/onboarding.py::get_status) stays coherent for old clients.
-    primary_activity = payload.activities[0]
+    primary_activity = sorted_activities[0]
     event_meta = dict(company.event_metadata or {})
-    if len(payload.activities) > 1 and "exporter" in payload.activities and "importer" in payload.activities:
+    if len(sorted_activities) > 1 and "exporter" in sorted_activities and "importer" in sorted_activities:
         event_meta["business_type"] = "both"
     else:
         event_meta["business_type"] = primary_activity
@@ -81,10 +100,10 @@ def complete_onboarding(
     # Persist new-shape summary into onboarding_data for frontend restore paths
     # until Day 2 rewires the wizard to read Company directly.
     onboarding_blob = dict(user.onboarding_data or {})
-    onboarding_blob["activities"] = list(payload.activities)
+    onboarding_blob["activities"] = sorted_activities
     onboarding_blob["country"] = payload.country
     onboarding_blob["tier"] = payload.tier
-    onboarding_blob["business_types"] = list(payload.activities)  # legacy key
+    onboarding_blob["business_types"] = list(sorted_activities)  # legacy key
     onboarding_blob["company"] = {
         **onboarding_blob.get("company", {}),
         "name": company.name,

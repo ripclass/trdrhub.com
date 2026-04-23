@@ -35,6 +35,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import {
   completeOnboarding as completeOnboardingRequest,
+  sortActivitiesByPriority,
   type BusinessActivity,
   type BusinessTier,
 } from "@/api/onboarding";
@@ -339,7 +340,12 @@ export default function Register() {
     try {
       const backendRole = getBackendRole();
       const normalizedTier: BusinessTier = tier;
-      const primaryActivity = activities[0];
+
+      // Sort activities by canonical priority so two users with the same
+      // selections (but different click orders) land on the same dashboard.
+      // See ACTIVITY_PRIORITY in @/api/onboarding.
+      const sortedActivities = sortActivitiesByPriority(activities);
+      const primaryActivity = sortedActivities[0];
 
       // Register with company info. We still pass legacy fields (companyType/
       // companySize/businessTypes) so registerWithEmail's existing contract
@@ -351,9 +357,9 @@ export default function Register() {
         backendRole,
         {
           companyName: formData.companyName,
-          companyType: primaryActivity,                  // first activity = primary
+          companyType: primaryActivity,                  // priority-sorted primary
           companySize: normalizedTier,
-          businessTypes: activities,
+          businessTypes: sortedActivities,
           country: country,
           currency: selectedCountry?.currency || "USD",
           paymentGateway: selectedCountry?.paymentGateway || "stripe",
@@ -366,7 +372,7 @@ export default function Register() {
       // that registerWithEmail already seeded.
       try {
         await completeOnboardingRequest({
-          activities,
+          activities: sortedActivities,
           country,
           tier: normalizedTier,
           company_name: formData.companyName,

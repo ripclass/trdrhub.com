@@ -7,7 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useOnboarding } from '@/hooks/use-onboarding'
-import type { BusinessActivity, BusinessTier } from '@/api/onboarding'
+import {
+  sortActivitiesByPriority,
+  type BusinessActivity,
+  type BusinessTier,
+} from '@/api/onboarding'
 
 interface OnboardingWizardProps {
   open: boolean
@@ -157,8 +161,11 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
     setSubmitting(true)
     setError(null)
     try {
+      // Sort by canonical priority before persisting so landing-dashboard
+      // selection is deterministic across users (agent > exporter > importer
+      // > services; see ACTIVITY_PRIORITY in @/api/onboarding).
       await completeOnboarding({
-        activities,
+        activities: sortActivitiesByPriority(activities),
         country,
         tier: finalTier,
       })
