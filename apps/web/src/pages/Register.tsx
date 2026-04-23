@@ -32,80 +32,78 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { useOnboarding } from "@/hooks/use-onboarding";
 import { cn } from "@/lib/utils";
+import {
+  completeOnboarding as completeOnboardingRequest,
+  type BusinessActivity,
+  type BusinessTier,
+} from "@/api/onboarding";
 
 // ─────────────────────────────────────────────────────────────
-// Types & Constants
+// Types & Constants — aligned with the post-auth OnboardingWizard
+// (apps/web/src/components/onboarding/OnboardingWizard.tsx) and the
+// backend Company.business_activities / Company.tier columns.
+// See REGISTER_WIZARD_ALIGNMENT.md at repo root.
 // ─────────────────────────────────────────────────────────────
-
-type CompanyType = "exporter" | "importer" | "both" | "logistics" | "";
-type CompanySize = "small" | "growing" | "established" | "enterprise" | "";
 
 interface CompanyTypeOption {
-  value: CompanyType;
+  value: BusinessActivity;
   label: string;
   description: string;
   icon: React.ElementType;
 }
 
 interface CompanySizeOption {
-  value: CompanySize;
+  value: BusinessTier;
   label: string;
   employees: string;
   icon: React.ElementType;
 }
 
 const COMPANY_TYPES: CompanyTypeOption[] = [
-  { 
-    value: "exporter", 
-    label: "Exporter", 
-    description: "Export goods internationally",
+  {
+    value: "exporter",
+    label: "Exporter",
+    description: "We export goods",
     icon: Package,
   },
-  { 
-    value: "importer", 
-    label: "Importer", 
-    description: "Import goods into our country",
+  {
+    value: "importer",
+    label: "Importer",
+    description: "We import goods",
     icon: PackageOpen,
   },
-  { 
-    value: "both", 
-    label: "Both", 
-    description: "Import and export",
-    icon: RefreshCw,
+  {
+    value: "agent",
+    label: "Sourcing agent",
+    description: "We manage LCs for buyers",
+    icon: Users,
   },
-  { 
-    value: "logistics", 
-    label: "Logistics", 
-    description: "Freight & forwarding",
+  {
+    value: "services",
+    label: "Trade services",
+    description: "Freight / broker / consultant",
     icon: Truck,
   },
 ];
 
 const COMPANY_SIZES: CompanySizeOption[] = [
-  { 
-    value: "small", 
-    label: "Small", 
-    employees: "1-20 people",
+  {
+    value: "solo",
+    label: "Solo",
+    employees: "1-3 people",
     icon: User,
   },
-  { 
-    value: "growing", 
-    label: "Growing", 
-    employees: "21-100 people",
+  {
+    value: "sme",
+    label: "SME",
+    employees: "4-20 people",
     icon: Users,
   },
-  { 
-    value: "established", 
-    label: "Established", 
-    employees: "100-500 people",
-    icon: Building,
-  },
-  { 
-    value: "enterprise", 
-    label: "Enterprise", 
-    employees: "500+ people",
+  {
+    value: "enterprise",
+    label: "Enterprise",
+    employees: "21+, SSO + audit log",
     icon: Factory,
   },
 ];
@@ -182,10 +180,11 @@ const COUNTRIES: CountryOption[] = [
 export default function Register() {
   // Step state
   const [step, setStep] = useState(1);
-  
-  // Step 1 state
-  const [companyType, setCompanyType] = useState<CompanyType>("");
-  const [companySize, setCompanySize] = useState<CompanySize>("");
+
+  // Step 1 state — multi-select activities, single tier, single country.
+  // Shape mirrors OnboardingCompletePayload (apps/api/app/schemas/onboarding.py).
+  const [activities, setActivities] = useState<BusinessActivity[]>([]);
+  const [tier, setTier] = useState<BusinessTier | "">("");
   const [country, setCountry] = useState<string>("");
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   
@@ -205,7 +204,6 @@ export default function Register() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { registerWithEmail } = useAuth();
-  const { updateProgress } = useOnboarding();
 
   // ─────────────────────────────────────────────────────────────
   // Auto-detect country from IP (Vercel Geo Headers)
@@ -241,42 +239,23 @@ export default function Register() {
   // Role & Business Logic
   // ─────────────────────────────────────────────────────────────
 
-  const getBackendRole = (type: CompanyType, size: CompanySize): string => {
-    // Large companies get tenant_admin regardless of type
-    if (size === "established" || size === "enterprise") {
+  // Legacy User.role has a CHECK constraint — only exporter/importer/tenant_admin/bank_*
+  // are allowed. Enterprise-tier users with an exporter/importer activity get tenant_admin
+  // for downstream RBAC; agent/services fall back to exporter (primary activity doesn't
+  // matter once Company.business_activities is persisted — routing reads from there).
+  const getBackendRole = (): string => {
+    if (tier === "enterprise") {
       return "tenant_admin";
     }
-    
-    // Small/growing companies get role based on type
-    const roleMap: Record<string, string> = {
-      exporter: "exporter",
-      importer: "importer",
-      both: "exporter",      // SME "both" defaults to exporter
-      logistics: "exporter", // Logistics uses exporter flow
-    };
-
-    return roleMap[type] || "exporter";
+    const primary = activities[0];
+    if (primary === "importer") return "importer";
+    return "exporter";
   };
 
-  const getBusinessTypes = (type: CompanyType): string[] => {
-    if (type === "both") {
-      return ["exporter", "importer"];
-    }
-    if (type === "logistics") {
-      return ["exporter"]; // Backend recognizes exporter
-    }
-    return type ? [type] : [];
-  };
-
-  const mapSizeToBackend = (size: CompanySize): string => {
-    const sizeMap: Record<CompanySize, string> = {
-      small: "sme",
-      growing: "medium",
-      established: "large",
-      enterprise: "enterprise",
-      "": "sme",
-    };
-    return sizeMap[size];
+  const toggleActivity = (value: BusinessActivity) => {
+    setActivities((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -284,18 +263,18 @@ export default function Register() {
   // ─────────────────────────────────────────────────────────────
 
   const handleContinue = () => {
-    if (!companyType) {
+    if (activities.length === 0) {
       toast({
-        title: "Select your business type",
-        description: "Please tell us what your company does.",
+        title: "Select what your business does",
+        description: "Pick one or more. You can always change this later.",
         variant: "destructive",
       });
       return;
     }
-    if (!companySize) {
+    if (!tier) {
       toast({
         title: "Select your team size",
-        description: "Please tell us how big your team is.",
+        description: "Pick the tier that best matches your team.",
         variant: "destructive",
       });
       return;
@@ -346,12 +325,25 @@ export default function Register() {
       return;
     }
 
-    try {
-      const backendRole = getBackendRole(companyType, companySize);
-      const businessTypes = getBusinessTypes(companyType);
-      const normalizedSize = mapSizeToBackend(companySize);
+    if (!tier) {
+      // Guarded by handleContinue on step 1, but TS needs the narrowing.
+      toast({
+        title: "Select your team size",
+        description: "Please complete step 1 before registering.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
 
-      // Register with company info
+    try {
+      const backendRole = getBackendRole();
+      const normalizedTier: BusinessTier = tier;
+      const primaryActivity = activities[0];
+
+      // Register with company info. We still pass legacy fields (companyType/
+      // companySize/businessTypes) so registerWithEmail's existing contract
+      // stays green until that signature can be simplified in a follow-up.
       await registerWithEmail(
         formData.email,
         formData.password,
@@ -359,32 +351,28 @@ export default function Register() {
         backendRole,
         {
           companyName: formData.companyName,
-          companyType: companyType,
-          companySize: normalizedSize,
-          businessTypes: businessTypes,
+          companyType: primaryActivity,                  // first activity = primary
+          companySize: normalizedTier,
+          businessTypes: activities,
           country: country,
           currency: selectedCountry?.currency || "USD",
           paymentGateway: selectedCountry?.paymentGateway || "stripe",
-        }
+        },
       );
 
-      // Update onboarding progress
+      // Persist the 3-question wizard answers into Company.business_activities /
+      // Company.tier / Company.country via the new endpoint. Non-fatal if this
+      // fails — the fallback routing still works off legacy onboarding_data
+      // that registerWithEmail already seeded.
       try {
-        const requiresTeamSetup = backendRole === "tenant_admin";
-
-        await updateProgress({
-          role: backendRole,
-          company: {
-            name: formData.companyName,
-            type: companyType,
-            size: normalizedSize,
-          },
-          business_types: businessTypes,
-          complete: !requiresTeamSetup,
-          onboarding_step: requiresTeamSetup ? "team_setup" : null,
+        await completeOnboardingRequest({
+          activities,
+          country,
+          tier: normalizedTier,
+          company_name: formData.companyName,
         });
       } catch (error) {
-        console.warn("Failed to sync onboarding progress (non-critical):", error);
+        console.warn("Failed to persist onboarding payload (non-critical):", error);
       }
 
       toast({
@@ -469,18 +457,21 @@ export default function Register() {
                 </div>
 
                 <div className="space-y-6">
-                  {/* Company Type Selection */}
+                  {/* Business Activities — multi-select */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-medium text-[#EDF5F2]/80">Business Type</Label>
+                    <Label className="text-sm font-medium text-[#EDF5F2]/80">
+                      Business Activities
+                      <span className="ml-1 text-xs text-[#EDF5F2]/40">(select all that apply)</span>
+                    </Label>
                     <div className="grid grid-cols-2 gap-3">
                       {COMPANY_TYPES.map((option) => {
                         const Icon = option.icon;
-                        const isSelected = companyType === option.value;
+                        const isSelected = activities.includes(option.value);
                         return (
                           <button
                             key={option.value}
                             type="button"
-                            onClick={() => setCompanyType(option.value)}
+                            onClick={() => toggleActivity(option.value)}
                             className={cn(
                               "relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all text-center",
                               isSelected 
@@ -515,18 +506,18 @@ export default function Register() {
                     </div>
                   </div>
 
-                  {/* Company Size Selection */}
+                  {/* Team Size / Tier */}
                   <div className="space-y-3">
                     <Label className="text-sm font-medium text-[#EDF5F2]/80">Team Size</Label>
                     <div className="grid grid-cols-2 gap-3">
                       {COMPANY_SIZES.map((option) => {
                         const Icon = option.icon;
-                        const isSelected = companySize === option.value;
+                        const isSelected = tier === option.value;
                         return (
                           <button
                             key={option.value}
                             type="button"
-                            onClick={() => setCompanySize(option.value)}
+                            onClick={() => setTier(option.value)}
                             className={cn(
                               "relative flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
                               isSelected 
@@ -673,7 +664,11 @@ export default function Register() {
                     Create your account
                   </h1>
                   <p className="text-[#EDF5F2]/60">
-                    {companyType === "both" ? "Exporter & Importer" : COMPANY_TYPES.find(t => t.value === companyType)?.label} • {COMPANY_SIZES.find(s => s.value === companySize)?.label} Team
+                    {activities
+                      .map((a) => COMPANY_TYPES.find((t) => t.value === a)?.label ?? a)
+                      .join(" & ")}
+                    {" • "}
+                    {COMPANY_SIZES.find((s) => s.value === tier)?.label} Team
                   </p>
                 </div>
 
