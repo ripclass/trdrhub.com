@@ -86,8 +86,12 @@ class Company(Base):
     payment_gateway = Column(String(20), nullable=True, default="stripe")  # stripe, sslcommerz, razorpay, local
 
     # Onboarding (3-question wizard — see onboarding_service.complete_onboarding)
+    # ARRAY(Text) not ARRAY(String) so the PG column type is text[] rather than
+    # varchar[]. text[] avoids an explicit ::text[] cast in the CHECK constraint
+    # (ck_companies_business_activities_valid uses the <@ operator against a
+    # text[] literal).
     business_activities = Column(
-        ARRAY(String),
+        ARRAY(Text),
         nullable=False,
         server_default="{exporter}",
     )

@@ -29,14 +29,17 @@ ALLOWED_TIERS_SQL = "('solo','sme','enterprise')"
 
 
 def upgrade() -> None:
-    # 1. Add business_activities — all existing rows default to ['exporter'].
+    # 1. Add business_activities as TEXT[] — all existing rows default to
+    #    ['exporter']. Using sa.Text (not sa.String) so the resulting column
+    #    is text[] not varchar[]; varchar[] would need an explicit ::text[]
+    #    cast for the <@ operator in the CHECK constraint below.
     op.add_column(
         "companies",
         sa.Column(
             "business_activities",
-            postgresql.ARRAY(sa.String()),
+            postgresql.ARRAY(sa.Text()),
             nullable=False,
-            server_default="{exporter}",
+            server_default=sa.text("ARRAY['exporter']::text[]"),
         ),
     )
 
@@ -62,11 +65,11 @@ def upgrade() -> None:
         """
         UPDATE companies
         SET business_activities = CASE
-            WHEN event_metadata->>'business_type' = 'both'     THEN ARRAY['exporter','importer']
-            WHEN event_metadata->>'business_type' = 'exporter' THEN ARRAY['exporter']
-            WHEN event_metadata->>'business_type' = 'importer' THEN ARRAY['importer']
-            WHEN event_metadata->>'business_type' = 'agent'    THEN ARRAY['agent']
-            WHEN event_metadata->>'business_type' = 'services' THEN ARRAY['services']
+            WHEN event_metadata->>'business_type' = 'both'     THEN ARRAY['exporter','importer']::text[]
+            WHEN event_metadata->>'business_type' = 'exporter' THEN ARRAY['exporter']::text[]
+            WHEN event_metadata->>'business_type' = 'importer' THEN ARRAY['importer']::text[]
+            WHEN event_metadata->>'business_type' = 'agent'    THEN ARRAY['agent']::text[]
+            WHEN event_metadata->>'business_type' = 'services' THEN ARRAY['services']::text[]
             ELSE business_activities
         END
         WHERE event_metadata ? 'business_type'
