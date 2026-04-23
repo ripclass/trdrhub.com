@@ -53,3 +53,26 @@ export const approveOnboarding = async (userId: string): Promise<OnboardingStatu
   return response.data
 }
 
+// ---------------------------------------------------------------------------
+// 3-question wizard (Day 1 backend, Day 2 frontend).
+// Mirrors apps/api/app/schemas/onboarding.py::OnboardingCompletePayload and
+// packages/shared-types/src/api.ts::OnboardingCompletePayloadSchema.
+// ---------------------------------------------------------------------------
+
+export type BusinessActivity = 'exporter' | 'importer' | 'agent' | 'services'
+export type BusinessTier = 'solo' | 'sme' | 'enterprise'
+
+export interface OnboardingCompletePayload {
+  activities: BusinessActivity[]
+  country: string // ISO 3166-1 alpha-2, uppercase
+  tier: BusinessTier
+  company_name?: string
+}
+
+export const completeOnboarding = async (
+  payload: OnboardingCompletePayload,
+): Promise<OnboardingStatus> => {
+  const response = await api.post<OnboardingStatus>('/onboarding/complete', payload)
+  return response.data
+}
+

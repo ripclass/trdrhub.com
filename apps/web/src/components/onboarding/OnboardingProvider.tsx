@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '@/hooks/use-auth'
 import {
+  completeOnboarding as completeOnboardingRequest,
   getOnboardingStatus,
   updateOnboardingProgress,
+  type OnboardingCompletePayload,
   type OnboardingProgressPayload,
   type OnboardingStatus,
 } from '@/api/onboarding'
@@ -12,6 +14,7 @@ interface OnboardingContextType {
   isLoading: boolean
   needsOnboarding: boolean
   updateProgress: (payload: OnboardingProgressPayload) => Promise<void>
+  completeOnboarding: (payload: OnboardingCompletePayload) => Promise<OnboardingStatus>
   refreshStatus: () => Promise<void>
 }
 
@@ -101,6 +104,39 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     }
   }
 
+  const completeOnboarding = async (
+    payload: OnboardingCompletePayload,
+  ): Promise<OnboardingStatus> => {
+    if (GUEST_MODE) {
+      // Guest mode is fully mocked — return the current status unchanged.
+      return (
+        status ?? {
+          user_id: user?.id ?? 'guest',
+          role: payload.activities[0],
+          company_id: null,
+          completed: true,
+          step: null,
+          status: 'active',
+          kyc_status: 'none',
+          required: { basic: [], legal: [], docs: [] },
+          details: {
+            activities: payload.activities,
+            country: payload.country,
+            tier: payload.tier,
+          },
+        }
+      )
+    }
+    try {
+      const updatedStatus = await completeOnboardingRequest(payload)
+      setStatus(updatedStatus)
+      return updatedStatus
+    } catch (error) {
+      console.error('Failed to complete onboarding:', error)
+      throw error
+    }
+  }
+
   const refreshStatus = async () => {
     await loadStatus()
   }
@@ -128,6 +164,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     isLoading: effectivelyLoading,
     needsOnboarding,
     updateProgress,
+    completeOnboarding,
     refreshStatus,
   }
 

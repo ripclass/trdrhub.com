@@ -179,6 +179,117 @@ describe('resolveLcopilotRoute', () => {
       reason: 'system_admin',
     })
   })
+
+  // ---- Day 2 onboarding shape (details.activities) ----
+
+  it('Day 2 shape: single-activity exporter lands on exporter dashboard', () => {
+    const decision = resolveLcopilotRoute({
+      user: buildUser(),
+      onboardingStatus: buildOnboardingStatus({
+        details: {
+          activities: ['exporter'],
+          country: 'BD',
+          tier: 'sme',
+        },
+      }),
+    })
+    expect(decision).toEqual({
+      destination: '/lcopilot/exporter-dashboard',
+      reason: 'exporter',
+    })
+  })
+
+  it('Day 2 shape: single-activity importer lands on importer dashboard', () => {
+    const decision = resolveLcopilotRoute({
+      user: buildUser({ role: 'importer' }),
+      onboardingStatus: buildOnboardingStatus({
+        role: 'importer',
+        details: {
+          activities: ['importer'],
+          country: 'IN',
+          tier: 'sme',
+        },
+      }),
+    })
+    expect(decision).toEqual({
+      destination: '/lcopilot/importer-dashboard',
+      reason: 'importer',
+    })
+  })
+
+  it('Day 2 shape: multi-activity lands on first activity\'s dashboard (NOT combined)', () => {
+    // Core plan directive: "multi-activity -> first activity's dashboard". The
+    // Day 3 workspace switcher will let the user flip to the other workspace.
+    const decision = resolveLcopilotRoute({
+      user: buildUser(),
+      onboardingStatus: buildOnboardingStatus({
+        details: {
+          activities: ['exporter', 'importer'],
+          country: 'BD',
+          tier: 'sme',
+        },
+      }),
+    })
+    expect(decision).toEqual({
+      destination: '/lcopilot/exporter-dashboard',
+      reason: 'exporter',
+    })
+  })
+
+  it('Day 2 shape: enterprise tier does NOT short-circuit to enterprise dashboard', () => {
+    // Enterprise is a pricing tier, not a dashboard (per redesign). The
+    // cross-SBU rollup surfaces on the activity dashboard as a KPI strip
+    // (Day 4+). Landing must still go to the primary activity.
+    const decision = resolveLcopilotRoute({
+      user: buildUser(),
+      onboardingStatus: buildOnboardingStatus({
+        role: 'tenant_admin',
+        details: {
+          activities: ['exporter', 'importer'],
+          country: 'BD',
+          tier: 'enterprise',
+        },
+      }),
+    })
+    expect(decision).toEqual({
+      destination: '/lcopilot/exporter-dashboard',
+      reason: 'exporter',
+    })
+  })
+
+  it('Day 2 shape: agent activity temp-routes to exporter until Day 4 ships agency dashboard', () => {
+    const decision = resolveLcopilotRoute({
+      user: buildUser(),
+      onboardingStatus: buildOnboardingStatus({
+        details: {
+          activities: ['agent'],
+          country: 'BD',
+          tier: 'sme',
+        },
+      }),
+    })
+    expect(decision).toEqual({
+      destination: '/lcopilot/exporter-dashboard',
+      reason: 'exporter',
+    })
+  })
+
+  it('Day 2 shape: services activity routes to exporter (no dedicated dashboard)', () => {
+    const decision = resolveLcopilotRoute({
+      user: buildUser(),
+      onboardingStatus: buildOnboardingStatus({
+        details: {
+          activities: ['services'],
+          country: 'GB',
+          tier: 'solo',
+        },
+      }),
+    })
+    expect(decision).toEqual({
+      destination: '/lcopilot/exporter-dashboard',
+      reason: 'exporter',
+    })
+  })
 })
 
 describe('matchesLcopilotScope', () => {

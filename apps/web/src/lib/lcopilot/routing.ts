@@ -58,14 +58,47 @@ function normalizeText(value: unknown): string {
 }
 
 function normalizeBusinessTypes(details: OnboardingStatus['details']): string[] {
-  const businessTypes = (details as Record<string, unknown> | undefined)?.business_types
-  if (!Array.isArray(businessTypes)) {
-    return []
-  }
+  const source = details as Record<string, unknown> | undefined
+  // Prefer the 3-question wizard's `activities` field (Day 2 onboarding shape).
+  // Fall back to legacy `business_types` for users who completed the old wizard
+  // before the Day 2 frontend landed. Backend mirrors activities into both keys
+  // on POST /onboarding/complete, so steady state they agree.
+  const raw = Array.isArray(source?.activities)
+    ? (source!.activities as unknown[])
+    : Array.isArray(source?.business_types)
+      ? (source!.business_types as unknown[])
+      : []
+  return raw.map((value) => normalizeText(value)).filter(Boolean)
+}
 
-  return businessTypes
-    .map((value) => normalizeText(value))
-    .filter(Boolean)
+// Activity-keyed dashboard routing (Day 2 onboarding).
+// agent/services don't have dedicated dashboards yet — map to exporter as the
+// temporary landing page. Day 4 plans to create /lcopilot/agency-dashboard; at
+// that point, swap the `agent` mapping.
+const ACTIVITY_DESTINATIONS: Record<string, LcopilotBetaDestination> = {
+  exporter: '/lcopilot/exporter-dashboard',
+  importer: '/lcopilot/importer-dashboard',
+  agent: '/lcopilot/exporter-dashboard',
+  services: '/lcopilot/exporter-dashboard',
+}
+
+function destinationForPrimaryActivity(
+  activities: string[],
+): { destination: LcopilotBetaDestination; reason: LcopilotRouteDecision['reason'] } | null {
+  for (const activity of activities) {
+    const dest = ACTIVITY_DESTINATIONS[activity]
+    if (dest) {
+      const reason: LcopilotRouteDecision['reason'] =
+        activity === 'importer' ? 'importer' : 'exporter'
+      return { destination: dest, reason }
+    }
+  }
+  return null
+}
+
+function hasNewOnboardingShape(details: OnboardingStatus['details']): boolean {
+  const source = details as Record<string, unknown> | undefined
+  return Array.isArray(source?.activities) && (source!.activities as unknown[]).length > 0
 }
 
 export function resolveLcopilotRoute(params: {
@@ -120,23 +153,38 @@ export function resolveLcopilotRoute(params: {
   const companySize = normalizeText(company.size)
   const businessTypes = normalizeBusinessTypes(onboardingStatus.details)
 
-  const hasExporter = businessTypes.includes('exporter')
-  const hasImporter = businessTypes.includes('importer')
-  const isCombinedCompanyType = COMBINED_COMPANY_TYPES.has(companyType)
-  const isCombined = isCombinedCompanyType || (hasExporter && hasImporter)
-  const isEnterprise = role === 'tenant_admin' || (isCombined && ENTERPRISE_COMPANY_SIZES.has(companySize))
-  const isImporterOnly = role === 'importer' || (!isCombined && (companyType === 'importer' || hasImporter))
-  const isBank = BANK_ROLES.has(role)
   const isSystemAdmin = role === 'system_admin' || role === 'admin' || user.role === 'admin'
+  const isBank = BANK_ROLES.has(role)
 
   if (isSystemAdmin) {
     return { destination: '/admin', reason: 'system_admin' }
   }
 
   if (isBank) {
-    // Bank remains parked for the public beta. Keep bank users out of LCopilot's default route.
+    // Bank remains parked for the public beta.
     return { destination: '/hub', reason: 'bank_parked' }
   }
+
+  // Day 2 onboarding shape — activities[0] drives landing, per
+  // memory/project_lcopilot_onboarding_redesign.md ("multi-activity -> first
+  // activity's dashboard"). Day 3 will add the workspace switcher in the
+  // header so users with 2+ activities can flip between workspaces.
+  if (hasNewOnboardingShape(onboardingStatus.details)) {
+    const primary = destinationForPrimaryActivity(businessTypes)
+    if (primary) {
+      return primary
+    }
+  }
+
+  // Legacy fallback — users who completed the pre-Day-2 wizard still carry
+  // the old shape (company.type/size + business_types only). Preserve the
+  // combined/enterprise routing until Day 3 ships the 301 redirects.
+  const hasExporter = businessTypes.includes('exporter')
+  const hasImporter = businessTypes.includes('importer')
+  const isCombinedCompanyType = COMBINED_COMPANY_TYPES.has(companyType)
+  const isCombined = isCombinedCompanyType || (hasExporter && hasImporter)
+  const isEnterprise = role === 'tenant_admin' || (isCombined && ENTERPRISE_COMPANY_SIZES.has(companySize))
+  const isImporterOnly = role === 'importer' || (!isCombined && (companyType === 'importer' || hasImporter))
 
   if (isEnterprise) {
     return { destination: '/lcopilot/enterprise-dashboard', reason: 'enterprise' }
