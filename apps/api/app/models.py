@@ -19,7 +19,15 @@ from .models.lc_versions import LCVersion, LCVersionStatus
 from .models.audit_log import AuditLog, AuditAction, AuditResult
 
 # Import billing models
-from .models.company import Company, PlanType, CompanyStatus
+from .models.company import (
+    Company,
+    PlanType,
+    CompanyStatus,
+    BusinessActivity,
+    BusinessTier,
+    BUSINESS_ACTIVITY_VALUES,
+    BUSINESS_TIER_VALUES,
+)
 from .models.invoice import Invoice, InvoiceStatus, Currency
 from .models.usage_record import UsageRecord, UsageAction
 

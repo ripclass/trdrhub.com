@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, Date, DateTime, Enum, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, UUID, JSONB
 from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
@@ -44,6 +44,30 @@ class LanguageType(str, enum.Enum):
     MALAY = "ms"
 
 
+class BusinessActivity(str, enum.Enum):
+    """What a company does in trade. Multi-select on the Company model.
+
+    Drives dashboard routing (Q1 of the 3-question onboarding wizard).
+    """
+
+    EXPORTER = "exporter"
+    IMPORTER = "importer"
+    AGENT = "agent"        # sourcing / buying house managing LCs on behalf of foreign buyers
+    SERVICES = "services"  # freight forwarder / customs broker / LC consultant
+
+
+class BusinessTier(str, enum.Enum):
+    """Pricing tier — drives feature set (SSO, audit log, RBAC), NOT dashboard layout."""
+
+    SOLO = "solo"            # 1–3 people
+    SME = "sme"              # 4–20 people
+    ENTERPRISE = "enterprise"  # 21+, multi-office, SSO + audit log + RBAC
+
+
+BUSINESS_ACTIVITY_VALUES = tuple(a.value for a in BusinessActivity)
+BUSINESS_TIER_VALUES = tuple(t.value for t in BusinessTier)
+
+
 class Company(Base):
     """
     Company model for multi-tenant billing and quota management.
@@ -60,6 +84,18 @@ class Company(Base):
     country = Column(String(2), nullable=True)  # ISO 3166-1 alpha-2 code (BD, IN, US, etc.)
     currency = Column(String(3), nullable=True, default="USD")  # ISO 4217 currency code
     payment_gateway = Column(String(20), nullable=True, default="stripe")  # stripe, sslcommerz, razorpay, local
+
+    # Onboarding (3-question wizard — see onboarding_service.complete_onboarding)
+    business_activities = Column(
+        ARRAY(String),
+        nullable=False,
+        server_default="{exporter}",
+    )
+    tier = Column(
+        String(20),
+        nullable=False,
+        server_default=BusinessTier.SME.value,
+    )
 
     # Billing configuration
     plan = Column(_enum_column(PlanType, "plan_type"), nullable=False, default=PlanType.FREE)

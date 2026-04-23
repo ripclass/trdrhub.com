@@ -51,6 +51,10 @@ AuditResult = _legacy.AuditResult  # type: ignore[attr-defined]
 Company = _legacy.Company  # type: ignore[attr-defined]
 PlanType = _legacy.PlanType  # type: ignore[attr-defined]
 CompanyStatus = _legacy.CompanyStatus  # type: ignore[attr-defined]
+BusinessActivity = _legacy.BusinessActivity  # type: ignore[attr-defined]
+BusinessTier = _legacy.BusinessTier  # type: ignore[attr-defined]
+BUSINESS_ACTIVITY_VALUES = _legacy.BUSINESS_ACTIVITY_VALUES  # type: ignore[attr-defined]
+BUSINESS_TIER_VALUES = _legacy.BUSINESS_TIER_VALUES  # type: ignore[attr-defined]
 Invoice = _legacy.Invoice  # type: ignore[attr-defined]
 InvoiceStatus = _legacy.InvoiceStatus  # type: ignore[attr-defined]
 Currency = _legacy.Currency  # type: ignore[attr-defined]
@@ -132,6 +136,10 @@ __all__ = [
     "Company",
     "PlanType",
     "CompanyStatus",
+    "BusinessActivity",
+    "BusinessTier",
+    "BUSINESS_ACTIVITY_VALUES",
+    "BUSINESS_TIER_VALUES",
     "Invoice",
     "InvoiceStatus",
     "Currency",

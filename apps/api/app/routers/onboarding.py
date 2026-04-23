@@ -11,10 +11,12 @@ from ..database import get_db
 from ..models import Company, User
 from ..schemas.onboarding import (
     CompanyPayload,
+    OnboardingCompletePayload,
     OnboardingProgressPayload,
     OnboardingRequirements,
     OnboardingStatus,
 )
+from ..services.onboarding_service import complete_onboarding
 from ..core.security import get_current_user, require_admin, infer_effective_role
 
 
@@ -377,11 +379,43 @@ async def reset_onboarding(
     """Reset onboarding status (allow re-access)."""
     current_user.onboarding_completed = False
     current_user.onboarding_data = _get_default_progress()
-    
+
     db.commit()
     db.refresh(current_user)
-    
+
     return {
         "message": "Onboarding reset successfully",
         "onboarding_completed": False
     }
+
+
+@router.post("/complete", response_model=OnboardingStatus)
+async def complete_wizard(
+    payload: OnboardingCompletePayload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> OnboardingStatus:
+    """3-question wizard submission: activities × country × tier.
+
+    Writes the onboarding answers onto Company + User, marks onboarding complete,
+    and returns the standard OnboardingStatus so the frontend can redirect to the
+    appropriate dashboard (derived from activities[0] on the client side).
+    """
+    company = complete_onboarding(db, current_user, payload)
+    db.commit()
+    db.refresh(current_user)
+
+    requirements = _requirements_for_user(current_user)
+    db.commit()
+
+    return OnboardingStatus(
+        user_id=str(current_user.id),
+        role=current_user.role,
+        company_id=str(company.id),
+        completed=current_user.onboarding_completed,
+        step=current_user.onboarding_step,
+        status=current_user.status,
+        kyc_status=current_user.kyc_status,
+        required=requirements,
+        details=current_user.onboarding_data or {},
+    )

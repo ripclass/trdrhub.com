@@ -1235,6 +1235,49 @@ export function safeValidateApiResponse<T>(
 }
 
 // ============================================================================
+// Onboarding — 3-question wizard (Day 1 backend, Day 2 frontend)
+// ============================================================================
+// Mirrors apps/api/app/schemas/onboarding.py::OnboardingCompletePayload and
+// apps/api/app/models/company.py::BusinessActivity / BusinessTier. Keep in
+// lockstep — drift between Zod and Pydantic bites at runtime when
+// parseOnboarding-style paths start firing.
+
+export const BusinessActivitySchema = z.enum(['exporter', 'importer', 'agent', 'services']);
+export type BusinessActivity = z.infer<typeof BusinessActivitySchema>;
+
+export const BusinessTierSchema = z.enum(['solo', 'sme', 'enterprise']);
+export type BusinessTier = z.infer<typeof BusinessTierSchema>;
+
+export const OnboardingCompletePayloadSchema = z.object({
+  activities: z.array(BusinessActivitySchema).min(1),
+  country: z.string().length(2).regex(/^[A-Z]{2}$/, 'ISO 3166-1 alpha-2, uppercase'),
+  tier: BusinessTierSchema,
+  company_name: z.string().optional(),
+});
+export type OnboardingCompletePayload = z.infer<typeof OnboardingCompletePayloadSchema>;
+
+export const OnboardingRequirementsSchema = z.object({
+  basic: z.array(z.string()).default([]),
+  legal: z.array(z.string()).default([]),
+  docs: z.array(z.string()).default([]),
+});
+export type OnboardingRequirements = z.infer<typeof OnboardingRequirementsSchema>;
+
+export const OnboardingStatusSchema = z.object({
+  user_id: z.string(),
+  role: z.string().nullable(),
+  company_id: z.string().nullable().optional(),
+  completed: z.boolean().default(false),
+  step: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
+  kyc_status: z.string().nullable().optional(),
+  required: OnboardingRequirementsSchema.default({ basic: [], legal: [], docs: [] }),
+  details: z.record(z.unknown()).default({}),
+});
+export type OnboardingStatus = z.infer<typeof OnboardingStatusSchema>;
+
+
+// ============================================================================
 // Schema Collections for Export
 // ============================================================================
 
@@ -1327,4 +1370,11 @@ export const schemas = {
   ContractWarning: ContractWarningSchema,
   ContractValidation: ContractValidationSchema,
   ValidationResults: ValidationResultsSchema,
+
+  // Onboarding wizard (3-question model — activities × country × tier)
+  BusinessActivity: BusinessActivitySchema,
+  BusinessTier: BusinessTierSchema,
+  OnboardingCompletePayload: OnboardingCompletePayloadSchema,
+  OnboardingRequirements: OnboardingRequirementsSchema,
+  OnboardingStatus: OnboardingStatusSchema,
 } as const;
