@@ -197,14 +197,20 @@ async def get_status(current_user: User = Depends(get_current_user), db: Session
                     needs_commit = True
                     logger.info(f"📦 Restored onboarding data for user {current_user.id}: {restored_data}")
                 
-                # Auto-complete if we have company info and user is not a bank
-                if company.name and company_type and current_user.role not in {'bank_officer', 'bank_admin'}:
-                    if not current_user.onboarding_completed:
-                        current_user.onboarding_completed = True
-                        current_user.status = 'active'
-                        needs_commit = True
-                        logger.info(f"✅ Auto-completed onboarding for user {current_user.id}")
-                
+                # NOTE (2026-04-23): auto-complete disabled. The previous branch set
+                # current_user.onboarding_completed = True whenever an auto-created
+                # Company existed, which locked brand-new users out of the 3-question
+                # wizard (they'd land on exporter-dashboard with default
+                # business_activities=['exporter'] regardless of what they actually
+                # picked at /register). POST /api/onboarding/complete is now the
+                # ONLY path that flips onboarding_completed.
+                #
+                # Company auto-create above is kept — it's a legacy healing path for
+                # users whose Company row was deleted/orphaned. If they re-hit
+                # /onboarding/status we give them a valid skeleton, then route them
+                # back to /onboarding (since completed is still False) so they can
+                # re-run the wizard and update the Company to correct values.
+
                 # Commit all changes at once
                 if needs_commit:
                     db.commit()

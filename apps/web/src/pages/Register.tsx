@@ -367,9 +367,11 @@ export default function Register() {
       );
 
       // Persist the 3-question wizard answers into Company.business_activities /
-      // Company.tier / Company.country via the new endpoint. Non-fatal if this
-      // fails — the fallback routing still works off legacy onboarding_data
-      // that registerWithEmail already seeded.
+      // Company.tier / Company.country via the new endpoint. If this fails we
+      // surface the failure instead of silently landing the user on the default
+      // (exporter) dashboard — they need activities=['agent'] (or whatever
+      // they picked) to persist, otherwise the WorkspaceSwitcher,
+      // EnterpriseGroupLink, and AgencyDashboard read empty defaults.
       try {
         await completeOnboardingRequest({
           activities: sortedActivities,
@@ -377,8 +379,19 @@ export default function Register() {
           tier: normalizedTier,
           company_name: formData.companyName,
         });
-      } catch (error) {
-        console.warn("Failed to persist onboarding payload (non-critical):", error);
+      } catch (error: any) {
+        const detail =
+          error?.response?.data?.detail ||
+          error?.message ||
+          "Your account was created but we couldn't save your onboarding answers. Sign in and re-run the wizard from /onboarding.";
+        toast({
+          title: "Onboarding not fully saved",
+          description: detail,
+          variant: "destructive",
+        });
+        // Still navigate — the user's Supabase account exists, and /onboarding
+        // status will now return completed=false (after 2026-04-23 backend fix),
+        // so the router will redirect them to the wizard on next mount.
       }
 
       toast({
