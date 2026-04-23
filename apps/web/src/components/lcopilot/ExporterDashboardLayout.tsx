@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import type { ResultsTab } from "./dashboardTabs";
 import ExporterSidebar from "./ExporterSidebar";
 import DashboardNav from "./DashboardNav";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 type LayoutProps = {
   children: React.ReactNode;
@@ -20,6 +21,7 @@ export default function ExporterDashboardLayout({ children, activeTab, onTabChan
         { label: "Exporter Dashboard" },
       ]}
       title="Exporter LC Workspace"
+      workspaceSwitcher={<WorkspaceSwitcher />}
       topbar={<DashboardNav activeTab={activeTab} onTabChange={onTabChange} />}
       actions={
         <Button asChild size="sm">

@@ -50,7 +50,6 @@ const COMBINED_COMPANY_TYPES = new Set([
   'both exporter and importer',
 ])
 
-const ENTERPRISE_COMPANY_SIZES = new Set(['medium', 'large', 'enterprise', 'established'])
 const BANK_ROLES = new Set(['bank_officer', 'bank_admin'])
 
 function normalizeText(value: unknown): string {
@@ -94,11 +93,6 @@ function destinationForPrimaryActivity(
     }
   }
   return null
-}
-
-function hasNewOnboardingShape(details: OnboardingStatus['details']): boolean {
-  const source = details as Record<string, unknown> | undefined
-  return Array.isArray(source?.activities) && (source!.activities as unknown[]).length > 0
 }
 
 export function resolveLcopilotRoute(params: {
@@ -150,7 +144,6 @@ export function resolveLcopilotRoute(params: {
   const details = onboardingStatus.details as Record<string, unknown> | undefined
   const company = (details?.company as Record<string, unknown> | undefined) ?? {}
   const companyType = normalizeText(company.type)
-  const companySize = normalizeText(company.size)
   const businessTypes = normalizeBusinessTypes(onboardingStatus.details)
 
   const isSystemAdmin = role === 'system_admin' || role === 'admin' || user.role === 'admin'
@@ -165,36 +158,31 @@ export function resolveLcopilotRoute(params: {
     return { destination: '/hub', reason: 'bank_parked' }
   }
 
-  // Day 2 onboarding shape — activities[0] drives landing, per
-  // memory/project_lcopilot_onboarding_redesign.md ("multi-activity -> first
-  // activity's dashboard"). Day 3 will add the workspace switcher in the
-  // header so users with 2+ activities can flip between workspaces.
-  if (hasNewOnboardingShape(onboardingStatus.details)) {
-    const primary = destinationForPrimaryActivity(businessTypes)
-    if (primary) {
-      return primary
-    }
+  // Activity-based landing — single source of truth.
+  //
+  // Day 2 onboarding shape uses details.activities (preferred). Legacy shape
+  // uses details.business_types; normalizeBusinessTypes() hides which list
+  // won, so this branch covers both. For legacy "both" shape
+  // (company.type = 'both' but business_types missing) we synthesize the
+  // inferred activity list from company.type so those users still route
+  // somewhere sensible after Combined/Enterprise dashboards were retired on
+  // 2026-04-23 — see memory/project_lcopilot_onboarding_redesign.md.
+  let effectiveActivities: string[] = businessTypes
+  if (effectiveActivities.length === 0 && COMBINED_COMPANY_TYPES.has(companyType)) {
+    effectiveActivities = ['exporter', 'importer']
+  } else if (effectiveActivities.length === 0 && companyType === 'importer') {
+    effectiveActivities = ['importer']
+  } else if (effectiveActivities.length === 0 && companyType === 'exporter') {
+    effectiveActivities = ['exporter']
   }
 
-  // Legacy fallback — users who completed the pre-Day-2 wizard still carry
-  // the old shape (company.type/size + business_types only). Preserve the
-  // combined/enterprise routing until Day 3 ships the 301 redirects.
-  const hasExporter = businessTypes.includes('exporter')
-  const hasImporter = businessTypes.includes('importer')
-  const isCombinedCompanyType = COMBINED_COMPANY_TYPES.has(companyType)
-  const isCombined = isCombinedCompanyType || (hasExporter && hasImporter)
-  const isEnterprise = role === 'tenant_admin' || (isCombined && ENTERPRISE_COMPANY_SIZES.has(companySize))
-  const isImporterOnly = role === 'importer' || (!isCombined && (companyType === 'importer' || hasImporter))
-
-  if (isEnterprise) {
-    return { destination: '/lcopilot/enterprise-dashboard', reason: 'enterprise' }
+  const primary = destinationForPrimaryActivity(effectiveActivities)
+  if (primary) {
+    return primary
   }
 
-  if (isCombined) {
-    return { destination: '/lcopilot/combined-dashboard', reason: 'combined' }
-  }
-
-  if (isImporterOnly) {
+  // Legacy-ish fallback for role='importer' with no activities/company.type.
+  if (role === 'importer') {
     return { destination: '/lcopilot/importer-dashboard', reason: 'importer' }
   }
 

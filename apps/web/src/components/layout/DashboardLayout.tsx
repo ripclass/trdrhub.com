@@ -29,6 +29,7 @@ interface DashboardLayoutProps {
   breadcrumbs?: { label: string; href?: string }[];
   actions?: ReactNode;
   topbar?: ReactNode; // Slot for topbar content (mode toggle, search, etc.)
+  workspaceSwitcher?: ReactNode; // Multi-activity header switcher — renders null when not applicable
   children: ReactNode;
 }
 
@@ -38,6 +39,7 @@ export function DashboardLayout({
   breadcrumbs,
   actions,
   topbar,
+  workspaceSwitcher,
   children,
 }: DashboardLayoutProps) {
   return (
@@ -82,14 +84,21 @@ export function DashboardLayout({
             {!breadcrumbs && title && (
               <h1 className="text-base font-medium">{title}</h1>
             )}
-            
+
+            {/* Workspace switcher — multi-activity companies only */}
+            {workspaceSwitcher && (
+              <div className="ml-3 flex items-center">
+                {workspaceSwitcher}
+              </div>
+            )}
+
             {/* Topbar content (mode toggle, search, etc.) */}
             {topbar && (
               <div className="flex-1 flex items-center justify-center">
                 {topbar}
               </div>
             )}
-            
+
             {/* Actions */}
             <div className="ml-auto flex items-center gap-2">
               {actions}

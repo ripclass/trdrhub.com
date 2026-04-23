@@ -115,7 +115,11 @@ describe('resolveLcopilotRoute', () => {
     })
   })
 
-  it('routes combined SME users to the combined dashboard', () => {
+  it('legacy shape: combined SME lands on first-activity dashboard (combined-dashboard retired 2026-04-23)', () => {
+    // Pre-Day-2 users still carry business_types + company.type='both'.
+    // After the redesign, Combined dashboard was retired — they now land on
+    // the first activity (exporter), with the WorkspaceSwitcher available in
+    // the header. The /lcopilot/combined-dashboard URL 301s to exporter.
     const decision = resolveLcopilotRoute({
       user: buildUser(),
       onboardingStatus: buildOnboardingStatus({
@@ -127,12 +131,15 @@ describe('resolveLcopilotRoute', () => {
     })
 
     expect(decision).toEqual({
-      destination: '/lcopilot/combined-dashboard',
-      reason: 'combined',
+      destination: '/lcopilot/exporter-dashboard',
+      reason: 'exporter',
     })
   })
 
-  it('routes enterprise users to the enterprise dashboard', () => {
+  it('legacy shape: enterprise tenant_admin lands on first-activity dashboard (enterprise-dashboard retired)', () => {
+    // Enterprise tier is now a pricing flag, not a dashboard. Cross-SBU
+    // rollup will surface as a KPI strip / "Group overview" link on the
+    // activity dashboard (Day 4+), not a separate page.
     const decision = resolveLcopilotRoute({
       user: buildUser(),
       onboardingStatus: buildOnboardingStatus({
@@ -145,8 +152,8 @@ describe('resolveLcopilotRoute', () => {
     })
 
     expect(decision).toEqual({
-      destination: '/lcopilot/enterprise-dashboard',
-      reason: 'enterprise',
+      destination: '/lcopilot/exporter-dashboard',
+      reason: 'exporter',
     })
   })
 

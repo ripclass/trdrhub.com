@@ -139,8 +139,6 @@ import DiscrepancyListDemo from './components/DiscrepancyListDemo'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminShell from './pages/admin/AdminShell'
 import AuthCallback from './pages/auth/Callback'
-import CombinedDashboard from './pages/CombinedDashboard'
-import EnterpriseDashboard from './pages/EnterpriseDashboard'
 import { BankAuthProvider } from './lib/bank/auth'
 import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
 import { ImporterValidationPage } from './pages/importer/ImporterValidationPage'
@@ -393,10 +391,12 @@ function App() {
             <ExporterDashboard />
           </LcopilotBetaRoute>
         } />
+        {/* Combined/Enterprise dashboards retired 2026-04-23 — multi-activity users
+            now land on their first activity's dashboard with the WorkspaceSwitcher
+            in the header (see memory/project_lcopilot_onboarding_redesign.md).
+            Redirect retained for ≥90 days so old links and bookmarks don't 404. */}
         <Route path="/lcopilot/combined-dashboard" element={
-          <LcopilotBetaRoute scope="combined">
-            <CombinedDashboard />
-          </LcopilotBetaRoute>
+          <Navigate to="/lcopilot/exporter-dashboard" replace />
         } />
         <Route path="/lcopilot/exporter-dashboard/legacy" element={<Navigate to="/lcopilot/exporter-dashboard" replace />} />
         <Route path="/lcopilot/exporter-dashboard/v2" element={<Navigate to="/lcopilot/exporter-dashboard" replace />} />
@@ -423,9 +423,7 @@ function App() {
           </>
         )}
         <Route path="/lcopilot/enterprise-dashboard" element={
-          <LcopilotBetaRoute scope="enterprise">
-            <EnterpriseDashboard />
-          </LcopilotBetaRoute>
+          <Navigate to="/lcopilot/exporter-dashboard" replace />
         } />
         <Route path="/lcopilot/exporter-results" element={<LegacyExporterResultsRedirect />} />
         <Route path="/lcopilot/exporter-analytics" element={<RequireAuth><ExporterAnalytics /></RequireAuth>} />

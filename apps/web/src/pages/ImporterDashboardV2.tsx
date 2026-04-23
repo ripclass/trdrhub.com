@@ -29,6 +29,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { WorkspaceSwitcher } from "@/components/lcopilot/WorkspaceSwitcher";
 import {
   ImporterSidebar,
   type ImporterSidebarSection,
@@ -267,6 +268,7 @@ export default function ImporterDashboardV2() {
           onSectionChange={handleSectionChange}
         />
       }
+      workspaceSwitcher={<WorkspaceSwitcher />}
     >
       <div className="container mx-auto p-6">{body}</div>
     </DashboardLayout>

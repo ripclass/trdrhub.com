@@ -180,7 +180,7 @@ export function CombinedTasks({
         {allTasks.length >= maxItems && (
           <div className="pt-2 border-t">
             <Link
-              to="/lcopilot/combined-dashboard?section=workspace"
+              to="/lcopilot/exporter-dashboard?section=workspace"
               className="text-sm text-primary hover:underline"
             >
               View all tasks →
