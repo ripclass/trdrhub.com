@@ -282,7 +282,23 @@ class ValidationSession(Base):
         default=WorkflowType.EXPORTER_PRESENTATION.value,
         server_default=WorkflowType.EXPORTER_PRESENTATION.value,
     )
-    
+
+    # LC lifecycle state — Phase A1 (2026-04-25). Canonical UCP600 stages
+    # (issued / advised / docs_in_preparation / docs_presented /
+    # under_bank_review / discrepancies_raised / discrepancies_resolved /
+    # paid / closed / expired). State transitions are gated by the helper
+    # in app/services/lc_lifecycle.py and write LCLifecycleEvent rows.
+    lifecycle_state = Column(
+        String(50),
+        nullable=False,
+        default="docs_in_preparation",
+        server_default="docs_in_preparation",
+    )
+    lifecycle_state_changed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     # Processing metadata
     ocr_provider = Column(String(50), nullable=True)
     processing_started_at = Column(DateTime(timezone=True), nullable=True)

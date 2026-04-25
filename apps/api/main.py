@@ -55,7 +55,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions, agency
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions, agency, lc_lifecycle
 
 # V2 Pipeline removed - using V1 with enhanced features
 from app.routes.health import router as health_router
@@ -263,6 +263,7 @@ async def healthz() -> Dict[str, str]:
 # Include API routers
 app.include_router(auth.router)
 app.include_router(sessions.router)
+app.include_router(lc_lifecycle.router)  # LC lifecycle state-machine endpoints (Phase A1)
 app.include_router(lc_versions.router)  # LC version control endpoints
 app.include_router(audit.router)        # Audit trail and compliance endpoints
 app.include_router(admin.router)        # Admin endpoints for user and role management
