@@ -1,8 +1,8 @@
 # Session resume — Path A build
 
 **Last updated:** 2026-04-26 evening
-**State frozen at commit:** Phase A1 part 2 — pending push (this commit)
-**Branch:** `master`
+**State frozen at commit:** `ddc8ed49` (origin/master) — Phase A1 part 2 shipped
+**Branch:** `master` (pushed)
 **Active phase:** A1 done. Next phase A2 (discrepancy resolution + re-papering loop, week of 2026-05-04).
 
 ---
