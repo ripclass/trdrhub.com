@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -20,6 +19,12 @@ interface OnboardingWizardProps {
 }
 
 // Q1 — What does your business do? (multi-select)
+//
+// Pre-launch scope-down (2026-04-25): only exporter + importer are
+// actively sold. Agent (buying-house) and Services (freight forwarder /
+// LC consultant) dashboards land post-launch — until then we don't
+// offer them in the wizard. The backend Pydantic validator rejects them
+// too, so a stale frontend can't sneak them in.
 const ACTIVITY_OPTIONS: Array<{ value: BusinessActivity; label: string; description: string }> = [
   {
     value: 'exporter',
@@ -30,16 +35,6 @@ const ACTIVITY_OPTIONS: Array<{ value: BusinessActivity; label: string; descript
     value: 'importer',
     label: 'We import goods',
     description: "We're the buyer in letters of credit.",
-  },
-  {
-    value: 'agent',
-    label: "We're a sourcing / buying agent",
-    description: 'We manage LC paperwork for foreign buyers buying from local manufacturers.',
-  },
-  {
-    value: 'services',
-    label: 'We provide trade documentation services',
-    description: 'Freight forwarder, customs broker, or LC consultant.',
   },
 ]
 
@@ -66,34 +61,27 @@ const COUNTRY_OPTIONS: Array<{ code: string; label: string }> = [
   { code: 'NL', label: 'Netherlands' },
 ]
 
-// Q3 — How big is your team? (drives pricing tier, NOT dashboard layout)
-const TIER_OPTIONS: Array<{ value: BusinessTier; label: string; sublabel: string }> = [
-  { value: 'solo', label: 'Solo', sublabel: 'Just me / 1–3 people' },
-  { value: 'sme', label: 'SME', sublabel: '4–20 people' },
-  {
-    value: 'enterprise',
-    label: 'Enterprise',
-    sublabel: '21+ people, multi-office, need SSO + audit log',
-  },
-]
+// Pre-launch scope-down (2026-04-25): Q3 (tier) was dropped from the
+// wizard. Tier doesn't gate any user-facing feature today, so asking
+// at signup was a question we didn't act on. We default to 'sme' on
+// every new signup; backend keeps the column for forward compat.
+const TIER_DEFAULT: BusinessTier = 'sme'
 
-const TIER_DEFAULT_ON_SKIP: BusinessTier = 'sme'
-
-type WizardStep = 1 | 2 | 3
+type WizardStep = 1 | 2
 
 export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizardProps) {
   const { status, completeOnboarding } = useOnboarding()
   const [step, setStep] = useState<WizardStep>(1)
   const [activities, setActivities] = useState<BusinessActivity[]>([])
   const [country, setCountry] = useState<string>('')
-  const [tier, setTier] = useState<BusinessTier | ''>('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Hydrate from any partial saved state so a user who abandoned the wizard
-  // can resume. Reads both the new shape (details.activities/country/tier)
-  // and the legacy shape (business_types / company.type / company.size) for
-  // users who started on the old 5-role wizard before Day 2 landed.
+  // can resume. Reads both the new shape (details.activities / country) and
+  // the legacy shape (business_types / company.type) for users who started
+  // on the old 5-role wizard before Day 2 landed. Tier hydration was
+  // dropped along with Q3 (2026-04-25 scope-down).
   useEffect(() => {
     if (!open || !status) return
     const details = (status.details as Record<string, unknown> | undefined) ?? {}
@@ -103,7 +91,10 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
       : Array.isArray(details.business_types)
         ? (details.business_types as string[])
         : []
-    const allowedActivities = new Set<BusinessActivity>(['exporter', 'importer', 'agent', 'services'])
+    // Only the actively-sold activities are pre-selectable. Stale 'agent'
+    // / 'services' values from old DB rows get filtered out so the user
+    // sees an empty list and picks fresh.
+    const allowedActivities = new Set<BusinessActivity>(['exporter', 'importer'])
     const hydrated = savedActivities.filter((a): a is BusinessActivity =>
       allowedActivities.has(a as BusinessActivity),
     )
@@ -114,13 +105,6 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
       ((details.company as Record<string, unknown> | undefined)?.country as string | undefined)
     if (savedCountry && /^[A-Za-z]{2}$/.test(savedCountry)) {
       setCountry(savedCountry.toUpperCase())
-    }
-
-    const savedTier =
-      (typeof details.tier === 'string' ? (details.tier as string) : undefined) ??
-      ((details.company as Record<string, unknown> | undefined)?.size as string | undefined)
-    if (savedTier && (savedTier === 'solo' || savedTier === 'sme' || savedTier === 'enterprise')) {
-      setTier(savedTier)
     }
   }, [open, status])
 
@@ -148,7 +132,7 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
   const goNext = () => {
     if (!canAdvance(step)) return
     setError(null)
-    if (step < 3) setStep((step + 1) as WizardStep)
+    if (step < 2) setStep((step + 1) as WizardStep)
   }
 
   const goBack = () => {
@@ -156,18 +140,18 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
     if (step > 1) setStep((step - 1) as WizardStep)
   }
 
-  const submit = async (finalTier: BusinessTier) => {
+  const submit = async () => {
     if (submitting) return
     setSubmitting(true)
     setError(null)
     try {
       // Sort by canonical priority before persisting so landing-dashboard
-      // selection is deterministic across users (agent > exporter > importer
-      // > services; see ACTIVITY_PRIORITY in @/api/onboarding).
+      // selection is deterministic across users (exporter > importer; see
+      // ACTIVITY_PRIORITY in @/lib/lcopilot/activities).
       await completeOnboarding({
         activities: sortActivitiesByPriority(activities),
         country,
-        tier: finalTier,
+        tier: TIER_DEFAULT,
       })
       onComplete()
       onClose()
@@ -180,12 +164,7 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
   }
 
   const handleFinish = () => {
-    const finalTier = tier || TIER_DEFAULT_ON_SKIP
-    void submit(finalTier)
-  }
-
-  const handleSkipTier = () => {
-    void submit(TIER_DEFAULT_ON_SKIP)
+    void submit()
   }
 
   // -------------------------------------------------------------------------
@@ -194,7 +173,7 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
 
   const progressDots = (
     <div className="flex justify-center gap-2 pb-2">
-      {[1, 2, 3].map((n) => (
+      {[1, 2].map((n) => (
         <span
           key={n}
           className={
@@ -255,7 +234,7 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
       className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault()
-        goNext()
+        handleFinish()
       }}
     >
       <div>
@@ -279,50 +258,6 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
           </SelectContent>
         </Select>
       </div>
-      <div className="flex justify-between gap-2">
-        <Button type="button" variant="ghost" onClick={goBack}>
-          Back
-        </Button>
-        <Button type="submit" disabled={!canAdvance(2)}>
-          Continue
-        </Button>
-      </div>
-    </form>
-  )
-
-  const renderStep3 = () => (
-    <form
-      className="space-y-6"
-      onSubmit={(e) => {
-        e.preventDefault()
-        handleFinish()
-      }}
-    >
-      <div>
-        <h2 className="text-xl font-semibold mb-2">How big is your team that touches LCs?</h2>
-        <p className="text-sm text-muted-foreground">
-          Drives pricing tier and enterprise features. You can change this later.
-        </p>
-      </div>
-      <RadioGroup
-        value={tier}
-        onValueChange={(v) => setTier(v as BusinessTier)}
-        className="space-y-3"
-      >
-        {TIER_OPTIONS.map((opt) => (
-          <label
-            key={opt.value}
-            className="flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-muted/40"
-            htmlFor={`tier-${opt.value}`}
-          >
-            <RadioGroupItem value={opt.value} id={`tier-${opt.value}`} />
-            <span className="flex flex-col">
-              <span className="font-medium">{opt.label}</span>
-              <span className="text-sm text-muted-foreground">{opt.sublabel}</span>
-            </span>
-          </label>
-        ))}
-      </RadioGroup>
       {error && (
         <Alert variant="destructive">
           <AlertTitle>Couldn't save</AlertTitle>
@@ -333,14 +268,9 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
         <Button type="button" variant="ghost" onClick={goBack} disabled={submitting}>
           Back
         </Button>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={handleSkipTier} disabled={submitting}>
-            Skip (use SME)
-          </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? 'Saving…' : 'Finish'}
-          </Button>
-        </div>
+        <Button type="submit" disabled={submitting || !canAdvance(2)}>
+          {submitting ? 'Saving…' : 'Finish'}
+        </Button>
       </div>
     </form>
   )
@@ -354,7 +284,6 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
         {progressDots}
         {step === 1 && renderStep1()}
         {step === 2 && renderStep2()}
-        {step === 3 && renderStep3()}
       </DialogContent>
     </Dialog>
   )

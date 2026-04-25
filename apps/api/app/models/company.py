@@ -48,12 +48,16 @@ class BusinessActivity(str, enum.Enum):
     """What a company does in trade. Multi-select on the Company model.
 
     Drives dashboard routing (Q1 of the 3-question onboarding wizard).
+
+    Pre-launch scope-down (2026-04-25): only EXPORTER and IMPORTER are
+    accepted by the API. AGENT and SERVICES are deferred until their
+    dashboards land for real. Existing DB rows with those values stay
+    valid (DB CHECK constraint still allows them); the routing layer
+    falls them back to /lcopilot/exporter-dashboard.
     """
 
     EXPORTER = "exporter"
     IMPORTER = "importer"
-    AGENT = "agent"        # sourcing / buying house managing LCs on behalf of foreign buyers
-    SERVICES = "services"  # freight forwarder / customs broker / LC consultant
 
 
 class BusinessTier(str, enum.Enum):

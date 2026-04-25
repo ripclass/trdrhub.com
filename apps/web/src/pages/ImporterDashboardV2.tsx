@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { WorkspaceSwitcher } from "@/components/lcopilot/WorkspaceSwitcher";
-import { EnterpriseGroupLink } from "@/components/lcopilot/EnterpriseGroupLink";
 import {
   ImporterSidebar,
   type ImporterSidebarSection,
@@ -270,7 +269,6 @@ export default function ImporterDashboardV2() {
         />
       }
       workspaceSwitcher={<WorkspaceSwitcher />}
-      headerExtras={<EnterpriseGroupLink />}
     >
       <div className="container mx-auto p-6">{body}</div>
     </DashboardLayout>

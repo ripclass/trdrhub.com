@@ -140,8 +140,6 @@ import AdminShell from './pages/admin/AdminShell'
 import AuthCallback from './pages/auth/Callback'
 import { BankAuthProvider } from './lib/bank/auth'
 import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
-import AgencyDashboard from './pages/lcopilot/AgencyDashboard'
-import GroupOverview from './pages/lcopilot/GroupOverview'
 import { ImporterValidationPage } from './pages/importer/ImporterValidationPage'
 import { isImporterV2Enabled } from './lib/lcopilot/featureFlags'
 import { RequireAuth } from './components/lcopilot/RequireAuth'
@@ -426,17 +424,15 @@ function App() {
         <Route path="/lcopilot/enterprise-dashboard" element={
           <Navigate to="/lcopilot/exporter-dashboard" replace />
         } />
-        {/* Day 4: agency dashboard placeholder for sourcing/buying-agent users. */}
+        {/* Pre-launch scope-down (2026-04-25): retired agency-dashboard +
+            group-overview placeholders. agent activity falls back to
+            exporter via routing.ts (DB rows with stale 'agent' value
+            still resolve cleanly). */}
         <Route path="/lcopilot/agency-dashboard" element={
-          <LcopilotBetaRoute scope="agency">
-            <AgencyDashboard />
-          </LcopilotBetaRoute>
+          <Navigate to="/lcopilot/exporter-dashboard" replace />
         } />
-        {/* Day 4: enterprise-tier cross-SBU rollup placeholder. */}
         <Route path="/lcopilot/group-overview" element={
-          <RequireAuth>
-            <GroupOverview />
-          </RequireAuth>
+          <Navigate to="/lcopilot/exporter-dashboard" replace />
         } />
         <Route path="/lcopilot/exporter-results" element={<LegacyExporterResultsRedirect />} />
         <Route path="/lcopilot/exporter-analytics" element={<RequireAuth><ExporterAnalytics /></RequireAuth>} />

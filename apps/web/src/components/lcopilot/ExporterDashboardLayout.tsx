@@ -5,7 +5,6 @@ import type { ResultsTab } from "./dashboardTabs";
 import ExporterSidebar from "./ExporterSidebar";
 import DashboardNav from "./DashboardNav";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
-import { EnterpriseGroupLink } from "./EnterpriseGroupLink";
 
 type LayoutProps = {
   children: React.ReactNode;
@@ -23,7 +22,6 @@ export default function ExporterDashboardLayout({ children, activeTab, onTabChan
       ]}
       title="Exporter LC Workspace"
       workspaceSwitcher={<WorkspaceSwitcher />}
-      headerExtras={<EnterpriseGroupLink />}
       topbar={<DashboardNav activeTab={activeTab} onTabChange={onTabChange} />}
       actions={
         <Button asChild size="sm">
