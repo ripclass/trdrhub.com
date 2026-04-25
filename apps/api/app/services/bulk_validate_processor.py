@@ -674,27 +674,45 @@ class BulkValidateProcessor:
     def _summarize_result(result: Any) -> dict:
         """Compress the validation result into a small JSONB-friendly summary.
 
-        We store the LC validation status, compliance score, and finding
-        count. Full structured_result lives on the spawned
-        ValidationSession row — bulk's view is the summary plus a link.
+        Read the canonical paths the rest of the codebase uses:
+
+          * verdict      → ``structured_result.bank_verdict.verdict``
+                           (set by ``_build_bank_submission_verdict`` in
+                           result_finalization.py)
+          * score        → ``structured_result.analytics.compliance_score``
+                           (the frontend-aliased copy of ``lc_compliance_score``)
+          * finding_count → ``structured_result._provisional_issues``
+                           (issues bucket from the same finalization step;
+                           top-level ``provisional_issues`` is also accepted
+                           as a fallback for older callers)
+
+        Full structured_result lives on the spawned ValidationSession
+        row; bulk's view is the summary + a link back to it.
         """
         if not isinstance(result, dict):
             return {"raw_type": type(result).__name__}
         structured = result.get("structured_result") or {}
+        bank_verdict = structured.get("bank_verdict") or {}
+        analytics = structured.get("analytics") or {}
+
         verdict = (
-            structured.get("verdict")
+            bank_verdict.get("verdict")
+            or structured.get("verdict")
             or result.get("verdict")
             or result.get("validation_status")
         )
         score = (
-            structured.get("compliance_score")
+            analytics.get("compliance_score")
+            or analytics.get("lc_compliance_score")
+            or structured.get("compliance_score")
             or result.get("compliance_score")
         )
-        findings = result.get("provisional_issues") or []
-        if isinstance(findings, list):
-            finding_count = len(findings)
-        else:
-            finding_count = 0
+        findings = (
+            structured.get("_provisional_issues")
+            or result.get("provisional_issues")
+            or []
+        )
+        finding_count = len(findings) if isinstance(findings, list) else 0
         return {
             "verdict": verdict,
             "compliance_score": score,
@@ -734,8 +752,15 @@ class BulkValidateProcessor:
         item_id: UUID,
     ) -> None:
         """Bulk completion of an item moves the LC into
-        ``under_bank_review``. This is the customer's "I'm handing this
-        package off to my bank" signal.
+        ``docs_presented`` — the customer has presented their package
+        through us. Actual bank-side review (``under_bank_review``) is
+        a separate downstream event triggered by the bank submission
+        flow, not bulk validation.
+
+        Allowed transition table: docs_in_preparation → docs_presented
+        (single hop). The earlier two-hop attempt to under_bank_review
+        was rejected because the state machine requires going through
+        docs_presented first.
 
         If the session is already in a state that doesn't allow this
         transition (e.g. a re-run on a terminal LC), we log + swallow.
@@ -748,7 +773,7 @@ class BulkValidateProcessor:
             lifecycle_transition(
                 db,
                 session,
-                LCLifecycleState.UNDER_BANK_REVIEW,
+                LCLifecycleState.DOCS_PRESENTED,
                 actor_user_id=actor_user_id,
                 reason="bulk_validate_completed",
                 extra={"bulk_job_id": str(job_id), "bulk_item_id": str(item_id)},

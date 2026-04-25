@@ -256,7 +256,7 @@ def _mock_pipeline_factory(*, validation_session_holder: dict, db):
             user_id=current_user.id,
             status="completed",
             workflow_type="exporter_presentation",
-            lifecycle_state=LCLifecycleState.DOCS_PRESENTED.value,
+            lifecycle_state=LCLifecycleState.DOCS_IN_PREPARATION.value,
         )
         db.add(sess)
         db.commit()
@@ -340,7 +340,7 @@ class TestProcessorHappyPath:
         # Lifecycle event written per spawned session.
         events = db.query(LCLifecycleEvent).all()
         assert len(events) == 3
-        assert all(e.to_state == LCLifecycleState.UNDER_BANK_REVIEW.value for e in events)
+        assert all(e.to_state == LCLifecycleState.DOCS_PRESENTED.value for e in events)
         assert all(e.reason == "bulk_validate_completed" for e in events)
 
         # Progress events: one job_started, three item_started + item_completed,
@@ -371,7 +371,7 @@ class TestProcessorFailureIsolation:
                 user_id=kwargs["current_user"].id,
                 status="completed",
                 workflow_type="exporter_presentation",
-                lifecycle_state=LCLifecycleState.DOCS_PRESENTED.value,
+                lifecycle_state=LCLifecycleState.DOCS_IN_PREPARATION.value,
             )
             db.add(sess)
             db.commit()
@@ -422,7 +422,7 @@ class TestProcessorCancel:
                 user_id=kwargs["current_user"].id,
                 status="completed",
                 workflow_type="exporter_presentation",
-                lifecycle_state=LCLifecycleState.DOCS_PRESENTED.value,
+                lifecycle_state=LCLifecycleState.DOCS_IN_PREPARATION.value,
             )
             db.add(sess)
             db.commit()
