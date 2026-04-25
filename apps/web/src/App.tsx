@@ -145,6 +145,7 @@ import GroupOverview from './pages/lcopilot/GroupOverview'
 import { ImporterValidationPage } from './pages/importer/ImporterValidationPage'
 import { isBulkValidationEnabled, isImporterV2Enabled } from './lib/lcopilot/featureFlags'
 import BulkValidateTest from './pages/lcopilot/BulkValidateTest'
+import RepaperRecipient from './pages/lcopilot/RepaperRecipient'
 import { RequireAuth } from './components/lcopilot/RequireAuth'
 import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
 import { 
@@ -432,6 +433,8 @@ function App() {
             </RequireAuth>
           } />
         )}
+        {/* Phase A2 — re-papering recipient page. Public-by-token, NOT auth-gated. */}
+        <Route path="/repaper/:token" element={<RepaperRecipient />} />
         <Route path="/lcopilot/enterprise-dashboard" element={
           <Navigate to="/lcopilot/exporter-dashboard" replace />
         } />

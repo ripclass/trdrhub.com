@@ -22,6 +22,28 @@ export function isImporterV2Enabled(): boolean {
 }
 
 /**
+ * LCOPILOT_DISCREPANCY_WORKFLOW gates the discrepancy resolution +
+ * re-papering UI (Phase A2). When off, the results page shows the
+ * read-only discrepancy cards we always had. When on, each card gets
+ * Accept / Reject / Waive / Re-paper actions + a collapsed comment
+ * thread.
+ *
+ * The /repaper/{token} recipient page is always available (it's the
+ * link the back-end emails to non-platform users) — that surface
+ * doesn't depend on the flag.
+ *
+ * Enable locally by adding to apps/web/.env:
+ *   VITE_LCOPILOT_DISCREPANCY_WORKFLOW=true
+ */
+export function isDiscrepancyWorkflowEnabled(): boolean {
+  const raw = (import.meta.env.VITE_LCOPILOT_DISCREPANCY_WORKFLOW ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  return raw === "true" || raw === "1";
+}
+
+/**
  * LCOPILOT_BULK_VALIDATION gates the customer-facing bulk LC validation
  * surface (Phase A1 part 2). v1 ships only the QA test page at
  * /lcopilot/_bulk-test; the full dashboard surface comes in a later
