@@ -1458,18 +1458,35 @@ async def execute_validation_pipeline(
             # Add sanctions screening
             supplement_domains.append("sanctions.screening")
 
-            # Primary jurisdiction (prefer exporter's country)
+            # Primary jurisdiction priority: CoO origin > invoice seller >
+            # any LC-detected country > current user's Company.country (from
+            # onboarding) > "global". The Company.country fallback ensures
+            # a BD-onboarded user gets BD rule packs even when the LC text
+            # itself doesn't carry an explicit country signal — common on
+            # ISO 20022 LCs and bare-bones MT700 drafts.
             primary_jurisdiction = "global"
+            company_country_fallback = ""
+            try:
+                if current_user and current_user.company and current_user.company.country:
+                    company_country_fallback = (current_user.company.country or "").lower().strip()
+            except Exception:  # noqa: BLE001 — defensive against detached session
+                company_country_fallback = ""
+
             if origin_country:
                 primary_jurisdiction = origin_country
             elif seller_country:
                 primary_jurisdiction = seller_country
             elif detected_jurisdictions:
                 primary_jurisdiction = list(detected_jurisdictions)[0]
+            elif company_country_fallback and len(company_country_fallback) == 2:
+                primary_jurisdiction = company_country_fallback
+                detected_jurisdictions.add(company_country_fallback)
+                if company_country_fallback != "global":
+                    supplement_domains.append(f"regulations.{company_country_fallback}")
 
             logger.info(
-                "Dynamic jurisdiction detection: primary=%s, all=%s, supplements=%s",
-                primary_jurisdiction, list(detected_jurisdictions), supplement_domains
+                "Dynamic jurisdiction detection: primary=%s, all=%s, supplements=%s, company_fallback=%s",
+                primary_jurisdiction, list(detected_jurisdictions), supplement_domains, company_country_fallback
             )
 
             # Build document data for rule engine
