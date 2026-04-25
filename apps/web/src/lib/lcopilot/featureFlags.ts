@@ -20,3 +20,20 @@ export function isImporterV2Enabled(): boolean {
     .toLowerCase();
   return raw === "true" || raw === "1";
 }
+
+/**
+ * LCOPILOT_BULK_VALIDATION gates the customer-facing bulk LC validation
+ * surface (Phase A1 part 2). v1 ships only the QA test page at
+ * /lcopilot/_bulk-test; the full dashboard surface comes in a later
+ * phase once we've smoke-tested the backend infra in the wild.
+ *
+ * Enable locally by adding to apps/web/.env:
+ *   VITE_LCOPILOT_BULK_VALIDATION=true
+ */
+export function isBulkValidationEnabled(): boolean {
+  const raw = (import.meta.env.VITE_LCOPILOT_BULK_VALIDATION ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  return raw === "true" || raw === "1";
+}

@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from app import models as legacy_models  # noqa: F401  (side effects)
 from app.models import ValidationSession
 from app.models.base import Base
+from app.models.bulk_jobs import BulkItem, BulkJob  # noqa: F401  — needed for FK targets
 from app.models.lc_lifecycle import (
     LC_LIFECYCLE_DEFAULT_STATE,
     LC_LIFECYCLE_TERMINAL_STATES,
@@ -110,6 +111,11 @@ def db():
     """
     engine = create_engine("sqlite:///:memory:")
     tables = [
+        # bulk_jobs / bulk_items must come before validation_sessions
+        # because ValidationSession now carries nullable FKs to them
+        # (Phase A1 part 2).
+        BulkJob.__table__,
+        BulkItem.__table__,
         ValidationSession.__table__,
         LCLifecycleEvent.__table__,
     ]

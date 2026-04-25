@@ -3,7 +3,7 @@ Bulk Processing Models
 Batch LC processing with async job tracking and failure management
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Index, DECIMAL
+from sqlalchemy import JSON, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Index, DECIMAL
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -11,6 +11,13 @@ from enum import Enum
 import uuid
 
 from app.database import Base
+
+
+# Cross-dialect JSON column type. Stays JSONB on Postgres (production)
+# and degrades to plain JSON on SQLite (tests). Required because the
+# bulk-validate test suite uses an in-memory SQLite engine that doesn't
+# understand the JSONB type.
+_JSONB = JSON().with_variant(JSONB, "postgresql")
 
 
 class JobStatus(str, Enum):
@@ -57,7 +64,7 @@ class BulkJob(Base):
 
     # Job configuration
     job_type = Column(String(32), nullable=False)  # lc_validation, doc_verification, risk_analysis
-    config = Column(JSONB, nullable=False, default=dict)
+    config = Column(_JSONB, nullable=False, default=dict)
 
     # User context
     created_by = Column(UUID(as_uuid=True), nullable=False)
@@ -82,7 +89,7 @@ class BulkJob(Base):
 
     # Resume capability
     resume_token = Column(String(128), nullable=True)
-    checkpoint_data = Column(JSONB, nullable=True)
+    checkpoint_data = Column(_JSONB, nullable=True)
 
     # File references
     s3_manifest_bucket = Column(String(128), nullable=True)
@@ -123,7 +130,7 @@ class BulkItem(Base):
     # Item identification
     lc_identifier = Column(String(128), nullable=False)  # LC number or document ID
     source_ref = Column(String(256), nullable=True)  # Reference in manifest
-    item_data = Column(JSONB, nullable=False)  # LC data or file references
+    item_data = Column(_JSONB, nullable=False)  # LC data or file references
 
     # Processing
     status = Column(String(16), nullable=False, default=ItemStatus.PENDING)
@@ -136,8 +143,8 @@ class BulkItem(Base):
     duration_ms = Column(Integer, nullable=True)
 
     # Results
-    result_data = Column(JSONB, nullable=True)  # Validation results, extracted data
-    output_files = Column(JSONB, nullable=True)  # Generated reports, corrected docs
+    result_data = Column(_JSONB, nullable=True)  # Validation results, extracted data
+    output_files = Column(_JSONB, nullable=True)  # Generated reports, corrected docs
 
     # Error tracking
     last_error = Column(Text, nullable=True)
@@ -173,7 +180,7 @@ class BulkFailure(Base):
     attempt_number = Column(Integer, nullable=False)
     error_code = Column(String(64), nullable=False)
     error_message = Column(Text, nullable=False)
-    error_details = Column(JSONB, nullable=True)
+    error_details = Column(_JSONB, nullable=True)
 
     # Classification
     error_category = Column(String(32), nullable=False)  # validation, processing, system, network
@@ -182,7 +189,7 @@ class BulkFailure(Base):
 
     # Context
     worker_id = Column(String(64), nullable=True)
-    execution_context = Column(JSONB, nullable=True)
+    execution_context = Column(_JSONB, nullable=True)
 
     # Timing
     failed_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -209,7 +216,7 @@ class JobEvent(Base):
     job_id = Column(UUID(as_uuid=True), ForeignKey("bulk_jobs.id", ondelete="CASCADE"), nullable=False)
 
     event_type = Column(String(32), nullable=False)
-    event_data = Column(JSONB, nullable=False, default=dict)
+    event_data = Column(_JSONB, nullable=False, default=dict)
 
     # Context
     user_id = Column(UUID(as_uuid=True), nullable=True)
@@ -240,9 +247,9 @@ class BulkTemplate(Base):
     job_type = Column(String(32), nullable=False)
 
     # Template configuration
-    config_template = Column(JSONB, nullable=False)
-    manifest_schema = Column(JSONB, nullable=True)
-    validation_rules = Column(JSONB, nullable=True)
+    config_template = Column(_JSONB, nullable=False)
+    manifest_schema = Column(_JSONB, nullable=True)
+    validation_rules = Column(_JSONB, nullable=True)
 
     # Usage tracking
     usage_count = Column(Integer, default=0)
@@ -251,7 +258,7 @@ class BulkTemplate(Base):
     # Access control
     created_by = Column(UUID(as_uuid=True), nullable=False)
     is_public = Column(Boolean, default=False)
-    allowed_roles = Column(JSONB, nullable=True)
+    allowed_roles = Column(_JSONB, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

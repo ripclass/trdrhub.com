@@ -143,7 +143,8 @@ import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
 import AgencyDashboard from './pages/lcopilot/AgencyDashboard'
 import GroupOverview from './pages/lcopilot/GroupOverview'
 import { ImporterValidationPage } from './pages/importer/ImporterValidationPage'
-import { isImporterV2Enabled } from './lib/lcopilot/featureFlags'
+import { isBulkValidationEnabled, isImporterV2Enabled } from './lib/lcopilot/featureFlags'
+import BulkValidateTest from './pages/lcopilot/BulkValidateTest'
 import { RequireAuth } from './components/lcopilot/RequireAuth'
 import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
 import { 
@@ -422,6 +423,14 @@ function App() {
               </LcopilotBetaRoute>
             } />
           </>
+        )}
+        {/* Phase A1 part 2 — bulk validation QA tester (hidden, no nav link). */}
+        {isBulkValidationEnabled() && (
+          <Route path="/lcopilot/_bulk-test" element={
+            <RequireAuth>
+              <BulkValidateTest />
+            </RequireAuth>
+          } />
         )}
         <Route path="/lcopilot/enterprise-dashboard" element={
           <Navigate to="/lcopilot/exporter-dashboard" replace />

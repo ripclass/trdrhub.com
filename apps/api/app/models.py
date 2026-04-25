@@ -299,6 +299,23 @@ class ValidationSession(Base):
         nullable=True,
     )
 
+    # Bulk-validation back-references — Phase A1 part 2 (2026-04-26).
+    # NULL for sessions created via the single-LC upload path. Populated
+    # by BulkValidateProcessor right before it kicks the validation
+    # pipeline, so the bulk job can reverse-look-up its children.
+    bulk_job_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("bulk_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    bulk_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("bulk_items.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Processing metadata
     ocr_provider = Column(String(50), nullable=True)
     processing_started_at = Column(DateTime(timezone=True), nullable=True)
