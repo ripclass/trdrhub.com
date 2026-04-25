@@ -23,13 +23,14 @@ import type { User } from '@/hooks/use-auth'
 // Mirror of the WorkspaceSwitcher gate (>=2 activities)
 const showsSwitcher = (activities: BusinessActivity[]): boolean => activities.length >= 2
 
+// Mirror of the EnterpriseGroupLink gate
+const showsGroupLink = (tier: BusinessTier): boolean => tier === 'enterprise'
+
 // Dashboard the activity maps to, per ACTIVITY_DESTINATIONS in routing.ts.
-// Pre-launch scope-down (2026-04-25): agent + services dashboards
-// retired; both fall back to exporter via the routing.ts fallback.
 const ACTIVITY_DASHBOARDS: Record<BusinessActivity, string> = {
   exporter: '/lcopilot/exporter-dashboard',
   importer: '/lcopilot/importer-dashboard',
-  agent: '/lcopilot/exporter-dashboard',
+  agent: '/lcopilot/agency-dashboard',
   services: '/lcopilot/exporter-dashboard',
 }
 
@@ -100,6 +101,7 @@ interface RunResult {
   dashboard: string
   dashboardMatchesPrimary: boolean
   switcher: boolean
+  groupLink: boolean
   reason: string
 }
 
@@ -124,6 +126,7 @@ describe('onboarding scenario matrix — new Day 2 shape', () => {
       dashboard: decision.destination,
       dashboardMatchesPrimary: decision.destination === expectedDashboard,
       switcher: showsSwitcher(s.activities),
+      groupLink: showsGroupLink(s.tier),
       reason: decision.reason,
     })
   })
@@ -197,36 +200,31 @@ describe('onboarding scenario matrix — edge cases', () => {
 })
 
 describe('activity priority sort', () => {
-  it('sorts any click order into canonical priority (exporter > importer)', () => {
+  it('sorts any click order into canonical priority (agent > exporter > importer > services)', () => {
     expect(sortActivitiesByPriority(['importer', 'exporter'])).toEqual(['exporter', 'importer'])
-    expect(sortActivitiesByPriority(['exporter'])).toEqual(['exporter'])
-    expect(sortActivitiesByPriority(['importer'])).toEqual(['importer'])
-  })
-
-  it('sorts unknown legacy values to the end (sane fallback for old DB rows)', () => {
-    // Pre-launch scope-down (2026-04-25): agent + services no longer in
-    // priority list. Stable sort puts them after the known values.
-    const sorted = sortActivitiesByPriority(['services', 'importer', 'exporter', 'agent'])
-    expect(sorted.slice(0, 2)).toEqual(['exporter', 'importer'])
-    expect(new Set(sorted.slice(2))).toEqual(new Set(['services', 'agent']))
+    expect(sortActivitiesByPriority(['services', 'agent'])).toEqual(['agent', 'services'])
+    expect(
+      sortActivitiesByPriority(['services', 'importer', 'exporter', 'agent']),
+    ).toEqual(['agent', 'exporter', 'importer', 'services'])
   })
 
   it('is idempotent', () => {
-    const input: BusinessActivity[] = ['exporter', 'importer']
+    const input: BusinessActivity[] = ['exporter', 'agent']
     const once = sortActivitiesByPriority(input)
     const twice = sortActivitiesByPriority(once)
     expect(once).toEqual(twice)
   })
 
   it('does not mutate the input array', () => {
-    const input: BusinessActivity[] = ['importer', 'exporter']
+    const input: BusinessActivity[] = ['services', 'agent']
     const sorted = sortActivitiesByPriority(input)
-    expect(input).toEqual(['importer', 'exporter'])
-    expect(sorted).toEqual(['exporter', 'importer'])
+    expect(input).toEqual(['services', 'agent'])
+    expect(sorted).toEqual(['agent', 'services'])
   })
 
-  it('ACTIVITY_PRIORITY contains only actively-sold activities (exporter, importer)', () => {
-    expect([...ACTIVITY_PRIORITY]).toEqual(['exporter', 'importer'])
+  it('ACTIVITY_PRIORITY contains every BusinessActivity value exactly once', () => {
+    const all: BusinessActivity[] = ['exporter', 'importer', 'agent', 'services']
+    expect([...ACTIVITY_PRIORITY].sort()).toEqual(all.sort())
   })
 })
 
@@ -239,6 +237,7 @@ afterAll(() => {
       scenario: r.label,
       dashboard: r.dashboard.replace('/lcopilot/', ''),
       switcher: r.switcher ? 'shown' : '—',
+      'group overview': r.groupLink ? 'shown' : '—',
       reason: r.reason,
     })),
   )

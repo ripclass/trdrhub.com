@@ -56,9 +56,13 @@ interface CompanyTypeOption {
   icon: React.ElementType;
 }
 
-// Pre-launch scope-down (2026-04-25): only exporter + importer are
-// actively sold. Agent (buying-house) and Services (freight forwarder /
-// LC consultant) dashboards land post-launch.
+interface CompanySizeOption {
+  value: BusinessTier;
+  label: string;
+  employees: string;
+  icon: React.ElementType;
+}
+
 const COMPANY_TYPES: CompanyTypeOption[] = [
   {
     value: "exporter",
@@ -72,13 +76,40 @@ const COMPANY_TYPES: CompanyTypeOption[] = [
     description: "We import goods",
     icon: PackageOpen,
   },
+  {
+    value: "agent",
+    label: "Sourcing agent",
+    description: "We manage LCs for buyers",
+    icon: Users,
+  },
+  {
+    value: "services",
+    label: "Trade services",
+    description: "Freight / broker / consultant",
+    icon: Truck,
+  },
 ];
 
-// Pre-launch scope-down (2026-04-25): tier question dropped from signup.
-// New users default to 'sme' on the backend; we keep the column for
-// forward compat. Tier-gated features (SSO, audit log, RBAC, group
-// rollup) ship post-launch.
-const TIER_DEFAULT: BusinessTier = "sme";
+const COMPANY_SIZES: CompanySizeOption[] = [
+  {
+    value: "solo",
+    label: "Solo",
+    employees: "1-3 people",
+    icon: User,
+  },
+  {
+    value: "sme",
+    label: "SME",
+    employees: "4-20 people",
+    icon: Users,
+  },
+  {
+    value: "enterprise",
+    label: "Enterprise",
+    employees: "21+, SSO + audit log",
+    icon: Factory,
+  },
+];
 
 const FEATURES = [
   { icon: FileCheck, label: "LC Validation", desc: "UCP600 compliance" },
@@ -153,11 +184,10 @@ export default function Register() {
   // Step state
   const [step, setStep] = useState(1);
 
-  // Step 1 state — multi-select activities + single country. Tier is
-  // dropped from the wizard (2026-04-25 scope-down); we default to 'sme'
-  // on submit. Shape mirrors OnboardingCompletePayload
-  // (apps/api/app/schemas/onboarding.py).
+  // Step 1 state — multi-select activities, single tier, single country.
+  // Shape mirrors OnboardingCompletePayload (apps/api/app/schemas/onboarding.py).
   const [activities, setActivities] = useState<BusinessActivity[]>([]);
+  const [tier, setTier] = useState<BusinessTier | "">("");
   const [country, setCountry] = useState<string>("");
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   
@@ -213,9 +243,13 @@ export default function Register() {
   // ─────────────────────────────────────────────────────────────
 
   // Legacy User.role has a CHECK constraint — only exporter/importer/tenant_admin/bank_*
-  // are allowed. Tier-based tenant_admin assignment dropped along with Q3
-  // (2026-04-25 scope-down) since tier no longer gates anything functional.
+  // are allowed. Enterprise-tier users with an exporter/importer activity get tenant_admin
+  // for downstream RBAC; agent/services fall back to exporter (primary activity doesn't
+  // matter once Company.business_activities is persisted — routing reads from there).
   const getBackendRole = (): string => {
+    if (tier === "enterprise") {
+      return "tenant_admin";
+    }
     const primary = activities[0];
     if (primary === "importer") return "importer";
     return "exporter";
@@ -236,6 +270,14 @@ export default function Register() {
       toast({
         title: "Select what your business does",
         description: "Pick one or more. You can always change this later.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!tier) {
+      toast({
+        title: "Select your team size",
+        description: "Pick the tier that best matches your team.",
         variant: "destructive",
       });
       return;
@@ -286,12 +328,24 @@ export default function Register() {
       return;
     }
 
+    if (!tier) {
+      // Guarded by handleContinue on step 1, but TS needs the narrowing.
+      toast({
+        title: "Select your team size",
+        description: "Please complete step 1 before registering.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const backendRole = getBackendRole();
+      const normalizedTier: BusinessTier = tier;
 
       // Sort activities by canonical priority so two users with the same
       // selections (but different click orders) land on the same dashboard.
-      // See ACTIVITY_PRIORITY in @/lib/lcopilot/activities.
+      // See ACTIVITY_PRIORITY in @/api/onboarding.
       const sortedActivities = sortActivitiesByPriority(activities);
       const primaryActivity = sortedActivities[0];
 
@@ -306,7 +360,7 @@ export default function Register() {
         {
           companyName: formData.companyName,
           companyType: primaryActivity,                  // priority-sorted primary
-          companySize: TIER_DEFAULT,
+          companySize: normalizedTier,
           businessTypes: sortedActivities,
           country: country,
           currency: selectedCountry?.currency || "USD",
@@ -329,7 +383,7 @@ export default function Register() {
         await completeOnboardingRequest({
           activities: sortedActivities,
           country,
-          tier: TIER_DEFAULT,
+          tier: normalizedTier,
           company_name: formData.companyName,
         });
       } catch (error: any) {
@@ -478,6 +532,52 @@ export default function Register() {
                     </div>
                   </div>
 
+                  {/* Team Size / Tier */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium text-[#EDF5F2]/80">Team Size</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {COMPANY_SIZES.map((option) => {
+                        const Icon = option.icon;
+                        const isSelected = tier === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setTier(option.value)}
+                            className={cn(
+                              "relative flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
+                              isSelected 
+                                ? "border-[#B2F273] bg-[#B2F273]/10" 
+                                : "border-[#EDF5F2]/10 bg-[#00382E]/30 hover:border-[#EDF5F2]/20"
+                            )}
+                          >
+                            {isSelected && (
+                              <div className="absolute top-2 right-2">
+                                <Check className="w-3.5 h-3.5 text-[#B2F273]" />
+                              </div>
+                            )}
+                            <div className={cn(
+                              "w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors",
+                              isSelected ? "bg-[#B2F273]/20" : "bg-[#00382E]"
+                            )}>
+                              <Icon className={cn(
+                                "w-4 h-4 transition-colors",
+                                isSelected ? "text-[#B2F273]" : "text-[#EDF5F2]/40"
+                              )} />
+                            </div>
+                            <div>
+                              <p className={cn(
+                                "font-medium text-sm transition-colors",
+                                isSelected ? "text-white" : "text-[#EDF5F2]/80"
+                              )}>{option.label}</p>
+                              <p className="text-xs text-[#EDF5F2]/40">{option.employees}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* Country Selection */}
                   <div className="space-y-3">
                     <Label className="text-sm font-medium text-[#EDF5F2]/80">
@@ -593,7 +693,8 @@ export default function Register() {
                     {activities
                       .map((a) => COMPANY_TYPES.find((t) => t.value === a)?.label ?? a)
                       .join(" & ")}
-                    {selectedCountry ? ` • ${selectedCountry.name}` : ""}
+                    {" • "}
+                    {COMPANY_SIZES.find((s) => s.value === tier)?.label} Team
                   </p>
                 </div>
 

@@ -24,13 +24,14 @@ import type { BusinessActivity } from '@/api/onboarding'
 
 const STORAGE_KEY = 'lcopilot.activeWorkspace'
 
-// Pre-launch scope-down (2026-04-25): agent + services have no dedicated
-// dashboard. Stale stored values fall through the lookup and resolve to
-// exporter via the dashboardForActivity nullish fallback. Keep in sync
-// with ACTIVITY_DESTINATIONS in lib/lcopilot/routing.ts.
-const ACTIVITY_DASHBOARD: Partial<Record<BusinessActivity, string>> = {
+const ACTIVITY_DASHBOARD: Record<BusinessActivity, string> = {
   exporter: '/lcopilot/exporter-dashboard',
   importer: '/lcopilot/importer-dashboard',
+  agent: '/lcopilot/agency-dashboard',
+  // services has no dedicated dashboard yet — exporter is the closest match
+  // (services teams typically operate around exporter workflows). Keep in
+  // sync with ACTIVITY_DESTINATIONS in lib/lcopilot/routing.ts.
+  services: '/lcopilot/exporter-dashboard',
 }
 
 export function dashboardForActivity(activity: BusinessActivity): string {
@@ -41,9 +42,6 @@ function readStoredWorkspace(): BusinessActivity | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = window.sessionStorage.getItem(STORAGE_KEY)
-    // 'agent' / 'services' from stale sessionStorage entries are still
-    // type-valid as BusinessActivity but routing falls them back to
-    // exporter via dashboardForActivity above.
     if (
       raw === 'exporter' ||
       raw === 'importer' ||

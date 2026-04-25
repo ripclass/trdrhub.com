@@ -29,11 +29,7 @@ _ACTIVITY_TO_LEGACY_ROLE = {
 # landing dashboard + default active workspace, so we sort here as a
 # belt-and-suspenders guard — even if a frontend caller forgets to sort,
 # the persisted array is deterministic. Keep in lockstep.
-#
-# Pre-launch scope-down (2026-04-25): wizard only accepts exporter +
-# importer. Stale 'agent' / 'services' values from DB rows still sort
-# safely (unknown values land at the end via the rank.get fallback).
-_ACTIVITY_PRIORITY = ("exporter", "importer")
+_ACTIVITY_PRIORITY = ("agent", "exporter", "importer", "services")
 
 
 def _sort_activities_by_priority(activities: List[str]) -> List[str]:

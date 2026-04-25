@@ -8,6 +8,7 @@ export type LcopilotBetaDestination =
   | '/admin'
   | '/lcopilot/exporter-dashboard'
   | '/lcopilot/importer-dashboard'
+  | '/lcopilot/agency-dashboard'
   | '/lcopilot/combined-dashboard'
   | '/lcopilot/enterprise-dashboard'
 
@@ -16,6 +17,7 @@ export type LcopilotBetaScope =
   | 'onboarding'
   | 'exporter'
   | 'importer'
+  | 'agency'
   | 'combined'
   | 'enterprise'
 
@@ -29,6 +31,7 @@ export interface LcopilotRouteDecision {
     | 'bank_parked'
     | 'enterprise'
     | 'combined'
+    | 'agency'
     | 'importer'
     | 'exporter'
 }
@@ -39,6 +42,7 @@ const DASHBOARD_DESTINATIONS: Record<
 > = {
   exporter: '/lcopilot/exporter-dashboard',
   importer: '/lcopilot/importer-dashboard',
+  agency: '/lcopilot/agency-dashboard',
   combined: '/lcopilot/combined-dashboard',
   enterprise: '/lcopilot/enterprise-dashboard',
 }
@@ -71,21 +75,20 @@ function normalizeBusinessTypes(details: OnboardingStatus['details']): string[] 
 }
 
 // Activity-keyed dashboard routing.
-//
-// Pre-launch scope-down (2026-04-25): only exporter + importer are sold.
-// Stale 'agent' / 'services' values from old DB rows are not in this map
-// — destinationForPrimaryActivity returns null for them, the caller
-// falls through to the exporter-dashboard fallback at the bottom of
-// resolveLcopilotRoute. Keep in sync with ACTIVITY_DASHBOARD in
-// lib/lcopilot/activeWorkspace.ts.
+// `services` has no dedicated dashboard yet — exporter is the closest match.
+// Keep in sync with ACTIVITY_DASHBOARD in lib/lcopilot/activeWorkspace.ts.
 const ACTIVITY_DESTINATIONS: Record<string, LcopilotBetaDestination> = {
   exporter: '/lcopilot/exporter-dashboard',
   importer: '/lcopilot/importer-dashboard',
+  agent: '/lcopilot/agency-dashboard',
+  services: '/lcopilot/exporter-dashboard',
 }
 
 const ACTIVITY_REASONS: Record<string, LcopilotRouteDecision['reason']> = {
   exporter: 'exporter',
   importer: 'importer',
+  agent: 'agency',
+  services: 'exporter',
 }
 
 function destinationForPrimaryActivity(
