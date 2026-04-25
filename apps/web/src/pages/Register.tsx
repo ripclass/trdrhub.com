@@ -39,6 +39,8 @@ import {
   type BusinessActivity,
   type BusinessTier,
 } from "@/api/onboarding";
+import { fetchCsrfToken } from "@/lib/csrf";
+import { API_BASE_URL } from "@/api/client";
 
 // ─────────────────────────────────────────────────────────────
 // Types & Constants — aligned with the post-auth OnboardingWizard
@@ -369,10 +371,15 @@ export default function Register() {
       // Persist the 3-question wizard answers into Company.business_activities /
       // Company.tier / Company.country via the new endpoint. If this fails we
       // surface the failure instead of silently landing the user on the default
-      // (exporter) dashboard — they need activities=['agent'] (or whatever
-      // they picked) to persist, otherwise the WorkspaceSwitcher,
-      // EnterpriseGroupLink, and AgencyDashboard read empty defaults.
+      // (exporter) dashboard — they need activities to persist, otherwise the
+      // router lands them on the wrong dashboard.
+      //
+      // Explicit CSRF prefetch eliminates the race where the axios
+      // interceptor's on-demand fetch lands AFTER the POST has already gone
+      // out without a header. fetchCsrfToken is dedup'd by inFlightCsrfFetch
+      // and is a no-op if a token is already cached.
       try {
+        await fetchCsrfToken(API_BASE_URL);
         await completeOnboardingRequest({
           activities: sortedActivities,
           country,

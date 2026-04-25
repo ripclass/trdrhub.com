@@ -626,37 +626,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       try {
-        const registerResponse = await fetch(`${API_BASE_URL}/auth/register`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify(registerPayload),
-        })
-
-        if (!registerResponse.ok) {
-          const errorData = await registerResponse.json().catch(() => ({ detail: 'Backend registration failed' }))
-          const errorMessage = errorData.detail || `HTTP ${registerResponse.status}: Backend registration failed`
-          
-          // If user already exists, that's okay - continue
-          if (registerResponse.status === 400 && errorData.detail?.includes('already registered')) {
-            authLogger.info('User already exists in backend, continuing...')
-          } else {
-            // This is CRITICAL - backend registration failed
-            authLogger.error('Backend registration failed:', errorMessage)
-            // Still continue - user exists in Supabase, but onboarding data might be missing
-            // User will need to complete onboarding wizard
-          }
-        } else {
-          const userData = await registerResponse.json().catch(() => null)
-          authLogger.info('Backend registration successful:', userData?.id)
-        }
+        // Route through the axios client so error reporting, timeouts, and
+        // request telemetry stay consistent with the rest of the app. The
+        // backend exempts /auth/register from CSRF (main.py exempt_paths) so
+        // the interceptor's CSRF-fetch attempt is harmless even on a
+        // brand-new browser with no prior session.
+        const { data: registerData } = await api.post('/auth/register', registerPayload)
+        authLogger.info('Backend registration successful:', registerData?.id)
       } catch (backendError: any) {
-        // This is CRITICAL - backend registration error
-        authLogger.error('Backend registration error:', backendError?.message)
-        // Still continue - user exists in Supabase, but onboarding data might be missing
-        // User will need to complete onboarding wizard
+        const status = backendError?.response?.status
+        const detail = backendError?.response?.data?.detail || backendError?.message
+        if (status === 400 && typeof detail === 'string' && detail.includes('already registered')) {
+          authLogger.info('User already exists in backend, continuing...')
+        } else {
+          // CRITICAL - backend registration failed. Still continue: the user
+          // exists in Supabase, /auth/me middleware will create a User row
+          // on next call, and /onboarding will redirect to the wizard.
+          authLogger.error(
+            'Backend registration failed:',
+            detail || `HTTP ${status ?? 'unknown'}: Backend registration failed`,
+          )
+        }
       }
 
       const profile = await fetchUserProfile()
