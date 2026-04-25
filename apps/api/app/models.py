@@ -334,7 +334,13 @@ class ValidationSession(Base):
     user = relationship("User", back_populates="validation_sessions")
     company = relationship("Company", back_populates="validation_sessions")
     documents = relationship("Document", back_populates="validation_session")
-    discrepancies = relationship("Discrepancy", back_populates="validation_session")
+    # Phase A2 added Discrepancy.resolution_evidence_session_id which
+    # also FKs to validation_sessions; need foreign_keys to disambiguate.
+    discrepancies = relationship(
+        "Discrepancy",
+        back_populates="validation_session",
+        foreign_keys="Discrepancy.validation_session_id",
+    )
     reports = relationship("Report", back_populates="validation_session")
     lc_version = relationship("LCVersion", back_populates="validation_session", uselist=False)
     usage_records = relationship("UsageRecord", back_populates="session")
@@ -391,13 +397,43 @@ class Discrepancy(Base):
     
     # References to source documents
     source_document_types = Column(JSON, nullable=True)  # Array of document types involved
-    
+
+    # Resolution workflow — Phase A2 (2026-04-27). State-machine driven via
+    # app/services/discrepancy_workflow.py. Default 'raised' = examiner just
+    # flagged it, no user action yet. Allowed transitions enforced server-side.
+    state = Column(
+        String(20),
+        nullable=False,
+        default="raised",
+        server_default="raised",
+    )
+    state_changed_at = Column(DateTime(timezone=True), nullable=True)
+    owner_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolution_action = Column(String(20), nullable=True)
+    resolution_evidence_session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("validation_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Audit trail
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    validation_session = relationship("ValidationSession", back_populates="discrepancies")
+    validation_session = relationship(
+        "ValidationSession",
+        back_populates="discrepancies",
+        foreign_keys=[validation_session_id],
+    )
 
 
 class Report(Base):

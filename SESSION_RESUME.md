@@ -1,9 +1,23 @@
 # Session resume — Path A build
 
 **Last updated:** 2026-04-26 evening
-**State frozen at commit:** `ddc8ed49` (origin/master) — Phase A1 part 2 shipped
+**State frozen at commit:** `dc86c44f` (origin/master) — Phase A1 part 2 shipped + LIVE-SMOKE VERIFIED
 **Branch:** `master` (pushed)
-**Active phase:** A1 done. Next phase A2 (discrepancy resolution + re-papering loop, week of 2026-05-04).
+**Active phase:** A1 done + verified. Phase A2 starting (discrepancy resolution + re-papering loop).
+
+## A1.2 live-smoke result (2026-04-26 evening)
+
+- Migration applied via `render jobs create` (manual; trdrhub-api has no auto-hook).
+- Smoke job `270c8103` ran 5 LC packages through the bulk pipeline — 5/5 succeeded.
+- Lifecycle event verified end-to-end via `/sessions/{id}/lifecycle/history`:
+  `from_state=docs_in_preparation → to_state=docs_presented`,
+  `extra={bulk_job_id, bulk_item_id}`, `reason=bulk_validate_completed`.
+- 4/5 items returned `verdict=None` due to OpenRouter 402 (credits out). The 1
+  item with sufficient credits returned `verdict=REJECT score=16`. **Bulk infra
+  itself is fully working** — verdict=None is upstream LLM credit, not a bulk bug.
+- Two post-smoke fixes shipped at `9cce6d4e`: lifecycle target corrected
+  (`under_bank_review` → `docs_presented`), `_summarize_result` reads canonical
+  `bank_verdict.verdict` + `analytics.compliance_score` paths.
 
 ---
 
