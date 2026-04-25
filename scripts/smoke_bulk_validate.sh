@@ -116,7 +116,7 @@ for i in $(seq 1 360); do  # 360 * 5s = 30 min
     "$API/api/bulk-validate/$JOB_ID" \
     -H "Authorization: Bearer $TOKEN"
   STATUS=$(python -c "import json; print(json.load(open(r'$JOB_OUT'))['status'])")
-  PROC=$(python -c "import json; d=json.load(open(r'$JOB_OUT')); print(f\"{d['succeeded_items']}✓/{d['failed_items']}✗/{d['skipped_items']}⤬ of {d['total_items']}\")")
+  PROC=$(python -c "import json; d=json.load(open(r'$JOB_OUT')); print(f\"{d['succeeded_items']}SUCCEEDED/{d['failed_items']}FAILED/{d['skipped_items']}SKIPPED of {d['total_items']}\")")
   echo "  [t+$((i*5))s] status=$STATUS  $PROC"
   case "$STATUS" in
     succeeded|failed|partial|cancelled) break ;;
@@ -130,7 +130,7 @@ python <<PY
 import json
 d = json.load(open(r"$JOB_OUT"))
 print(f"  Job status: {d['status']}")
-print(f"  Items: {d['succeeded_items']}✓ / {d['failed_items']}✗ / {d['skipped_items']}⤬ of {d['total_items']}")
+print(f"  Items: {d['succeeded_items']} ok / {d['failed_items']} failed / {d['skipped_items']} skipped of {d['total_items']}")
 print(f"  Duration: {d.get('duration_seconds') or '?'}s")
 print()
 for it in d.get("items", []):
