@@ -1,6 +1,7 @@
 // ExporterSidebar - Navigation component for Exporter Dashboard
-import { Upload, BarChart3, Settings, Building2, CreditCard, LogOut, ArrowLeft } from "lucide-react";
+import { Upload, BarChart3, Settings, Building2, CreditCard, LogOut, ArrowLeft, Inbox } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
+import { isBulkValidationEnabled } from "@/lib/lcopilot/featureFlags";
 import {
   Sidebar,
   SidebarContent,
@@ -98,6 +99,16 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
                   <span>Upload</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {isBulkValidationEnabled() && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild tooltip="Bulk validation">
+                    <Link to="/lcopilot/_bulk-test">
+                      <Inbox />
+                      <span>Bulk validation</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

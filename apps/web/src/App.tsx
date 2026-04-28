@@ -4,6 +4,7 @@ import NotificationSettings from './pages/settings/NotificationSettings'
 import ServicesDashboard from './pages/lcopilot/ServicesDashboard'
 import EnterpriseGroupOverview from './pages/lcopilot/EnterpriseGroupOverview'
 import EnterpriseAuditLog from './pages/lcopilot/EnterpriseAuditLog'
+import StatusPage from './pages/StatusPage'
 import Index from './pages/Index'
 import TRDRHub from './pages/TRDRHub'
 import UploadPage from './pages/UploadPage'
@@ -205,6 +206,7 @@ function App() {
     <>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/status" element={<StatusPage />} />
         <Route path="/debug" element={<div style={{padding: '20px', fontSize: '24px'}}>🎉 Debug Route Works! The server and routing are functioning correctly.</div>} />
         <Route path="/lc-demo" element={<Index />} />
         <Route path="/trdr" element={<TRDRHub />} />

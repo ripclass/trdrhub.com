@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { EnvironmentBanner } from "@/components/shared/EnvironmentBanner";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
 
 // Inline cn function to avoid import/bundling issues
 function cn(...classes: (string | undefined | null | boolean | Record<string, boolean>)[]): string {
@@ -108,6 +109,11 @@ export function DashboardLayout({
                 {topbar}
               </div>
             )}
+
+            {/* Global search — Phase A12. Hidden on small screens. */}
+            <div className={`${topbar ? "ml-2" : "ml-auto"} hidden md:flex items-center min-w-[280px]`}>
+              <GlobalSearchBar />
+            </div>
 
             {/* Actions */}
             <div className="ml-auto flex items-center gap-2">
