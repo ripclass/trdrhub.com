@@ -24,6 +24,9 @@ import {
 import { cn } from '@/lib/utils';
 import type { IssueCard } from '@/types/lcopilot';
 import { BankProfileBadge } from '@/pages/exporter/results/BankProfileBadge';
+import { isDiscrepancyWorkflowEnabled } from '@/lib/lcopilot/featureFlags';
+import { DiscrepancyActions } from '@/components/discrepancy/DiscrepancyActions';
+import { CommentThread } from '@/components/discrepancy/CommentThread';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -112,6 +115,8 @@ function FindingCard({ issue, index }: { issue: IssueCard; index: number }) {
   const severity = normSeverity(issue.severity);
   const config = SEVERITY_CONFIG[severity];
   const Icon = config.Icon;
+  const workflowEnabled = isDiscrepancyWorkflowEnabled();
+  const discrepancyId = typeof issue.id === 'string' ? issue.id : null;
 
   const lcClause = (issue as any).lc_clause;
   const impact = (issue as any).impact;
@@ -210,6 +215,19 @@ function FindingCard({ issue, index }: { issue: IssueCard; index: number }) {
             </p>
             <p className="text-sm text-blue-900 dark:text-blue-100">{fix}</p>
           </div>
+        )}
+
+        {/* Phase A2 — workflow actions + comment thread.
+         *
+         * Gated by VITE_LCOPILOT_DISCREPANCY_WORKFLOW so legacy users
+         * see read-only cards. The id must be a Discrepancy.id UUID
+         * (option-B persistence in finding_persistence.py); otherwise
+         * both child components self-suppress. */}
+        {workflowEnabled && (
+          <>
+            <DiscrepancyActions discrepancyId={discrepancyId} />
+            <CommentThread discrepancyId={discrepancyId} />
+          </>
         )}
       </CardContent>
     </Card>
