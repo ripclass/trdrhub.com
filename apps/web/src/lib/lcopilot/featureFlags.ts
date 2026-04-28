@@ -59,3 +59,20 @@ export function isBulkValidationEnabled(): boolean {
     .toLowerCase();
   return raw === "true" || raw === "1";
 }
+
+/**
+ * LCOPILOT_NOTIFICATIONS gates the bell icon + dropdown that surfaces
+ * the in-app notification rows the backend writes (Phase A3 part 1).
+ * Off by default — when disabled, the bell + the notifications API
+ * calls are absent. The backend endpoints exist either way.
+ *
+ * Enable locally by adding to apps/web/.env:
+ *   VITE_LCOPILOT_NOTIFICATIONS=true
+ */
+export function isNotificationsEnabled(): boolean {
+  const raw = (import.meta.env.VITE_LCOPILOT_NOTIFICATIONS ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  return raw === "true" || raw === "1";
+}
