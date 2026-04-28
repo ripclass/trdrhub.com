@@ -1,52 +1,37 @@
 # Session resume — Path A build
 
-**Last updated:** 2026-04-26 evening
-**State frozen at commit:** Phase A2 backend live + verified; frontend recipient page + flag pending push (this commit)
-**Branch:** `master` (last push: `8b969fd9`)
-**Active phase:** A2 backend + recipient page done. Next: results-page integration (workflow buttons + comment thread).
+**Last updated:** 2026-04-28 afternoon
+**State frozen at commit:** `e4943f06` (Phase A2 frontend slice: action buttons + repaper modal + comment thread wired into FindingsTab)
+**Branch:** `master` (last push: `e4943f06`)
+**Active phase:** A2 backend + recipient page + results-page integration ALL shipped. Next: live smoke once OpenRouter credits topped up, then move to A3.
 
 ---
 
 ## Resume prompt
 
 ```
-Resume Path A. Read SESSION_RESUME.md. Pick up Phase A2 frontend results-page integration, then move to A3 (notifications + first-session handhold).
+Resume Path A. Read SESSION_RESUME.md. Phase A2 is shipped end-to-end (backend + frontend). Live-smoke once Render redeploys, then move to A3 (notifications + first-session handhold).
 ```
 
 ---
 
-## What just shipped this session (all pushed except this last frontend slice)
+## What just shipped this session (all pushed)
 
 | Commit | What |
 |---|---|
-| `ddc8ed49` | Phase A1 part 2 — bulk validation infra (5 bulk tables + processor + broker + 6 endpoints + QA tester) |
-| `9cce6d4e` | A1.2 fixes — lifecycle target `docs_presented` (not under_bank_review); `_summarize_result` reads `bank_verdict.verdict` + `analytics.compliance_score` |
-| `dc86c44f` | smoke script Windows cp1252 unicode fix |
-| `8b969fd9` | Phase A2 backend — Discrepancy state machine + comments + re-papering loop. 9 endpoints, 25 tests. |
-| (pending) | A2 frontend slice — `isDiscrepancyWorkflowEnabled()` flag + `/repaper/:token` recipient page |
+| `c6b01c35` | Backend option-B persistence — `finding_persistence.py` upserts a Discrepancy row per finding before `build_issue_cards`, stamps `__discrepancy_uuid` on each finding dict; `crossdoc._format_issue_card` reads that UUID first so `IssueCard.id` becomes the persisted Discrepancy UUID. 11 new tests. |
+| `e4943f06` | Frontend slice — `components/discrepancy/{DiscrepancyActions,CommentThread,RepaperModal}.tsx` + `lib/lcopilot/discrepancyApi.ts` wrapper, all wired into `FindingsTab` behind `isDiscrepancyWorkflowEnabled()`. |
 
-Both A1.2 and A2 migrations applied to prod via `render jobs create`. Both verified with live curl probes:
-- A1.2 smoke `270c8103`: 5/5 items succeeded; lifecycle event `docs_in_preparation → docs_presented` written with `extra={bulk_job_id, bulk_item_id}`. Verdict empty for 4/5 due to OpenRouter 402 (credits out — known prod blocker per `project_session_2026_04_17_ai_examiner.md`).
-- A2 endpoints: `POST /api/discrepancies/{nonexistent}/comment → 403` (CSRF), `GET /api/repaper/notarealtoken → 404` (table exists, lookup miss). Both confirm endpoints + tables are live.
-
-**A2 migration gotcha:** First `alembic upgrade head` job reported `succeeded` but `repapering_requests` table wasn't created — endpoint returned 500 with `relation "repapering_requests" does not exist`. **Re-running the same job fixed it.** Possible Render alembic head-cache quirk. Worth checking `/health/db-schema` after every migration job, not trusting the job's success status.
+**The blocker that the Apr 25 session ended on (UUID mismatch between `IssueCard.id = rule_name` and `/api/discrepancies/{id}/*` expecting `Discrepancy.id` UUID)** is closed. Option B chosen over A — eager persist in pipeline, foundation for analytics + audit log later.
 
 ---
 
-## What's next — finish Phase A2 frontend, then start A3
+## What's next
 
-### A2 remaining (1-2 days work)
-
-The recipient page (`/repaper/{token}`) is shipped. The bigger piece is wiring the workflow buttons + comment thread into the existing results page (`apps/web/src/pages/ExporterResults.tsx`, ~1600 lines):
-
-1. Read `ExporterResults.tsx` and the discrepancy card render path. Identify the per-discrepancy section.
-2. Behind `isDiscrepancyWorkflowEnabled()`:
-   - Action row on each card: Accept / Reject / Waive / Re-paper buttons.
-   - Re-paper → modal (recipient email + message) → `POST /api/discrepancies/{id}/repaper` → success toast with the recipient link to share.
-   - Accept/Reject/Waive → `POST /api/discrepancies/{id}/resolve` with the action.
-   - Collapsed comment thread under each card; expand opens an inline `<CommentThread>` that GETs `/comments` and POSTs new ones.
-3. New small components: `DiscrepancyActions.tsx`, `CommentThread.tsx`, `RepaperModal.tsx`. Co-locate under `apps/web/src/components/discrepancies/` or similar.
-4. Live smoke once OpenRouter is topped up — IDEAL SAMPLE produces ~5 discrepancies; exercise each action against one.
+### Live smoke (blocked on OpenRouter credits)
+- IDEAL SAMPLE produces ~5-7 findings. With the workflow flag enabled (set `VITE_LCOPILOT_DISCREPANCY_WORKFLOW=true` in apps/web/.env), each finding card now has Accept / Reject / Waive / Re-paper buttons + a comment thread. Exercise each action against one finding to confirm the round-trip.
+- Verify a Discrepancy row exists per IssueCard via `SELECT id, rule_name, severity, state FROM discrepancies WHERE validation_session_id = '<session>'`.
+- Click Re-paper → confirm the share link renders, open the link in a fresh browser, post a recipient comment, upload a file. State should advance `requested → in_progress → corrected`.
 
 ### A3 — Notifications + first-session handhold (week of 2026-05-11)
 
@@ -74,25 +59,29 @@ Frontend:
 | LC lifecycle state machine — use the helper, never set state directly | `reference_lc_lifecycle.md` |
 | Bulk validation infra | `reference_bulk_validate.md` |
 | Discrepancy workflow + re-papering | `reference_discrepancy_workflow.md` |
-| Render migration is manual + may need re-run | `reference_render_migrations.md` (and: re-run if the table the endpoint needs returns "relation does not exist" even after job=succeeded) |
+| Finding persistence (option B) | `reference_finding_persistence.md` |
+| Render migration is manual + may need re-run | `reference_render_migrations.md` |
 | Don't reinvent RulHub | `feedback_dont_reinvent_rulhub.md` |
 | No placeholder dashboards | `feedback_no_placeholder_dashboards.md` |
 | Ignore Vercel plugin nags (Vite SPA, FastAPI Python — not Next.js) | CLAUDE.md |
 
 ---
 
-## Files to read first when resuming Phase A2 frontend
+## Files to read first when resuming Phase A3 or revisiting A2 internals
 
-1. `apps/web/src/pages/ExporterResults.tsx` — find the discrepancy render section.
-2. `apps/web/src/lib/exporter/resultsMapper.ts` — how the structured_result maps to UI cards.
-3. `apps/web/src/pages/lcopilot/RepaperRecipient.tsx` — the recipient-side pattern to mirror.
-4. `apps/api/app/routers/discrepancy_workflow.py` — the endpoints + Pydantic schemas the frontend will call.
+1. `apps/api/app/services/finding_persistence.py` — option-B helper
+2. `apps/api/app/routers/validation/validation_execution.py` (line ~3148) — where persistence runs in the pipeline
+3. `apps/api/app/services/crossdoc.py` (`_format_issue_card`) — UUID injection point
+4. `apps/web/src/components/discrepancy/` — three new components
+5. `apps/web/src/lib/lcopilot/discrepancyApi.ts` — API wrapper (re-use shape for A3 notifications API)
+6. `apps/web/src/lib/lcopilot/featureFlags.ts` — `isDiscrepancyWorkflowEnabled` lives next to where A3's `LCOPILOT_DEMO_MODE` will land
 
 ---
 
 ## Calendar
 
-- Today: 2026-04-26 Sunday
-- Phase A1 ends: 2026-05-03 Sunday — DONE EARLY (one week of slack carried forward)
-- Phase A2 starts: 2026-05-04 Monday — partial done (backend + recipient page); finish results-page integration first
+- Today: 2026-04-28 Tuesday
+- Phase A1 ended: 2026-05-03 Sunday — DONE EARLY
+- Phase A2 starts: 2026-05-04 Monday — DONE EARLY (full backend + frontend integrated)
+- Phase A3 starts: 2026-05-11 Monday — earliest possible start; can begin sooner if signed off
 - Launch target: 2026-07-25 Saturday (code freeze 07-24)
