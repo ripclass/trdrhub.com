@@ -3156,6 +3156,20 @@ async def execute_validation_pipeline(
         len(deduplicated_results),
     )
 
+    # Phase A2 (option B): persist each finding as a Discrepancy row so the
+    # frontend's resolution endpoints have a stable backend UUID to act on.
+    # Mutates the finding dicts in-place with `__discrepancy_uuid`, which
+    # `_format_issue_card` reads to populate `IssueCard.id`. Wrapped in
+    # try/except — persistence is advisory, never block the pipeline.
+    try:
+        from app.services.finding_persistence import persist_findings_as_discrepancies
+
+        persist_findings_as_discrepancies(
+            db, validation_session, deduplicated_results
+        )
+    except Exception:
+        logger.exception("Discrepancy persistence skipped — continuing without UUIDs")
+
     issue_cards, reference_issues = build_issue_cards(deduplicated_results)
     checkpoint("issue_cards_built")
 

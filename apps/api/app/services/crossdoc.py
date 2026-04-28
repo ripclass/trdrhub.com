@@ -362,7 +362,16 @@ def _format_issue_card(discrepancy: Dict[str, Any], index: int) -> Dict[str, Any
         document_label = semantic_payload["documents"][0]
     if semantic_payload and semantic_payload.get("suggested_fix"):
         suggestion = semantic_payload["suggested_fix"]
-    discrepancy_id = discrepancy.get("rule") or f"issue-{index}"
+    # Prefer the persisted Discrepancy UUID injected by
+    # finding_persistence.persist_findings_as_discrepancies — it's what
+    # the /api/discrepancies/{id}/* endpoints expect. Fall back to the
+    # legacy rule-name-based id when persistence didn't run (e.g.,
+    # validation_session is None on stub paths).
+    discrepancy_id = (
+        discrepancy.get("__discrepancy_uuid")
+        or discrepancy.get("rule")
+        or f"issue-{index}"
+    )
 
     # Extract UCP/ISBP references - check multiple possible field names
     ucp_ref = (
