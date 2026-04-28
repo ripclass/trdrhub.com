@@ -93,3 +93,33 @@ export function isAgencyRealEnabled(): boolean {
     .toLowerCase();
   return raw === "true" || raw === "1";
 }
+
+/**
+ * LCOPILOT_SERVICES_REAL gates the rebuilt services dashboard
+ * (/lcopilot/services-dashboard) — Phase A8 + A9. Off by default.
+ *
+ * Enable locally by adding to apps/web/.env:
+ *   VITE_LCOPILOT_SERVICES_REAL=true
+ */
+export function isServicesRealEnabled(): boolean {
+  const raw = (import.meta.env.VITE_LCOPILOT_SERVICES_REAL ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  return raw === "true" || raw === "1";
+}
+
+/**
+ * LCOPILOT_ENTERPRISE_TIER gates the enterprise group overview +
+ * audit log + RBAC surfaces — Phase A10.
+ *
+ * Enable locally by adding to apps/web/.env:
+ *   VITE_LCOPILOT_ENTERPRISE_TIER=true
+ */
+export function isEnterpriseTierEnabled(): boolean {
+  const raw = (import.meta.env.VITE_LCOPILOT_ENTERPRISE_TIER ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  return raw === "true" || raw === "1";
+}

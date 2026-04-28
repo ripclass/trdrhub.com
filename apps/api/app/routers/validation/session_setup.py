@@ -154,6 +154,49 @@ async def prepare_validation_session(
                     _supplier_exc,
                 )
 
+        # Phase A8 — services persona attribution. Same shape as the
+        # supplier path above; just gates on a different roster.
+        services_client_id_raw = (
+            payload.get("services_client_id")
+            or payload.get("servicesClientId")
+            or (
+                (payload.get("metadata") or {}).get("services_client_id")
+                if isinstance(payload.get("metadata"), dict)
+                else None
+            )
+        )
+        if services_client_id_raw and getattr(current_user, "company_id", None):
+            try:
+                from uuid import UUID as _UUID
+
+                from app.models.services import ServicesClient as _ServicesClient
+
+                client_uuid = _UUID(str(services_client_id_raw))
+                owned_client = (
+                    db.query(_ServicesClient)
+                    .filter(_ServicesClient.id == client_uuid)
+                    .filter(
+                        _ServicesClient.services_company_id == current_user.company_id
+                    )
+                    .filter(_ServicesClient.deleted_at.is_(None))
+                    .first()
+                )
+                if owned_client is not None:
+                    validation_session.services_client_id = client_uuid
+                else:
+                    logger.warning(
+                        "Validate request rejected services_client_id=%s — not "
+                        "owned by company %s",
+                        services_client_id_raw,
+                        current_user.company_id,
+                    )
+            except (ValueError, AttributeError, TypeError) as _client_exc:
+                logger.warning(
+                    "Validate request: services_client_id=%r is not a valid UUID (%s)",
+                    services_client_id_raw,
+                    _client_exc,
+                )
+
         db.commit()
         job_id = str(validation_session.id)
         checkpoint("session_created")

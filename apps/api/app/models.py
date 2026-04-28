@@ -327,6 +327,16 @@ class ValidationSession(Base):
         index=True,
     )
 
+    # Services persona — Phase A8 (2026-04-30). Same shape as
+    # supplier_id but for the services consultant: links the session
+    # to a specific client so the services portfolio can roll up.
+    services_client_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("services_clients.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Processing metadata
     ocr_provider = Column(String(50), nullable=True)
     processing_started_at = Column(DateTime(timezone=True), nullable=True)
