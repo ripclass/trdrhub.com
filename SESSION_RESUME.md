@@ -1,64 +1,61 @@
 # Session resume — Path A build
 
 **Last updated:** 2026-04-28 evening
-**State frozen at commit:** `6e128fcb` (Phase A3 part 2 — notification bell + dropdown in header)
-**Branch:** `master` (last push: `6e128fcb`)
-**Active phase:** A3 in progress. Backend dispatcher + 6 endpoints + 2 wired triggers + frontend bell shipped. Next: settings page section, more triggers, first-session handhold.
+**State frozen at commit:** `066547bf` (Phase A3 part 4 — settings page + coachmark)
+**Branch:** `master` (last push: `066547bf`)
+**Active phase:** A3 effectively shipped (1 deferred sub-item). Next: sample-LC button (needs bundled fixtures), then A4 (quota / paywall).
 
 ---
 
 ## Resume prompt
 
 ```
-Resume Path A. Read SESSION_RESUME.md. Phase A3 part 1+2 done (backend + bell). Next: settings page section for notification prefs, wire remaining triggers (validation_complete, bulk_complete, repaper_request_received), then first-session handhold (sample-LC button + coachmark + LCOPILOT_DEMO_MODE).
+Resume Path A. Read SESSION_RESUME.md. Phase A3 is shipped end-to-end except the "Try a sample LC" button (deferred — needs fixture PDFs in repo). Knock that out first or skip to A4 (quota / paywall) — your call.
 ```
 
 ---
 
-## What just shipped this session (all pushed)
+## What just shipped this session — 8 commits
 
 | Commit | What |
 |---|---|
-| `c6b01c35` | A2 backend B — `finding_persistence.py` upserts a Discrepancy per finding pre-`build_issue_cards`, stamps `__discrepancy_uuid`. 11 tests. |
-| `e4943f06` | A2 frontend slice — `components/discrepancy/{DiscrepancyActions,CommentThread,RepaperModal}` + `discrepancyApi.ts` wired into FindingsTab behind `isDiscrepancyWorkflowEnabled()`. |
-| `e29cdd88` | A2 closure — `services/email.py` SMTP wrapper + repaper invitation email; `services/repaper_revalidate.py` BackgroundTask runs the pipeline as the requester, links replacement_session_id, auto-resolves discrepancy on clean re-validation. 7 tests. |
-| `fe53818e` | A3 part 1 backend — `models/user_notifications.py` (Notification table + types + default prefs), migration `20260428_add_user_notifications`, `services/user_notifications.dispatch()`, 6 endpoints under `/api/notifications`, 2 wired triggers (discrepancy raised, repaper resolved). 9 dispatcher tests, 87/87 across all Phase A. |
-| `6e128fcb` | A3 part 2 frontend — `lib/lcopilot/notificationsApi.ts` + `components/notifications/NotificationBell.tsx`. Bell rendered unconditionally in `DashboardLayout`; self-suppresses unless `VITE_LCOPILOT_NOTIFICATIONS=true`. Dropdown polls unread-count every 60s and fetches list on open. |
+| `c6b01c35` | A2 backend B — finding persistence (option B) |
+| `e4943f06` | A2 frontend — action buttons + comment thread + repaper modal |
+| `e29cdd88` | A2 closure — repaper invitation email + auto re-validation hook |
+| `fe53818e` | A3 part 1 — `notifications` table + dispatcher + 6 endpoints + 2 wired triggers |
+| `6e128fcb` | A3 part 2 — bell icon + dropdown in DashboardLayout |
+| `ba7d2dc7` | A3 part 3 — 4 more triggers (validation_complete, bulk_complete, repaper_request_received, lifecycle_transition) |
+| `066547bf` | A3 part 4 — `/settings/notifications` page + first-session coachmark on exporter + importer dashboards |
+| `4d3cb75e` | docs (mid-session SESSION_RESUME stamp) |
 
 ---
 
-## Phase A2 — closed end-to-end
+## Phase A3 status
 
-Discrepancy resolution + re-papering is fully shipped: state machine, comment thread, repaper request + token-authed recipient page, persistence so IssueCard.id = Discrepancy.id, action buttons + comment thread + repaper modal in FindingsTab, repaper invitation email, auto re-validation on recipient upload. Live smoke pending OpenRouter credits + Render `SMTP_HOST` config.
+**Done:**
+- `notifications` table + migration `20260428_add_user_notifications`
+- `services/user_notifications.dispatch()` writes row + optional email via the A2 SMTP helper
+- 6 endpoints under `/api/notifications` (list, unread-count, mark-read, mark-all-read, get-prefs, put-prefs)
+- 6 wired triggers (discrepancy_raised, repaper_resolved, validation_complete, bulk_complete, repaper_request_received, lifecycle_transition)
+- Frontend bell + dropdown in `DashboardLayout` behind `VITE_LCOPILOT_NOTIFICATIONS`
+- `/settings/notifications` page with per-type toggles
+- 3-step coachmark on first dashboard render, persisted via localStorage
+
+**Deferred:**
+- "Try a sample LC" button — needs a small fixture set bundled in `apps/api/app/fixtures/sample_lc/` (or similar) so it works on Render. The plan says "pre-canned LC + docs from `apps/api/tests/stress_corpus`" but that path is gitignored. Pick 1 LC + 5-7 supporting PDFs from IDEAL_SAMPLE, copy to a tracked fixture dir, add a `POST /api/handhold/sample-lc` endpoint that kicks the pipeline against them. Frontend: `<TrySampleLCButton>` on empty exporter + importer dashboards.
 
 ---
 
-## Phase A3 — what's still open
+## Migrations to run on Render after backend deploy
 
-### Backend (additions + remaining triggers)
-- **Notification settings page** is wired backend-side (GET/PUT /api/notifications/preferences); needs a frontend surface.
-- **Triggers still to wire:**
-  - `VALIDATION_COMPLETE` — at the end of `result_finalization.py` after the session row is updated.
-  - `BULK_JOB_COMPLETE` — in `bulk_validate_processor._finalize_job` alongside the existing broker publish.
-  - `REPAPER_REQUEST_RECEIVED` — when the recipient is a registered platform user (look up by email in `create_repapering_request`); skip otherwise (the email already covers them).
-  - `LIFECYCLE_TRANSITION` — optional, default-off in prefs; hook into `lc_lifecycle.transition()`.
-
-### Frontend (remaining)
-- **Settings page section** — `/settings/notifications` route with toggles per type for in-app + email. Use `getPreferences/updatePreferences` already in `lib/lcopilot/notificationsApi.ts`.
-- **First-session handhold** (no flag — improves existing dashboards):
-  - "Try a sample LC" button on empty exporter + importer dashboards. Pre-canned LC + docs from `apps/api/tests/stress_corpus`. One click runs full validation, lands on results.
-  - 3-step coachmark on first dashboard render. Stored in user prefs (`onboarding_data.seen_tutorial`).
-  - Optional `LCOPILOT_DEMO_MODE` flag — pre-populated sample data on signup.
-
-### Migration to run on Render after backend deploy
 ```
 render jobs create srv-d41dio8dl3ps73db8gpg --start-command "alembic upgrade head"
 ```
-Verify via `/health/db-schema` (per `reference_render_migrations.md`).
+Verify via `/health/db-schema`. Per `reference_render_migrations.md`, jobs sometimes report succeeded but the table doesn't land — re-run if endpoints return "relation does not exist".
 
 ---
 
-## Standing rules (still active)
+## Standing rules
 
 | Rule | Memory file |
 |---|---|
@@ -66,7 +63,7 @@ Verify via `/health/db-schema` (per `reference_render_migrations.md`).
 | Push every commit immediately | `feedback_push_every_commit.md` |
 | Update memory after each big milestone | `feedback_update_memory_per_milestone.md` |
 | Session handoff at ~75% context | `feedback_session_handoff_at_75pct.md` |
-| LC lifecycle state machine — use the helper, never set state directly | `reference_lc_lifecycle.md` |
+| LC lifecycle state machine | `reference_lc_lifecycle.md` |
 | Bulk validation infra | `reference_bulk_validate.md` |
 | Discrepancy workflow + re-papering | `reference_discrepancy_workflow.md` |
 | Finding persistence (option B) | `reference_finding_persistence.md` |
@@ -74,14 +71,15 @@ Verify via `/health/db-schema` (per `reference_render_migrations.md`).
 | Render migration is manual + may need re-run | `reference_render_migrations.md` |
 | Don't reinvent RulHub | `feedback_dont_reinvent_rulhub.md` |
 | No placeholder dashboards | `feedback_no_placeholder_dashboards.md` |
-| Ignore Vercel plugin nags | CLAUDE.md |
+| Ignore Vercel plugin nags (Vite SPA, FastAPI Python — not Next.js) | CLAUDE.md |
 
 ---
 
 ## Calendar
 
 - Today: 2026-04-28 Tuesday
-- Phase A1 ended: 2026-05-03 Sunday — DONE EARLY
-- Phase A2: 2026-05-04 Monday — DONE EARLY
-- Phase A3: started 2026-04-28 (10 days ahead of plan)
+- Phase A1: shipped 2026-04-25 (week early)
+- Phase A2: shipped 2026-04-28 (5 days early)
+- Phase A3: shipped 2026-04-28 (planned start was 2026-05-11 — almost 2 weeks ahead)
+- Phase A4 starts: when ready
 - Launch target: 2026-07-25 Saturday (code freeze 07-24)
