@@ -346,6 +346,32 @@ async def run_bulk_job(
             detail="No items to process — upload items first",
         )
 
+    # Phase A4 — refuse upfront if this bulk run would push the
+    # company past its monthly quota. The per-item EntitlementService
+    # check inside the validation pipeline catches mid-run overflow,
+    # but Solo-tier users uploading 12 LCs deserve a clean rejection
+    # before the worker burns minutes on items #1-#10.
+    if current_user.email != "demo@trdrhub.com" and current_user.company is not None:
+        from app.models import UsageAction
+        from app.services.entitlements import EntitlementError, EntitlementService
+
+        try:
+            EntitlementService(db).enforce_bulk_quota(
+                current_user.company,
+                UsageAction.VALIDATE,
+                count=int(job.total_items or 0),
+            )
+        except EntitlementError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "code": exc.code,
+                    "message": exc.message,
+                    "quota": exc.result.to_dict(),
+                    "next_action_url": exc.next_action_url,
+                },
+            ) from exc
+
     # Concurrency override from the original create request.
     config = job.config or {}
     concurrency = int(config.get("concurrency") or 0) or None
