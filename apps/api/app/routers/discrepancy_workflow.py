@@ -33,6 +33,7 @@ from uuid import UUID
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -43,6 +44,7 @@ from fastapi import (
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..core.security import get_current_user
 from ..database import get_db
 from ..models import Discrepancy, User, ValidationSession
@@ -62,6 +64,8 @@ from ..services.discrepancy_workflow import (
     transition_discrepancy,
     transition_repapering,
 )
+from ..services.email import send_email
+from ..services.repaper_revalidate import schedule_revalidation
 
 logger = logging.getLogger(__name__)
 
@@ -362,7 +366,64 @@ async def request_repapering(
     )
     db.commit()
     db.refresh(request)
+
+    # Fire the recipient invitation email. Best-effort — return the
+    # request either way so the caller can surface the share link
+    # even if SMTP is unconfigured (dev) or the send transiently fails.
+    _send_repaper_invitation_email(
+        request=request,
+        discrepancy=discrepancy,
+        requester=current_user,
+    )
+
     return _to_repaper_read(request, include_token=True)
+
+
+def _send_repaper_invitation_email(
+    *,
+    request: RepaperingRequest,
+    discrepancy: Discrepancy,
+    requester: User,
+) -> None:
+    frontend = (settings.FRONTEND_URL or "").rstrip("/")
+    recipient_link = f"{frontend}/repaper/{request.access_token}"
+    requester_label = (
+        getattr(requester, "full_name", None)
+        or getattr(requester, "email", None)
+        or "your counterparty"
+    )
+    short_desc = (discrepancy.description or "").strip()
+    if len(short_desc) > 280:
+        short_desc = short_desc[:277] + "..."
+    custom_message = (request.message or "").strip()
+    custom_block = (
+        f"<blockquote style='margin:8px 0;padding:8px 12px;"
+        f"border-left:3px solid #d4d4d8;color:#3f3f46;'>"
+        f"{custom_message}</blockquote>"
+        if custom_message
+        else ""
+    )
+    html = f"""
+    <p>Hello,</p>
+    <p>{requester_label} has flagged a document that needs a correction
+    and asked you to help fix it. The discrepancy:</p>
+    <blockquote style='margin:8px 0;padding:8px 12px;
+    border-left:3px solid #f59e0b;color:#1f2937;'>{short_desc or 'Re-papering request'}</blockquote>
+    {custom_block}
+    <p>Open the link below to review the issue and upload the corrected
+    document(s). No account or login is required.</p>
+    <p><a href='{recipient_link}' style='display:inline-block;padding:8px 14px;
+    background:#0f172a;color:#fff;text-decoration:none;border-radius:6px;'>
+    Open the request</a></p>
+    <p style='color:#6b7280;font-size:12px;'>If the button does not work,
+    paste this URL into your browser:<br/>{recipient_link}</p>
+    <p style='color:#6b7280;font-size:12px;'>— TRDR Hub</p>
+    """
+    send_email(
+        to=request.recipient_email,
+        subject="Document correction request — TRDR Hub",
+        html_body=html,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -446,17 +507,20 @@ async def post_repaper_comment(
 )
 async def upload_repaper_files(
     token: str,
+    background: BackgroundTasks,
     files: List[UploadFile] = File(..., description="Corrected document(s)"),
     db: Session = Depends(get_db),
 ):
     """Recipient uploads corrected docs.
 
     Persists files under
-    ``<BULK_VALIDATE_STORAGE_DIR>/repaper/{request_id}/`` and marks
-    the request CORRECTED. The actual re-validation is kicked off by
-    a follow-up call (the requester reviews then validates) — keeping
-    the upload step pure persistence avoids burning LLM credits on
-    every random upload.
+    ``<BULK_VALIDATE_STORAGE_DIR>/repaper/{request_id}/``, marks the
+    request CORRECTED, and schedules a background re-validation. The
+    revalidation runs the pipeline as the original requester, links
+    the new ValidationSession via ``replacement_session_id``, and on a
+    clean run (zero findings) auto-resolves the parent Discrepancy
+    with the new session as evidence. See
+    ``app/services/repaper_revalidate.py``.
     """
     if not files:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "At least one file required")
@@ -498,6 +562,14 @@ async def upload_repaper_files(
         ) from exc
     db.commit()
     db.refresh(request)
+
+    # Schedule auto re-validation. The task runs after the response is
+    # returned, opens its own DB session, runs the pipeline, links the
+    # new ValidationSession, and (on a clean run) resolves the parent
+    # discrepancy. Failures inside the task are logged but never
+    # surface to the recipient — they uploaded successfully.
+    schedule_revalidation(background, request.id)
+
     return _to_repaper_read(request, include_token=False)
 
 
