@@ -1,9 +1,9 @@
 # Session resume — Path A build
 
-**Last updated:** 2026-04-28 afternoon
-**State frozen at commit:** `e4943f06` (Phase A2 frontend slice: action buttons + repaper modal + comment thread wired into FindingsTab)
-**Branch:** `master` (last push: `e4943f06`)
-**Active phase:** A2 backend + recipient page + results-page integration ALL shipped. Next: live smoke once OpenRouter credits topped up, then move to A3.
+**Last updated:** 2026-04-28 evening
+**State frozen at commit:** `e29cdd88` (Phase A2 closure — repaper email + auto re-validation hook)
+**Branch:** `master` (last push: `e29cdd88`)
+**Active phase:** A2 fully shipped (backend + frontend + email + auto-revalidate). Next: live smoke once OpenRouter credits topped up + SMTP_HOST configured on Render, then A3.
 
 ---
 
@@ -21,6 +21,7 @@ Resume Path A. Read SESSION_RESUME.md. Phase A2 is shipped end-to-end (backend +
 |---|---|
 | `c6b01c35` | Backend option-B persistence — `finding_persistence.py` upserts a Discrepancy row per finding before `build_issue_cards`, stamps `__discrepancy_uuid` on each finding dict; `crossdoc._format_issue_card` reads that UUID first so `IssueCard.id` becomes the persisted Discrepancy UUID. 11 new tests. |
 | `e4943f06` | Frontend slice — `components/discrepancy/{DiscrepancyActions,CommentThread,RepaperModal}.tsx` + `lib/lcopilot/discrepancyApi.ts` wrapper, all wired into `FindingsTab` behind `isDiscrepancyWorkflowEnabled()`. |
+| `e29cdd88` | A2 closure — repaper invitation email (new `services/email.py` SMTP wrapper) fires from `POST /api/discrepancies/{id}/repaper`; recipient `POST /api/repaper/{token}/upload` schedules a BackgroundTask (`services/repaper_revalidate.py`) that runs the pipeline as the requester, links `replacement_session_id`, and on zero findings auto-resolves the parent Discrepancy. 7 new tests, 78/78 across all Phase A. |
 
 **The blocker that the Apr 25 session ended on (UUID mismatch between `IssueCard.id = rule_name` and `/api/discrepancies/{id}/*` expecting `Discrepancy.id` UUID)** is closed. Option B chosen over A — eager persist in pipeline, foundation for analytics + audit log later.
 
@@ -28,10 +29,15 @@ Resume Path A. Read SESSION_RESUME.md. Phase A2 is shipped end-to-end (backend +
 
 ## What's next
 
-### Live smoke (blocked on OpenRouter credits)
+### Live smoke (blocked on OpenRouter credits + Render SMTP env)
 - IDEAL SAMPLE produces ~5-7 findings. With the workflow flag enabled (set `VITE_LCOPILOT_DISCREPANCY_WORKFLOW=true` in apps/web/.env), each finding card now has Accept / Reject / Waive / Re-paper buttons + a comment thread. Exercise each action against one finding to confirm the round-trip.
 - Verify a Discrepancy row exists per IssueCard via `SELECT id, rule_name, severity, state FROM discrepancies WHERE validation_session_id = '<session>'`.
-- Click Re-paper → confirm the share link renders, open the link in a fresh browser, post a recipient comment, upload a file. State should advance `requested → in_progress → corrected`.
+- Click Re-paper → confirm the share link renders. If `SMTP_HOST` is configured on Render, the recipient also gets an email; if not, the modal still surfaces the link to copy. Open the link in a fresh browser, post a recipient comment, upload a file. State advances `requested → in_progress → corrected → resolved` (the auto-revalidate task lifts the request to `resolved` after pipeline completes).
+- On clean re-validation, the parent Discrepancy auto-resolves with the new session linked as evidence. If the new session still has findings, the request resolves but the discrepancy stays open for manual review.
+
+### A2 nuance to revisit later
+- Auto-resolve uses `total_findings == 0` on the new session. If the new session has OTHER findings (unrelated to the original discrepancy) it stays open — correct conservative default but could be tightened later to "the SPECIFIC discrepancy is no longer present" once we have rule-level finding identity stable across sessions.
+- SMTP not configured on Render yet — the repaper email is a no-op in prod until `SMTP_HOST` is set. Phase A3 lands the broader notification dispatcher; same env vars will apply.
 
 ### A3 — Notifications + first-session handhold (week of 2026-05-11)
 
