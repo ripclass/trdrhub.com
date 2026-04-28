@@ -20,6 +20,7 @@ import {
   Globe2,
   Inbox,
   LayoutDashboard,
+  Mailbox,
   Pencil,
   Plus,
   Trash2,
@@ -48,6 +49,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { WorkspaceSwitcher } from "@/components/lcopilot/WorkspaceSwitcher";
 import { isAgencyRealEnabled } from "@/lib/lcopilot/featureFlags";
 import { BulkInbox } from "@/components/agency/BulkInbox";
+import { RepaperingPanel } from "@/components/agency/RepaperingPanel";
 import {
   createBuyer,
   createSupplier,
@@ -64,7 +66,7 @@ import {
   type SupplierInput,
 } from "@/lib/lcopilot/agencyApi";
 
-type Section = "dashboard" | "suppliers" | "buyers" | "bulk";
+type Section = "dashboard" | "suppliers" | "buyers" | "bulk" | "repaper";
 
 // ---------------------------------------------------------------------------
 // Sidebar
@@ -91,6 +93,7 @@ function AgencySidebar({
     { key: "suppliers", label: "Suppliers", Icon: Building2, count: supplierCount },
     { key: "buyers", label: "Foreign Buyers", Icon: Globe2, count: buyerCount },
     { key: "bulk", label: "Bulk Inbox", Icon: Inbox },
+    { key: "repaper", label: "Re-papering", Icon: Mailbox },
   ];
   return (
     <nav className="space-y-1 p-3">
@@ -1011,6 +1014,7 @@ export default function AgencyDashboard() {
         {section === "suppliers" && <SupplierPanel buyers={buyers} />}
         {section === "buyers" && <BuyerPanel />}
         {section === "bulk" && <BulkInbox />}
+        {section === "repaper" && <RepaperingPanel />}
       </div>
     </DashboardLayout>
   );

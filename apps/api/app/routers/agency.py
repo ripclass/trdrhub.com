@@ -33,6 +33,10 @@ from ..core.security import get_current_user
 from ..database import get_db
 from ..models import Discrepancy, User, ValidationSession
 from ..models.agency import ForeignBuyer, Supplier
+from ..models.discrepancy_workflow import (
+    RepaperingRequest,
+    RepaperingState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +138,26 @@ class PortfolioRead(BaseModel):
     open_discrepancy_count: int
     completed_this_month: int
     recent_activity: List[PortfolioActivity]
+
+
+class RepaperingRequestRead(BaseModel):
+    id: UUID
+    discrepancy_id: UUID
+    discrepancy_description: Optional[str]
+    supplier_id: Optional[UUID]
+    supplier_name: Optional[str]
+    recipient_email: str
+    recipient_display_name: Optional[str]
+    state: str
+    message: Optional[str]
+    created_at: datetime
+    opened_at: Optional[datetime]
+    submitted_at: Optional[datetime]
+    resolved_at: Optional[datetime]
+    cancelled_at: Optional[datetime]
+    replacement_session_id: Optional[UUID]
+    requester_user_id: Optional[UUID]
+    access_token: Optional[str]  # only included so the agent can copy/share the link
 
 
 # ---------------------------------------------------------------------------
@@ -571,6 +595,160 @@ async def get_portfolio(
         completed_this_month=int(completed_this_month),
         recent_activity=activity,
     )
+
+
+# ---------------------------------------------------------------------------
+# Re-papering coordination — Phase A7 slice 1
+# ---------------------------------------------------------------------------
+
+
+@router.get("/repaper-requests", response_model=List[RepaperingRequestRead])
+async def list_repaper_requests(
+    only_open: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """All re-papering requests created against discrepancies on
+    sessions in the caller's company.
+
+    The agent uses this to keep tabs on which suppliers / counterparties
+    haven't responded yet and to nudge them with a follow-up email.
+    """
+    company_id = _company_id_or_403(current_user)
+
+    # Scope by joining through Discrepancy → ValidationSession → company_id.
+    q = (
+        db.query(
+            RepaperingRequest,
+            Discrepancy.description.label("disc_desc"),
+            ValidationSession.supplier_id.label("session_supplier_id"),
+            Supplier.name.label("supplier_name"),
+        )
+        .join(Discrepancy, Discrepancy.id == RepaperingRequest.discrepancy_id)
+        .join(
+            ValidationSession,
+            ValidationSession.id == Discrepancy.validation_session_id,
+        )
+        .outerjoin(Supplier, Supplier.id == ValidationSession.supplier_id)
+        .filter(ValidationSession.company_id == company_id)
+        .order_by(RepaperingRequest.created_at.desc())
+    )
+    if only_open:
+        q = q.filter(
+            RepaperingRequest.state.in_(
+                (
+                    RepaperingState.REQUESTED.value,
+                    RepaperingState.IN_PROGRESS.value,
+                    RepaperingState.CORRECTED.value,
+                )
+            )
+        )
+
+    rows = q.limit(200).all()
+    return [
+        RepaperingRequestRead(
+            id=req.id,
+            discrepancy_id=req.discrepancy_id,
+            discrepancy_description=disc_desc,
+            supplier_id=session_supplier_id,
+            supplier_name=supplier_name,
+            recipient_email=req.recipient_email,
+            recipient_display_name=req.recipient_display_name,
+            state=req.state,
+            message=req.message,
+            created_at=req.created_at,
+            opened_at=req.opened_at,
+            submitted_at=req.submitted_at,
+            resolved_at=req.resolved_at,
+            cancelled_at=req.cancelled_at,
+            replacement_session_id=req.replacement_session_id,
+            requester_user_id=req.requester_user_id,
+            access_token=req.access_token,
+        )
+        for (req, disc_desc, session_supplier_id, supplier_name) in rows
+    ]
+
+
+@router.post("/repaper-requests/{request_id}/resend-email")
+async def resend_repaper_email(
+    request_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Re-send the recipient invitation email for an open re-papering
+    request. Useful when the recipient says they didn't get the first
+    one or it landed in spam.
+    """
+    company_id = _company_id_or_403(current_user)
+
+    row = (
+        db.query(RepaperingRequest, Discrepancy)
+        .join(Discrepancy, Discrepancy.id == RepaperingRequest.discrepancy_id)
+        .join(
+            ValidationSession,
+            ValidationSession.id == Discrepancy.validation_session_id,
+        )
+        .filter(RepaperingRequest.id == request_id)
+        .filter(ValidationSession.company_id == company_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Re-papering request not found"
+        )
+    request, discrepancy = row
+    if request.state in (
+        RepaperingState.RESOLVED.value,
+        RepaperingState.CANCELLED.value,
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Cannot resend — request already {request.state}",
+        )
+
+    from ..config import settings as _settings
+    from ..services.email import send_email
+
+    frontend = (_settings.FRONTEND_URL or "").rstrip("/")
+    recipient_link = f"{frontend}/repaper/{request.access_token}"
+    requester_label = (
+        getattr(current_user, "full_name", None)
+        or getattr(current_user, "email", None)
+        or "Your counterparty"
+    )
+    short_desc = (discrepancy.description or "").strip()
+    if len(short_desc) > 280:
+        short_desc = short_desc[:277] + "..."
+    custom_message = (request.message or "").strip()
+    custom_block = (
+        f"<blockquote style='margin:8px 0;padding:8px 12px;"
+        f"border-left:3px solid #d4d4d8;color:#3f3f46;'>"
+        f"{custom_message}</blockquote>"
+        if custom_message
+        else ""
+    )
+    html = f"""
+    <p>Hello,</p>
+    <p>This is a follow-up reminder. {requester_label} previously asked
+    you to fix a flagged document. The discrepancy:</p>
+    <blockquote style='margin:8px 0;padding:8px 12px;
+    border-left:3px solid #f59e0b;color:#1f2937;'>{short_desc or 'Re-papering request'}</blockquote>
+    {custom_block}
+    <p>Open the link below to review and upload the corrected
+    document(s). No login required.</p>
+    <p><a href='{recipient_link}' style='display:inline-block;padding:8px 14px;
+    background:#0f172a;color:#fff;text-decoration:none;border-radius:6px;'>
+    Open the request</a></p>
+    <p style='color:#6b7280;font-size:12px;'>If the button does not work,
+    paste this URL into your browser:<br/>{recipient_link}</p>
+    <p style='color:#6b7280;font-size:12px;'>— TRDR Hub</p>
+    """
+    sent = send_email(
+        to=request.recipient_email,
+        subject="Reminder: document correction request — TRDR Hub",
+        html_body=html,
+    )
+    return {"sent": bool(sent), "recipient": request.recipient_email}
 
 
 __all__ = ["router"]

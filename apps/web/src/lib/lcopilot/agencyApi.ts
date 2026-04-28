@@ -139,3 +139,54 @@ export async function getPortfolio(): Promise<Portfolio> {
   const { data } = await api.get<Portfolio>("/api/agency/portfolio");
   return data;
 }
+
+// ---- Re-papering coordination (Phase A7) -------------------------------
+
+export interface AgencyRepaperingRequest {
+  id: string;
+  discrepancy_id: string;
+  discrepancy_description: string | null;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  recipient_email: string;
+  recipient_display_name: string | null;
+  state: string;
+  message: string | null;
+  created_at: string;
+  opened_at: string | null;
+  submitted_at: string | null;
+  resolved_at: string | null;
+  cancelled_at: string | null;
+  replacement_session_id: string | null;
+  requester_user_id: string | null;
+  access_token: string | null;
+}
+
+export async function listAgencyRepaperRequests(opts?: {
+  onlyOpen?: boolean;
+}): Promise<AgencyRepaperingRequest[]> {
+  const params = new URLSearchParams();
+  if (opts?.onlyOpen) params.set("only_open", "true");
+  const query = params.toString();
+  const path = query
+    ? `/api/agency/repaper-requests?${query}`
+    : "/api/agency/repaper-requests";
+  const { data } = await api.get<AgencyRepaperingRequest[]>(path);
+  return data ?? [];
+}
+
+export async function resendAgencyRepaperEmail(
+  requestId: string,
+): Promise<{ sent: boolean; recipient: string }> {
+  const { data } = await api.post<{ sent: boolean; recipient: string }>(
+    `/api/agency/repaper-requests/${requestId}/resend-email`,
+  );
+  return data;
+}
+
+export async function cancelAgencyRepaperRequest(
+  requestId: string,
+): Promise<void> {
+  // Reuses the existing requester-cancel endpoint from Phase A2.
+  await api.post(`/api/repaper/${requestId}/cancel`);
+}
