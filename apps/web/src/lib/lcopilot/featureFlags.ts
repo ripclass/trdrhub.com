@@ -76,3 +76,20 @@ export function isNotificationsEnabled(): boolean {
     .toLowerCase();
   return raw === "true" || raw === "1";
 }
+
+/**
+ * LCOPILOT_AGENCY_REAL gates the rebuilt agency dashboard
+ * (/lcopilot/agency-dashboard). Off by default — when disabled, the
+ * page renders the legacy stub. When on, the agent gets the real
+ * Dashboard / Suppliers / Foreign Buyers surfaces from Phase A5.
+ *
+ * Enable locally by adding to apps/web/.env:
+ *   VITE_LCOPILOT_AGENCY_REAL=true
+ */
+export function isAgencyRealEnabled(): boolean {
+  const raw = (import.meta.env.VITE_LCOPILOT_AGENCY_REAL ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  return raw === "true" || raw === "1";
+}
