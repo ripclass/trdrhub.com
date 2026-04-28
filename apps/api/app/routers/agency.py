@@ -751,4 +751,140 @@ async def resend_repaper_email(
     return {"sent": bool(sent), "recipient": request.recipient_email}
 
 
+# ---------------------------------------------------------------------------
+# Reports — Phase A7 slice 3
+# ---------------------------------------------------------------------------
+
+
+from fastapi.responses import Response  # noqa: E402
+
+from ..services.agency_reports import (  # noqa: E402
+    build_buyer_report,
+    build_supplier_report,
+    render_buyer_report_pdf,
+    render_supplier_report_pdf,
+)
+
+
+@router.get("/reports/supplier/{supplier_id}")
+async def get_supplier_report(
+    supplier_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Structured per-supplier report — counts + recent activity."""
+    supplier = _load_owned_supplier(db, current_user, supplier_id)
+    report = build_supplier_report(db, supplier)
+    # Dataclass → dict (Pydantic-friendly)
+    return {
+        "supplier_id": str(report.supplier_id),
+        "supplier_name": report.supplier_name,
+        "country": report.country,
+        "contact_email": report.contact_email,
+        "contact_phone": report.contact_phone,
+        "foreign_buyer_id": str(report.foreign_buyer_id)
+        if report.foreign_buyer_id
+        else None,
+        "foreign_buyer_name": report.foreign_buyer_name,
+        "total_sessions": report.total_sessions,
+        "active_sessions": report.active_sessions,
+        "completed_this_month": report.completed_this_month,
+        "total_discrepancies": report.total_discrepancies,
+        "open_discrepancies": report.open_discrepancies,
+        "repaper_requests": report.repaper_requests,
+        "repaper_open": report.repaper_open,
+        "discrepancy_rate": report.discrepancy_rate,
+        "recent_sessions": [
+            {
+                "validation_session_id": str(r.validation_session_id),
+                "lifecycle_state": r.lifecycle_state,
+                "status": r.status,
+                "findings_count": r.findings_count,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in report.recent_sessions
+        ],
+        "generated_at": report.generated_at.isoformat(),
+    }
+
+
+@router.get("/reports/supplier/{supplier_id}.pdf")
+async def get_supplier_report_pdf(
+    supplier_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    supplier = _load_owned_supplier(db, current_user, supplier_id)
+    report = build_supplier_report(db, supplier)
+    pdf = render_supplier_report_pdf(report)
+    safe_name = "".join(
+        c if c.isalnum() or c in ("-", "_") else "-" for c in supplier.name
+    )[:64].strip("-") or "supplier"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="supplier-report-{safe_name}.pdf"'
+            )
+        },
+    )
+
+
+@router.get("/reports/buyer/{buyer_id}")
+async def get_buyer_report(
+    buyer_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    buyer = _load_owned_buyer(db, current_user, buyer_id)
+    report = build_buyer_report(db, buyer)
+    return {
+        "buyer_id": str(report.buyer_id),
+        "buyer_name": report.buyer_name,
+        "country": report.country,
+        "contact_email": report.contact_email,
+        "contact_phone": report.contact_phone,
+        "supplier_count": report.supplier_count,
+        "total_sessions": report.total_sessions,
+        "active_sessions": report.active_sessions,
+        "open_discrepancies": report.open_discrepancies,
+        "suppliers": [
+            {
+                "supplier_id": str(s.supplier_id),
+                "supplier_name": s.supplier_name,
+                "country": s.country,
+                "total_sessions": s.total_sessions,
+                "active_sessions": s.active_sessions,
+                "open_discrepancies": s.open_discrepancies,
+            }
+            for s in report.suppliers
+        ],
+        "generated_at": report.generated_at.isoformat(),
+    }
+
+
+@router.get("/reports/buyer/{buyer_id}.pdf")
+async def get_buyer_report_pdf(
+    buyer_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    buyer = _load_owned_buyer(db, current_user, buyer_id)
+    report = build_buyer_report(db, buyer)
+    pdf = render_buyer_report_pdf(report)
+    safe_name = "".join(
+        c if c.isalnum() or c in ("-", "_") else "-" for c in buyer.name
+    )[:64].strip("-") or "buyer"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="buyer-report-{safe_name}.pdf"'
+            )
+        },
+    )
+
+
 __all__ = ["router"]

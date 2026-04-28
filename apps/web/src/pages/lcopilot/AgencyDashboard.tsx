@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  BarChart3,
   Building2,
   FileCheck,
   Globe2,
@@ -50,6 +51,7 @@ import { WorkspaceSwitcher } from "@/components/lcopilot/WorkspaceSwitcher";
 import { isAgencyRealEnabled } from "@/lib/lcopilot/featureFlags";
 import { BulkInbox } from "@/components/agency/BulkInbox";
 import { RepaperingPanel } from "@/components/agency/RepaperingPanel";
+import { ReportsPanel } from "@/components/agency/ReportsPanel";
 import {
   createBuyer,
   createSupplier,
@@ -66,7 +68,7 @@ import {
   type SupplierInput,
 } from "@/lib/lcopilot/agencyApi";
 
-type Section = "dashboard" | "suppliers" | "buyers" | "bulk" | "repaper";
+type Section = "dashboard" | "suppliers" | "buyers" | "bulk" | "repaper" | "reports";
 
 // ---------------------------------------------------------------------------
 // Sidebar
@@ -94,6 +96,7 @@ function AgencySidebar({
     { key: "buyers", label: "Foreign Buyers", Icon: Globe2, count: buyerCount },
     { key: "bulk", label: "Bulk Inbox", Icon: Inbox },
     { key: "repaper", label: "Re-papering", Icon: Mailbox },
+    { key: "reports", label: "Reports", Icon: BarChart3 },
   ];
   return (
     <nav className="space-y-1 p-3">
@@ -1114,6 +1117,7 @@ export default function AgencyDashboard() {
         {section === "buyers" && <BuyerPanel />}
         {section === "bulk" && <BulkInbox />}
         {section === "repaper" && <RepaperingPanel />}
+        {section === "reports" && <ReportsPanel />}
       </div>
     </DashboardLayout>
   );

@@ -190,3 +190,125 @@ export async function cancelAgencyRepaperRequest(
   // Reuses the existing requester-cancel endpoint from Phase A2.
   await api.post(`/api/repaper/${requestId}/cancel`);
 }
+
+// ---- Reports (Phase A7 slice 3) ----------------------------------------
+
+export interface SupplierReportRecentSession {
+  validation_session_id: string;
+  lifecycle_state: string | null;
+  status: string;
+  findings_count: number;
+  created_at: string;
+}
+
+export interface SupplierReportData {
+  supplier_id: string;
+  supplier_name: string;
+  country: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  foreign_buyer_id: string | null;
+  foreign_buyer_name: string | null;
+  total_sessions: number;
+  active_sessions: number;
+  completed_this_month: number;
+  total_discrepancies: number;
+  open_discrepancies: number;
+  repaper_requests: number;
+  repaper_open: number;
+  discrepancy_rate: number;
+  recent_sessions: SupplierReportRecentSession[];
+  generated_at: string;
+}
+
+export interface BuyerReportSupplier {
+  supplier_id: string;
+  supplier_name: string;
+  country: string | null;
+  total_sessions: number;
+  active_sessions: number;
+  open_discrepancies: number;
+}
+
+export interface BuyerReportData {
+  buyer_id: string;
+  buyer_name: string;
+  country: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  supplier_count: number;
+  total_sessions: number;
+  active_sessions: number;
+  open_discrepancies: number;
+  suppliers: BuyerReportSupplier[];
+  generated_at: string;
+}
+
+export async function getSupplierReport(
+  supplierId: string,
+): Promise<SupplierReportData> {
+  const { data } = await api.get<SupplierReportData>(
+    `/api/agency/reports/supplier/${supplierId}`,
+  );
+  return data;
+}
+
+export async function getBuyerReport(
+  buyerId: string,
+): Promise<BuyerReportData> {
+  const { data } = await api.get<BuyerReportData>(
+    `/api/agency/reports/buyer/${buyerId}`,
+  );
+  return data;
+}
+
+export function supplierReportPdfUrl(supplierId: string): string {
+  // Bare API URL — let the user open it in a new tab; axios bearer-auth +
+  // CSRF cookies ride on cross-origin requests automatically.
+  const base = (api.defaults.baseURL ?? "").replace(/\/$/, "");
+  return `${base}/api/agency/reports/supplier/${supplierId}.pdf`;
+}
+
+export function buyerReportPdfUrl(buyerId: string): string {
+  const base = (api.defaults.baseURL ?? "").replace(/\/$/, "");
+  return `${base}/api/agency/reports/buyer/${buyerId}.pdf`;
+}
+
+/**
+ * Trigger a PDF download with the existing axios auth/CSRF stack.
+ * Browser <a href> won't carry the bearer header so we fetch + create
+ * a Blob URL on the fly.
+ */
+export async function downloadSupplierReportPdf(
+  supplierId: string,
+  filename = "supplier-report.pdf",
+): Promise<void> {
+  const { data } = await api.get<Blob>(
+    `/api/agency/reports/supplier/${supplierId}.pdf`,
+    { responseType: "blob" },
+  );
+  triggerBlobDownload(data, filename);
+}
+
+export async function downloadBuyerReportPdf(
+  buyerId: string,
+  filename = "buyer-report.pdf",
+): Promise<void> {
+  const { data } = await api.get<Blob>(
+    `/api/agency/reports/buyer/${buyerId}.pdf`,
+    { responseType: "blob" },
+  );
+  triggerBlobDownload(data, filename);
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Defer revoke so the browser actually finishes the download
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
