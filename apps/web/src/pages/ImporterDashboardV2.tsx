@@ -33,6 +33,7 @@ import { WorkspaceSwitcher } from "@/components/lcopilot/WorkspaceSwitcher";
 import { EnterpriseGroupLink } from "@/components/lcopilot/EnterpriseGroupLink";
 import { FirstSessionCoachmark } from "@/components/handhold/FirstSessionCoachmark";
 import { TrySampleLCButton } from "@/components/handhold/TrySampleLCButton";
+import { QuotaStrip } from "@/components/entitlements/QuotaStrip";
 import {
   ImporterSidebar,
   type ImporterSidebarSection,
@@ -211,6 +212,8 @@ export default function ImporterDashboardV2() {
             Draft-LC risk analysis and supplier-document review.
           </p>
         </header>
+
+        <QuotaStrip />
 
         <section className="grid gap-4 md:grid-cols-3">
           <Card>

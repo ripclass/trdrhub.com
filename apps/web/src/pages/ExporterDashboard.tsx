@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, Link, useLocation } from "react-router-dom";
 import { FirstSessionCoachmark } from "@/components/handhold/FirstSessionCoachmark";
 import { TrySampleLCButton } from "@/components/handhold/TrySampleLCButton";
+import { QuotaStrip } from "@/components/entitlements/QuotaStrip";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -345,10 +346,13 @@ function DashboardContent() {
       ]}
     >
       <div className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
+        {/* Quota strip — Phase A4 */}
+        <QuotaStrip />
+
         {/* Overview Section */}
         {activeSection === "overview" && (
-          <OverviewPanel 
-            onNavigate={handleSectionChange} 
+          <OverviewPanel
+            onNavigate={handleSectionChange}
             user={currentUser}
           />
         )}
