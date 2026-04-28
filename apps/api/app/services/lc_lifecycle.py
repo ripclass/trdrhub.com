@@ -143,7 +143,60 @@ def transition(
     )
     db.add(event)
 
+    # A3 — opt-in lifecycle notification (default-off in prefs). Users
+    # who want a heartbeat as their LC moves through the bank pipeline
+    # can flip this on; everyone else doesn't see it.
+    try:
+        _notify_lifecycle_transition(
+            db,
+            session=session,
+            from_state=from_value,
+            to_state=to_state.value,
+        )
+    except Exception:
+        # Don't let notification failure roll back the transition.
+        # Lifecycle is the load-bearing one here, not the bell.
+        import logging as _logging
+
+        _logging.getLogger(__name__).exception(
+            "lifecycle_transition notification skipped for session %s",
+            getattr(session, "id", None),
+        )
+
     return event
+
+
+def _notify_lifecycle_transition(
+    db: Session,
+    *,
+    session: ValidationSession,
+    from_state: str,
+    to_state: str,
+) -> None:
+    user_id = getattr(session, "user_id", None)
+    if not user_id:
+        return
+    from ..models import User
+    from ..models.user_notifications import NotificationType
+    from .user_notifications import dispatch as _dispatch
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        return
+    pretty = lambda s: s.replace("_", " ").title()  # noqa: E731
+    _dispatch(
+        db,
+        user,
+        NotificationType.LIFECYCLE_TRANSITION,
+        title=f"LC moved to {pretty(to_state)}",
+        body=f"Lifecycle state changed: {pretty(from_state)} → {pretty(to_state)}.",
+        link_url=f"/exporter/results/{session.id}",
+        metadata={
+            "validation_session_id": str(session.id),
+            "from_state": from_state,
+            "to_state": to_state,
+        },
+    )
 
 
 def history(

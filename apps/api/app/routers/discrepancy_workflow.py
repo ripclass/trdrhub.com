@@ -376,7 +376,67 @@ async def request_repapering(
         requester=current_user,
     )
 
+    # A3 — if the recipient happens to be a registered platform user,
+    # also drop an in-app notification for them. The email handles
+    # non-platform recipients.
+    try:
+        _notify_recipient_if_platform_user(
+            db=db,
+            request=request,
+            discrepancy=discrepancy,
+            requester=current_user,
+        )
+    except Exception:
+        logger.exception(
+            "repaper_request_received notification skipped for request %s",
+            request.id,
+        )
+
     return _to_repaper_read(request, include_token=True)
+
+
+def _notify_recipient_if_platform_user(
+    *,
+    db: Session,
+    request: RepaperingRequest,
+    discrepancy: Discrepancy,
+    requester: User,
+) -> None:
+    recipient = (
+        db.query(User).filter(User.email == request.recipient_email).first()
+        if request.recipient_email
+        else None
+    )
+    if recipient is None:
+        return
+    from ..services.user_notifications import dispatch as _dispatch
+    from ..models.user_notifications import NotificationType
+
+    requester_label = (
+        getattr(requester, "full_name", None)
+        or getattr(requester, "email", None)
+        or "A counterparty"
+    )
+    short_desc = (discrepancy.description or "").strip()
+    if len(short_desc) > 200:
+        short_desc = short_desc[:197] + "..."
+    title = f"{requester_label} asked you to fix a document"
+    body = short_desc or "A discrepancy needs corrected paperwork from you."
+    link_url = f"/repaper/{request.access_token}"
+    _dispatch(
+        db,
+        recipient,
+        NotificationType.REPAPER_REQUEST_RECEIVED,
+        title=title,
+        body=body,
+        link_url=link_url,
+        metadata={
+            "repaper_request_id": str(request.id),
+            "discrepancy_id": str(discrepancy.id),
+            "requester_email": getattr(requester, "email", None),
+        },
+    )
+    db.commit()
 
 
 def _send_repaper_invitation_email(

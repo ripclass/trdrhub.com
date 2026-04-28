@@ -1301,6 +1301,47 @@ async def finalize_validation_result(
     else:
         db.commit()
 
+    # A3 — notify the session owner that validation finished. Skipped
+    # when discrepancies were raised (finding_persistence already
+    # dispatched DISCREPANCY_RAISED, which is the more actionable
+    # signal). Best-effort: never block the response on a notification
+    # write or email send.
+    if validation_session and not (deduplicated_results and len(deduplicated_results) > 0):
+        try:
+            from app.services.user_notifications import dispatch as _dispatch
+            from app.models.user_notifications import NotificationType
+            from app.models import User
+
+            owner = (
+                db.query(User)
+                .filter(User.id == validation_session.user_id)
+                .first()
+                if validation_session.user_id
+                else None
+            )
+            if owner is not None:
+                _dispatch(
+                    db,
+                    owner,
+                    NotificationType.VALIDATION_COMPLETE,
+                    title="LC validation complete — no findings",
+                    body=(
+                        "Your validation run finished cleanly. The full "
+                        "presentation set passed every check."
+                    ),
+                    link_url=f"/exporter/results/{validation_session.id}",
+                    metadata={
+                        "validation_session_id": str(validation_session.id),
+                        "finding_count": 0,
+                    },
+                )
+                db.commit()
+        except Exception:
+            logger.exception(
+                "validation_complete notification skipped for session %s",
+                validation_session.id if validation_session else None,
+            )
+
     # Add DB rules debug info to response
     structured_result["_db_rules_debug"] = db_rules_debug
 

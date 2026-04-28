@@ -586,6 +586,65 @@ class BulkValidateProcessor:
         )
         db.commit()
 
+        # A3 — notify the job creator that the bulk run finished. Best-
+        # effort, never blocks. Skipped on FAILED status (a separate
+        # _fail_job path covers explicit failure; here a partial run
+        # with some failures is still worth surfacing).
+        try:
+            self._notify_bulk_complete(
+                db,
+                job=job,
+                succeeded=succeeded,
+                failed=failed,
+                skipped=skipped,
+            )
+        except Exception:
+            logger.exception(
+                "bulk_complete notification skipped for job %s", job.id
+            )
+
+    def _notify_bulk_complete(
+        self,
+        db: Session,
+        *,
+        job: BulkJob,
+        succeeded: int,
+        failed: int,
+        skipped: int,
+    ) -> None:
+        if not getattr(job, "created_by", None):
+            return
+        from app.services.user_notifications import dispatch as _dispatch
+        from app.models.user_notifications import NotificationType
+        from app.models import User
+
+        user = db.query(User).filter(User.id == job.created_by).first()
+        if user is None:
+            return
+        total = (succeeded + failed + skipped) or (job.total_items or 0)
+        title = f"Bulk validation finished — {succeeded}/{total} succeeded"
+        body = (
+            f"Status: {job.status}. Succeeded: {succeeded}, "
+            f"Failed: {failed}, Skipped: {skipped}."
+        )
+        link_url = f"/lcopilot/bulk/{job.id}"
+        _dispatch(
+            db,
+            user,
+            NotificationType.BULK_JOB_COMPLETE,
+            title=title,
+            body=body,
+            link_url=link_url,
+            metadata={
+                "bulk_job_id": str(job.id),
+                "status": job.status,
+                "succeeded": succeeded,
+                "failed": failed,
+                "skipped": skipped,
+            },
+        )
+        db.commit()
+
     async def _fail_job(
         self,
         db: Session,
