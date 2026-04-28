@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import LandingPage from './pages/landing/LandingPage'
+import NotificationSettings from './pages/settings/NotificationSettings'
 import Index from './pages/Index'
 import TRDRHub from './pages/TRDRHub'
 import UploadPage from './pages/UploadPage'
@@ -365,6 +366,7 @@ function App() {
           <Route path="settings" element={<HubSettings />} />
         </Route>
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/settings/notifications" element={<RequireAuth><NotificationSettings /></RequireAuth>} />
         <Route path="/lcopilot/upload" element={<RequireAuth><UploadPage /></RequireAuth>} />
         <Route path="/lcopilot/review/:sessionId" element={<RequireAuth><ReviewPage /></RequireAuth>} />
         <Route path="/lcopilot/report/:sessionId" element={<RequireAuth><ReportPage /></RequireAuth>} />

@@ -1,6 +1,7 @@
 // ExporterDashboard - Section-based dashboard with embedded workflows
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, Link, useLocation } from "react-router-dom";
+import { FirstSessionCoachmark } from "@/components/handhold/FirstSessionCoachmark";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,6 +82,7 @@ export default function ExporterDashboard() {
   return (
     <ResultsProvider>
       <DashboardContent />
+      <FirstSessionCoachmark />
     </ResultsProvider>
   );
 }
