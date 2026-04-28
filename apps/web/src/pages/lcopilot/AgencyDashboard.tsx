@@ -18,6 +18,7 @@ import {
   Building2,
   FileCheck,
   Globe2,
+  Inbox,
   LayoutDashboard,
   Pencil,
   Plus,
@@ -46,6 +47,7 @@ import {
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { WorkspaceSwitcher } from "@/components/lcopilot/WorkspaceSwitcher";
 import { isAgencyRealEnabled } from "@/lib/lcopilot/featureFlags";
+import { BulkInbox } from "@/components/agency/BulkInbox";
 import {
   createBuyer,
   createSupplier,
@@ -62,7 +64,7 @@ import {
   type SupplierInput,
 } from "@/lib/lcopilot/agencyApi";
 
-type Section = "dashboard" | "suppliers" | "buyers";
+type Section = "dashboard" | "suppliers" | "buyers" | "bulk";
 
 // ---------------------------------------------------------------------------
 // Sidebar
@@ -88,6 +90,7 @@ function AgencySidebar({
     { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
     { key: "suppliers", label: "Suppliers", Icon: Building2, count: supplierCount },
     { key: "buyers", label: "Foreign Buyers", Icon: Globe2, count: buyerCount },
+    { key: "bulk", label: "Bulk Inbox", Icon: Inbox },
   ];
   return (
     <nav className="space-y-1 p-3">
@@ -1007,6 +1010,7 @@ export default function AgencyDashboard() {
         {section === "dashboard" && <DashboardPanel />}
         {section === "suppliers" && <SupplierPanel buyers={buyers} />}
         {section === "buyers" && <BuyerPanel />}
+        {section === "bulk" && <BulkInbox />}
       </div>
     </DashboardLayout>
   );

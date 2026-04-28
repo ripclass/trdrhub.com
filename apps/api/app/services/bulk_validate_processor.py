@@ -402,6 +402,14 @@ class BulkValidateProcessor:
             if document_tags:
                 payload["document_tags"] = document_tags
 
+            # Phase A6 — agency attribution. When the item carries a
+            # supplier_id (set by /api/bulk-validate/{id}/items with
+            # supplier_id form field), forward it so the validation
+            # pipeline stamps it onto the new ValidationSession.
+            supplier_id = (item.item_data or {}).get("supplier_id")
+            if supplier_id:
+                payload["supplier_id"] = supplier_id
+
             runtime_context: dict = {
                 "validation_session": None,
                 "bulk_job_id": str(job.id),

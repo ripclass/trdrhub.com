@@ -246,6 +246,11 @@ async def create_bulk_job(
 async def upload_bulk_item(
     job_id: UUID,
     lc_identifier: str = Form(..., min_length=1, max_length=128),
+    supplier_id: Optional[UUID] = Form(
+        None,
+        description="Phase A6 — agency attribution. When provided, the resulting "
+        "ValidationSession lands under this supplier in the agent's portfolio.",
+    ),
     files: List[UploadFile] = File(..., description="LC PDF + supporting PDFs"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -289,14 +294,35 @@ async def upload_bulk_item(
             detail="No usable files in upload",
         )
 
+    # Phase A6 — validate supplier_id ownership before storing it.
+    # Cross-company ids get warned + dropped silently, same defensive
+    # shape as session_setup uses for the single-validate path.
+    validated_supplier_id: Optional[str] = None
+    if supplier_id is not None and getattr(current_user, "company_id", None):
+        from app.models.agency import Supplier as _Supplier
+
+        owned = (
+            db.query(_Supplier)
+            .filter(_Supplier.id == supplier_id)
+            .filter(_Supplier.agent_company_id == current_user.company_id)
+            .filter(_Supplier.deleted_at.is_(None))
+            .first()
+        )
+        if owned is not None:
+            validated_supplier_id = str(supplier_id)
+
+    item_data: dict = {
+        "file_paths": saved_paths,
+        "uploaded_filenames": [f.filename for f in files if f.filename],
+    }
+    if validated_supplier_id:
+        item_data["supplier_id"] = validated_supplier_id
+
     item = BulkItem(
         id=item_id,
         job_id=job.id,
         lc_identifier=lc_identifier,
-        item_data={
-            "file_paths": saved_paths,
-            "uploaded_filenames": [f.filename for f in files if f.filename],
-        },
+        item_data=item_data,
         status=ItemStatus.PENDING.value,
     )
     db.add(item)
