@@ -12,10 +12,11 @@
  */
 
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
+  FileCheck,
   Globe2,
   LayoutDashboard,
   Pencil,
@@ -369,6 +370,7 @@ function SupplierForm({
 }
 
 function SupplierPanel({ buyers }: { buyers: ForeignBuyer[] }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: suppliers = [], isLoading } = useQuery({
     queryKey: ["agency", "suppliers"],
@@ -575,6 +577,17 @@ function SupplierPanel({ buyers }: { buyers: ForeignBuyer[] }) {
               {selected.open_discrepancy_count}
             </p>
             <div className="flex gap-2 pt-2">
+              <Button
+                size="sm"
+                onClick={() =>
+                  navigate(
+                    `/lcopilot/upload-lc?supplier_id=${encodeURIComponent(selected.id)}`,
+                  )
+                }
+              >
+                <FileCheck className="w-3.5 h-3.5 mr-1" />
+                Validate LC for this supplier
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setEditing(selected)}>
                 <Pencil className="w-3.5 h-3.5 mr-1" />
                 Edit

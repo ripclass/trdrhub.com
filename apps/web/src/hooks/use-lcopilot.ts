@@ -32,6 +32,13 @@ export interface ValidationRequest {
    */
   workflowTypeEnum?: 'exporter_presentation' | 'importer_draft_lc' | 'importer_supplier_docs';
   metadata?: Record<string, any>; // Additional metadata (e.g., clientName, dateReceived)
+  /**
+   * Phase A6: agency attribution. When the agent's "Validate LC for
+   * supplier X" flow originates the upload, this carries the supplier
+   * UUID; the backend stamps it on ValidationSession.supplier_id after
+   * validating the supplier belongs to the user's company.
+   */
+  supplierId?: string;
   lcTypeOverride?: 'auto' | 'export' | 'import';
   intakeOnly?: boolean;
   /**
@@ -377,6 +384,11 @@ export const useValidate = () => {
       // Add metadata if provided
       if (request.metadata) {
         formData.append('metadata', JSON.stringify(request.metadata));
+      }
+
+      // Phase A6 — agency attribution
+      if (request.supplierId) {
+        formData.append('supplier_id', request.supplierId);
       }
 
       if (request.lcTypeOverride && request.lcTypeOverride !== 'auto') {

@@ -555,6 +555,10 @@ export default function ExportLCUpload({
     initialLcTypeParam === 'export' || initialLcTypeParam === 'import'
       ? (initialLcTypeParam as 'export' | 'import')
       : 'auto';
+  // Phase A6 — agency attribution. The agent's supplier-detail "Validate
+  // LC" CTA navigates here with ?supplier_id=<uuid> so the resulting
+  // ValidationSession lands under that supplier in their portfolio.
+  const supplierIdFromQuery = searchParams.get('supplier_id') || undefined;
   const [lcTypeOverride, setLcTypeOverride] = useState<'auto' | 'export' | 'import'>(initialLcTypeOverride);
   
   // Validation hook
@@ -1345,6 +1349,7 @@ export default function ExportLCUpload({
         extractOnly: true,
         clientRequestId: requestId,
         ...(previousJobId ? { reuseJobId: previousJobId } : {}),
+        ...(supplierIdFromQuery ? { supplierId: supplierIdFromQuery } : {}),
       });
 
       // Check for blocked response (wrong LC type, no LC found, etc.)

@@ -109,6 +109,51 @@ async def prepare_validation_session(
         validation_session.status = SessionStatus.PROCESSING.value
         validation_session.workflow_type = workflow_type
         validation_session.processing_started_at = func.now()
+
+        # Phase A6 — agency attribution. The agent's "Validate LC for
+        # supplier X" flow passes supplier_id as a form field; we
+        # validate it belongs to this user's company before stamping
+        # it on the session so a malformed or cross-company id can't
+        # mis-attribute someone else's roster.
+        supplier_id_raw = (
+            payload.get("supplier_id")
+            or payload.get("supplierId")
+            or (
+                (payload.get("metadata") or {}).get("supplier_id")
+                if isinstance(payload.get("metadata"), dict)
+                else None
+            )
+        )
+        if supplier_id_raw and getattr(current_user, "company_id", None):
+            try:
+                from uuid import UUID as _UUID
+
+                from app.models.agency import Supplier as _Supplier
+
+                supplier_uuid = _UUID(str(supplier_id_raw))
+                owned = (
+                    db.query(_Supplier)
+                    .filter(_Supplier.id == supplier_uuid)
+                    .filter(_Supplier.agent_company_id == current_user.company_id)
+                    .filter(_Supplier.deleted_at.is_(None))
+                    .first()
+                )
+                if owned is not None:
+                    validation_session.supplier_id = supplier_uuid
+                else:
+                    logger.warning(
+                        "Validate request rejected supplier_id=%s — not owned "
+                        "by company %s",
+                        supplier_id_raw,
+                        current_user.company_id,
+                    )
+            except (ValueError, AttributeError, TypeError) as _supplier_exc:
+                logger.warning(
+                    "Validate request: supplier_id=%r is not a valid UUID (%s)",
+                    supplier_id_raw,
+                    _supplier_exc,
+                )
+
         db.commit()
         job_id = str(validation_session.id)
         checkpoint("session_created")
