@@ -285,7 +285,7 @@ app.include_router(bank_tokens.router)  # Bank API tokens endpoints
 app.include_router(bank_webhooks.router)  # Bank webhooks endpoints
 app.include_router(bank_orgs.router)  # Bank organizations endpoints
 app.include_router(onboarding.router)   # Onboarding wizard endpoints
-app.include_router(agency.router)       # Agency workspace stub (GET /agency/suppliers)
+app.include_router(agency.router)       # Agency persona — supplier + buyer rosters + portfolio (Phase A5)
 app.include_router(sme.router)          # SME workspace endpoints (LC Workspace, Drafts, Amendments)
 app.include_router(sme_templates.router)  # SME templates endpoints (LC and document templates with pre-fill)
 app.include_router(workspace_sharing.router)  # SME workspace sharing endpoints (team roles, invitations)

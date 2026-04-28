@@ -316,6 +316,17 @@ class ValidationSession(Base):
         index=True,
     )
 
+    # Agency persona — Phase A5 (2026-04-29). NULL for non-agent runs;
+    # populated when the agent's "Validate LC for supplier X" flow
+    # creates the session so the agency portfolio can group sessions
+    # by supplier.
+    supplier_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("agency_suppliers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Processing metadata
     ocr_provider = Column(String(50), nullable=True)
     processing_started_at = Column(DateTime(timezone=True), nullable=True)
