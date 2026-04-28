@@ -757,9 +757,25 @@ function BuyerPanel() {
     queryKey: ["agency", "buyers"],
     queryFn: listBuyers,
   });
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["agency", "suppliers"],
+    queryFn: listSuppliers,
+  });
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<ForeignBuyer | null>(null);
+  const [selected, setSelected] = useState<ForeignBuyer | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const suppliersByBuyer = useMemo(() => {
+    const out: Record<string, Supplier[]> = {};
+    for (const s of suppliers) {
+      if (!s.foreign_buyer_id) continue;
+      const list = out[s.foreign_buyer_id] ?? [];
+      list.push(s);
+      out[s.foreign_buyer_id] = list;
+    }
+    return out;
+  }, [suppliers]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["agency"] });
@@ -847,44 +863,127 @@ function BuyerPanel() {
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Country</th>
                   <th className="px-4 py-3 font-medium">Contact</th>
+                  <th className="px-4 py-3 font-medium tabular-nums">Suppliers</th>
                   <th className="px-4 py-3 font-medium" />
                 </tr>
               </thead>
               <tbody>
-                {buyers.map((b) => (
-                  <tr key={b.id} className="border-t border-border">
-                    <td className="px-4 py-3">{b.name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {b.country ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {b.contact_email ?? b.contact_name ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setEditing(b)}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={submitting}
-                        onClick={() => {
-                          if (confirm(`Delete ${b.name}?`)) {
-                            deleteMutation.mutate(b.id);
-                          }
-                        }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {buyers.map((b) => {
+                  const supCount = suppliersByBuyer[b.id]?.length ?? 0;
+                  return (
+                    <tr
+                      key={b.id}
+                      className={`border-t border-border ${
+                        selected?.id === b.id
+                          ? "bg-neutral-50 dark:bg-neutral-800/50"
+                          : ""
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setSelected(b)}
+                          className="hover:underline"
+                        >
+                          {b.name}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {b.country ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {b.contact_email ?? b.contact_name ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                        {supCount}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setEditing(b)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={submitting}
+                          onClick={() => {
+                            if (confirm(`Delete ${b.name}?`)) {
+                              deleteMutation.mutate(b.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+          </CardContent>
+        </Card>
+      )}
+
+      {selected && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{selected.name}</CardTitle>
+            <CardDescription>
+              {selected.country ?? "Unknown country"} ·{" "}
+              {selected.contact_email ?? "no contact"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm space-y-3">
+            <p>
+              <span className="text-muted-foreground">Contact:</span>{" "}
+              {selected.contact_name ?? "—"} · {selected.contact_phone ?? "—"}
+            </p>
+            {selected.notes && (
+              <p className="text-muted-foreground italic">{selected.notes}</p>
+            )}
+            <div>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                Suppliers shipping to this buyer
+              </p>
+              {(suppliersByBuyer[selected.id] ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No suppliers have this buyer set as their default. Edit a
+                  supplier to link them.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {suppliersByBuyer[selected.id].map((s) => (
+                    <li
+                      key={s.id}
+                      className="flex items-center justify-between rounded border border-border bg-neutral-50 dark:bg-neutral-800/40 px-3 py-2"
+                    >
+                      <div>
+                        <p className="font-medium">{s.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {s.country ?? "—"} ·{" "}
+                          {s.contact_email ?? "no contact"}
+                        </p>
+                      </div>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {s.active_lc_count} active · {s.open_discrepancy_count} open
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setEditing(selected)}>
+                <Pencil className="w-3.5 h-3.5 mr-1" />
+                Edit
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>
+                Close
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
