@@ -289,6 +289,13 @@ async def resolve_discrepancy(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Phase A10 — RBAC. Resolving a discrepancy is a meaningful
+    # state change; gate on RESOLVE_DISCREPANCY (admin/owner by
+    # default; member can only comment + send re-paper).
+    from ..services.rbac import Permission, require_permission
+
+    require_permission(db, current_user, Permission.RESOLVE_DISCREPANCY)
+
     target_state = _RESOLVE_ACTION_TO_STATE.get(body.action.lower())
     if target_state is None:
         raise HTTPException(

@@ -16,6 +16,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import models as legacy_models  # noqa: F401  (side effects)
+# Import all models referenced by ValidationSession FKs so SQLAlchemy
+# can resolve them when create_all builds the schema.
+from app.models.agency import ForeignBuyer as _AgencyBuyer, Supplier as _AgencySupplier  # noqa: F401
+from app.models.services import ServicesClient as _ServicesClient, TimeEntry as _TimeEntry  # noqa: F401
+_legacy_models = legacy_models  # noqa: F401  (side effects)
 from app.models import Discrepancy, ValidationSession
 from app.models.agency import ForeignBuyer, Supplier
 from app.models.base import Base
