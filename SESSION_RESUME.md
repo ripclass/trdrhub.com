@@ -1,16 +1,16 @@
 # Session resume — Path A build
 
 **Last updated:** 2026-04-28 evening
-**State frozen at commit:** `f2556084` (Phase A5 part 2 — rebuilt agency dashboard)
-**Branch:** `master` (last push: `f2556084`)
-**Active phase:** A5 fully shipped (suppliers + foreign buyers + portfolio + dashboard). Next: A6 — agent dashboard part 2 (single + bulk validation flows attributed to suppliers).
+**State frozen at commit:** `1c6cd925` (Phase A6 slice 2 — bulk inbox folder upload + supplier matching)
+**Branch:** `master` (last push: `1c6cd925`)
+**Active phase:** A6 slice 1 + 2 shipped. Slice 3 remaining: bulk results table + actions bar ("approve all clean" / "send re-paper for all with discrepancies" / "download per-supplier PDFs").
 
 ---
 
 ## Resume prompt
 
 ```
-Resume Path A. Read SESSION_RESUME.md. Phases A1-A5 shipped. Start A6 — agent dashboard part 2: "Validate LC for supplier X" CTA on supplier detail (reuse existing exporter upload scoped with supplier_id) + Bulk Inbox (drag-drop folder/ZIP, parse top-level dir = supplier name, kick bulk job).
+Resume Path A. Read SESSION_RESUME.md. Phases A1-A5 + A6 slices 1-2 shipped. Finish A6 with slice 3: bulk results table (per-item verdict, sortable, click → results page) + actions bar ("approve all clean" / "send re-paper for all with discrepancies" / "download per-supplier PDFs"). Then move to A7 (re-papering coordination + foreign buyer profiles + reports).
 ```
 
 ---
@@ -32,6 +32,8 @@ Resume Path A. Read SESSION_RESUME.md. Phases A1-A5 shipped. Start A6 — agent 
 | `0a7698a1` | A4 part 3 | per-tier seat enforcement on invites |
 | `7b487a4d` | A5 part 1 | Supplier + ForeignBuyer models + migration + 11 endpoints + 9 tests |
 | `f2556084` | A5 part 2 | rebuilt agency dashboard with sidebar + 3 sections |
+| `d833a030` | A6 slice 1 | single-supplier validation attribution (`?supplier_id=` on upload, `Validate LC for this supplier` CTA on detail) |
+| `1c6cd925` | A6 slice 2 | bulk inbox — folder upload, name-match suppliers, per-item supplier_id propagated through the bulk pipeline |
 | `4d3cb75e`, `58b8a3d9`, `9cbec651`, `e2137728` | docs | SESSION_RESUME stamps |
 
 ---
