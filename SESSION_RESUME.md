@@ -1,77 +1,81 @@
 # Session resume — Path A build
 
 **Last updated:** 2026-04-28 evening
-**State frozen at commit:** `0a7698a1` (Phase A4 part 3 — per-tier seat enforcement)
-**Branch:** `master` (last push: `0a7698a1`)
-**Active phase:** A4 effectively shipped (real Stripe checkout integration deferred — uses existing /api/billing flow). Next: A5 (agent dashboard part 1).
+**State frozen at commit:** `f2556084` (Phase A5 part 2 — rebuilt agency dashboard)
+**Branch:** `master` (last push: `f2556084`)
+**Active phase:** A5 fully shipped (suppliers + foreign buyers + portfolio + dashboard). Next: A6 — agent dashboard part 2 (single + bulk validation flows attributed to suppliers).
 
 ---
 
 ## Resume prompt
 
 ```
-Resume Path A. Read SESSION_RESUME.md. Phases A1-A4 shipped. Start A5 — agent dashboard part 1: supplier model + sidebar + portfolio. ~6 working days in plan, but pace has been ~50% faster than scheduled.
+Resume Path A. Read SESSION_RESUME.md. Phases A1-A5 shipped. Start A6 — agent dashboard part 2: "Validate LC for supplier X" CTA on supplier detail (reuse existing exporter upload scoped with supplier_id) + Bulk Inbox (drag-drop folder/ZIP, parse top-level dir = supplier name, kick bulk job).
 ```
 
 ---
 
-## What just shipped this session — 14 commits
+## What just shipped this session — 18 commits
 
 | Commit | Phase | What |
 |---|---|---|
 | `c6b01c35` | A2 closure | finding persistence (option B) |
 | `e4943f06` | A2 frontend | DiscrepancyActions + comments + repaper modal |
 | `e29cdd88` | A2 closure | repaper email + auto re-validation |
-| `fe53818e` | A3 part 1 | notifications table + dispatcher + 6 endpoints + 2 triggers |
+| `fe53818e` | A3 part 1 | notifications backend + dispatcher + 6 endpoints + 2 triggers |
 | `6e128fcb` | A3 part 2 | bell icon |
 | `ba7d2dc7` | A3 part 3 | 4 more triggers wired |
 | `066547bf` | A3 part 4 | settings page + coachmark |
 | `0b1131f5` | A3 part 5 | sample-LC button + bundled fixtures |
-| `ce686bfe` | A4 part 1 | tier-aware quota + bulk pre-check + /api/entitlements/current |
+| `ce686bfe` | A4 part 1 | tier-aware quota + bulk pre-check + entitlements endpoint |
 | `4b882e6f` | A4 part 2 | QuotaStrip on dashboards |
 | `0a7698a1` | A4 part 3 | per-tier seat enforcement on invites |
-| `4d3cb75e`, `58b8a3d9`, `9cbec651` | docs | SESSION_RESUME stamps |
+| `7b487a4d` | A5 part 1 | Supplier + ForeignBuyer models + migration + 11 endpoints + 9 tests |
+| `f2556084` | A5 part 2 | rebuilt agency dashboard with sidebar + 3 sections |
+| `4d3cb75e`, `58b8a3d9`, `9cbec651`, `e2137728` | docs | SESSION_RESUME stamps |
 
 ---
 
-## Phase A4 status
+## Phase A5 status — fully shipped
 
-**Done:**
-- Tier-aware monthly quota: Solo=10, SME=50, Enterprise=unlimited (`TIER_QUOTA_LIMITS` in `services/entitlements.py`).
-- Per-tier seat caps: Solo=1, SME=5, Enterprise=unlimited (`TIER_SEAT_LIMITS`). Active members + pending invites both count.
-- Pre-validation enforcement: per-LC via existing `enforce_quota` in the validation pipeline.
-- Bulk pre-check: `enforce_bulk_quota` at `POST /api/bulk-validate/{id}/run` returns 402 `bulk_quota_exceeded` upfront so a Solo Tier user uploading 12 LCs doesn't burn worker minutes on items 1-10.
-- Seat enforcement: `POST /api/companies/members/invite` returns 402 `seat_limit_reached`.
-- `GET /api/entitlements/current` — dashboard snapshot.
-- Frontend `QuotaStrip` mounted on exporter + importer dashboards. Polls every 60s + on focus. Amber at 70%, rose at 90%+ with upgrade CTA.
-- Hard-block modal on over-quota validate already exists (use-lcopilot.ts maps 402 → QuotaModal).
+**Backend:**
+- `Supplier` + `ForeignBuyer` models in `app/models/agency.py` (soft-delete, agent_company_id scoped)
+- Optional `Supplier.foreign_buyer_id` FK for default-buyer pre-fill
+- `ValidationSession.supplier_id` (nullable) for LC attribution
+- Migration `20260429_add_agency_suppliers_buyers`
+- 11 endpoints under `/api/agency/{suppliers,buyers,portfolio}` — full CRUD + KPI snapshot
 
-**Wishlist (not blocking — nice-to-have for polish phase):**
-- Inline frontend handling of the new `seat_limit_reached` 402 on the invite form (currently surfaces as a generic error toast).
-- Real Stripe checkout wired to the QuotaStrip's "Upgrade" CTA (existing /api/billing has Stripe wiring; just need the right plan-id mapping per tier).
+**Frontend:**
+- `VITE_LCOPILOT_AGENCY_REAL` flag in `featureFlags.ts`
+- `lib/lcopilot/agencyApi.ts` — typed wrappers
+- Rebuilt `pages/lcopilot/AgencyDashboard.tsx`: in-page sidebar (Dashboard / Suppliers / Foreign Buyers), KPI strip, recent activity table, supplier list+CRUD+detail, buyer list+CRUD
 
----
-
-## Phase A3 — fully shipped (recap)
-
-Notifications table + dispatcher + 6 wired triggers + bell + dropdown + `/settings/notifications` + 3-step coachmark + sample-LC button with bundled fixtures.
+**Tests:** 112/112 across all Phase A suites.
 
 ---
 
-## Phase A2 — fully shipped (recap)
+## Phase A6 — what's next (week of 2026-06-01 in plan, available now)
 
-State machine + comments + token-authed repaper recipient + finding persistence (option B, IssueCard.id = Discrepancy.id UUID) + frontend action buttons + comment thread + repaper modal + invitation email + auto re-validation.
+Per `EXECUTION_PLAN_PATH_A_2026_04_25.md` lines 390-422:
+
+- **"Validate LC" CTA on supplier detail** — reuse existing exporter upload component scoped with `supplier_id`. The backend already accepts the FK on validation_session.
+- **Bulk Inbox** — drag-drop folder OR ZIP upload, parses structure (top-level dir = supplier name, contents = LC + docs), matches to existing supplier records (or prompts to create), kicks off bulk job. Phase A1's `BulkValidateProcessor` already accepts `manifest_data`; need a thin parser + matcher on top.
+- **Bulk progress page** — live SSE per-item progress (broker already exists from A1.2).
+- **Bulk results table** — per-item verdict, sortable, click → full results page.
+- **Bulk actions bar** — "approve all clean" / "send re-papering for all with discrepancies" / "download per-supplier PDFs".
+
+**Done criteria:** "Agent uploads a folder of 10 supplier presentations, all validate, bulk results page is accurate, bulk-action 'send re-papering for all with discrepancies' creates N repaper requests."
 
 ---
 
 ## Migrations to run on Render after backend deploy
 
-Last migration is `20260428_add_user_notifications` from A3. No new migration in A4 (tier limits live in code).
+Pending: `20260428_add_user_notifications` + `20260429_add_agency_suppliers_buyers`.
 
 ```
 render jobs create srv-d41dio8dl3ps73db8gpg --start-command "alembic upgrade head"
 ```
-Verify via `/health/db-schema`.
+Verify via `/health/db-schema`. Re-run if first job reports succeeded but the relevant tables don't appear (per `reference_render_migrations.md`).
 
 ---
 
@@ -89,6 +93,7 @@ Verify via `/health/db-schema`.
 | Finding persistence (option B) | `reference_finding_persistence.md` |
 | User notifications (A3) | `reference_user_notifications.md` |
 | Tier quotas + seat caps (A4) | `reference_tier_quotas.md` |
+| Agency persona models + endpoints (A5) | `reference_agency_persona.md` |
 | Render migration is manual + may need re-run | `reference_render_migrations.md` |
 | Don't reinvent RulHub | `feedback_dont_reinvent_rulhub.md` |
 | No placeholder dashboards | `feedback_no_placeholder_dashboards.md` |
@@ -100,8 +105,9 @@ Verify via `/health/db-schema`.
 
 - Today: 2026-04-28 Tuesday
 - Phase A1: shipped 2026-04-25 (week early)
-- Phase A2: shipped 2026-04-28 (~5 days early)
-- Phase A3: shipped 2026-04-28 (~2 weeks ahead — was scheduled 2026-05-11)
-- Phase A4: shipped 2026-04-28 (~3 weeks ahead — was scheduled 2026-05-18)
-- Phase A5 starts: when ready
+- Phase A2: shipped 2026-04-28 (5 days early)
+- Phase A3: shipped 2026-04-28 (~2 weeks ahead — was 2026-05-11)
+- Phase A4: shipped 2026-04-28 (~3 weeks ahead — was 2026-05-18)
+- Phase A5: shipped 2026-04-28 (~4 weeks ahead — was 2026-05-25)
+- Phase A6 starts: when ready
 - Launch target: 2026-07-25 Saturday (code freeze 07-24)
