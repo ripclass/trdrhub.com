@@ -1,16 +1,16 @@
 # Session resume — Path A build
 
 **Last updated:** 2026-04-28 evening
-**State frozen at commit:** `1c6cd925` (Phase A6 slice 2 — bulk inbox folder upload + supplier matching)
-**Branch:** `master` (last push: `1c6cd925`)
-**Active phase:** A6 slice 1 + 2 shipped. Slice 3 remaining: bulk results table + actions bar ("approve all clean" / "send re-paper for all with discrepancies" / "download per-supplier PDFs").
+**State frozen at commit:** `ea4a84a2` (Phase A6 slice 3 — bulk job list + recent jobs panel + drill-in)
+**Branch:** `master` (last push: `ea4a84a2`)
+**Active phase:** A6 effectively shipped (3 slices). Bulk actions bar (approve-all-clean / repaper-all-discrepancies / per-supplier PDFs) deferred to A11 polish. Next: A7 — re-papering coordination + foreign buyer profiles + per-supplier reports.
 
 ---
 
 ## Resume prompt
 
 ```
-Resume Path A. Read SESSION_RESUME.md. Phases A1-A5 + A6 slices 1-2 shipped. Finish A6 with slice 3: bulk results table (per-item verdict, sortable, click → results page) + actions bar ("approve all clean" / "send re-paper for all with discrepancies" / "download per-supplier PDFs"). Then move to A7 (re-papering coordination + foreign buyer profiles + reports).
+Resume Path A. Read SESSION_RESUME.md. Phases A1-A6 shipped (action bar deferred to A11 polish). Start A7 — re-papering coordination + foreign buyer profiles + per-supplier reports. ~5 working days in plan, scheduled 2026-06-08, currently ~5 weeks ahead.
 ```
 
 ---
@@ -34,6 +34,7 @@ Resume Path A. Read SESSION_RESUME.md. Phases A1-A5 + A6 slices 1-2 shipped. Fin
 | `f2556084` | A5 part 2 | rebuilt agency dashboard with sidebar + 3 sections |
 | `d833a030` | A6 slice 1 | single-supplier validation attribution (`?supplier_id=` on upload, `Validate LC for this supplier` CTA on detail) |
 | `1c6cd925` | A6 slice 2 | bulk inbox — folder upload, name-match suppliers, per-item supplier_id propagated through the bulk pipeline |
+| `ea4a84a2` | A6 slice 3 | bulk job list endpoint + RecentJobsPanel with auto-poll + per-item drill-in |
 | `4d3cb75e`, `58b8a3d9`, `9cbec651`, `e2137728` | docs | SESSION_RESUME stamps |
 
 ---
@@ -111,5 +112,6 @@ Verify via `/health/db-schema`. Re-run if first job reports succeeded but the re
 - Phase A3: shipped 2026-04-28 (~2 weeks ahead — was 2026-05-11)
 - Phase A4: shipped 2026-04-28 (~3 weeks ahead — was 2026-05-18)
 - Phase A5: shipped 2026-04-28 (~4 weeks ahead — was 2026-05-25)
-- Phase A6 starts: when ready
+- Phase A6: shipped 2026-04-28 (~5 weeks ahead — was 2026-06-01; action bar deferred to A11)
+- Phase A7 starts: when ready
 - Launch target: 2026-07-25 Saturday (code freeze 07-24)
