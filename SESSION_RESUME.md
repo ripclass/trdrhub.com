@@ -1,16 +1,16 @@
 # Session resume — Path A build
 
 **Last updated:** 2026-04-28 evening
-**State frozen at commit:** `066547bf` (Phase A3 part 4 — settings page + coachmark)
-**Branch:** `master` (last push: `066547bf`)
-**Active phase:** A3 effectively shipped (1 deferred sub-item). Next: sample-LC button (needs bundled fixtures), then A4 (quota / paywall).
+**State frozen at commit:** `0b1131f5` (Phase A3 part 5 — sample-LC button + bundled fixtures)
+**Branch:** `master` (last push: `0b1131f5`)
+**Active phase:** A3 fully shipped end-to-end. Next: A4 (quota / paywall + tier enforcement).
 
 ---
 
 ## Resume prompt
 
 ```
-Resume Path A. Read SESSION_RESUME.md. Phase A3 is shipped end-to-end except the "Try a sample LC" button (deferred — needs fixture PDFs in repo). Knock that out first or skip to A4 (quota / paywall) — your call.
+Resume Path A. Read SESSION_RESUME.md. Phase A3 fully shipped (backend + bell + settings + coachmark + sample-LC). Start A4 — quota / paywall + tier enforcement (week of 2026-05-18 in the original plan, ~3 weeks ahead).
 ```
 
 ---
@@ -26,13 +26,14 @@ Resume Path A. Read SESSION_RESUME.md. Phase A3 is shipped end-to-end except the
 | `6e128fcb` | A3 part 2 — bell icon + dropdown in DashboardLayout |
 | `ba7d2dc7` | A3 part 3 — 4 more triggers (validation_complete, bulk_complete, repaper_request_received, lifecycle_transition) |
 | `066547bf` | A3 part 4 — `/settings/notifications` page + first-session coachmark on exporter + importer dashboards |
-| `4d3cb75e` | docs (mid-session SESSION_RESUME stamp) |
+| `0b1131f5` | A3 part 5 — `Try a sample LC` button + bundled fixtures (`apps/api/app/fixtures/sample_lc/`) + `POST /api/handhold/sample-lc` endpoint. .gitignore unignores the bundled PDFs so they ship to Render. |
+| `4d3cb75e`, `58b8a3d9` | docs (SESSION_RESUME stamps mid-session) |
 
 ---
 
 ## Phase A3 status
 
-**Done:**
+**Done end-to-end:**
 - `notifications` table + migration `20260428_add_user_notifications`
 - `services/user_notifications.dispatch()` writes row + optional email via the A2 SMTP helper
 - 6 endpoints under `/api/notifications` (list, unread-count, mark-read, mark-all-read, get-prefs, put-prefs)
@@ -40,9 +41,11 @@ Resume Path A. Read SESSION_RESUME.md. Phase A3 is shipped end-to-end except the
 - Frontend bell + dropdown in `DashboardLayout` behind `VITE_LCOPILOT_NOTIFICATIONS`
 - `/settings/notifications` page with per-type toggles
 - 3-step coachmark on first dashboard render, persisted via localStorage
+- Sample-LC button + 7 bundled fixture PDFs (BD-CN/SHIPMENT_CLEAN, ~27 KB total) + `POST /api/handhold/sample-lc` endpoint
 
-**Deferred:**
-- "Try a sample LC" button — needs a small fixture set bundled in `apps/api/app/fixtures/sample_lc/` (or similar) so it works on Render. The plan says "pre-canned LC + docs from `apps/api/tests/stress_corpus`" but that path is gitignored. Pick 1 LC + 5-7 supporting PDFs from IDEAL_SAMPLE, copy to a tracked fixture dir, add a `POST /api/handhold/sample-lc` endpoint that kicks the pipeline against them. Frontend: `<TrySampleLCButton>` on empty exporter + importer dashboards.
+**Remaining wishlist (not blocking — push to follow-up phases):**
+- Cross-device persistence for the coachmark dismiss (currently localStorage). Move to `User.onboarding_data['seen_tutorial']` if it becomes a UX issue.
+- More diverse sample-LC corridors (US-VN, UK-IN, DE-CN already exist in importer-corpus; could rotate or let users pick).
 
 ---
 
