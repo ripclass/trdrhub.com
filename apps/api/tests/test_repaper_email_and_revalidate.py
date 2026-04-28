@@ -31,6 +31,7 @@ from app.models.discrepancy_workflow import (
     RepaperingRequest,
     RepaperingState,
 )
+from app.models.user_notifications import Notification
 from app.services.email import send_email
 from app.services import repaper_revalidate
 
@@ -55,6 +56,7 @@ def db():
         Discrepancy.__table__,
         DiscrepancyComment.__table__,
         RepaperingRequest.__table__,
+        Notification.__table__,
     ]
     Base.metadata.create_all(engine, tables=tables)
     Session = sessionmaker(bind=engine, expire_on_commit=False)

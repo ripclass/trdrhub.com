@@ -21,6 +21,7 @@ from app.models.discrepancy_workflow import (  # noqa: F401  — share metadata
     DiscrepancyComment,
     RepaperingRequest,
 )
+from app.models.user_notifications import Notification
 from app.services.crossdoc import build_issue_cards
 from app.services.finding_persistence import persist_findings_as_discrepancies
 
@@ -35,6 +36,7 @@ def db():
         Discrepancy.__table__,
         DiscrepancyComment.__table__,
         RepaperingRequest.__table__,
+        Notification.__table__,
     ]
     Base.metadata.create_all(engine, tables=tables)
     Session = sessionmaker(bind=engine, expire_on_commit=False)

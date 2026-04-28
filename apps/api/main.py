@@ -55,7 +55,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions, agency, lc_lifecycle, bulk_validate, discrepancy_workflow
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions, agency, lc_lifecycle, bulk_validate, discrepancy_workflow, user_notifications
 
 # V2 Pipeline removed - using V1 with enhanced features
 from app.routes.health import router as health_router
@@ -309,6 +309,7 @@ app.include_router(exporter.router)  # Exporter-specific endpoints (customs pack
 app.include_router(bulk_validate.router)  # Customer-facing bulk LC validation (Phase A1 part 2)
 app.include_router(discrepancy_workflow.discrepancy_router)  # Discrepancy resolution workflow (Phase A2)
 app.include_router(discrepancy_workflow.repaper_router)  # Re-papering loop (Phase A2)
+app.include_router(user_notifications.router)  # In-app notifications (Phase A3)
 app.include_router(jobs_public.router)  # Public validation job status/results endpoints
 app.include_router(health_router)       # Use the new comprehensive health endpoints
 app.include_router(ocr_health_router)   # Internal OCR provider diagnostics endpoint

@@ -153,12 +153,18 @@ def persist_findings_as_discrepancies(
 
     Mutates the finding dicts in-place. Empty/None entries in
     ``findings`` are skipped silently.
+
+    Phase A3: when *new* discrepancy rows are inserted, dispatches a
+    single summary notification to the session owner. Existing-row
+    updates do not trigger a notification — the user already saw it.
     """
     if validation_session is None:
         return 0
     finding_list = [f for f in (findings or []) if isinstance(f, dict)]
     if not finding_list:
         return 0
+    new_count = 0
+    severity_breakdown = {"critical": 0, "major": 0, "minor": 0}
 
     session_id = validation_session.id
     existing = (
@@ -211,6 +217,10 @@ def persist_findings_as_discrepancies(
             )
             db.add(row)
             by_sig[lookup_sig] = row
+            new_count += 1
+            sev = _severity_for(finding)
+            if sev in severity_breakdown:
+                severity_breakdown[sev] += 1
         else:
             # Update mutable fields. Don't touch state/owner_user_id —
             # those carry user-resolution context the pipeline can't override.
@@ -238,12 +248,81 @@ def persist_findings_as_discrepancies(
         finding["__discrepancy_uuid"] = str(row.id)
 
     logger.info(
-        "Persisted %d findings as Discrepancy rows for session %s (%d existing reused)",
+        "Persisted %d findings as Discrepancy rows for session %s "
+        "(%d new, %d existing reused)",
         touched,
         session_id,
+        new_count,
         len(existing),
     )
+
+    # A3: notify the session owner when *new* discrepancies were
+    # raised. Best-effort — never let notification failure block the
+    # validation pipeline. Updates to existing rows don't trigger.
+    if new_count > 0:
+        try:
+            _notify_discrepancies_raised(
+                db,
+                validation_session,
+                new_count=new_count,
+                severity_breakdown=severity_breakdown,
+            )
+        except Exception:
+            logger.exception(
+                "discrepancy-raised notification skipped for session %s",
+                session_id,
+            )
+
     return touched
+
+
+def _notify_discrepancies_raised(
+    db: Session,
+    validation_session: ValidationSession,
+    *,
+    new_count: int,
+    severity_breakdown: dict[str, int],
+) -> None:
+    """Dispatch a single summary notification per validation run."""
+    user_id = getattr(validation_session, "user_id", None)
+    if not user_id:
+        return
+    # Imported lazily so circular-import paths between models and the
+    # dispatcher service stay loose.
+    from .user_notifications import dispatch as _dispatch_notification
+    from ..models import User
+    from ..models.user_notifications import NotificationType
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        return
+
+    crit = severity_breakdown.get("critical", 0)
+    major = severity_breakdown.get("major", 0)
+    minor = severity_breakdown.get("minor", 0)
+    if new_count == 1:
+        title = "1 new finding on your LC validation"
+    else:
+        title = f"{new_count} new findings on your LC validation"
+    body = (
+        f"Critical: {crit}, Major: {major}, Advisory: {minor}. "
+        "Review the findings page to accept, reject, waive, or send a "
+        "re-papering request."
+    )
+    link_url = f"/exporter/results/{validation_session.id}"
+    _dispatch_notification(
+        db,
+        user,
+        NotificationType.DISCREPANCY_RAISED,
+        title=title,
+        body=body,
+        link_url=link_url,
+        metadata={
+            "validation_session_id": str(validation_session.id),
+            "new_count": new_count,
+            "severity_breakdown": severity_breakdown,
+        },
+    )
 
 
 __all__ = ["persist_findings_as_discrepancies"]

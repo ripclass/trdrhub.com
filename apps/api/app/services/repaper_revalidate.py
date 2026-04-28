@@ -283,8 +283,80 @@ async def revalidate_repaper_request(request_id: UUID | str) -> None:
             new_session_id,
             finding_count,
         )
+
+        # A3: notify the requester that the recipient came through. A
+        # clean re-validation also counts as the parent discrepancy
+        # being resolved — we say so explicitly in the body.
+        try:
+            _notify_repaper_resolved(
+                db,
+                requester_user_id=request.requester_user_id,
+                request_id=request.id,
+                replacement_session_id=new_session_uuid,
+                discrepancy_id=request.discrepancy_id,
+                clean=(finding_count == 0),
+            )
+        except Exception:
+            logger.exception(
+                "repaper-resolved notification skipped for request %s",
+                request_id,
+            )
     finally:
         db.close()
+
+
+def _notify_repaper_resolved(
+    db,
+    *,
+    requester_user_id,
+    request_id,
+    replacement_session_id,
+    discrepancy_id,
+    clean: bool,
+) -> None:
+    """Dispatch a notification to the original requester after the
+    recipient's upload re-validates."""
+    if not requester_user_id:
+        return
+    from .user_notifications import dispatch as _dispatch_notification
+    from ..models.user_notifications import NotificationType
+
+    requester = _load_requester(db, requester_user_id)
+    if requester is None:
+        return
+
+    if clean:
+        title = "Re-papering resolved your discrepancy"
+        body = (
+            "The corrected document(s) re-validated cleanly. The original "
+            "discrepancy has been auto-resolved."
+        )
+    else:
+        title = "Re-papering completed — review needed"
+        body = (
+            "The recipient uploaded corrected document(s). The new "
+            "validation still found issues — review whether the original "
+            "discrepancy is satisfied."
+        )
+    link_url = (
+        f"/exporter/results/{replacement_session_id}"
+        if replacement_session_id
+        else None
+    )
+    _dispatch_notification(
+        db,
+        requester,
+        NotificationType.REPAPER_RESOLVED,
+        title=title,
+        body=body,
+        link_url=link_url,
+        metadata={
+            "repaper_request_id": str(request_id),
+            "replacement_session_id": str(replacement_session_id) if replacement_session_id else None,
+            "discrepancy_id": str(discrepancy_id) if discrepancy_id else None,
+            "clean_revalidation": clean,
+        },
+    )
 
 
 def schedule_revalidation(background, request_id: UUID | str) -> None:
