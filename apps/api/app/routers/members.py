@@ -16,13 +16,14 @@ from typing import List, Optional
 from uuid import UUID
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.database import get_db
-from app.models import User
+from app.models import Company, User
+from app.services.entitlements import resolve_seat_limit
 from app.models.rbac import (
     CompanyMember,
     CompanyInvitation,
@@ -224,7 +225,52 @@ async def invite_member(
     ).first()
     if existing_invitation:
         raise HTTPException(status_code=400, detail="An invitation has already been sent to this email")
-    
+
+    # Phase A4 — per-tier seat cap. Solo = 1, SME = 5, Enterprise =
+    # unlimited. Active members + pending invitations count toward the
+    # cap so a Solo company can't paper over the limit by leaving
+    # invitations un-accepted.
+    company = (
+        db.query(Company).filter(Company.id == member.company_id).first()
+        if member.company_id
+        else None
+    )
+    seat_limit = resolve_seat_limit(company)
+    if seat_limit is not None:
+        active_members = (
+            db.query(CompanyMember)
+            .filter(
+                CompanyMember.company_id == member.company_id,
+                CompanyMember.status == MemberStatus.ACTIVE.value,
+            )
+            .count()
+        )
+        pending_invites = (
+            db.query(CompanyInvitation)
+            .filter(
+                CompanyInvitation.company_id == member.company_id,
+                CompanyInvitation.status == InvitationStatus.PENDING.value,
+            )
+            .count()
+        )
+        used_seats = int(active_members) + int(pending_invites)
+        if used_seats >= seat_limit:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "code": "seat_limit_reached",
+                    "message": (
+                        f"Your {company.tier if company else 'current'} plan "
+                        f"allows {seat_limit} seat(s); "
+                        f"{used_seats} are already in use (active + pending). "
+                        "Upgrade to invite more teammates."
+                    ),
+                    "seat_limit": seat_limit,
+                    "seats_used": used_seats,
+                    "next_action_url": "/pricing",
+                },
+            )
+
     # Determine tool access
     tool_access = request.tool_access if request.tool_access else DEFAULT_TOOL_ACCESS.get(
         MemberRole(request.role), []
