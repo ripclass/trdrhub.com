@@ -429,6 +429,61 @@ async def run_bulk_job(
 # ---------------------------------------------------------------------------
 
 
+@router.get("", response_model=List[BulkValidateJobRead])
+async def list_bulk_jobs(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Recent bulk jobs for the caller's tenant. Phase A6 slice 3 —
+    feeds the agent's "Recent jobs" panel under the Bulk Inbox.
+    """
+    capped = max(1, min(int(limit or 20), 100))
+    jobs = (
+        db.query(BulkJob)
+        .filter(BulkJob.tenant_id == _tenant_id_for(current_user))
+        .filter(BulkJob.job_type == CUSTOMER_LC_VALIDATION_JOB_TYPE)
+        .order_by(BulkJob.created_at.desc())
+        .limit(capped)
+        .all()
+    )
+    if not jobs:
+        return []
+    job_ids = [j.id for j in jobs]
+    items_by_job: dict = {}
+    rows = (
+        db.query(BulkItem)
+        .filter(BulkItem.job_id.in_(job_ids))
+        .order_by(BulkItem.created_at.asc())
+        .all()
+    )
+    for r in rows:
+        items_by_job.setdefault(r.job_id, []).append(r)
+
+    return [
+        BulkValidateJobRead(
+            id=j.id,
+            name=j.name,
+            description=j.description,
+            status=j.status,
+            total_items=j.total_items or 0,
+            processed_items=j.processed_items or 0,
+            succeeded_items=j.succeeded_items or 0,
+            failed_items=j.failed_items or 0,
+            skipped_items=j.skipped_items or 0,
+            started_at=j.started_at,
+            finished_at=j.finished_at,
+            duration_seconds=j.duration_seconds,
+            created_at=j.created_at,
+            items=[
+                BulkValidateItemRead.from_orm_item(i)
+                for i in items_by_job.get(j.id, [])
+            ],
+        )
+        for j in jobs
+    ]
+
+
 @router.get("/{job_id}", response_model=BulkValidateJobRead)
 async def get_bulk_job(
     job_id: UUID,

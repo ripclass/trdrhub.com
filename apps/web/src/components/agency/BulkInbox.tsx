@@ -12,15 +12,18 @@
  * a relative path via `File.webkitRelativePath`.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
+  CircleDashed,
   FolderUp,
+  History,
   Inbox,
   Loader2,
   Play,
+  XCircle,
   X,
 } from "lucide-react";
 
@@ -28,6 +31,262 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/api/client";
 import { listSuppliers, type Supplier } from "@/lib/lcopilot/agencyApi";
+
+interface BulkJobItem {
+  id: string;
+  lc_identifier: string;
+  status: string;
+  attempts: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  last_error: string | null;
+  error_code: string | null;
+  result_summary: Record<string, unknown> | null;
+}
+
+interface BulkJob {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  total_items: number;
+  processed_items: number;
+  succeeded_items: number;
+  failed_items: number;
+  skipped_items: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_seconds: number | null;
+  created_at: string;
+  items: BulkJobItem[];
+}
+
+async function listRecentBulkJobs(): Promise<BulkJob[]> {
+  const { data } = await api.get<BulkJob[]>("/api/bulk-validate?limit=20");
+  return data ?? [];
+}
+
+function StatusPill({ status }: { status: string }) {
+  const norm = status.toLowerCase();
+  let Icon = CircleDashed;
+  let cls = "text-muted-foreground bg-neutral-200/40";
+  if (norm === "succeeded" || norm === "complete" || norm === "completed") {
+    Icon = CheckCircle2;
+    cls = "text-emerald-700 bg-emerald-100";
+  } else if (norm === "failed") {
+    Icon = XCircle;
+    cls = "text-rose-700 bg-rose-100";
+  } else if (norm === "running" || norm === "processing") {
+    Icon = Loader2;
+    cls = "text-blue-700 bg-blue-100";
+  } else if (norm === "partial") {
+    Icon = CircleDashed;
+    cls = "text-amber-700 bg-amber-100";
+  }
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+    >
+      <Icon className={`w-3 h-3 ${norm === "running" ? "animate-spin" : ""}`} />
+      {status}
+    </span>
+  );
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds == null) return "—";
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+}
+
+function RecentJobsPanel() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: jobs = [], isLoading } = useQuery({
+    queryKey: ["agency", "bulk-jobs"],
+    queryFn: listRecentBulkJobs,
+    // Auto-refresh while there's a running/processing job so the agent
+    // sees progress without manually refreshing. (TanStack Query v4
+    // signature: callback receives the cached data directly.)
+    refetchInterval: (data) => {
+      const list = (data as BulkJob[] | undefined) ?? [];
+      const live = list.some((j) =>
+        ["running", "processing", "pending"].includes(
+          (j.status ?? "").toLowerCase(),
+        ),
+      );
+      return live ? 5_000 : false;
+    },
+  });
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-6 text-sm text-muted-foreground">
+          Loading…
+        </CardContent>
+      </Card>
+    );
+  }
+  if (jobs.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="border-b px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">Recent bulk jobs</h3>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              queryClient.invalidateQueries({ queryKey: ["agency", "bulk-jobs"] })
+            }
+          >
+            Refresh
+          </Button>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-muted-foreground border-b">
+            <tr>
+              <th className="px-4 py-2 font-medium">Job</th>
+              <th className="px-4 py-2 font-medium">Status</th>
+              <th className="px-4 py-2 font-medium tabular-nums">Items</th>
+              <th className="px-4 py-2 font-medium tabular-nums">Duration</th>
+              <th className="px-4 py-2 font-medium">Created</th>
+              <th className="px-4 py-2 font-medium" />
+            </tr>
+          </thead>
+          <tbody>
+            {jobs.map((job) => {
+              const expanded = expandedJobId === job.id;
+              return (
+                <Fragment key={job.id}>
+                  <tr
+                    className="border-t border-border hover:bg-neutral-50 dark:hover:bg-neutral-800/40 cursor-pointer"
+                    onClick={() =>
+                      setExpandedJobId(expanded ? null : job.id)
+                    }
+                  >
+                    <td className="px-4 py-2 font-medium truncate max-w-[20ch]">
+                      {job.name}
+                    </td>
+                    <td className="px-4 py-2">
+                      <StatusPill status={job.status} />
+                    </td>
+                    <td className="px-4 py-2 tabular-nums">
+                      {job.succeeded_items}/{job.total_items}
+                      {job.failed_items > 0 && (
+                        <span className="ml-1 text-rose-600">
+                          ({job.failed_items} failed)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 tabular-nums text-muted-foreground">
+                      {formatDuration(job.duration_seconds)}
+                    </td>
+                    <td className="px-4 py-2 text-muted-foreground">
+                      {new Date(job.created_at).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/lcopilot/_bulk-test?job_id=${job.id}`);
+                        }}
+                      >
+                        Live progress
+                      </Button>
+                    </td>
+                  </tr>
+                  {expanded && job.items.length > 0 && (
+                    <tr className="bg-neutral-50/60 dark:bg-neutral-800/20">
+                      <td colSpan={6} className="px-4 py-3">
+                        <table className="w-full text-xs">
+                          <thead className="text-left text-[10px] text-muted-foreground">
+                            <tr>
+                              <th className="pb-1 font-medium">Item</th>
+                              <th className="pb-1 font-medium">Status</th>
+                              <th className="pb-1 font-medium">Verdict</th>
+                              <th className="pb-1 font-medium">Findings</th>
+                              <th className="pb-1 font-medium" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {job.items.map((item) => {
+                              const summary = item.result_summary ?? {};
+                              const verdict =
+                                (summary.verdict as string | undefined) ??
+                                (summary.bank_verdict as string | undefined) ??
+                                "—";
+                              const findings =
+                                (summary.findings_count as number | undefined) ??
+                                (summary.findings as number | undefined) ??
+                                "—";
+                              const sessionId =
+                                (summary.validation_session_id as
+                                  | string
+                                  | undefined) ??
+                                (summary.session_id as string | undefined);
+                              return (
+                                <tr
+                                  key={item.id}
+                                  className="border-t border-border/40"
+                                >
+                                  <td className="py-1.5">
+                                    {item.lc_identifier}
+                                  </td>
+                                  <td className="py-1.5">
+                                    <StatusPill status={item.status} />
+                                  </td>
+                                  <td className="py-1.5 text-muted-foreground">
+                                    {String(verdict)}
+                                  </td>
+                                  <td className="py-1.5 tabular-nums text-muted-foreground">
+                                    {String(findings)}
+                                  </td>
+                                  <td className="py-1.5 text-right">
+                                    {sessionId && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() =>
+                                          navigate(
+                                            `/exporter/results/${sessionId}`,
+                                          )
+                                        }
+                                      >
+                                        Open
+                                      </Button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
 
 interface FolderGroup {
   /** Top-level dir name (or "_root_" if files were dropped without a folder). */
@@ -325,6 +584,8 @@ export function BulkInbox() {
           </CardContent>
         </Card>
       )}
+
+      <RecentJobsPanel />
     </div>
   );
 }
