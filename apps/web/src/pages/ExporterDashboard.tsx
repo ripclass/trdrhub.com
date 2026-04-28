@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, Link, useLocation } from "react-router-dom";
 import { FirstSessionCoachmark } from "@/components/handhold/FirstSessionCoachmark";
+import { TrySampleLCButton } from "@/components/handhold/TrySampleLCButton";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -812,15 +813,17 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                 <div className="text-center py-8 text-muted-foreground">
                   <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
                   <p>No validations yet</p>
-                  <p className="text-sm">Upload your first LC package to get started</p>
-                  <Button 
-                    variant="outline" 
-                    className="mt-4"
-                    onClick={() => onNavigate("upload")}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload LC
-                  </Button>
+                  <p className="text-sm">Upload your first LC package — or run a sample to see how validation works.</p>
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => onNavigate("upload")}
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload LC
+                    </Button>
+                    <TrySampleLCButton variant="default" />
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">

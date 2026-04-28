@@ -32,6 +32,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { WorkspaceSwitcher } from "@/components/lcopilot/WorkspaceSwitcher";
 import { EnterpriseGroupLink } from "@/components/lcopilot/EnterpriseGroupLink";
 import { FirstSessionCoachmark } from "@/components/handhold/FirstSessionCoachmark";
+import { TrySampleLCButton } from "@/components/handhold/TrySampleLCButton";
 import {
   ImporterSidebar,
   type ImporterSidebarSection,
@@ -255,7 +256,17 @@ export default function ImporterDashboardV2() {
             </Link>
           </CardHeader>
           <CardContent>
-            <ReviewsTable sessions={rows} />
+            {rows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center text-muted-foreground">
+                <p className="text-sm">
+                  No reviews yet. Start with a sample to see how validation
+                  works, or upload your own LC + supporting docs.
+                </p>
+                <TrySampleLCButton variant="default" />
+              </div>
+            ) : (
+              <ReviewsTable sessions={rows} />
+            )}
           </CardContent>
         </Card>
       </div>
