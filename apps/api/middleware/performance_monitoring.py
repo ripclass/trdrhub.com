@@ -233,8 +233,9 @@ class ColdStartOptimizer:
         try:
             # Pre-warm database connection
             from database import get_db_connection
+            from sqlalchemy import text
             db = get_db_connection()
-            db.execute("SELECT 1").fetchone()
+            db.execute(text("SELECT 1")).fetchone()
             print("Database connection warmed up")
             
         except Exception as e:

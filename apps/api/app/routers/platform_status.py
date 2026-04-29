@@ -22,7 +22,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from ..core.security import get_current_user
@@ -84,7 +84,7 @@ async def get_status(db: Session = Depends(get_db)):
     # Database — if get_db gave us a session, the connection is up.
     db_healthy = True
     try:
-        db.execute("SELECT 1").scalar()
+        db.execute(text("SELECT 1")).scalar()
     except Exception:
         db_healthy = False
     upstream.append(

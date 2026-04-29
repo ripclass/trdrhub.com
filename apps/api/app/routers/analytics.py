@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -548,7 +549,7 @@ async def get_analytics_health(
     """
     try:
         # Test database connectivity
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
 
         # Test analytics computation speed
         analytics_service = AnalyticsService(db)
