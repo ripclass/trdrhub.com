@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -9,7 +11,37 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Company, UsageRecord, UsageAction
+from app.models import Company, CompanyMember, UsageRecord, UsageAction, User
+
+logger = logging.getLogger(__name__)
+
+
+def _smoke_bypass_emails() -> set[str]:
+    """User emails whose Company is exempt from validation quota.
+
+    Source of truth: the ``SMOKE_TEST_EMAILS`` env var, comma-
+    separated email addresses, lower-cased on read. Empty / unset =
+    no bypass. Used for launch-prep smoke + load-test runs so we
+    don't burn through real customer quota when re-validating the
+    same fixtures repeatedly.
+
+    NEVER add a real customer's email here.
+    """
+    raw = os.getenv("SMOKE_TEST_EMAILS", "") or ""
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+
+
+def _smoke_bypass_result(action: UsageAction) -> "EntitlementResult":
+    """Synthetic 'unlimited' result returned when smoke-bypass is on."""
+    return EntitlementResult(
+        used=0,
+        limit=None,        # None = unlimited
+        remaining=None,
+        period_start=datetime.combine(
+            date.today().replace(day=1), time.min, tzinfo=timezone.utc
+        ),
+        tier="smoke_bypass",
+    )
 
 
 # Phase A4 — tier-aware monthly quota.
@@ -94,6 +126,30 @@ class EntitlementError(Exception):
         self.code = code
 
 
+def _is_smoke_bypass_company(db: Session, company: Optional[Company]) -> bool:
+    """Return True if any active member of `company` matches the
+    `SMOKE_TEST_EMAILS` allowlist.
+
+    Cheap one-shot DB query keyed off (company_id, lower(email)). The
+    allowlist is recomputed each call so removing an email from the
+    Render env var takes effect on the next request without a restart.
+    """
+    if company is None or company.id is None:
+        return False
+    allowlist = _smoke_bypass_emails()
+    if not allowlist:
+        return False
+    member_email = (
+        db.query(func.lower(User.email))
+        .join(CompanyMember, CompanyMember.user_id == User.id)
+        .filter(CompanyMember.company_id == company.id)
+        .filter(func.lower(User.email).in_(allowlist))
+        .limit(1)
+        .scalar()
+    )
+    return member_email is not None
+
+
 class EntitlementService:
     """Utility for checking and recording company usage quotas."""
 
@@ -151,6 +207,18 @@ class EntitlementService:
     def enforce_quota(self, company: Company, action: UsageAction) -> EntitlementResult:
         """Ensure company has remaining quota for the action."""
 
+        # Smoke-bypass: companies whose UUIDs are listed in the
+        # SMOKE_TEST_COMPANY_IDS env var skip the quota gate entirely.
+        # This keeps repeated launch-prep / load-test runs from
+        # exhausting real-customer monthly limits. Never add a real
+        # customer ID to that env var.
+        if _is_smoke_bypass_company(self.db, company):
+            logger.info(
+                "Quota bypass for smoke-test company %s on action %s",
+                company.id, action,
+            )
+            return _smoke_bypass_result(action)
+
         if not company.is_active:
             raise EntitlementError(
                 "Company account is not active.",
@@ -178,6 +246,13 @@ class EntitlementService:
         instead of finding out after item #11 lands and #12 dies
         mid-run.
         """
+        if _is_smoke_bypass_company(self.db, company):
+            logger.info(
+                "Bulk-quota bypass for smoke-test company %s on action %s (count=%d)",
+                company.id, action, count,
+            )
+            return _smoke_bypass_result(action)
+
         if not company.is_active:
             raise EntitlementError(
                 "Company account is not active.",
