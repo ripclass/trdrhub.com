@@ -15,6 +15,7 @@ SUPABASE="https://nnmmhgnriisfsncphipd.supabase.co"
 ANON_KEY="sb_publishable_db40L4wNiQX0jOTCRJi-8g_9p-PWmN3"
 EMAIL="${SMOKE_EMAIL:-imran@iec.com}"
 PASSWORD="${SMOKE_PASSWORD:-ripc0722}"
+CORRIDOR="${CORRIDOR:-US-VN}"
 
 # Temp paths — use a real Windows-native path so both MSYS curl and
 # Windows-native python can read/write. On Git-Bash, $TEMP is /tmp which
@@ -29,7 +30,7 @@ RES1="$T/smoke_res_draft.json"
 EX2="$T/smoke_ex_supplier.json"
 RES2="$T/smoke_res_supplier.json"
 
-FIX="apps/web/tests/fixtures/importer-corpus/US-VN"
+FIX="apps/web/tests/fixtures/importer-corpus/$CORRIDOR"
 
 rm -f "$AUTH" "$COOK" "$EX1" "$RES1" "$EX2" "$RES2"
 
@@ -50,7 +51,7 @@ echo "  csrf acquired: ${CSRF:0:28}..."
 
 echo ""
 echo "=== 3. Moment 1 — Draft LC (workflow_type=importer_draft_lc) ==="
-echo "   uploading US-VN/DRAFT_CLEAN/LC.pdf, extract_only=true"
+echo "   uploading $CORRIDOR/DRAFT_CLEAN/LC.pdf, extract_only=true"
 HTTP1=$(curl -s -b "$COOK" -c "$COOK" -o "$EX1" \
   -w "%{http_code}|%{time_total}" \
   --max-time 300 \
@@ -124,7 +125,7 @@ fi
 
 echo ""
 echo "=== 4. Moment 2 — Supplier Docs (workflow_type=importer_supplier_docs) ==="
-echo "   uploading US-VN/SHIPMENT_CLEAN/* (7 files)"
+echo "   uploading $CORRIDOR/SHIPMENT_CLEAN/* (7 files)"
 # Re-grab CSRF in case state drifted
 curl -s -c "$COOK" "$API/auth/csrf-token" > "$CSRF_JSON"
 CSRF=$(python -c "import json; print(json.load(open(r'$T/smoke_csrf.json'))['csrf_token'])")
