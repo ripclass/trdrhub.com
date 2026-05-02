@@ -62,8 +62,12 @@ HTTP1=$(curl -s -b "$COOK" -c "$COOK" -o "$EX1" \
   -F "document_type=letter_of_credit" \
   -F "files=@$FIX/DRAFT_CLEAN/LC.pdf")
 echo "   extract HTTP $HTTP1"
+SEMANTIC_FAILS_FILE="$T/smoke_semantic_fails.txt"
+: > "$SEMANTIC_FAILS_FILE"
 python <<PY
-import json
+import json, os, sys
+from decimal import Decimal
+sys.path.insert(0, "scripts")
 try:
     d = json.load(open(r"$EX1"))
 except Exception as e:
@@ -74,15 +78,59 @@ print("   status:", d.get("status"))
 print("   job_id:", d.get("job_id"))
 print("   workflow_type:", d.get("workflow_type"))
 print("   documents:", len(d.get("documents", [])))
+
+# ---- Semantic diff: verify extracted LC fields against corridor truth -----
+fails = 0
 if d.get("documents"):
     doc0 = d["documents"][0]
     print("     doc[0] type:", doc0.get("document_type"))
     fields = doc0.get("extracted_fields") or {}
-    # Key MT700 fields that should be extracted
-    for k in ("lc_number","applicant_name","beneficiary_name","currency","amount","port_of_loading","port_of_discharge","latest_shipment_date"):
-        v = fields.get(k)
-        if v is not None:
-            print(f"     {k}: {v}")
+    try:
+        from importer_corpus.corridors import get_corridor
+        c = get_corridor("$CORRIDOR")
+    except Exception as e:
+        print(f"   WARN: could not load corridor truth: {e}")
+        c = None
+    if c is not None:
+        # Expected -> extracted-key mapping. Amount derives from goods_line_items.
+        line_sum = sum(Decimal(str(i["qty"])) * Decimal(str(i["unit_price"]))
+                       for i in c.get("goods_line_items") or [])
+        expected = {
+            "lc_number": c["lc_number"],
+            "currency": c["currency"],
+            "amount": float(line_sum),
+            "port_of_loading": c["port_loading"],
+            "port_of_discharge": c["port_discharge"],
+        }
+        print("   --- semantic diff (extracted vs corridor truth) ---")
+        for k, exp in expected.items():
+            got = fields.get(k)
+            if got is None:
+                print(f"     [FAIL] {k}: MISSING (expected {exp!r})")
+                fails += 1
+                continue
+            # Numeric tolerance for amount; substring tolerance for ports
+            # (extractor may keep the canonical 'PORT, COUNTRY' suffix that
+            # the corpus value also uses, so direct equality usually works)
+            ok = False
+            if k == "amount":
+                try:
+                    ok = abs(float(got) - float(exp)) < 0.01
+                except (TypeError, ValueError):
+                    ok = False
+            elif k in ("port_of_loading", "port_of_discharge"):
+                ok = (str(exp).strip().upper() in str(got).strip().upper()) or \
+                     (str(got).strip().upper() in str(exp).strip().upper())
+            else:
+                ok = str(got).strip() == str(exp).strip()
+            flag = "OK  " if ok else "FAIL"
+            print(f"     [{flag}] {k}: got={got!r}  expected={exp!r}")
+            if not ok:
+                fails += 1
+print(f"   semantic-diff fails: {fails}")
+# Persist for the bash summary at the end
+with open(r"$SEMANTIC_FAILS_FILE", "a") as f:
+    f.write(f"M1 {fails}\n")
 PY
 
 JOB1=$(python -c "import json; print(json.load(open(r'$EX1')).get('job_id',''))")
@@ -210,4 +258,13 @@ echo ""
 echo "=== 5. Summary ==="
 echo "  extract1=$HTTP1  resume1=${HTTP1R:-SKIPPED}"
 echo "  extract2=$HTTP2  resume2=${HTTP2R:-SKIPPED}"
+SEM_FAIL_TOTAL=0
+if [ -f "$SEMANTIC_FAILS_FILE" ]; then
+  SEM_FAIL_TOTAL=$(awk '{sum += $2} END {print sum+0}' "$SEMANTIC_FAILS_FILE")
+fi
+echo "  semantic-diff fails (LC fields vs corridor truth): $SEM_FAIL_TOTAL"
 echo "Artifacts saved under: $T/smoke_*.json"
+# Exit non-zero on any semantic failure so CI / the smoke matrix sees red.
+if [ "$SEM_FAIL_TOTAL" -gt 0 ]; then
+  exit 1
+fi
