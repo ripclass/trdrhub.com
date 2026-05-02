@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import hashlib
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
@@ -28,7 +29,14 @@ logger = logging.getLogger(__name__)
 
 # Cache configuration
 CACHE_TTL_MINUTES = 15  # Re-fetch rules every 15 minutes
-RULHUB_API_ENABLED = False  # Set to True when Rulhub API is ready
+# Switch the rule-catalog fetch path between local DB (default) and the
+# RulHub API. Driven by the RULHUB_API_ENABLED env var so Render can
+# flip it without a code change. Requires RULHUB_API_KEY to be set
+# alongside it; the loader falls back to the database if either is
+# missing or the API call fails.
+RULHUB_API_ENABLED = os.getenv("RULHUB_API_ENABLED", "false").strip().lower() in {
+    "true", "1", "yes", "on"
+}
 
 
 class RuleLoader:
