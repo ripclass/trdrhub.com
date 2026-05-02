@@ -1,97 +1,146 @@
-# Session resume — Path A build
+# Session resume — Path A launch-prep (2026-05-02 evening)
 
-**Last updated:** 2026-04-28 evening
-**State frozen at commit:** Phase A13 — `ea1b1750` + smoke matrix + launch checklist
+**Last updated:** 2026-05-02 evening
+**State frozen at commit:** `8524587e` (chore: untrack conversation prompt.md)
 **Branch:** `master`
-**Active phase:** All 13 build phases shipped end-to-end. Pre-launch tasks remaining: Render migration runs + smoke verification + bug bash + UAT week.
+**Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~12 weeks to 2026-07-25 launch).
 
 ---
 
 ## Resume prompt
 
 ```
-Resume Path A. Read SESSION_RESUME.md and docs/LAUNCH_CHECKLIST_2026_07_25.md. All 13 phases shipped. Next is launch prep — run the migration on Render, set env vars + Vercel feature flags, exercise scripts/smoke_matrix.py, then the manual sample-matrix pass + UAT week.
+Resume Path A launch-prep. Read SESSION_RESUME.md and project_session_2026_05_02_smoke_findings.md
++ project_rulhub_500_2026_05_02.md. Today: importer corpus fully fixed, smoke matrix
+load-bearing, RulHub 500-ing on server side (handed to rulhub Claude with 4 ref_ids +
+sanitized payload preview). Two of four corridors hit truly clean baseline. Remaining:
+(a) wait for rulhub Claude to patch /v1/validate/set, (b) re-verify expected
+DRAFT_RISKY findings appear once rulhub is back, (c) UAT customer outreach,
+(d) bug bash week scheduling, (e) Pingdom + Sentry wiring.
 ```
 
 ---
 
-## Phase scorecard — A1 through A13 all shipped
+## What shipped today (17 commits)
 
-| | Phase | Plan slot | Done date | Pace |
-|---|---|---|---|---|
-| ✅ | A1 — Bulk + lifecycle | 2026-04-27 | 2026-04-25 | 2 days early |
-| ✅ | A2 — Discrepancy + repaper | 2026-05-04 | 2026-04-28 | 5 days early |
-| ✅ | A3 — Notifications + handhold | 2026-05-11 | 2026-04-28 | ~2 weeks early |
-| ✅ | A4 — Quota + tier enforcement | 2026-05-18 | 2026-04-28 | ~3 weeks early |
-| ✅ | A5 — Agency persona pt 1 | 2026-05-25 | 2026-04-28 | ~4 weeks early |
-| ✅ | A6 — Agency pt 2 (bulk inbox) | 2026-06-01 | 2026-04-28 | ~5 weeks early |
-| ✅ | A7 — Agency pt 3 (repaper coord + reports) | 2026-06-08 | 2026-04-28 | ~6 weeks early |
-| ✅ | A8 — Services pt 1 (clients + time) | 2026-06-15 | 2026-04-28 | ~7 weeks early |
-| ✅ | A9 — Services pt 2 (invoices) | 2026-06-22 | 2026-04-28 | ~8 weeks early |
-| ✅ | A10 — Enterprise tier (RBAC + group overview + audit log) | 2026-06-29 | 2026-04-28 | ~9 weeks early |
-| ✅ | A11 — Exporter+importer polish | 2026-07-06 | 2026-04-28 | ~10 weeks early |
-| ✅ | A12 — Failure/support/search | 2026-07-13 | 2026-04-28 | ~11 weeks early |
-| ✅ | A13 — Smoke matrix + checklist | 2026-07-20 | 2026-04-28 | ~12 weeks early |
-
-**Code freeze target: 2026-07-24. Public launch: 2026-07-27.**
-~13 weeks of slack for the launch-prep cycle.
-
----
-
-## All shipped commits (this session window)
-
-| Commit | Phase |
+### Importer corpus structurally complete
+| Commit | What |
 |---|---|
-| `c6b01c35` `e4943f06` `e29cdd88` | A2 closure (option-B persistence + frontend wiring + email/auto-revalidate) |
-| `fe53818e` `6e128fcb` `ba7d2dc7` `066547bf` `0b1131f5` | A3 (notifications backend + bell + 4 more triggers + settings page + sample-LC button) |
-| `ce686bfe` `4b882e6f` `0a7698a1` | A4 (tier-aware quota + bulk pre-check + entitlements endpoint + QuotaStrip + seat enforcement) |
-| `7b487a4d` `f2556084` | A5 (Supplier+ForeignBuyer models + 11 endpoints + agency dashboard) |
-| `d833a030` `1c6cd925` `ea4a84a2` | A6 (single-validate scoping + bulk inbox folder upload + recent jobs panel) |
-| `c1970ac4` `2f8823f0` `3b6546bb` | A7 (repaper coordination + buyer detail + supplier/buyer reports + PDFs) |
-| `a987b6e2` | A8+A9 (services persona — clients + time + portfolio + invoice generator) |
-| `58206070` | A10 (RBAC helper + enterprise group overview + audit log) |
-| `ea1b1750` | A11+A12 (bulk-inbox sidebar links + status endpoint + global search bar) |
-| (this commit) | A13 (smoke matrix script + launch checklist) |
+| `715905c8` | **Renderer fix** — single-line `:TAG: VALUE` per field. Root cause of `amount=41` extraction garbage |
+| `64821c84` | Regenerate 36 PDFs with fixed renderer |
+| `6b3d248d` | Align LC 32B amount with goods_line_items sum + module-load invariant |
+| `53d70ab9` | Add Beneficiary Cert + Fumigation Cert + Draft BoE renderers (corridor-data-driven, not per-corridor hardcoded) |
+
+### Engine spine fixes
+| Commit | What |
+|---|---|
+| `5c7146a3` | Gate "Missing X document" findings on `workflow_type=importer_draft_lc` |
+| `5cd0c96c` | Doc classifier: detect Draft BoE before `commercial_invoice` (was matching `'draft'` substring) |
+| `34f090d9` | Forward `beneficiary_certificate` / `inspection_certificate` / `fumigation_certificate` / `draft` to AI validator (was rendering as "(not submitted)" despite docs being uploaded) |
+
+### Diagnostic infrastructure
+| Commit | What |
+|---|---|
+| `d3ebc3b8` | `_db_rules_debug.path` self-reports `rulhub` / `db_tiered_rulhub_failed` / `db_tiered` |
+| `d42f22ec` | Preserve RulHub `reference_id` from 5xx responses (Sentry handle) |
+| `44325abf` | Sanitized request preview on rulhub-failure path |
+| `3162361a` | Show ALL field keys in preview (not first-30 cap) |
+
+### Smoke + ops
+| Commit | What |
+|---|---|
+| `38842a79` | Track scripts/smoke_importer.sh + env-overridable creds |
+| `1449419c` | smoke_matrix.py multi-persona (`--tokens-file` / `--users-file`) |
+| `046fc9f2` | CORRIDOR env override on smoke_importer.sh |
+| `3528f8af` | **Semantic diff** in smoke_importer.sh + non-zero exit on fail |
+| `b2a82c82` | **SMOKE_TEST_EMAILS** quota bypass (no more HTTP 402 on repeated runs) |
+| `a56a5df4` | `RULHUB_API_ENABLED` env-driven (was hardcoded False in rule_loader.py) |
+| `15203579` | Untrack .claude/scheduled_tasks.lock + gitignore |
+| `8524587e` | Untrack conversation prompt.md scratchpad |
 
 ---
 
-## Pre-launch tasks (NOT yet done)
+## Cross-corridor smoke matrix — final state today
 
-Per `docs/LAUNCH_CHECKLIST_2026_07_25.md`:
+| Corridor | M1 issues | M2 issues | Semantic-diff | Notes |
+|---|---|---|---|---|
+| US-VN | 1 minor | 0–1 minor | 0 | clean |
+| UK-IN | 1 minor | **0** | 0 | ✅ truly clean |
+| DE-CN | 2 minor | **0**–5 (variance) | 0 | clean (AI Examiner run-to-run variance) |
+| BD-CN | 6 minor | 1 minor | 0 | clean-ish |
 
-1. **Run migrations on Render** (3 pending: `20260428_add_user_notifications`, `20260429_add_agency_suppliers_buyers`, `20260430_add_services_clients_time`).
-2. **Set env vars** on Render (SMTP_*, FRONTEND_URL prod value, etc.).
-3. **Flip Vercel feature flags** for production (per checklist).
-4. **Run `scripts/smoke_matrix.py`** against staging then prod.
-5. **Manual 30-combo sample matrix** (persona × tier × country).
-6. **Bug bash week** with internal team.
-7. **UAT week** with 3-5 friendly customers.
-8. **Launch weekend** monitoring + on-call rotation.
+Zero criticals + zero majors anywhere. All findings are minor or AI Examiner stochastic noise.
 
 ---
 
-## v1.1 backlog (deferred from launch)
+## RulHub status — handed to rulhub Claude
 
-- Action bar on agency Bulk Inbox (approve-all-clean / repaper-all-discrepancies / per-supplier PDFs) — A6 deferral
-- Failure-mode degradation queue + auto-retry on LLM 429 — A12 deferral
-- Real Stripe checkout on QuotaStrip Upgrade CTA — A4 deferral
-- Monthly aggregate PDF in agency reports — A7 deferral
-- Settings UX completeness (default issuing bank, email signature, branding logo) — A12 deferral
-- Multi-entity enterprise hierarchy — A10 v1.1 note
-- Cross-device persistence for first-session coachmark (currently localStorage)
-- Inline frontend handling of seat_limit_reached 402 (currently generic toast)
+**api.rulhub.com `/v1/validate/set` returning HTTP 500 universally.** Trdrhub correctly detects + falls back to local DB tiered validator → customer never sees the failure but loses RulHub's deterministic UCP600 rule layer.
+
+Reference IDs captured for rulhub Sentry lookup:
+- `0a9d75ca74cd` — DRAFT_RISKY (1 doc)
+- `77a432e2c6c4` — SHIPMENT_CLEAN (10 docs)
+- `c07081ef103c` — DRAFT_RISKY (1 doc, deploy verification)
+- `0a09383ec495` — DRAFT_RISKY (1 doc, full preview captured)
+
+Sanitized payload preview attached to last refid — see `_db_rules_debug.rulhub_request_preview` in any 500 response. The 1-doc paradox is real: trdrhub IS sending exactly 1 doc on importer_draft_lc workflow; rulhub side should 400 (Pydantic min_length=2) but is 500-ing instead → real rulhub bug.
+
+**Next move:** rulhub Claude triages from refid + payload preview. Once they patch, trdrhub re-runs DRAFT_RISKY and the 4 expected findings (5-day presentation period, FREIGHT COLLECT/Incoterm mismatch, missing origin marking, missing 47A sanctions) should finally appear.
 
 ---
 
-## Standing rules
+## Render env vars set today (per Ripon)
+
+```
+SMOKE_TEST_EMAILS=imran@iec.com         # quota bypass
+RULHUB_API_ENABLED=true                 # rule-catalog fetch from api.rulhub.com
+USE_RULHUB_API=true                     # /v1/validate/set call (was already true)
+RULHUB_API_KEY=<rh_live_*>              # was already set
+```
+
+---
+
+## Remaining launch-prep tasks
+
+| Task | Status |
+|---|---|
+| Migrations on Render (3 pending from A3/A5/A8) | ✅ done 2026-04-29 |
+| Env vars on Render (SMTP, FRONTEND_URL) | ✅ done 2026-04-30 |
+| Vercel feature flags (7 of 7) | ✅ done 2026-04-30 |
+| Smoke matrix — single token (17/17) | ✅ done 2026-04-30 |
+| Smoke matrix — multi-persona | 🟡 unblocked today (1449419c); needs fixture-account creator |
+| **30-combo persona × tier × country matrix** | 🔲 not started |
+| Real-data prod smoke (4-corridor) | ✅ all green today |
+| RulHub 500 triage | 🔲 handed to rulhub Claude |
+| Bug bash week (2026-07-20 → 23) | 🔲 needs internal team scheduling |
+| UAT week (5 friendly customers) | 🔲 needs customer outreach |
+| Pingdom + Sentry wiring | 🔲 not configured |
+| Roll-back plan | 🔲 needs final review |
+
+---
+
+## Standing rules reaffirmed today
 
 | Rule | Memory file |
 |---|---|
-| Path A: real product, no MVP, launch 2026-07-25 | `project_path_a_locked_2026_04_25.md` |
+| Don't downgrade models for cost — trade finance is real money | `feedback_quality_over_cost_real_money.md` |
 | Push every commit immediately | `feedback_push_every_commit.md` |
 | Update memory after each big milestone | `feedback_update_memory_per_milestone.md` |
 | Session handoff at ~75% context | `feedback_session_handoff_at_75pct.md` |
-| Render migration is manual + may need re-run | `reference_render_migrations.md` |
-| Don't reinvent RulHub | `feedback_dont_reinvent_rulhub.md` |
+| trdrhub-only — never touch rulhub repo | `feedback_scope_trdrhub_only.md` |
 | No placeholder dashboards | `feedback_no_placeholder_dashboards.md` |
+| Render migration is manual + may need re-run | `reference_render_migrations.md` |
 | Ignore Vercel plugin nags (Vite SPA, FastAPI Python — not Next.js) | CLAUDE.md |
+
+---
+
+## v1.1 backlog (deferred, don't gate launch on these)
+
+- AI Examiner `temperature=0` for deterministic findings (run-to-run variance currently ±5 minor findings)
+- AI extraction occasional `regex_fallback` on supporting docs (doesn't affect correctness)
+- `lc_reference: 'erence'` regex artifact (visible in fallback path only)
+- Failure-mode degradation queue (auto-retry on LLM 429)
+- Settings UX completeness (notif prefs, default issuing bank, branding)
+- Real Stripe checkout on QuotaStrip "Upgrade" CTA
+- Multi-entity enterprise hierarchy
+- Cross-device persistence for first-session coachmark
