@@ -107,23 +107,70 @@ def _total_amount(items: List[Dict[str, Any]]) -> Decimal:
     return sum((_line_amount(i) for i in items), Decimal("0"))
 
 
-def _tag_pairs(pairs: List[tuple[str, str]]) -> Table:
-    """Render [tag, value] pairs as a 2-column table in MT700 style."""
-    data = []
+_STYLE_TAG_LINE = ParagraphStyle(
+    "MT700TagLine",
+    parent=_BASE_STYLES["BodyText"],
+    fontName="Courier",
+    fontSize=8,
+    leading=11,
+    spaceAfter=4,
+    leftIndent=0,
+    firstLineIndent=0,
+    textColor=colors.HexColor("#111827"),
+)
+
+
+def _field_lines(pairs: List[tuple[str, str]]) -> List:
+    """Render plain-document [label, value] pairs as single-line paragraphs.
+
+    Same anti-table-column-confusion fix as `_tag_lines`, but for non-MT700
+    documents (invoice, BL, packing list, etc.) that use English labels
+    rather than SWIFT tag codes. Each pair becomes one Paragraph; long
+    values wrap at whitespace within their own paragraph and never collide
+    with the next field's label.
+    """
+    flow = []
+    for label, val in pairs:
+        formatted_val = val.replace("<br/>", "<br/>&nbsp;&nbsp;&nbsp;")
+        line_html = (
+            f"<font face='Helvetica-Bold'>{label}:</font> {formatted_val}"
+        )
+        flow.append(Paragraph(line_html, _STYLE_TAG_LINE))
+    return flow
+
+
+def _tag_lines(pairs: List[tuple[str, str]]) -> List:
+    """Render [tag_code, value] pairs as canonical SWIFT MT700 lines.
+
+    Replaces the older 2-column ReportLab Table layout. The Table
+    rendered each field as label-cell-then-value-cell; long labels
+    wrapped to multiple visual lines while values stayed in the
+    adjacent cell, so pdftotext / vision-LLM linearization produced
+    'label-fragment value label-fragment value' streams that the
+    extractor mis-parsed (e.g. read SWIFT field code '41' from
+    '41D Available With' as the LC amount value).
+
+    The new layout is one Paragraph per field, label inline with
+    value, label as bold Courier and value as regular Courier. When
+    a value is long enough to wrap, the wrapped continuation never
+    collides with the next field's label because each field is its
+    own Paragraph block.
+
+    `tag` here is just the SWIFT tag code (e.g. '32B'), matching real
+    MT700 wire format where the descriptive English label is human
+    annotation, not part of the message.
+    """
+    flow = []
     for tag, val in pairs:
-        data.append([
-            Paragraph(tag, _STYLE_TAG),
-            Paragraph(val, _STYLE_TAG_VAL),
-        ])
-    tbl = Table(data, colWidths=[32 * mm, 145 * mm])
-    tbl.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("TOPPADDING", (0, 0), (-1, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-    ]))
-    return tbl
+        # ReportLab Paragraph treats <br/> as a line break; preserve
+        # those for multi-line values like applicant addresses.
+        # Indent continuation lines so they're visually under the value.
+        formatted_val = val.replace("<br/>", "<br/>&nbsp;&nbsp;&nbsp;")
+        line_html = (
+            f"<font face='Courier-Bold'>:{tag}:</font> {formatted_val}"
+        )
+        flow.append(Paragraph(line_html, _STYLE_TAG_LINE))
+    return flow
 
 
 def _doc(path: Path, title: str) -> SimpleDocTemplate:
@@ -199,44 +246,35 @@ def _lc_flow(c: Dict[str, Any], mode: str) -> List:
     flow.append(Spacer(1, 6))
 
     pairs: List[tuple[str, str]] = [
-        ("27 Sequence of Total", "1/1"),
-        ("40A Form of Documentary Credit", "IRREVOCABLE"),
-        ("20 Documentary Credit Number", c["lc_number"]),
-        ("31C Date of Issue", _mt700_date(c["issue_date"])),
-        ("40E Applicable Rules", c["applicable_rules"]),
-        ("31D Date and Place of Expiry", f"{_mt700_date(c['expiry_date'])} {c['expiry_place']}"),
-        ("50 Applicant", f"{c['applicant_name']}<br/>{c['applicant_address']}"),
-        ("59 Beneficiary", f"{c['beneficiary_account_hint']}<br/>{c['beneficiary_name']}<br/>{c['beneficiary_address']}"),
-        ("32B Currency Code, Amount", f"{c['currency']} {c['amount']}"),
-        ("41D Available With ... By ...", c["available_with"]),
-        ("42C Drafts at ...", "SIGHT"),
-        ("42A Drawee", c["drawee_bic"]),
-        ("43P Partial Shipments", c["partial_shipments"]),
-        ("43T Transhipment", c["transhipment"]),
-        ("44E Port of Loading/Airport of Departure", c["port_loading"]),
-        ("44F Port of Discharge/Airport of Destination", c["port_discharge"]),
-        ("44B Place of Final Destination/For Transportation to .../Place of Delivery", c["final_destination"]),
-        ("44C Latest Date of Shipment", _mt700_date(c["latest_shipment_date"])),
-        ("45A Description of Goods and/or Services", c["goods_description"]),
-        (
-            "46A Documents Required",
-            "<br/><br/>".join(c["documents_required"]),
-        ),
-        (
-            "47A Additional Conditions",
-            "<br/><br/>".join(c["additional_conditions"]),
-        ),
-        ("71D Charges", c["charges_clause"]),
-        (
-            "48 Period for Presentation in Days",
-            f"{c['presentation_period_days']}/FROM SHIPMENT BUT WITHIN LC EXPIRY",
-        ),
-        ("49 Confirmation Instructions", c["confirmation"]),
-        ("78 Instructions to the Paying/Accepting/Negotiating Bank", c["instructions_78"]),
-        ("57A 'Advise Through' Bank", c["advise_through_bic"]),
-        ("72Z Sender to Receiver Information", "PLS ADVISE THE CREDIT TO THE BENEFICIARY ACCORDINGLY UNDER INTIMATION TO US."),
+        ("27", "1/1"),
+        ("40A", "IRREVOCABLE"),
+        ("20", c["lc_number"]),
+        ("31C", _mt700_date(c["issue_date"])),
+        ("40E", c["applicable_rules"]),
+        ("31D", f"{_mt700_date(c['expiry_date'])} {c['expiry_place']}"),
+        ("50", f"{c['applicant_name']}<br/>{c['applicant_address']}"),
+        ("59", f"{c['beneficiary_account_hint']}<br/>{c['beneficiary_name']}<br/>{c['beneficiary_address']}"),
+        ("32B", f"{c['currency']} {c['amount']}"),
+        ("41D", c["available_with"]),
+        ("42C", "SIGHT"),
+        ("42A", c["drawee_bic"]),
+        ("43P", c["partial_shipments"]),
+        ("43T", c["transhipment"]),
+        ("44E", c["port_loading"]),
+        ("44F", c["port_discharge"]),
+        ("44B", c["final_destination"]),
+        ("44C", _mt700_date(c["latest_shipment_date"])),
+        ("45A", c["goods_description"]),
+        ("46A", "<br/><br/>".join(c["documents_required"])),
+        ("47A", "<br/><br/>".join(c["additional_conditions"])),
+        ("71D", c["charges_clause"]),
+        ("48", f"{c['presentation_period_days']}/FROM SHIPMENT BUT WITHIN LC EXPIRY"),
+        ("49", c["confirmation"]),
+        ("78", c["instructions_78"]),
+        ("57A", c["advise_through_bic"]),
+        ("72Z", "PLS ADVISE THE CREDIT TO THE BENEFICIARY ACCORDINGLY UNDER INTIMATION TO US."),
     ]
-    flow.append(_tag_pairs(pairs))
+    flow.extend(_tag_lines(pairs))
 
     # Applicant tax-ID footer (regulatory-shape; varies by corridor)
     flow.append(Spacer(1, 10))
@@ -285,15 +323,7 @@ def render_invoice(c: Dict[str, Any], out: Path) -> None:
         ("Incoterms", c["incoterm"]),
         ("Currency", c["currency"]),
     ]
-    htbl = Table(
-        [[Paragraph(k, _STYLE_TAG), Paragraph(v, _STYLE_TAG_VAL)] for k, v in header_pairs],
-        colWidths=[40 * mm, 137 * mm],
-    )
-    htbl.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-    ]))
-    flow.append(htbl)
+    flow.extend(_field_lines(header_pairs))
     flow.append(Spacer(1, 6))
 
     flow.append(Paragraph("Seller (Beneficiary)", _STYLE_SECTION))
@@ -377,12 +407,7 @@ def render_bill_of_lading(c: Dict[str, Any], out: Path) -> None:
         ("Freight Term", "FREIGHT PREPAID" if "CIF" in c["incoterm"] or "CFR" in c["incoterm"] or "CPT" in c["incoterm"] or "CIP" in c["incoterm"] else "FREIGHT COLLECT"),
         ("LC Reference", c["lc_number"]),
     ]
-    t = Table(
-        [[Paragraph(k, _STYLE_TAG), Paragraph(v, _STYLE_TAG_VAL)] for k, v in header_pairs],
-        colWidths=[48 * mm, 129 * mm],
-    )
-    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    flow.append(t)
+    flow.extend(_field_lines(header_pairs))
     flow.append(Spacer(1, 8))
 
     flow.append(Paragraph("Shipper", _STYLE_SECTION))
@@ -452,11 +477,7 @@ def render_packing_list(c: Dict[str, Any], out: Path) -> None:
         ("Seller", c["beneficiary_name"]),
         ("Shipment", f"{c['vessel_name']} voyage {c['voyage_number']}"),
     ]
-    t = Table(
-        [[Paragraph(k, _STYLE_TAG), Paragraph(v, _STYLE_TAG_VAL)] for k, v in header_pairs],
-        colWidths=[48 * mm, 129 * mm],
-    )
-    flow.append(t)
+    flow.extend(_field_lines(header_pairs))
     flow.append(Spacer(1, 6))
 
     flow.append(Paragraph("Carton-wise breakdown", _STYLE_SECTION))
@@ -527,11 +548,7 @@ def render_certificate_of_origin(c: Dict[str, Any], out: Path) -> None:
         ("Country of Destination", c["port_discharge"].split(",")[-1].strip()),
         ("Means of Transport", f"Vessel {c['vessel_name']} voyage {c['voyage_number']}"),
     ]
-    t = Table(
-        [[Paragraph(k, _STYLE_TAG), Paragraph(v, _STYLE_TAG_VAL)] for k, v in pairs],
-        colWidths=[48 * mm, 129 * mm],
-    )
-    flow.append(t)
+    flow.extend(_field_lines(pairs))
 
     flow.append(Paragraph("Goods description and HS classification", _STYLE_SECTION))
     rows = [["Description", "HS Code", "Quantity"]]
@@ -592,11 +609,7 @@ def render_insurance_certificate(c: Dict[str, Any], out: Path) -> None:
         ("Vessel / Voyage", f"{c['vessel_name']} / {c['voyage_number']}"),
         ("Claims Payable At", c["final_destination"]),
     ]
-    t = Table(
-        [[Paragraph(k, _STYLE_TAG), Paragraph(v, _STYLE_TAG_VAL)] for k, v in pairs],
-        colWidths=[48 * mm, 129 * mm],
-    )
-    flow.append(t)
+    flow.extend(_field_lines(pairs))
 
     flow.append(Spacer(1, 10))
     flow.append(Paragraph(
@@ -635,11 +648,7 @@ def render_inspection_certificate(c: Dict[str, Any], out: Path) -> None:
         ("Country of Origin", c["origin_country"]),
         ("Language Used", c["language"]),
     ]
-    t = Table(
-        [[Paragraph(k, _STYLE_TAG), Paragraph(v, _STYLE_TAG_VAL)] for k, v in pairs],
-        colWidths=[48 * mm, 129 * mm],
-    )
-    flow.append(t)
+    flow.extend(_field_lines(pairs))
 
     flow.append(Paragraph("Findings", _STYLE_SECTION))
     flow.append(Paragraph(
