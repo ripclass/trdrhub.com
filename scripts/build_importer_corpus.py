@@ -36,8 +36,11 @@ if str(ROOT) not in sys.path:
 
 from scripts.importer_corpus.corridors import CORRIDORS, corridor_keys, get_corridor
 from scripts.importer_corpus.render import (
+    render_beneficiary_certificate,
     render_bill_of_lading,
     render_certificate_of_origin,
+    render_draft_bill_of_exchange,
+    render_fumigation_certificate,
     render_inspection_certificate,
     render_insurance_certificate,
     render_invoice,
@@ -60,6 +63,7 @@ def build_set(corridor_key: str, mode: str, out_root: Path) -> List[Path]:
     produced.append(lc_path)
 
     if mode == "SHIPMENT_CLEAN":
+        # Always-present supporting documents.
         pairs = [
             ("Invoice.pdf", render_invoice),
             ("Bill_of_Lading.pdf", render_bill_of_lading),
@@ -67,7 +71,23 @@ def build_set(corridor_key: str, mode: str, out_root: Path) -> List[Path]:
             ("Certificate_of_Origin.pdf", render_certificate_of_origin),
             ("Insurance_Certificate.pdf", render_insurance_certificate),
             ("Inspection_Certificate.pdf", render_inspection_certificate),
+            # Sight LCs (42C: SIGHT, true for all 4 corridors today) carry
+            # an implicit Draft / Bill of Exchange. The validator infers
+            # this even when 46A doesn't enumerate it, so the bundle ships
+            # one for every corridor.
+            ("Draft_Bill_of_Exchange.pdf", render_draft_bill_of_exchange),
         ]
+        # Conditional supporting documents — driven by the corridor's
+        # own LC clauses, not hardcoded per-corridor exception lists.
+        if c.get("beneficiary_certificate_statement"):
+            pairs.append(
+                ("Beneficiary_Certificate.pdf", render_beneficiary_certificate)
+            )
+        if c.get("fumigation_provider"):
+            pairs.append(
+                ("Fumigation_Certificate.pdf", render_fumigation_certificate)
+            )
+
         for filename, fn in pairs:
             path = target / filename
             fn(c, path)

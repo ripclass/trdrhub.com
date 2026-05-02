@@ -130,6 +130,15 @@ CORRIDORS: Dict[str, Dict[str, Any]] = {
         "insurance_cover_mode": "BY APPLICANT",
         "inspection_body": "SGS VIETNAM LIMITED",
         "language": "English",
+        # Statement the LC's 46A clause demands the beneficiary certificate
+        # carry. None means the LC doesn't require a Beneficiary Certificate.
+        "beneficiary_certificate_statement":
+            "GOODS ARE BRAND NEW, KILN-DRIED, AND MANUFACTURED IN 2026.",
+        # Fumigation provider — only present for corridors whose 46A asks
+        # for an ISPM 15 / fumigation certificate (typically wood-packaging
+        # commodities). None means fumigation cert is not in the bundle.
+        "fumigation_provider": "VIETNAM FUMIGATION SERVICES JSC.",
+        "fumigation_treatment": "Heat Treatment (HT) at 56 C core temperature for 30 minutes; ISPM 15 mark applied.",
     },
 
     # -----------------------------------------------------------------
@@ -228,6 +237,12 @@ CORRIDORS: Dict[str, Dict[str, Any]] = {
         "insurance_cover_mode": "BY BENEFICIARY (CIF)",
         "inspection_body": "BUREAU VERITAS INDIA PRIVATE LIMITED",
         "language": "English",
+        "beneficiary_certificate_statement":
+            "COTTON CONTENT IS A MINIMUM 95 PERCENT AND THE GOODS COMPLY "
+            "WITH REACH AND CPSIA REGULATIONS APPLICABLE IN THE EUROPEAN "
+            "UNION AND THE UNITED KINGDOM.",
+        "fumigation_provider": None,
+        "fumigation_treatment": None,
     },
 
     # -----------------------------------------------------------------
@@ -325,6 +340,11 @@ CORRIDORS: Dict[str, Dict[str, Any]] = {
         "insurance_cover_mode": "BY APPLICANT",
         "inspection_body": "TUV RHEINLAND (SHANGHAI) CO., LTD.",
         "language": "English and German",
+        "beneficiary_certificate_statement":
+            "THE MACHINERY IS BRAND NEW WITH YEAR OF MANUFACTURE 2026, "
+            "CE-MARKED, AND COMPLIES WITH EU MACHINERY DIRECTIVE 2006/42/EC.",
+        "fumigation_provider": None,
+        "fumigation_treatment": None,
     },
 
     # -----------------------------------------------------------------
@@ -427,6 +447,15 @@ CORRIDORS: Dict[str, Dict[str, Any]] = {
         "insurance_cover_mode": "BY APPLICANT",
         "inspection_body": "SGS-CSTC STANDARDS TECHNICAL SERVICES CO., LTD.",
         "language": "English",
+        # BD-CN's 46A doesn't include a Beneficiary Certificate clause —
+        # it relies on (2) Beneficiary's Manually Signed Invoice + (10)
+        # 'Goods must be new without manufacturing defect' acting as the
+        # equivalent assurance. So None here means the bundle skips the
+        # standalone Beneficiary Certificate doc; the validator should
+        # not raise 'Missing Beneficiary Certificate' on this corridor.
+        "beneficiary_certificate_statement": None,
+        "fumigation_provider": None,
+        "fumigation_treatment": None,
     },
 }
 

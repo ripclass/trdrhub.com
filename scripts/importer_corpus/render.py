@@ -630,6 +630,198 @@ def render_insurance_certificate(c: Dict[str, Any], out: Path) -> None:
 # Inspection certificate renderer
 # --------------------------------------------------------------------------
 
+def render_beneficiary_certificate(c: Dict[str, Any], out: Path) -> None:
+    """Render the Beneficiary Certificate when the LC's 46A asks for one.
+
+    The certificate is a corridor-driven attestation by the seller. The
+    actual statement is set per corridor in `beneficiary_certificate_statement`
+    and matches the corresponding 46A clause text.
+    """
+    statement = c.get("beneficiary_certificate_statement")
+    if not statement:
+        raise ValueError(
+            "render_beneficiary_certificate called for a corridor whose "
+            "LC does not require a Beneficiary Certificate. Caller should "
+            "gate on `c.get('beneficiary_certificate_statement')`."
+        )
+    doc = _doc(out, f"Beneficiary Certificate {c['invoice_number']}")
+    flow: List = []
+
+    flow.append(Paragraph("BENEFICIARY CERTIFICATE", _STYLE_TITLE))
+    flow.append(Paragraph(c["beneficiary_name"], _STYLE_SECTION))
+    flow.append(Spacer(1, 4))
+
+    pairs = [
+        ("Certificate No.", f"BC-{c['invoice_number']}"),
+        ("Issue Date", c["issue_date"]),
+        ("LC Reference", c["lc_number"]),
+        ("Invoice Reference", c["invoice_number"]),
+        ("Beneficiary", f"{c['beneficiary_name']}, {c['beneficiary_address']}"),
+        ("Applicant", f"{c['applicant_name']}, {c['applicant_address']}"),
+        ("Country of Origin", c["origin_country"]),
+    ]
+    flow.extend(_field_lines(pairs))
+    flow.append(Spacer(1, 8))
+
+    flow.append(Paragraph("Statement", _STYLE_SECTION))
+    flow.append(Paragraph(
+        f"We, {c['beneficiary_name']}, hereby certify that the goods "
+        f"shipped under Letter of Credit No. {c['lc_number']} and Invoice "
+        f"No. {c['invoice_number']} satisfy the following condition "
+        f"required under LC clause 46A:",
+        _STYLE_BODY,
+    ))
+    flow.append(Spacer(1, 4))
+    flow.append(Paragraph(
+        f"<i>{statement}</i>",
+        _STYLE_BODY,
+    ))
+
+    flow.append(Spacer(1, 14))
+    flow.append(Paragraph("Authorized Signature for Beneficiary", _STYLE_BODY))
+    flow.append(Paragraph("______________________________", _STYLE_BODY))
+    flow.append(Paragraph(c["beneficiary_name"], _STYLE_BODY))
+
+    doc.build(flow)
+
+
+def render_fumigation_certificate(c: Dict[str, Any], out: Path) -> None:
+    """Render the Fumigation / ISPM 15 Certificate when the LC asks for it.
+
+    Required for shipments with wood packaging (ISPM 15 compliance). The
+    fumigation provider and treatment text are corridor-driven; the
+    renderer raises if called for a corridor that doesn't define them.
+    """
+    provider = c.get("fumigation_provider")
+    treatment = c.get("fumigation_treatment")
+    if not provider or not treatment:
+        raise ValueError(
+            "render_fumigation_certificate called for a corridor whose "
+            "LC does not require a Fumigation Certificate. Caller should "
+            "gate on `c.get('fumigation_provider')`."
+        )
+    doc = _doc(out, f"Fumigation Certificate {c['invoice_number']}")
+    flow: List = []
+
+    flow.append(Paragraph("FUMIGATION CERTIFICATE", _STYLE_TITLE))
+    flow.append(Paragraph("ISPM 15 Compliant — Wood Packaging Material", _STYLE_SECTION))
+    flow.append(Spacer(1, 4))
+
+    pairs = [
+        ("Certificate No.", f"FUM-{c['invoice_number']}"),
+        ("Treatment Date", c["issue_date"]),
+        ("LC Reference", c["lc_number"]),
+        ("Invoice Reference", c["invoice_number"]),
+        ("Shipper", c["beneficiary_name"]),
+        ("Consignee", c["applicant_name"]),
+        ("Vessel / Voyage", f"{c['vessel_name']} / {c['voyage_number']}"),
+        ("Port of Loading", c["port_loading"]),
+        ("Port of Discharge", c["port_discharge"]),
+        ("Container No.", ", ".join(c.get("container_numbers") or []) or "N/A"),
+        ("Treatment Provider", provider),
+    ]
+    flow.extend(_field_lines(pairs))
+
+    flow.append(Spacer(1, 8))
+    flow.append(Paragraph("Treatment", _STYLE_SECTION))
+    flow.append(Paragraph(treatment, _STYLE_BODY))
+
+    flow.append(Paragraph("Statement", _STYLE_SECTION))
+    flow.append(Paragraph(
+        f"We hereby certify that all wood packaging material used in the "
+        f"shipment described above has been treated in accordance with "
+        f"ISPM 15 (International Standards for Phytosanitary Measures No. 15) "
+        f"and bears the ISPM 15 mark applied by {provider}. The wood "
+        f"packaging is free from bark and from live pests.",
+        _STYLE_BODY,
+    ))
+
+    flow.append(Spacer(1, 14))
+    flow.append(Paragraph("Authorized Inspector", _STYLE_BODY))
+    flow.append(Paragraph("______________________________", _STYLE_BODY))
+    flow.append(Paragraph(provider, _STYLE_BODY))
+
+    doc.build(flow)
+
+
+def render_draft_bill_of_exchange(c: Dict[str, Any], out: Path) -> None:
+    """Render the Draft / Bill of Exchange that accompanies any sight LC.
+
+    Even when 46A doesn't enumerate it, sight LCs (42C: SIGHT) carry an
+    implicit draft drawn on the drawee bank for full invoice value. The
+    draft is a corridor-agnostic financial instrument; data comes from
+    existing corridor fields (currency, drawee, beneficiary, amount).
+    """
+    from decimal import Decimal as _Decimal
+
+    line_sum = sum(
+        _Decimal(str(i["qty"])) * _Decimal(str(i["unit_price"]))
+        for i in c.get("goods_line_items") or []
+    )
+    drawee_bank = c.get("issuing_bank_name") or c.get("drawee_bic", "")
+    drawee_address = c.get("issuing_bank_address") or ""
+
+    doc = _doc(out, f"Draft Bill of Exchange {c['invoice_number']}")
+    flow: List = []
+
+    flow.append(Paragraph("BILL OF EXCHANGE", _STYLE_TITLE))
+    flow.append(Paragraph(
+        "Sight Draft — Negotiable Instrument under LC Negotiation",
+        _STYLE_SECTION,
+    ))
+    flow.append(Spacer(1, 6))
+
+    pairs = [
+        ("Bill of Exchange No.", f"BOE-{c['lc_number']}"),
+        ("Date of Draft", c["issue_date"]),
+        ("Place of Draft", c["beneficiary_address"].split(",")[-1].strip()),
+        ("LC Reference", c["lc_number"]),
+        ("Currency", c["currency"]),
+        ("Amount", f"{c['currency']} {_fmt_amount(line_sum)}"),
+        ("Tenor", "AT SIGHT"),
+        ("Drawer", f"{c['beneficiary_name']}, {c['beneficiary_address']}"),
+        ("Drawee", f"{drawee_bank} — BIC {c.get('drawee_bic', '')}"),
+        ("Payable To", "ORDER OF DRAWER (or as endorsed)"),
+    ]
+    flow.extend(_field_lines(pairs))
+
+    flow.append(Spacer(1, 10))
+    flow.append(Paragraph(
+        f"AT SIGHT, pay against this First of Exchange (Second of the same "
+        f"tenor and date being unpaid) to the order of {c['beneficiary_name']} "
+        f"the sum of {c['currency']} {_fmt_amount(line_sum)} "
+        f"({_amount_words(line_sum, c['currency'])}) for value received and "
+        f"charge the same to the account of {c['applicant_name']} as per "
+        f"Letter of Credit No. {c['lc_number']} issued by {drawee_bank}.",
+        _STYLE_BODY,
+    ))
+
+    flow.append(Spacer(1, 8))
+    flow.append(Paragraph("To:", _STYLE_BODY))
+    flow.append(Paragraph(drawee_bank, _STYLE_BODY))
+    if drawee_address:
+        flow.append(Paragraph(drawee_address, _STYLE_BODY))
+
+    flow.append(Spacer(1, 14))
+    flow.append(Paragraph("For and on behalf of the Drawer:", _STYLE_BODY))
+    flow.append(Paragraph("______________________________", _STYLE_BODY))
+    flow.append(Paragraph(c["beneficiary_name"], _STYLE_BODY))
+
+    doc.build(flow)
+
+
+def _amount_words(amount: Any, currency: str) -> str:
+    """Render an amount as 'words ONLY' suffix used on bills of exchange.
+
+    Numeric-precise English-style words are out of scope for synthetic
+    fixture output; we render an unambiguous bracketed numeric form
+    that tooling parses consistently.
+    """
+    from decimal import Decimal as _Decimal
+    val = _Decimal(str(amount))
+    return f"{currency} {val:,.2f} ONLY"
+
+
 def render_inspection_certificate(c: Dict[str, Any], out: Path) -> None:
     doc = _doc(out, f"Inspection Certificate {c['invoice_number']}")
     flow: List = []

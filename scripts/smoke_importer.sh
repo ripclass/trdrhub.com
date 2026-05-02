@@ -173,7 +173,17 @@ fi
 
 echo ""
 echo "=== 4. Moment 2 — Supplier Docs (workflow_type=importer_supplier_docs) ==="
-echo "   uploading $CORRIDOR/SHIPMENT_CLEAN/* (7 files)"
+# Glob every PDF in the corridor's SHIPMENT_CLEAN directory so newly-added
+# docs (Beneficiary_Certificate, Fumigation_Certificate, Draft_BoE, etc.)
+# get picked up automatically — no need to keep this list in sync.
+SHIPMENT_DIR="$FIX/SHIPMENT_CLEAN"
+M2_FILE_ARGS=()
+shopt -s nullglob
+for pdf in "$SHIPMENT_DIR"/*.pdf; do
+  M2_FILE_ARGS+=( -F "files=@$pdf" )
+done
+shopt -u nullglob
+echo "   uploading $CORRIDOR/SHIPMENT_CLEAN/*.pdf (${#M2_FILE_ARGS[@]} curl args / $((${#M2_FILE_ARGS[@]}/2)) files)"
 # Re-grab CSRF in case state drifted
 curl -s -c "$COOK" "$API/auth/csrf-token" > "$CSRF_JSON"
 CSRF=$(python -c "import json; print(json.load(open(r'$T/smoke_csrf.json'))['csrf_token'])")
@@ -186,13 +196,7 @@ HTTP2=$(curl -s -b "$COOK" -c "$COOK" -o "$EX2" \
   -H "X-CSRF-Token: $CSRF" \
   -F "extract_only=true" \
   -F "document_type=letter_of_credit" \
-  -F "files=@$FIX/SHIPMENT_CLEAN/LC.pdf" \
-  -F "files=@$FIX/SHIPMENT_CLEAN/Invoice.pdf" \
-  -F "files=@$FIX/SHIPMENT_CLEAN/Bill_of_Lading.pdf" \
-  -F "files=@$FIX/SHIPMENT_CLEAN/Packing_List.pdf" \
-  -F "files=@$FIX/SHIPMENT_CLEAN/Certificate_of_Origin.pdf" \
-  -F "files=@$FIX/SHIPMENT_CLEAN/Insurance_Certificate.pdf" \
-  -F "files=@$FIX/SHIPMENT_CLEAN/Inspection_Certificate.pdf")
+  "${M2_FILE_ARGS[@]}")
 echo "   extract HTTP $HTTP2"
 python <<PY
 import json
