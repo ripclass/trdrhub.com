@@ -1554,6 +1554,8 @@ async def execute_validation_pipeline(
             # =============================================================
             from app.config import settings as _app_settings
             _use_rulhub = getattr(_app_settings, "USE_RULHUB_API", False)
+            _rulhub_configured = _use_rulhub  # snapshot for debug reporting
+            _rulhub_error_msg: Optional[str] = None
             db_rules_timed_out = False
 
             if _use_rulhub:
@@ -2448,6 +2450,7 @@ async def execute_validation_pipeline(
                     )
                 except Exception as _rulhub_err:
                     logger.warning("RulHub API failed, falling back to DB rules: %s", _rulhub_err)
+                    _rulhub_error_msg = f"{type(_rulhub_err).__name__}: {str(_rulhub_err)[:200]}"
                     _use_rulhub = False  # fall through to DB path below
 
             if not _use_rulhub:
@@ -2474,9 +2477,22 @@ async def execute_validation_pipeline(
 
             logger.info("DB rules executed: %d issues found (after filtering)", len(db_rule_issues))
 
-            # Store debug info for response
+            # Store debug info for response. The `path` field self-reports
+            # whether RulHub or the local DB-backed tiered validator
+            # produced these findings — so smoke / launch-prep tooling can
+            # tell at a glance whether the RulHub integration is actually
+            # firing or silently failing-over to the DB path.
+            if _use_rulhub:
+                _path_taken = "rulhub"
+            elif _rulhub_configured and _rulhub_error_msg:
+                _path_taken = "db_tiered_rulhub_failed"
+            else:
+                _path_taken = "db_tiered"
             db_rules_debug = {
                 "enabled": True,
+                "path": _path_taken,
+                "rulhub_configured": _rulhub_configured,
+                "rulhub_error": _rulhub_error_msg,
                 "domain": "icc.ucp600",
                 "supplements": supplement_domains,
                 "primary_jurisdiction": primary_jurisdiction,
