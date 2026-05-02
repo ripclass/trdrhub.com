@@ -6,10 +6,22 @@ and reports pass/fail per combo. Designed to run against staging
 nightly (or pre-launch on-demand) so the bug bash week doesn't
 re-surface regressions every morning.
 
-Usage:
-    python scripts/smoke_matrix.py [--api https://api.trdrhub.com]
-                                   [--token <bearer>]
-                                   [--limit 30]
+Usage — three modes:
+
+    # 1. Public-only (no auth)
+    python scripts/smoke_matrix.py --public-only
+
+    # 2. Single token (one persona row)
+    python scripts/smoke_matrix.py --token "$JWT"
+
+    # 3. Multi-persona — supply pre-fetched tokens
+    python scripts/smoke_matrix.py --tokens-file tokens.json
+        # tokens.json: [{"label": "BD-exporter-solo", "token": "eyJ..."}, ...]
+
+    # 4. Multi-persona — supply creds, script fetches JWT per row
+    python scripts/smoke_matrix.py --users-file users.json
+        # users.json:  [{"label": "BD-exporter-solo",
+        #                "email": "...", "password": "..."}, ...]
 
 The script is read-only by default — every check is a GET. Mutating
 checks (signup, validation, repaper send) live behind --mutating.
@@ -17,7 +29,7 @@ checks (signup, validation, repaper send) live behind --mutating.
 Exit codes:
     0 = all sampled combos green
     1 = at least one combo failed; details printed
-    2 = config error (missing API URL, etc.)
+    2 = config error (missing API URL, bad creds file, etc.)
 """
 
 from __future__ import annotations
@@ -169,6 +181,57 @@ def _request(
 
 
 # ---------------------------------------------------------------------------
+# Supabase password-grant — fetch JWT for fixture users
+# ---------------------------------------------------------------------------
+
+
+SUPABASE_URL = "https://nnmmhgnriisfsncphipd.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_db40L4wNiQX0jOTCRJi-8g_9p-PWmN3"
+
+
+def _fetch_jwt(email: str, password: str, *, timeout: float = 15.0) -> Optional[str]:
+    """Exchange email+password for a Supabase access_token. None on failure."""
+    url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+    body = json.dumps({"email": email, "password": password}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("apikey", SUPABASE_ANON_KEY)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read())
+            return payload.get("access_token")
+    except Exception as e:  # noqa: BLE001
+        print(f"    auth failed: {e}", file=sys.stderr)
+        return None
+
+
+def _load_users_file(path: str) -> List[dict]:
+    """Read JSON: [{label, email, password}, ...]. Validates shape."""
+    with open(path, "r", encoding="utf-8") as f:
+        rows = json.load(f)
+    if not isinstance(rows, list):
+        raise ValueError(f"{path}: expected JSON array of users")
+    for i, row in enumerate(rows):
+        for k in ("label", "email", "password"):
+            if k not in row:
+                raise ValueError(f"{path}[{i}]: missing required key '{k}'")
+    return rows
+
+
+def _load_tokens_file(path: str) -> List[dict]:
+    """Read JSON: [{label, token}, ...]. Validates shape."""
+    with open(path, "r", encoding="utf-8") as f:
+        rows = json.load(f)
+    if not isinstance(rows, list):
+        raise ValueError(f"{path}: expected JSON array of tokens")
+    for i, row in enumerate(rows):
+        for k in ("label", "token"):
+            if k not in row:
+                raise ValueError(f"{path}[{i}]: missing required key '{k}'")
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 
@@ -222,6 +285,51 @@ def run_authed_checks(
         )
 
 
+def _resolve_personas(args) -> List[dict]:
+    """Build the list of {label, token} rows to run authed checks for.
+
+    Precedence: --tokens-file > --users-file > --token. At most one source
+    is honoured (validated upstream). Returns an empty list if no auth
+    source was supplied (caller falls back to public-only mode).
+    """
+    if args.tokens_file:
+        rows = _load_tokens_file(args.tokens_file)
+        return [{"label": r["label"], "token": r["token"]} for r in rows]
+
+    if args.users_file:
+        rows = _load_users_file(args.users_file)
+        out: List[dict] = []
+        print(f"\n[auth] fetching JWTs for {len(rows)} fixture users...")
+        for r in rows:
+            tok = _fetch_jwt(r["email"], r["password"])
+            if not tok:
+                print(f"  [SKIP] {r['label']} — auth failed")
+                continue
+            print(f"  [ OK ] {r['label']:32} token: {tok[:20]}...")
+            out.append({"label": r["label"], "token": tok})
+        return out
+
+    if args.token:
+        return [{"label": "single-token", "token": args.token}]
+
+    return []
+
+
+def _print_per_persona_summary(report: MatrixReport) -> None:
+    """Group results by persona and print a compact pass/fail table."""
+    by_persona: dict[str, list[CheckResult]] = {}
+    for r in report.results:
+        by_persona.setdefault(r.persona, []).append(r)
+    if len(by_persona) <= 1:
+        return  # the single-line overall summary is enough
+    print("\nPer-persona breakdown:")
+    for persona, rows in by_persona.items():
+        passed = sum(1 for r in rows if r.ok)
+        total = len(rows)
+        flag = "OK" if passed == total else "FAIL"
+        print(f"  [{flag:4}] {persona:32} {passed}/{total}")
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument(
@@ -232,14 +340,26 @@ def main() -> int:
     p.add_argument(
         "--token",
         default=None,
-        help="Bearer token for authed checks. When set, runs the auth'd "
-        "matrix once with the provided token (skips per-persona).",
+        help="Bearer token for authed checks. Single-persona mode.",
+    )
+    p.add_argument(
+        "--tokens-file",
+        default=None,
+        help="JSON file: [{label, token}, ...] — multi-persona mode with "
+        "pre-fetched JWTs.",
+    )
+    p.add_argument(
+        "--users-file",
+        default=None,
+        help="JSON file: [{label, email, password}, ...] — multi-persona "
+        "mode where the script fetches a JWT for each row via Supabase "
+        "password-grant.",
     )
     p.add_argument(
         "--limit",
         type=int,
-        default=10,
-        help="Max persona rows to sample (default: 10 — full row set)",
+        default=30,
+        help="Max persona rows to run (default: 30 — full Phase A13 matrix)",
     )
     p.add_argument(
         "--public-only",
@@ -252,6 +372,16 @@ def main() -> int:
         print("ERROR: --api is required", file=sys.stderr)
         return 2
 
+    auth_sources = sum(
+        bool(x) for x in (args.token, args.tokens_file, args.users_file)
+    )
+    if auth_sources > 1:
+        print(
+            "ERROR: pick exactly one of --token / --tokens-file / --users-file",
+            file=sys.stderr,
+        )
+        return 2
+
     print(f"Smoke matrix · target={args.api}")
     report = MatrixReport()
 
@@ -260,18 +390,27 @@ def main() -> int:
 
     # 2. Auth'd surface
     if not args.public_only:
-        if args.token:
-            run_authed_checks(args.api, "single-token", args.token, report)
-        else:
+        try:
+            personas = _resolve_personas(args)
+        except (ValueError, FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+
+        if not personas:
             print(
-                "\n[skip] No --token provided; auth'd checks skipped. "
-                "For full matrix, supply a Supabase JWT or wire fixture-token "
-                "creator (see SAMPLE_USERS)."
+                "\n[skip] No --token / --tokens-file / --users-file provided; "
+                "auth'd checks skipped."
             )
+        else:
+            for entry in personas[: args.limit]:
+                run_authed_checks(
+                    args.api, entry["label"], entry["token"], report
+                )
 
     # Summary
     print("\n" + "=" * 60)
     print(f"Total: {report.total}  Passed: {report.passed}  Failed: {report.failed}")
+    _print_per_persona_summary(report)
     if not report.green:
         print("\nFailed checks:")
         for r in report.results:
