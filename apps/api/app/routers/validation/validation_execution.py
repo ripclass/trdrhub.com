@@ -1556,6 +1556,7 @@ async def execute_validation_pipeline(
             _use_rulhub = getattr(_app_settings, "USE_RULHUB_API", False)
             _rulhub_configured = _use_rulhub  # snapshot for debug reporting
             _rulhub_error_msg: Optional[str] = None
+            _rulhub_request_preview: Optional[Dict[str, Any]] = None
             db_rules_timed_out = False
 
             if _use_rulhub:
@@ -2195,6 +2196,35 @@ async def execute_validation_pipeline(
                     )
 
                     _rulhub_adapter = RulHubRulesAdapter()
+                    # Sanitized payload preview — captured BEFORE the call so
+                    # we have it on the exception path. Field VALUES are
+                    # replaced with their type names so we can paste this
+                    # into the rulhub-side debug session without leaking
+                    # customer LC content. Only used when the call 5xxs.
+                    def _shape(v: Any) -> Any:
+                        if v is None:
+                            return None
+                        if isinstance(v, bool):
+                            return "<bool>"
+                        if isinstance(v, (int, float)):
+                            return f"<{type(v).__name__}>"
+                        if isinstance(v, str):
+                            return "<str>"
+                        if isinstance(v, list):
+                            return [_shape(x) for x in v[:3]]
+                        if isinstance(v, dict):
+                            return {k: _shape(val) for k, val in list(v.items())[:30]}
+                        return f"<{type(v).__name__}>"
+                    _rulhub_request_preview = {
+                        "endpoint": "/v1/validate/set",
+                        "jurisdiction": primary_jurisdiction,
+                        "doc_count": len(_rulhub_docs),
+                        "doc_types": [d.get("type") for d in _rulhub_docs],
+                        "documents_shape": [
+                            {"type": d.get("type"), "fields": _shape(d.get("fields") or {})}
+                            for d in _rulhub_docs
+                        ],
+                    }
                     _rulhub_result = await _rulhub_adapter.validate_document_set(
                         documents=_rulhub_docs,
                         jurisdiction=primary_jurisdiction,
@@ -2493,6 +2523,13 @@ async def execute_validation_pipeline(
                 "path": _path_taken,
                 "rulhub_configured": _rulhub_configured,
                 "rulhub_error": _rulhub_error_msg,
+                # Only populated on rulhub-failure path; values stripped
+                # to type names so this is safe to copy into bug reports
+                # without redaction. See _rulhub_request_preview build
+                # site above for the shape.
+                "rulhub_request_preview": (
+                    _rulhub_request_preview if _path_taken == "db_tiered_rulhub_failed" else None
+                ),
                 "domain": "icc.ucp600",
                 "supplements": supplement_domains,
                 "primary_jurisdiction": primary_jurisdiction,
