@@ -309,3 +309,6 @@ golden-corpus/
 
 # Local Claude session lock state (should never be committed)
 .claude/scheduled_tasks.lock
+
+# Local conversation scratchpad — never commit
+conversation prompt.md
