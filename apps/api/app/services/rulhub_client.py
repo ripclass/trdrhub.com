@@ -111,7 +111,27 @@ class RulHubClient:
             detail = resp.text[:500]
             raise RulHubAPIError(422, f"Bad request: {detail}")
         if resp.status_code >= 500:
-            raise RulHubAPIError(resp.status_code, "RulHub server error")
+            # RulHub responds with `{"detail": {"message": "...", "reference_id": "<12-char hex>"}}`
+            # on server errors. The reference_id is the only handle the
+            # rulhub team has into Sentry — preserving it in the
+            # exception message means the trdrhub-side debug surface
+            # (`_db_rules_debug.rulhub_error`) carries the id straight
+            # through, so we don't have to re-instrument every time
+            # they need to triage a 500.
+            ref_id = None
+            try:
+                _body = resp.json()
+                _detail = _body.get("detail") if isinstance(_body, dict) else None
+                if isinstance(_detail, dict):
+                    ref_id = _detail.get("reference_id")
+            except Exception:
+                pass
+            tag = f" ref={ref_id}" if ref_id else ""
+            body_snippet = resp.text[:300] if not ref_id else ""
+            raise RulHubAPIError(
+                resp.status_code,
+                f"RulHub server error{tag}{(' — ' + body_snippet) if body_snippet else ''}",
+            )
         if resp.status_code >= 400:
             raise RulHubAPIError(resp.status_code, resp.text[:500])
 
