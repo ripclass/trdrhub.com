@@ -306,3 +306,6 @@ apps/api/tests/stress_corpus/
 # -----------------------------------------------------------------------------
 /tmp_*
 golden-corpus/
+
+# Local Claude session lock state (should never be committed)
+.claude/scheduled_tasks.lock
