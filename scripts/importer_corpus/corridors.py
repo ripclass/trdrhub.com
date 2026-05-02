@@ -45,7 +45,7 @@ CORRIDORS: Dict[str, Dict[str, Any]] = {
         "latest_shipment_date": _future(60),
         "applicable_rules": "UCP LATEST VERSION",
         "currency": "USD",
-        "amount": "412,500.00",
+        "amount": "414,000.00",
         "incoterm": "FOB HAI PHONG (INCOTERMS 2020)",
         "partial_shipments": "NOT ALLOWED",
         "transhipment": "NOT ALLOWED",
@@ -145,7 +145,7 @@ CORRIDORS: Dict[str, Dict[str, Any]] = {
         "latest_shipment_date": _future(55),
         "applicable_rules": "UCP 600",
         "currency": "GBP",
-        "amount": "287,450.00",
+        "amount": "292,785.00",
         "incoterm": "CIF FELIXSTOWE (INCOTERMS 2020)",
         "partial_shipments": "ALLOWED",
         "transhipment": "ALLOWED",
@@ -243,7 +243,7 @@ CORRIDORS: Dict[str, Dict[str, Any]] = {
         "latest_shipment_date": _future(65),
         "applicable_rules": "UCP LATEST VERSION",
         "currency": "EUR",
-        "amount": "548,700.00",
+        "amount": "549,900.00",
         "incoterm": "FCA SHANGHAI (INCOTERMS 2020)",
         "partial_shipments": "NOT ALLOWED",
         "transhipment": "ALLOWED",
@@ -341,7 +341,7 @@ CORRIDORS: Dict[str, Dict[str, Any]] = {
         "latest_shipment_date": _future(60),
         "applicable_rules": "UCP LATEST VERSION",
         "currency": "USD",
-        "amount": "184,250.00",
+        "amount": "184,050.00",
         "incoterm": "CFR CHATTOGRAM (INCOTERMS 2020)",
         "partial_shipments": "NOT ALLOWED",
         "transhipment": "ALLOWED",
@@ -441,3 +441,32 @@ def get_corridor(key: str) -> Dict[str, Any]:
             f"Unknown corridor {key!r}. Known: {', '.join(corridor_keys())}"
         )
     return CORRIDORS[key]
+
+
+def _validate_amount_matches_line_items() -> None:
+    """Catch corridor drift at module-load time.
+
+    The LC's `32B amount` and the goods_line_items must agree, otherwise
+    the validator correctly flags the corpus's clean baseline as having
+    'Invoice line items do not sum to stated total' — a false signal
+    that masks real regressions when smoke-testing.
+    """
+    from decimal import Decimal as _Decimal
+
+    for code, c in CORRIDORS.items():
+        items = c.get("goods_line_items") or []
+        line_sum = sum(
+            _Decimal(str(i["qty"])) * _Decimal(str(i["unit_price"])) for i in items
+        )
+        declared_str = str(c.get("amount", "0")).replace(",", "")
+        declared = _Decimal(declared_str)
+        if line_sum != declared:
+            raise ValueError(
+                f"Corpus corridor {code!r}: 32B amount ({declared}) does not "
+                f"match goods_line_items sum ({line_sum}). Update either "
+                f"`amount` or one of the line-item qty/unit_price values "
+                f"so they agree."
+            )
+
+
+_validate_amount_matches_line_items()
