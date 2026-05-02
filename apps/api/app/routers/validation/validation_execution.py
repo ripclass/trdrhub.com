@@ -2213,7 +2213,13 @@ async def execute_validation_pipeline(
                         if isinstance(v, list):
                             return [_shape(x) for x in v[:3]]
                         if isinstance(v, dict):
-                            return {k: _shape(val) for k, val in list(v.items())[:30]}
+                            # Field NAMES are what the rulhub team needs to
+                            # diagnose schema mismatches — keep ALL keys, only
+                            # truncate the value side. (Earlier 30-key cap
+                            # silently dropped spine fields like lc_number,
+                            # amount, currency, ports — exactly the keys
+                            # rulhub schema validators care about.)
+                            return {k: _shape(val) for k, val in v.items()}
                         return f"<{type(v).__name__}>"
                     _rulhub_request_preview = {
                         "endpoint": "/v1/validate/set",
