@@ -304,7 +304,23 @@ def infer_document_type(filename: Optional[str], index: int) -> str:
             return "mates_receipt"
         if any(token in lower for token in ("shipping company certificate", "shipping_company_certificate")):
             return "shipping_company_certificate"
-        if any(token in lower for token in ("invoice", "inv", "bill of exchange", "draft", "promissory note", "promissory_note", "payment receipt", "receipt", "debit note", "credit note")):
+        # Draft / Bill of Exchange must be checked BEFORE commercial_invoice
+        # because a sight-LC presentation always carries a Draft, and the
+        # canonical filename (`Draft_Bill_of_Exchange.pdf`) contains
+        # substrings ('draft', 'bill') that would otherwise match the
+        # commercial_invoice or bill_of_lading catch-alls and silently
+        # mis-route the doc.
+        if any(token in lower for token in (
+            "bill of exchange",
+            "bill_of_exchange",
+            "draft bill of exchange",
+            "draft_bill_of_exchange",
+            "draft bill",
+            "draft_bill",
+            "boe",
+        )):
+            return "draft_bill_of_exchange"
+        if any(token in lower for token in ("invoice", "inv", "promissory note", "promissory_note", "payment receipt", "receipt", "debit note", "credit note")):
             return "commercial_invoice"
         if any(token in lower for token in (
             "bill of lading",
@@ -424,7 +440,19 @@ def infer_document_type_from_name(filename: Optional[str], index: int) -> str:
             return "mates_receipt"
         if any(token in name for token in ("shipping company certificate", "shipping_company_certificate")):
             return "shipping_company_certificate"
-        if any(token in name for token in ("invoice", "inv", "bill of exchange", "draft", "promissory note", "promissory_note", "payment receipt", "receipt", "debit note", "credit note")):
+        # Draft / Bill of Exchange must be checked BEFORE commercial_invoice
+        # — see infer_document_type() above for the rationale.
+        if any(token in name for token in (
+            "bill of exchange",
+            "bill_of_exchange",
+            "draft bill of exchange",
+            "draft_bill_of_exchange",
+            "draft bill",
+            "draft_bill",
+            "boe",
+        )):
+            return "draft_bill_of_exchange"
+        if any(token in name for token in ("invoice", "inv", "promissory note", "promissory_note", "payment receipt", "receipt", "debit note", "credit note")):
             return "commercial_invoice"
         if any(token in name for token in (
             "bill_of_lading",
