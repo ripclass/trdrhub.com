@@ -197,6 +197,49 @@ def _suppress_advisory_findings_for_documentary_context(
     ]
 
 
+def _suppress_missing_doc_findings_for_workflow(
+    issues: list[dict[str, Any]],
+    workflow_type: str | None,
+) -> list[dict[str, Any]]:
+    """
+    Drop "Missing X document" findings when the workflow doesn't require
+    supporting documents to be present.
+
+    Right now the only such workflow is `importer_draft_lc` — the importer
+    is reviewing a DRAFT LC before issuance, so they have the LC and only
+    the LC. Findings of the form 'Missing Bill Of Lading' (DOCSET-MISSING-*)
+    or 'Missing Required Document: Beneficiary Certificate' (AI-MISSING-*)
+    are by definition false positives at this stage; the supporting docs
+    don't exist yet because the LC hasn't been issued.
+
+    Other workflows (`importer_supplier_docs`, `exporter_presentation`)
+    leave the findings intact — those are presentations and missing docs
+    are real discrepancies.
+    """
+    if not issues or workflow_type != "importer_draft_lc":
+        return issues or []
+
+    def _rule_id(issue: dict[str, Any]) -> str:
+        return str(issue.get("rule") or issue.get("rule_id") or "").strip().upper()
+
+    def _is_missing_doc_finding(issue: dict[str, Any]) -> bool:
+        if not isinstance(issue, dict):
+            return False
+        rid = _rule_id(issue)
+        if rid.startswith("DOCSET-MISSING-") or rid.startswith("AI-MISSING-"):
+            return True
+        # Fallback for findings emitted without a structured rule_id but
+        # whose title clearly maps to the same category.
+        title = str(issue.get("title") or "").strip().lower()
+        if title.startswith("missing required document"):
+            return True
+        if title.startswith("missing required documents"):
+            return True
+        return False
+
+    return [issue for issue in issues if not _is_missing_doc_finding(issue)]
+
+
 def _retire_legacy_sanctions_block_surface(
     structured_result: dict[str, Any],
 ) -> dict[str, Any]:
@@ -316,6 +359,15 @@ async def finalize_validation_result(
     extracted_context = setup_state["extracted_context"]
     lc_context = setup_state["lc_context"]
     mt700 = lc_context.get("mt700") or {}
+
+    # Workflow type drives a few finding-suppression decisions downstream
+    # (e.g. don't raise "Missing supporting docs" findings when the user is
+    # reviewing a draft LC pre-issuance).
+    workflow_type = (
+        getattr(validation_session, "workflow_type", None)
+        if validation_session is not None
+        else None
+    )
 
     v2_gate_result = execution_state["v2_gate_result"]
     v2_baseline = execution_state["v2_baseline"]
@@ -564,10 +616,19 @@ async def finalize_validation_result(
             structured_result["analytics"]["document_composition"] = composition_result.get("composition", {})
             structured_result["analytics"]["lc_only_mode"] = composition_result.get("composition", {}).get("lc_only_mode", False)
 
-        # Add composition issues to the issues list (informational warnings)
+        # Add composition issues to the issues list (informational warnings).
+        # Suppress "Missing X" findings up-front for draft-LC review workflows
+        # where supporting docs aren't expected to be uploaded yet — the
+        # validator can't know at this stage what hasn't shipped.
         composition_issues = composition_result.get("issues", [])
+        composition_issues = _suppress_missing_doc_findings_for_workflow(
+            composition_issues, workflow_type
+        )
         if composition_issues:
             existing_issues = structured_result.get("issues") or []
+            existing_issues = _suppress_missing_doc_findings_for_workflow(
+                existing_issues, workflow_type
+            )
             structured_result["issues"] = existing_issues + composition_issues
             logger.info(f"Added {len(composition_issues)} document composition warnings")
 
@@ -604,7 +665,10 @@ async def finalize_validation_result(
         structured_result["issues"] = _suppress_legacy_issue_noise(
             structured_result["issues"]
         )
-        logger.info("Added %d issue cards to structured_result (total issues: %d)", 
+        structured_result["issues"] = _suppress_missing_doc_findings_for_workflow(
+            structured_result["issues"], workflow_type
+        )
+        logger.info("Added %d issue cards to structured_result (total issues: %d)",
                    len(formatted_issues), len(structured_result["issues"]))
 
     # NOTE: v2_crossdoc_issues are already included in issue_cards via failed_results
