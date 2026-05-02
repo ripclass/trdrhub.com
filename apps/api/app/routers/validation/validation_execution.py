@@ -1509,6 +1509,18 @@ async def execute_validation_pipeline(
                 "insurance_doc": insurance_rule_context,
                 "certificate_of_origin": payload.get("certificate_of_origin"),
                 "packing_list": payload.get("packing_list"),
+                # Doc types previously omitted — without them the tiered AI
+                # validator's prompt renders them as "(not submitted)" even
+                # when the customer uploaded the file, and the LLM then flags
+                # the doc as missing. The Draft / Bill of Exchange has two
+                # canonical names (the prompt key is "draft", the classifier
+                # type is "draft_bill_of_exchange"); forward both so the
+                # downstream renderer finds it under either lookup.
+                "inspection_certificate": payload.get("inspection_certificate"),
+                "beneficiary_certificate": payload.get("beneficiary_certificate"),
+                "fumigation_certificate": payload.get("fumigation_certificate"),
+                "draft": payload.get("draft") or payload.get("draft_bill_of_exchange"),
+                "draft_bill_of_exchange": payload.get("draft_bill_of_exchange") or payload.get("draft"),
                 # Extracted context
                 "extracted_context": extracted_context,
                 "requirements_graph_v1": requirements_graph_v1 if isinstance(requirements_graph_v1, dict) else None,

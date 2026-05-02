@@ -214,6 +214,7 @@ _PROMPT_DOCUMENT_KEYS: Tuple[str, ...] = (
     "packing_list",
     "inspection_certificate",
     "beneficiary_certificate",
+    "fumigation_certificate",
     "draft",
 )
 
