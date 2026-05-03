@@ -14,7 +14,6 @@
 import {
   BarChart3,
   FileText,
-  Inbox,
   ShieldCheck,
   Settings,
   Building2,
@@ -22,7 +21,6 @@ import {
   LogOut,
   ArrowLeft,
 } from "lucide-react";
-import { isBulkValidationEnabled } from "@/lib/lcopilot/featureFlags";
 import { Link } from "react-router-dom";
 import {
   Sidebar,
@@ -133,16 +131,6 @@ export function ImporterSidebar({
                   <span>Upload Supplier Docs</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {isBulkValidationEnabled() && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild tooltip="Bulk validation">
-                    <Link to="/lcopilot/_bulk-test">
-                      <Inbox />
-                      <span>Bulk validation</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
