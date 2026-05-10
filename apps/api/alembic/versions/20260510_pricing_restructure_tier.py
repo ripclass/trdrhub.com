@@ -5,21 +5,21 @@ docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md).
 
 ``companies.tier`` is now the BILLING tier (7-value BusinessTier enum):
 payg / solo / business / enterprise / agency_starter / agency_pro /
-agency_enterprise. There is no DB-level enum or CHECK constraint on the
-column (it's a plain ``varchar(20)``), so this migration only:
+agency_enterprise. The column carries a CHECK constraint
+``ck_companies_tier_valid`` (added in 20260423) that previously allowed
+only ('solo','sme','enterprise'). This migration:
 
-  1. Changes the column default from ``'sme'`` to ``'payg'`` (new
-     un-onboarded companies start on pay-per-use).
+  1. Drops the old CHECK constraint.
   2. Rewrites existing rows: ``'sme'`` -> ``'business'``. ``'solo'`` and
-     ``'enterprise'`` are already valid billing-tier strings, so they're
-     left alone. Anything else (shouldn't exist) is also left alone and
-     handled at read time by ``services.entitlements`` defaulting to
-     ``business``.
+     ``'enterprise'`` are already valid billing-tier strings; left alone.
+  3. Re-creates the CHECK constraint allowing the 7 new tier values.
+  4. Changes the column default from ``'sme'`` to ``'payg'`` (new
+     un-onboarded companies start on pay-per-use).
 
 Before the UPDATE, logs how many rows are on ``'sme'`` so the count is in
 the migration output — if any are real paying customers, grandfather them
-manually (bump to ``enterprise`` or set ``quota_limit`` to 50) before or
-after this runs; ``business`` gives 25 LCs/mo vs the old ``sme`` 50.
+manually (bump to ``enterprise`` or set ``quota_limit`` to 50) after this
+runs; ``business`` gives 25 LCs/mo vs the old ``sme`` 50.
 
 Revision ID: 20260510_pricing_restructure_tier
 Revises: 20260430_add_services_clients_time
@@ -39,6 +39,12 @@ depends_on = None
 
 logger = logging.getLogger("alembic.runtime.migration")
 
+_OLD_TIERS_SQL = "('solo','sme','enterprise')"
+_NEW_TIERS_SQL = (
+    "('payg','solo','business','enterprise',"
+    "'agency_starter','agency_pro','agency_enterprise')"
+)
+
 
 def upgrade() -> None:
     bind = op.get_bind()
@@ -53,7 +59,14 @@ def upgrade() -> None:
         sme_count,
     )
 
+    # Drop the old constraint, rewrite data, re-add with the new value set.
+    op.drop_constraint("ck_companies_tier_valid", "companies", type_="check")
     op.execute("UPDATE companies SET tier = 'business' WHERE tier = 'sme'")
+    op.create_check_constraint(
+        "ck_companies_tier_valid",
+        "companies",
+        "tier IN " + _NEW_TIERS_SQL,
+    )
     op.alter_column(
         "companies",
         "tier",
@@ -71,7 +84,15 @@ def downgrade() -> None:
         existing_type=sa.String(length=20),
         existing_nullable=False,
     )
-    # Best-effort reverse of the data migration. 'business' rows that were
-    # 'sme' before can't be distinguished from net-new 'business' rows, so
-    # this maps all 'business' back to 'sme'. Acceptable for a rollback.
-    op.execute("UPDATE companies SET tier = 'sme' WHERE tier = 'business'")
+    op.drop_constraint("ck_companies_tier_valid", "companies", type_="check")
+    # Best-effort reverse of the data migration. Map every value that isn't
+    # in the old allowed set back to a legal one so the re-added constraint
+    # holds: 'business' / 'payg' / 'agency_*' -> 'sme'.
+    op.execute(
+        "UPDATE companies SET tier = 'sme' WHERE tier NOT IN " + _OLD_TIERS_SQL
+    )
+    op.create_check_constraint(
+        "ck_companies_tier_valid",
+        "companies",
+        "tier IN " + _OLD_TIERS_SQL,
+    )
