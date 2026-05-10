@@ -176,7 +176,7 @@ export default function UploadLC() {
       <header className="bg-card border-b border-gray-200">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <Link to="/dashboard">
+            <Link to="/lcopilot/dashboard">
               <Button variant="outline" size="sm">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Dashboard

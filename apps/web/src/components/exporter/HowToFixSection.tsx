@@ -365,15 +365,15 @@ export function HowToFixSection({
           size="sm"
           className={cn(
             "w-full justify-between text-sm font-medium",
-            "hover:bg-emerald-500/10 hover:text-emerald-600",
-            isOpen && "bg-emerald-500/10 text-emerald-600"
+            "hover:bg-[#B2F273]/10 hover:text-[#00261C]",
+            isOpen && "bg-[#B2F273]/10 text-[#00261C]"
           )}
         >
           <span className="flex items-center gap-2">
             <Wrench className="w-4 h-4" />
             {sectionTitle}
             {instructions.isInternal && (
-              <Badge variant="outline" className="text-[10px] ml-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+              <Badge variant="outline" className="text-[10px] ml-1 bg-[#B2F273]/10 text-[#00261C] border-[#B2F273]/40">
                 {internalBadgeLabel}
               </Badge>
             )}
@@ -387,26 +387,26 @@ export function HowToFixSection({
       </CollapsibleTrigger>
       
       <CollapsibleContent className="mt-2">
-        <div className="p-4 bg-gradient-to-br from-emerald-500/5 to-emerald-500/10 rounded-lg border border-emerald-500/20 space-y-4">
-          
+        <div className="p-4 bg-gradient-to-br from-[#B2F273]/5 to-[#B2F273]/10 rounded-lg border border-[#B2F273]/30 space-y-4">
+
           {/* Copy-paste text block */}
           {instructions.copyText && (
             <div className="space-y-2">
-              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
+              <p className="text-xs font-medium text-[#00382E] dark:text-[#B2F273] uppercase tracking-wide">
                 📋 Add this to your documents:
               </p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 rounded border border-emerald-500/30 text-sm font-mono">
+                <code className="flex-1 px-3 py-2 bg-card rounded border border-[#B2F273]/30 text-sm font-mono">
                   {instructions.copyText}
                 </code>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="shrink-0 border-emerald-500/30 hover:bg-emerald-500/10"
+                  className="shrink-0 border-[#B2F273]/30 hover:bg-[#B2F273]/10"
                   onClick={handleCopy}
                 >
                   {copied ? (
-                    <Check className="w-4 h-4 text-emerald-600" />
+                    <Check className="w-4 h-4 text-[#00382E]" />
                   ) : (
                     <Copy className="w-4 h-4" />
                   )}
@@ -414,78 +414,78 @@ export function HowToFixSection({
               </div>
             </div>
           )}
-          
+
           {/* Steps */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
+            <p className="text-xs font-medium text-[#00382E] dark:text-[#B2F273] uppercase tracking-wide">
               {stepsLabel}
             </p>
             <ol className="space-y-1.5 text-sm">
               {instructions.steps.map((step, idx) => (
                 <li key={idx} className="flex items-start gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs flex items-center justify-center font-medium">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#B2F273]/20 text-[#00261C] dark:text-[#B2F273] text-xs flex items-center justify-center font-medium">
                     {idx + 1}
                   </span>
-                  <span className="text-slate-700 dark:text-slate-300">{step}</span>
+                  <span className="text-foreground">{step}</span>
                 </li>
               ))}
             </ol>
           </div>
-          
+
           {/* Time estimate */}
           <div className="flex items-center gap-2 text-sm">
-            <Clock className="w-4 h-4 text-emerald-600" />
-            <span className="text-slate-600 dark:text-slate-400">
-              Estimated time: <span className="font-medium text-slate-800 dark:text-slate-200">{instructions.timeEstimate}</span>
+            <Clock className="w-4 h-4 text-[#00382E] dark:text-[#B2F273]" />
+            <span className="text-muted-foreground">
+              Estimated time: <span className="font-medium text-foreground">{instructions.timeEstimate}</span>
             </span>
           </div>
-          
+
           {/* Contact info */}
           {instructions.contactInfo && (
-            <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
+            <div className="p-3 bg-card rounded-lg border border-border">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                 Contact
               </p>
-              <p className="font-medium text-slate-800 dark:text-slate-200">
+              <p className="font-medium text-foreground">
                 {instructions.contactInfo.name}
               </p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 {instructions.contactInfo.role}
               </p>
               {instructions.contactInfo.phone && (
-                <p className="text-sm text-slate-600 dark:text-slate-400 flex items-center gap-1 mt-1">
+                <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                   <Phone className="w-3 h-3" />
                   {instructions.contactInfo.phone}
                 </p>
               )}
               {instructions.contactInfo.email && (
-                <p className="text-sm text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                <p className="text-sm text-muted-foreground flex items-center gap-1">
                   <Mail className="w-3 h-3" />
                   {instructions.contactInfo.email}
                 </p>
               )}
             </div>
           )}
-          
+
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2 pt-2">
             {instructions.needsEmail && onDraftEmail && (
               <Button
                 size="sm"
                 variant="outline"
-                className="border-blue-500/30 text-blue-600 hover:bg-blue-500/10"
+                className="border-[#B2F273]/40 text-[#00382E] hover:bg-[#B2F273]/10 hover:text-[#00261C]"
                 onClick={handleDraftEmail}
               >
                 <Mail className="w-4 h-4 mr-1" />
                 Draft Email with AI
               </Button>
             )}
-            
+
             {instructions.docGeneratorLink && (
               <Button
                 size="sm"
                 variant="outline"
-                className="border-purple-500/30 text-purple-600 hover:bg-purple-500/10"
+                className="border-border hover:bg-muted"
                 asChild
               >
                 <a href={instructions.docGeneratorLink} target="_blank" rel="noopener noreferrer">

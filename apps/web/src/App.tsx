@@ -112,7 +112,8 @@ import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
 import LcopilotLanding from './pages/LcopilotLanding'
 import LcopilotRouter from './pages/LcopilotRouter'
-import Dashboard from './pages/Dashboard'
+// Legacy Dashboard.tsx (mock-data, "Dhaka Exports Ltd" hardcodes) deleted
+// 2026-05-10. /dashboard now redirects to /lcopilot/dashboard.
 import UploadLC from './pages/UploadLC'
 import DraftLCCorrections from './pages/DraftLCCorrections'
 import DraftLCRiskResults from './pages/DraftLCRiskResults'
@@ -373,7 +374,7 @@ function App() {
             housekeeping pass strips them. */}
         <Route path="/hub" element={<Navigate to="/lcopilot/dashboard" replace />} />
         <Route path="/hub/*" element={<Navigate to="/lcopilot/dashboard" replace />} />
-        <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/dashboard" element={<Navigate to="/lcopilot/dashboard" replace />} />
         <Route path="/settings/notifications" element={<RequireAuth><NotificationSettings /></RequireAuth>} />
         <Route path="/lcopilot/services-dashboard" element={<RequireAuth><ServicesDashboard /></RequireAuth>} />
         <Route path="/lcopilot/group-overview" element={<RequireAuth><EnterpriseGroupOverview /></RequireAuth>} />

@@ -85,9 +85,9 @@ function ToleranceExplanationBadge({ tolerance }: { tolerance: { tolerance_perce
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge 
-            variant="outline" 
-            className="gap-1 text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 cursor-help"
+          <Badge
+            variant="outline"
+            className="gap-1 text-xs bg-[#B2F273]/10 text-[#00261C] dark:text-[#B2F273] border-[#B2F273]/40 cursor-help"
           >
             <Scale className="w-3 h-3" />
             ±{tolerance.tolerance_percent}% tolerance
@@ -97,20 +97,20 @@ function ToleranceExplanationBadge({ tolerance }: { tolerance: { tolerance_perce
         <TooltipContent side="top" className="max-w-sm p-3">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Scale className="w-4 h-4 text-emerald-500" />
+              <Scale className="w-4 h-4 text-[#00382E] dark:text-[#B2F273]" />
               <p className="font-semibold text-sm">{sourceInfo.title}</p>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {sourceInfo.description}
             </p>
             {sourceInfo.reference && (
-              <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+              <p className="text-xs text-[#00382E] dark:text-[#B2F273] font-medium flex items-center gap-1">
                 <BookOpen className="w-3 h-3" />
                 {sourceInfo.reference}
               </p>
             )}
             {tolerance.explicit && (
-              <p className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded">
+              <p className="text-xs text-[#00261C] dark:text-[#B2F273] bg-[#B2F273]/10 px-2 py-1 rounded">
                 ✓ Explicitly stated in LC
               </p>
             )}
@@ -144,7 +144,7 @@ const BUSINESS_IMPACT = {
   minor: {
     label: 'Bank Discretion',
     description: 'Usually accepted, depends on bank',
-    color: 'bg-slate-200 text-slate-700',
+    color: 'bg-muted text-muted-foreground',
     Icon: Lightbulb,
   },
 } as const;
@@ -153,25 +153,25 @@ const COMPLIANCE_IMPACT = {
   critical: {
     label: 'Compliance Hold',
     description: 'Internal compliance review required before proceeding',
-    color: 'bg-sky-700 text-white',
+    color: 'bg-[#00261C] text-[#B2F273]',
     Icon: ShieldAlert,
   },
   major: {
     label: 'Compliance Alert',
     description: 'Escalate to internal compliance review',
-    color: 'bg-sky-600 text-white',
+    color: 'bg-[#00382E] text-[#B2F273]',
     Icon: ShieldAlert,
   },
   medium: {
     label: 'Manual Compliance Review',
     description: 'Review required before submission decision',
-    color: 'bg-sky-100 text-sky-900',
+    color: 'bg-[#B2F273]/20 text-[#00261C] dark:text-[#B2F273]',
     Icon: ShieldAlert,
   },
   minor: {
     label: 'Compliance Note',
     description: 'Monitor within internal compliance workflow',
-    color: 'bg-sky-50 text-sky-800',
+    color: 'bg-[#B2F273]/10 text-[#00382E] dark:text-[#B2F273]',
     Icon: ShieldAlert,
   },
 } as const;
@@ -306,7 +306,7 @@ export function ExporterIssueCard({
             {/* AI Detection Badge */}
             {isAIDetected && (
               <Badge
-                className="gap-1 text-xs font-semibold bg-gradient-to-r from-violet-500 to-purple-600 text-white"
+                className="gap-1 text-xs font-semibold bg-gradient-to-r from-[#00261C] to-[#00382E] text-[#B2F273]"
                 title="Detected by AI Validation Engine"
               >
                 <Sparkles className="w-3 h-3" />
@@ -345,11 +345,11 @@ export function ExporterIssueCard({
       <CardContent className="space-y-4">
         {/* Bank Examiner Message - Professional format for banks (from V2) */}
         {(issue.ucpReference || issue.isbpReference) && (
-          <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          <div className="p-3 bg-muted rounded-lg border border-border">
+            <p className="text-sm font-medium text-muted-foreground">
               Bank Examiner Message:
             </p>
-            <p className="text-sm text-slate-900 dark:text-slate-100 mt-1 font-mono">
+            <p className="text-sm text-foreground mt-1 font-mono">
               {issue.title}. Per {issue.ucpReference ? `UCP600 ${issue.ucpReference.replace('UCP600 Article ', 'Art. ').replace('UCP600 ', '')}` : ''}{issue.ucpReference && issue.isbpReference ? '; ' : ''}{issue.isbpReference ? `ISBP745 ${issue.isbpReference.replace('ISBP745 ', '¶')}` : ''}.
             </p>
           </div>
@@ -367,16 +367,16 @@ export function ExporterIssueCard({
                 {issue.ucpReference && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Badge 
-                        variant="secondary" 
-                        className="cursor-help bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200"
+                      <Badge
+                        variant="secondary"
+                        className="cursor-help bg-[#B2F273]/15 text-[#00261C] hover:bg-[#B2F273]/25 dark:bg-[#00382E] dark:text-[#B2F273] dark:hover:bg-[#00382E]/80"
                       >
                         UCP600 {issue.ucpReference.replace('UCP600 Article ', 'Art. ').replace('UCP600 ', '')}
                       </Badge>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
                       <p className="font-medium">{issue.ucpReference}</p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-muted-foreground">
                         {issue.ucpDescription || 'ICC Uniform Customs and Practice for Documentary Credits'}
                       </p>
                     </TooltipContent>
@@ -385,16 +385,16 @@ export function ExporterIssueCard({
                 {issue.isbpReference && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Badge 
+                      <Badge
                         variant="secondary"
-                        className="cursor-help bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900 dark:text-purple-200"
+                        className="cursor-help bg-muted text-muted-foreground hover:bg-muted/70 border border-border"
                       >
                         ISBP745 {issue.isbpReference.replace('ISBP745 ', '¶')}
                       </Badge>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
                       <p className="font-medium">{issue.isbpReference}</p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-muted-foreground">
                         {issue.isbpDescription || 'ICC International Standard Banking Practice'}
                       </p>
                     </TooltipContent>
@@ -509,14 +509,14 @@ export function ExporterIssueCard({
             )}
           </div>
         )}
-        <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+        <div className="bg-[#B2F273]/10 dark:bg-[#00382E] border border-[#B2F273]/30 rounded-lg p-3">
           <div className="flex items-start gap-2">
-            <Lightbulb className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+            <Lightbulb className="w-4 h-4 text-[#00382E] dark:text-[#B2F273] mt-0.5 flex-shrink-0" />
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#00261C] dark:text-[#B2F273] mb-1">
                 {actionLabel}
               </p>
-              <p className="text-sm text-blue-800 dark:text-blue-200">{nextAction}</p>
+              <p className="text-sm text-foreground">{nextAction}</p>
             </div>
           </div>
         </div>

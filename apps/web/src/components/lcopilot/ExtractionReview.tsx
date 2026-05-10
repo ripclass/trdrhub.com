@@ -783,14 +783,14 @@ export function ExtractionReview({
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
-              <FileText className="w-5 h-5 text-slate-500" />
+              <FileText className="w-5 h-5 text-muted-foreground" />
               <div>
                 <p className="text-sm text-muted-foreground">Documents</p>
                 <p className="text-2xl font-semibold">{docSections.length}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <CheckCircle2 className="w-5 h-5 text-[#00382E] dark:text-[#B2F273]" />
               <div>
                 <p className="text-sm text-muted-foreground">Fields Populated</p>
                 <p className="text-2xl font-semibold">
@@ -799,7 +799,7 @@ export function ExtractionReview({
               </div>
             </div>
             <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
-              <AlertCircle className={`w-5 h-5 ${totalEmpty > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
+              <AlertCircle className={`w-5 h-5 ${totalEmpty > 0 ? 'text-amber-500' : 'text-muted-foreground'}`} />
               <div>
                 <p className="text-sm text-muted-foreground">Need Your Input</p>
                 <p className="text-2xl font-semibold">{totalEmpty}</p>
@@ -849,14 +849,14 @@ export function ExtractionReview({
               <Label htmlFor={`${section.docKey}-${field.name}`} className="flex items-center gap-2">
                 {field.label}
                 {field.isConfirmed && (
-                  <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">
+                  <Badge variant="outline" className="text-[#00261C] dark:text-[#B2F273] border-[#B2F273]/40 bg-[#B2F273]/10 text-[10px]">
                     You edited
                   </Badge>
                 )}
               </Label>
               {listItems && listItems.length > 1 ? (
                 /* Readable list view — replaces the raw textarea for list-shaped fields */
-                <ol className="list-decimal pl-5 space-y-1 text-sm text-foreground rounded-md border border-gray-200/70 bg-secondary/20 p-3">
+                <ol className="list-decimal pl-5 space-y-1 text-sm text-foreground rounded-md border border-border bg-secondary/20 p-3">
                   {listItems.map((item, i) => (
                     <li key={`${field.name}-item-${i}`}>{item}</li>
                   ))}
@@ -950,7 +950,7 @@ export function ExtractionReview({
                 ) : isLC ? (
                   <div className="space-y-6">
                     <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3">
                         Key fields
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -959,7 +959,7 @@ export function ExtractionReview({
                     </div>
                     {optionalFields.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3">
                           Additional details
                         </p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
