@@ -373,14 +373,21 @@ export function isUnlimitedPlan(plan: PlanType): boolean {
   return PLAN_DEFINITIONS[plan].quota === null;
 }
 
-// Accepts three input shapes and folds them into PlanType so the billing
-// UI keeps working regardless of which column the backend surfaces:
-//   1. Frontend PlanType strings (FREE / STARTER / PROFESSIONAL / ENTERPRISE)
-//   2. Backend Phase A4 tier strings (solo / sme / enterprise)
-//   3. Legacy backend plan strings (free / pay_per_check / monthly_basic /
-//      monthly_pro / enterprise) — confirmed mapping per Ripon 2026-05-10:
-//      free + pay_per_check + monthly_basic → STARTER (Solo tier),
-//      monthly_pro → PROFESSIONAL (SME tier), enterprise → ENTERPRISE.
+// Folds every billing-tier / plan string shape we might see into the
+// frontend PlanType enum (FREE / STARTER / PROFESSIONAL / ENTERPRISE) so the
+// billing UI keeps rendering. Inputs:
+//   1. Frontend PlanType strings (passthrough).
+//   2. Backend 2026-05-10 billing tiers: payg / solo / business / enterprise
+//      / agency_starter / agency_pro / agency_enterprise.
+//   3. Legacy backend strings: company-size "sme"; PlanType column values
+//      free / pay_per_check / monthly_basic / monthly_pro / enterprise.
+// Mapping: payg + solo → STARTER · business + agency_* + sme + monthly_pro
+//   → PROFESSIONAL · enterprise + agency_enterprise → ENTERPRISE ·
+//   free + pay_per_check + monthly_basic → STARTER.
+// NOTE: the billing UI labels these "Starter/Professional/Enterprise" — a
+// follow-up should replace PlanType in the billing surfaces with the raw
+// tier string + a display-name map (see QuotaStrip.TIER_DISPLAY_NAMES) so
+// "Business" shows as "Business", etc. Until then this keeps it functional.
 export function normalizePlanType(plan: PlanType | string | null | undefined): PlanType | null {
   if (!plan) {
     return null;
@@ -398,12 +405,19 @@ export function normalizePlanType(plan: PlanType | string | null | undefined): P
       return PlanType.PROFESSIONAL;
     case PlanType.ENTERPRISE:
       return PlanType.ENTERPRISE;
-    // Backend tier strings (Phase A4)
+    // Backend 2026-05-10 billing tiers
+    case "PAYG":
     case "SOLO":
       return PlanType.STARTER;
+    case "BUSINESS":
+    case "AGENCY_STARTER":
+    case "AGENCY_PRO":
+      return PlanType.PROFESSIONAL;
+    case "AGENCY_ENTERPRISE":
+      return PlanType.ENTERPRISE;
+    // Legacy strings
     case "SME":
       return PlanType.PROFESSIONAL;
-    // Legacy backend plan strings
     case "PAY_PER_CHECK":
     case "MONTHLY_BASIC":
       return PlanType.STARTER;

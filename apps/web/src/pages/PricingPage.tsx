@@ -2,17 +2,22 @@ import { useState, useEffect } from "react";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { Button } from "@/components/ui/button";
-import { Check, ArrowRight, ChevronDown, HelpCircle, Building2 } from "lucide-react";
-import { 
-  PRICING_TIERS, 
-  getPriceDisplay, 
-  getPrice, 
+import { Check, ArrowRight, ChevronDown, HelpCircle, Building2, Zap } from "lucide-react";
+import {
+  getPriceDisplay,
+  getPrice,
+  getPayPerUseDisplay,
   getCurrencyFromCountry,
+  tiersForTrack,
   CURRENCIES,
-  type CurrencyCode 
+  type CurrencyCode,
+  type PricingTrack,
+  type PriceTier,
 } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
+
+const ENTERPRISE_IDS = new Set(["enterprise", "agency_enterprise"]);
 
 // Currency options for manual selection
 const CURRENCY_OPTIONS: { code: CurrencyCode; flag: string; label: string }[] = [
@@ -29,26 +34,110 @@ const CURRENCY_OPTIONS: { code: CurrencyCode; flag: string; label: string }[] = 
 const faqs = [
   {
     question: "Can I switch plans later?",
-    answer: "Yes, you can upgrade or downgrade your plan at any time. Prorated charges will be applied automatically."
+    answer: "Yes — upgrade or downgrade at any time. We meter per LC presentation (the LC plus all its supporting documents, validated together), so a 2-doc set and a 30-doc set both count as one."
   },
   {
     question: "What payment methods do you accept?",
-    answer: "We accept all major credit cards (Visa, Mastercard, Amex). For Bangladesh, India, and Pakistan, we also support local payment methods via SSLCommerz and Razorpay."
+    answer: "All major credit cards (Visa, Mastercard, Amex). For Bangladesh, India, and Pakistan we also support local payment methods via SSLCommerz and Razorpay."
   },
   {
-    question: "Is there a free trial?",
-    answer: "Yes, all paid plans come with a 14-day free trial. No credit card is required to start testing the platform."
+    question: "Is there a free option?",
+    answer: "There's no permanent free plan, but you can run a quick LC check without signing up, and pay-as-you-go is just $12 per LC presentation with no commitment and no card to start. Subscriptions start at $49/mo."
   },
   {
-    question: "What happens if I exceed my limits?",
-    answer: "We'll notify you when you're close to your limit. You can either upgrade your plan or pay for overages at our standard pay-per-use rates."
+    question: "What happens if I exceed my plan's included LCs?",
+    answer: "We'll flag it before you hit the limit. Solo overage is $10/LC, Business $7/LC, Enterprise $5/LC — or upgrade to the next tier for a better per-LC rate. Agency / Services seats are unlimited within fair use."
   }
 ];
+
+function PricingCard({
+  tier,
+  currency,
+  billingPeriod,
+  currencySymbol,
+}: {
+  tier: PriceTier;
+  currency: CurrencyCode;
+  billingPeriod: "monthly" | "yearly";
+  currencySymbol?: string;
+}) {
+  const priceDisplay = tier.custom
+    ? "Custom"
+    : getPriceDisplay(tier, currency, billingPeriod);
+  const price = tier.custom ? 0 : getPrice(tier, currency, billingPeriod);
+  const yearlyTotal = tier.custom ? 0 : getPrice(tier, currency, "yearly") * 12;
+  const period = tier.seatBased ? "/seat/mo" : "/mo";
+
+  return (
+    <div
+      className={cn(
+        "relative bg-[#00261C] border rounded-3xl p-8 flex flex-col transition-all duration-300 group",
+        tier.popular
+          ? "border-[#B2F273] shadow-[0_0_40px_-10px_rgba(178,242,115,0.2)] md:scale-105 z-10"
+          : "border-[#EDF5F2]/10 hover:border-[#EDF5F2]/20 hover:bg-[#00382E]/30"
+      )}
+    >
+      {tier.popular && (
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+          <span className="bg-[#B2F273] text-[#00261C] px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+            Most Popular
+          </span>
+        </div>
+      )}
+      <div className="mb-8">
+        <h3 className="text-xl font-bold text-white mb-2 font-display">{tier.name}</h3>
+        <p className="text-[#EDF5F2]/60 text-sm h-10">{tier.description}</p>
+      </div>
+      <div className="mb-8">
+        <div className="flex items-baseline gap-1">
+          <span className="text-4xl md:text-5xl font-bold text-white font-display tracking-tight">
+            {priceDisplay}
+          </span>
+          {!tier.custom && <span className="text-[#EDF5F2]/40">{period}</span>}
+        </div>
+        {!tier.custom && billingPeriod === "yearly" && price > 0 && (
+          <p className="text-xs text-[#B2F273] mt-2 font-mono">
+            Billed {currencySymbol}{yearlyTotal.toLocaleString()}/yr{tier.seatBased ? " per seat" : ""}
+          </p>
+        )}
+      </div>
+      <div className="flex-1 mb-8">
+        <ul className="space-y-4">
+          {tier.features.map((feature, i) => (
+            <li key={i} className="flex items-start gap-3">
+              <div className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+                tier.popular ? "bg-[#B2F273]" : "bg-[#00382E] border border-[#EDF5F2]/10"
+              )}>
+                <Check className={cn("w-3 h-3", tier.popular ? "text-[#00261C]" : "text-[#EDF5F2]/60")} />
+              </div>
+              <span className="text-[#EDF5F2]/80 text-sm leading-relaxed">{feature}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <Button
+        size="lg"
+        className={cn(
+          "w-full font-bold h-12 border-none transition-all duration-300",
+          tier.popular ? "bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662]" : "bg-[#EDF5F2]/5 text-white hover:bg-[#EDF5F2]/10"
+        )}
+        asChild
+      >
+        <Link to={tier.custom ? "/contact" : "/register"}>
+          {tier.custom ? "Contact Sales" : `Start ${tier.name}`}
+          <ArrowRight className="w-4 h-4 ml-2" />
+        </Link>
+      </Button>
+    </div>
+  );
+}
 
 const PricingPage = () => {
   const [currency, setCurrency] = useState<CurrencyCode>("USD");
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
+  const [track, setTrack] = useState<PricingTrack>("trader");
 
   // Auto-detect currency
   useEffect(() => {
@@ -82,9 +171,12 @@ const PricingPage = () => {
   const selectedCurrencyOption = CURRENCY_OPTIONS.find(c => c.code === currency) || CURRENCY_OPTIONS[0];
   const currencyInfo = CURRENCIES[currency];
 
-  // Filter out Enterprise for the main grid, we'll show it separately
-  const mainTiers = PRICING_TIERS.filter(t => t.id !== 'enterprise');
-  const enterpriseTier = PRICING_TIERS.find(t => t.id === 'enterprise');
+  // Tier set for the selected persona track. Enterprise (or Agency
+  // Enterprise) renders in the wide card below; the rest go in the grid.
+  const trackTiers = tiersForTrack(track);
+  const gridTiers = trackTiers.filter(t => !ENTERPRISE_IDS.has(t.id));
+  const enterpriseTier = trackTiers.find(t => ENTERPRISE_IDS.has(t.id));
+  const paygDisplay = getPayPerUseDisplay("lc_validation", currency);
 
   return (
     <div className="min-h-screen bg-[#00261C]">
@@ -110,8 +202,32 @@ const PricingPage = () => {
               <span className="text-[#B2F273] text-glow-sm">with your trade volume.</span>
             </h1>
             <p className="text-lg text-[#EDF5F2]/60 max-w-2xl mx-auto font-light leading-relaxed mb-10">
-              Start with a 14-day free trial. No credit card required. Cancel anytime.
+              Metered per LC presentation. Pay-as-you-go from {paygDisplay} per LC — no commitment, no card to start. Cancel anytime.
             </p>
+
+            {/* Track toggle — Trader vs Agency/Services */}
+            <div className="flex justify-center mb-6">
+              <div className="flex items-center gap-1 bg-[#00382E] border border-[#EDF5F2]/10 rounded-full px-1.5 py-1.5">
+                <button
+                  onClick={() => setTrack("trader")}
+                  className={cn(
+                    "px-4 py-1.5 rounded-full text-sm font-medium transition-all",
+                    track === "trader" ? "bg-[#B2F273] text-[#00261C]" : "text-[#EDF5F2]/60 hover:text-white"
+                  )}
+                >
+                  Exporters & Importers
+                </button>
+                <button
+                  onClick={() => setTrack("agency")}
+                  className={cn(
+                    "px-4 py-1.5 rounded-full text-sm font-medium transition-all",
+                    track === "agency" ? "bg-[#B2F273] text-[#00261C]" : "text-[#EDF5F2]/60 hover:text-white"
+                  )}
+                >
+                  Agencies & Services
+                </button>
+              </div>
+            </div>
 
             {/* Controls */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -184,128 +300,93 @@ const PricingPage = () => {
             </div>
           </div>
 
-          {/* Pricing Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto mb-12">
-            {mainTiers.map((plan) => {
-              const priceDisplay = getPriceDisplay(plan, currency, billingPeriod);
-              const price = getPrice(plan, currency, billingPeriod);
-              const yearlyTotal = getPrice(plan, currency, "yearly") * 12;
-
-              return (
-                <div 
-                  key={plan.id}
-                  className={cn(
-                    "relative bg-[#00261C] border rounded-3xl p-8 flex flex-col transition-all duration-300 group",
-                    plan.popular 
-                      ? "border-[#B2F273] shadow-[0_0_40px_-10px_rgba(178,242,115,0.2)] scale-105 z-10" 
-                      : "border-[#EDF5F2]/10 hover:border-[#EDF5F2]/20 hover:bg-[#00382E]/30"
-                  )}
-                >
-                  {plan.popular && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                      <span className="bg-[#B2F273] text-[#00261C] px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-                        Most Popular
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="mb-8">
-                    <h3 className="text-xl font-bold text-white mb-2 font-display">{plan.name}</h3>
-                    <p className="text-[#EDF5F2]/60 text-sm h-10">{plan.description}</p>
+          {/* Pay-as-you-go callout (trader track only) */}
+          {track === "trader" && (
+            <div className="max-w-6xl mx-auto mb-8">
+              <div className="bg-[#00382E]/40 border border-[#EDF5F2]/10 rounded-2xl px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-[#B2F273]/10 rounded-lg flex items-center justify-center shrink-0">
+                    <Zap className="w-4 h-4 text-[#B2F273]" />
                   </div>
-
-                  <div className="mb-8">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-4xl md:text-5xl font-bold text-white font-display tracking-tight">
-                        {priceDisplay}
-                      </span>
-                      <span className="text-[#EDF5F2]/40">/mo</span>
-                    </div>
-                    {billingPeriod === "yearly" && price > 0 && (
-                      <p className="text-xs text-[#B2F273] mt-2 font-mono">
-                        Billed {currencyInfo?.symbol}{yearlyTotal.toLocaleString()} yearly
-                      </p>
-                    )}
+                  <div>
+                    <p className="text-white font-semibold text-sm">Pay-as-you-go — {paygDisplay} per LC presentation</p>
+                    <p className="text-[#EDF5F2]/50 text-xs">No subscription. Full rule coverage, sanctions screening, PDF report. Subscribe later to cut the per-LC cost.</p>
                   </div>
-
-                  <div className="flex-1 mb-8">
-                    <ul className="space-y-4">
-                      {plan.features.map((feature, i) => (
-                        <li key={i} className="flex items-start gap-3">
-                          <div className={cn(
-                            "w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5",
-                            plan.popular ? "bg-[#B2F273]" : "bg-[#00382E] border border-[#EDF5F2]/10"
-                          )}>
-                            <Check className={cn(
-                              "w-3 h-3",
-                              plan.popular ? "text-[#00261C]" : "text-[#EDF5F2]/60"
-                            )} />
-                          </div>
-                          <span className="text-[#EDF5F2]/80 text-sm leading-relaxed">{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <Button 
-                    size="lg"
-                    className={cn(
-                      "w-full font-bold h-12 border-none transition-all duration-300",
-                      plan.popular 
-                        ? "bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662]" 
-                        : "bg-[#EDF5F2]/5 text-white hover:bg-[#EDF5F2]/10"
-                    )}
-                    asChild
-                  >
-                    <Link to="/register">
-                      Start Free Trial
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Link>
-                  </Button>
                 </div>
-              );
-            })}
+                <Button size="sm" className="bg-[#EDF5F2]/10 hover:bg-[#EDF5F2]/20 text-white border-none shrink-0" asChild>
+                  <Link to="/register">Get Started</Link>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Pricing Grid */}
+          <div className={cn(
+            "grid grid-cols-1 gap-8 max-w-6xl mx-auto mb-12",
+            gridTiers.length >= 2 ? "md:grid-cols-2" : "md:grid-cols-1",
+          )}>
+            {gridTiers.map((plan) => (
+              <PricingCard
+                key={plan.id}
+                tier={plan}
+                currency={currency}
+                billingPeriod={billingPeriod}
+                currencySymbol={currencyInfo?.symbol}
+              />
+            ))}
           </div>
 
-          {/* Enterprise Card */}
+          {/* Enterprise / Agency Enterprise wide card */}
           {enterpriseTier && (
             <div className="max-w-6xl mx-auto mb-24">
               <div className="bg-[#00382E]/30 border border-[#EDF5F2]/10 rounded-3xl p-8 md:p-12 relative overflow-hidden group hover:border-[#B2F273]/30 transition-colors">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-[#B2F273]/5 rounded-full blur-3xl" />
-                
+
                 <div className="flex flex-col md:flex-row gap-12 items-center relative z-10">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-10 h-10 bg-[#B2F273]/10 rounded-xl flex items-center justify-center">
                         <Building2 className="w-5 h-5 text-[#B2F273]" />
                       </div>
-                      <h3 className="text-2xl font-bold text-white font-display">Enterprise</h3>
+                      <h3 className="text-2xl font-bold text-white font-display">{enterpriseTier.name}</h3>
                     </div>
                     <p className="text-[#EDF5F2]/60 text-lg mb-8 max-w-xl">
-                      For banks and large organizations requiring custom integrations, SLA guarantees, and dedicated support.
+                      {enterpriseTier.description}. Custom integrations, SLA guarantees, dedicated support.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {enterpriseTier.features.map((feature, i) => (
                         <div key={i} className="flex items-center gap-3">
-                          <Check className="w-4 h-4 text-[#B2F273]" />
+                          <Check className="w-4 h-4 text-[#B2F273] shrink-0" />
                           <span className="text-[#EDF5F2]/80 text-sm">{feature}</span>
                         </div>
                       ))}
                     </div>
                   </div>
-                  
+
                   <div className="w-full md:w-auto flex flex-col items-center gap-4">
                     <div className="text-center mb-2">
-                      <span className="text-3xl font-bold text-white font-display">Custom</span>
-                      <p className="text-[#EDF5F2]/40 text-sm">Volume-based pricing</p>
+                      {enterpriseTier.custom ? (
+                        <>
+                          <span className="text-3xl font-bold text-white font-display">Custom</span>
+                          <p className="text-[#EDF5F2]/40 text-sm">Per-seat with volume discounts</p>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-3xl font-bold text-white font-display">
+                            {getPriceDisplay(enterpriseTier, currency, billingPeriod)}
+                          </span>
+                          <span className="text-[#EDF5F2]/40 text-sm">/mo</span>
+                          <p className="text-[#EDF5F2]/40 text-xs mt-1">Volume bands above 150 LCs/mo</p>
+                        </>
+                      )}
                     </div>
-                    <Button 
+                    <Button
                       size="lg"
                       className="bg-white text-[#00261C] hover:bg-[#EDF5F2] px-8 font-bold border-none min-w-[200px]"
                       asChild
                     >
                       <Link to="/contact">
-                        Contact Sales
+                        {enterpriseTier.custom ? "Contact Sales" : "Talk to Sales"}
                       </Link>
                     </Button>
                   </div>
