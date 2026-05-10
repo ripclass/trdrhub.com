@@ -152,7 +152,11 @@ import { isBulkValidationEnabled, isImporterV2Enabled } from './lib/lcopilot/fea
 import BulkValidateTest from './pages/lcopilot/BulkValidateTest'
 import RepaperRecipient from './pages/lcopilot/RepaperRecipient'
 import { RequireAuth } from './components/lcopilot/RequireAuth'
-import { HubLayout, HubHome, HubBilling, HubTeam, HubSettings, HubUsage } from './pages/hub'
+// /hub retired 2026-05-10 — single-product framing means LCopilot is the home.
+// HubLayout/HubHome/HubBilling/HubTeam/HubSettings/HubUsage are no longer
+// imported; the route below redirects /hub and all subroutes to
+// /lcopilot/dashboard. The page files remain in src/pages/hub/ as dead code
+// pending a future cleanup pass.
 import { 
   TrackingLayout, 
   TrackingOverview, 
@@ -361,15 +365,14 @@ function App() {
           </LcopilotBetaRoute>
         } />
         
-        {/* Hub - Unified Dashboard with Sidebar */}
-        <Route path="/hub" element={<RequireAuth><HubLayout /></RequireAuth>}>
-          <Route index element={<HubHome />} />
-          <Route path="home" element={<HubHome />} />
-          <Route path="usage" element={<HubUsage />} />
-          <Route path="billing" element={<HubBilling />} />
-          <Route path="team" element={<HubTeam />} />
-          <Route path="settings" element={<HubSettings />} />
-        </Route>
+        {/* Hub retired 2026-05-10 — LCopilot is the single shipped product
+            for launch. /hub and all subroutes redirect to /lcopilot/dashboard,
+            which activity-resolves to the user's exporter/importer/agency
+            dashboard. Redirect retained ≥90 days so old links + bookmarks +
+            in-app "Back to Hub" sidebar links keep working until the next
+            housekeeping pass strips them. */}
+        <Route path="/hub" element={<Navigate to="/lcopilot/dashboard" replace />} />
+        <Route path="/hub/*" element={<Navigate to="/lcopilot/dashboard" replace />} />
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/settings/notifications" element={<RequireAuth><NotificationSettings /></RequireAuth>} />
         <Route path="/lcopilot/services-dashboard" element={<RequireAuth><ServicesDashboard /></RequireAuth>} />

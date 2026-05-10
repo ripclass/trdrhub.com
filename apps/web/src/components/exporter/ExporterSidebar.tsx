@@ -1,6 +1,6 @@
 // ExporterSidebar - Navigation component for Exporter Dashboard
-import { Upload, BarChart3, Settings, Building2, CreditCard, LogOut, ArrowLeft } from "lucide-react";
-import { useLocation, Link } from "react-router-dom";
+import { Upload, BarChart3, Settings, Building2, CreditCard, LogOut } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -48,15 +48,6 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <div className="px-2 pt-2">
-          <Link
-            to="/hub"
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
-          >
-            <ArrowLeft className="h-3 w-3" />
-            Back to Hub
-          </Link>
-        </div>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
