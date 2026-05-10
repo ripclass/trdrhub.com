@@ -1,7 +1,7 @@
 # Session resume — UI/UX housekeeping + pricing restructure (2026-05-10)
 
 **Last updated:** 2026-05-10
-**State at commit:** `120ed3c9` (pricing restructure frontend, part 3) — branch `master`, pushed
+**State at commit:** `5b665fac` (migration constraint fix) — branch `master`, pushed. Migration applied on Render (see below).
 **Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~10 weeks to 2026-07-25). This session: brand housekeeping + importer-dashboard bug fixes + a clean-sheet LCopilot pricing restructure (backend ✅ + frontend reconciliation ✅ — only the public `/check` lead-magnet + a couple of secondary-pricing-component polish items remain).
 
 ---
@@ -19,14 +19,13 @@ to trdr-pricing-section.tsx / Pricing.tsx / ToolPricingSection.tsx (they already
 the new trader tiers, just no toggle — mirror PricingPage.tsx); (3) swap PlanType for
 the raw tier + a display-name map in the billing UI (BillingOverviewPage etc.) so
 "Business" shows as "Business" not "Professional".
-Also: run `alembic upgrade head` on Render trdrhub-api after the backend deploy lands
-(no auto hook) — check the migration's "sme row count" log line; grandfather any real
-sme customers (business=25 LCs/mo vs old sme=50).
 ```
+
+**Migration 20260510 — ✅ APPLIED on Render trdrhub-api 2026-05-10 13:52 UTC.** First attempt failed on the pre-existing `ck_companies_tier_valid` CHECK constraint (it only allowed `('solo','sme','enterprise')`) → fixed in commit `5b665fac` (drop → UPDATE → re-create constraint with the 7 new values), redeployed, re-ran, succeeded. `/health/db-schema` = ok. **141 company rows migrated `sme` → `business`** (25 LCs/mo, was 50) — mostly auto-created/test rows, but if any are real paying SME customers, grandfather them (`company.quota_limit = 50` or bump to `enterprise`). Future backend deploys with a new migration still need a manual `render jobs create srv-d41dio8dl3ps73db8gpg --start-command "alembic upgrade head"` (no auto hook).
 
 ---
 
-## What shipped today (14 commits, `93c8a394..120ed3c9`)
+## What shipped today (16 commits, `93c8a394..5b665fac`)
 
 ### Brand-drift housekeeping (the "everything's bluish, not our brand" complaint)
 | Commit | What |
@@ -51,6 +50,7 @@ sme customers (business=25 LCs/mo vs old sme=50).
 | `f16e9ae5` | **Backend.** `company.tier` is now the 7-value billing enum (`payg`/`solo`/`business`/`enterprise`/`agency_starter`/`agency_pro`/`agency_enterprise`); new `BusinessSize` enum for the onboarding Q3 "company size" answer + `starting_billing_tier()` mapping; `entitlements.py` rewrite (quota/seat/overage maps for all 7 tiers, agency fair-use soft-cap advisory log, default → `business`); `/api/entitlements/current` returns `overage_rate_usd`; `billing_service._resolve_tier` updated; migration `20260510_pricing_restructure_tier` (`sme`→`business`, default→`payg`, logs `sme` count). |
 | `64277e47` | **Frontend pt 1.** `lib/pricing.ts` rewritten as the single source of truth — `PRICING_TIERS` = 3 trader tiers + `AGENCY_TIERS` + `track`/`seatBased`/`custom`/`overageRateUsd`/`upgradeToId`; `PAY_PER_USE.lc_validation` 8→12; helper exports preserved. `Index.tsx` pricing cards derived from it; "Free $0/forever" card + the "2 vs 5 free LCs" self-contradiction scrubbed. |
 | `120ed3c9` | **Frontend pt 2.** `PricingPage.tsx` Trader/Agency toggle + shared `<PricingCard>` + Enterprise/Agency-Enterprise wide card + FAQ rewrite (no "14-day free trial"). `QuotaStrip.tsx` 7-value tiers, three states (pool bar + overage line / PAYG line / agency "Unlimited (fair use)" pill), brand-lime bar. `entitlementsApi.ts` `overage_rate_usd`. `types/billing.ts` `normalizePlanType` folds the 7 new tiers into `PlanType`. |
+| `5b665fac` | **Migration fix + applied.** First migration run failed on the pre-existing `ck_companies_tier_valid` CHECK constraint; migration now drops → updates → re-creates it with the 7 new tier values. Redeployed + re-ran on Render → succeeded. **141 company rows `sme` → `business`** (mostly test rows; grandfather any real paying ones). `/health/db-schema` ok. |
 
 Remaining for the pricing restructure (see spec §8): public `POST /api/check` + `/check` page (the free LC-check lead magnet); Trader/Agency toggle on `trdr-pricing-section.tsx` / `Pricing.tsx` / `ToolPricingSection.tsx` (they render the new trader tiers fine, just no toggle); swap `PlanType` for the raw tier + display-name map in the billing UI so "Business" reads as "Business".
 
@@ -82,7 +82,7 @@ Also: `reference_competitor_tradingdocs_ai.md` + `reference_lcopilot_pricing_mod
 6. **Deferred follow-up:** `POST /api/check` (public, no-auth, IP rate-limited, trimmed result) + `/check` page.
 
 ## Ops note
-Backend deploy lands on Render via push → **run `alembic upgrade head` manually** afterward (trdrhub-api has no pre/post-deploy hook — `reference_render_migrations.md`). Verify via `/health/db-schema`. Migration `20260510_pricing_restructure_tier` logs the count of `sme` rows it rewrites — check that line; if any are real paying customers, grandfather them (bump to `enterprise` or set `quota_limit=50`) since `business` = 25 LCs/mo vs the old `sme` 50.
+Migration `20260510_pricing_restructure_tier` is **applied** (Render trdrhub-api, 2026-05-10 13:52 UTC; `/health/db-schema` ok; 141 `sme`→`business` rows — grandfather any real paying SME customers via `quota_limit=50`). For future backend deploys with a new migration: trdrhub-api has no pre/post-deploy hook (`reference_render_migrations.md`), so run `render jobs create srv-d41dio8dl3ps73db8gpg --start-command "alembic upgrade head"` manually, then verify `/health/db-schema`.
 
 ---
 
