@@ -1,7 +1,7 @@
 # LCopilot Pricing Restructure — Design
 
 **Date:** 2026-05-10
-**Status:** **Mostly shipped.** Backend (`f16e9ae5`) + frontend reconciliation (`64277e47`, `120ed3c9`) done; remaining: public `/check` endpoint + `/check` page, and the Agency toggle on the secondary pricing components — see §8.
+**Status:** **Shipped.** Backend (`f16e9ae5`) + frontend reconciliation (`64277e47`, `120ed3c9`) + TRDR landing (`0cda613d`) + public `/api/check` + `/check` page (`a0efcb81`) + billing-UI tier labels (`c56b4e01`). Remaining loose ends are v1.1 / polish only — see §8.
 **Owner:** Ripon
 **Scope:** Clean-sheet redesign of the LCopilot pricing model, shipped pre-launch (target launch 2026-07-25), and full reconciliation of the three currently-contradictory pricing definitions in the codebase.
 
@@ -202,11 +202,32 @@ Run as a one-off data migration (or a backfill script) alongside the `entitlemen
 - `apps/web/src/lib/lcopilot/entitlementsApi.ts` — `CurrentEntitlements.overage_rate_usd`.
 - `apps/web/src/types/billing.ts` — `normalizePlanType` folds the 7 new tier strings into the `PlanType` enum (payg/solo→STARTER, business/agency_*→PROFESSIONAL, enterprise/agency_enterprise→ENTERPRISE) + keeps legacy mappings; in-comment note that the billing UI should eventually swap `PlanType` for the raw tier + a display-name map (the labels currently read Starter/Professional/Enterprise).
 
-### 🔲 Pending — public `/api/check` + `/check` page · Agency toggle on secondary pricing components
+### ✅ Shipped — public `/api/check` + `/check` page (commit `a0efcb81`, pushed)
 
-- `trdr-pricing-section.tsx` / `Pricing.tsx` / `ToolPricingSection.tsx` import the same `lib/pricing.ts` helpers/tiers, so they compile and render the new trader tiers with the new prices — they just lack the Trader/Agency toggle. Polish for the follow-up (mirror `PricingPage.tsx`).
-- The billing UI (`BillingOverviewPage` + `PlanCard`/`AlertBanner`/`UpgradeModal`) still labels tiers Starter/Professional/Enterprise via `normalizePlanType` — swap to the raw `company.tier` + a display-name map (see `QuotaStrip.TIER_DISPLAY_NAMES`).
-- Public `/api/check` endpoint + `/check` page — see the next subsection.
+- `apps/api/app/routers/public_check.py` — `POST /api/check` (multipart, same payload as `POST /api/validate/`) runs the full pipeline anonymously and returns the trimmed `{verdict, verdict_label, verdict_color, finding_count, top_findings:[≤2 × {title, severity}], signup_cta:true}` — withholds the full structured result / PDF / complete finding list. Plus `GET /api/check/availability` (non-consuming "used today?" probe). Identity: the existing `demo@trdrhub.com` sentinel user (`get_or_create_demo_user`) — the codebase's already-supported unauthenticated-validation identity, so the pipeline's billing/quota/usage blocks all special-case it and zero pipeline changes were needed. Kill switch: `settings.PUBLIC_LC_CHECK_ENABLED` (default True) — flip it off if anonymous model spend spikes.
+- `apps/api/app/utils/anon_rate_limit.py` — Redis-backed per-IP, per-scope counter (`reserve_anon_run` / `release_anon_run` / `peek_anon_run`). The generic `RateLimiterMiddleware` is in-memory / per-process / short-window and **cannot** express "1 req/IP/24h scoped to one path"; an un-rate-limited public endpoint that runs Sonnet/Opus on every hit is unbounded free model spend — so this is the cost control. Fails open only when Redis isn't configured at all (local/stub); fails closed (503) when configured-but-unreachable. Refunds the reservation on a malformed-upload 400 (no LLM spend happened).
+- `apps/api/main.py` — mounts the router; `/api/check` exempt from CSRF + audit middleware. `apps/api/app/config.py` — `PUBLIC_LC_CHECK_ENABLED` / `PUBLIC_LC_CHECK_WINDOW_SECONDS` / `PUBLIC_LC_CHECK_LIMIT_PER_WINDOW`.
+- `apps/api/tests/public_lc_check_test.py` — 12 tests (limiter: reserve/limit/refund/peek/per-IP/fail-open/forwarded-for; trimming helpers: shape, severity-sort, ≤2 cap, clean-presentation, provisional fallback, never leaks structured result).
+- `apps/web/src/pages/CheckPage.tsx` — public, brand-themed (`#00261C`/`#B2F273`/`#EDF5F2`), in the TRDR marketing shell (`TRDRHeader`/`TRDRFooter`), **not** auth-gated: drag/drop upload → trimmed verdict card (verdict badge + finding count + top findings) → "create a free account to see every finding + export the PDF" gate. Handles the 1/IP/24h limit (upfront via `/availability` and on the 429) with a dedicated sign-up CTA card.
+- `apps/web/src/lib/lcopilot/publicCheckApi.ts` — plain-`fetch` client (public, CSRF-exempt), 6 min timeout, typed 429 / error handling.
+- `apps/web/src/App.tsx` — `/check` route. `apps/web/src/pages/PricingPage.tsx` — "try it free" callout linking to `/check` (both tracks).
+- **Ops:** no new migration — `PUBLIC_LC_CHECK_ENABLED` has a default, Redis (`REDIS_URL`) already configured on Render. A backend redeploy picks up `/api/check`; Vercel auto-deploys `/check`.
+
+### ✅ Shipped — billing-UI tier labels (commit `c56b4e01`, pushed)
+
+- `apps/web/src/lib/billing/tierDisplay.ts` — new single source of truth: `BILLING_TIER_DISPLAY_NAMES` (7 tiers + legacy `sme`/`free`/`monthly_*` + `smoke_bypass`) + `tierDisplayName(rawTier)` + `isAgencyBillingTier()`. Title-cases an unknown tier as a last resort.
+- `apps/web/src/components/entitlements/QuotaStrip.tsx` — drops its local `TIER_DISPLAY_NAMES` / `tierDisplayName` / `isAgencyTier` copies, imports from the shared module.
+- `apps/web/src/types/billing.ts` — `PLAN_DEFINITIONS` realigned: `STARTER`→"Solo" (5 LCs / 1 seat), `PROFESSIONAL`→"Business" (25 / 5 seats, now `popular`), `ENTERPRISE` features updated, `FREE` points at `/check`. `price`/`currency` left as stale BDT placeholders (only surfaced in the half-built `UpgradeModal` — canonical pricing is `lib/pricing.ts`; real prices land with v1.1 checkout) with a comment.
+- `apps/web/src/components/billing/PlanCard.tsx` (+ `PlanCardCompact`) — prefers `tierDisplayName(billingInfo.tier)` for the title + badge; the `'Starter'`/`'Professional'` literal badge strings now render the real tier name; icon/colour stay on `PlanType`.
+- `apps/web/src/components/billing/AlertBanner.tsx` — new optional `tierName` prop; quota-warning copy reads "your <tierName> plan". `apps/web/src/pages/BillingOverviewPage.tsx` computes `currentTierName` from `billingInfo.tier` and passes it.
+- `UpgradeModal` labels come along for free via the `PLAN_DEFINITIONS` name rename (it only deals with `PlanType` upgrade targets, no PAYG). `UsageSummaryGrid` / `QuotaMeter` render no plan name → untouched.
+
+### 🔲 Pending — Agency toggle on the secondary pricing components (polish, low urgency)
+
+- `trdr-pricing-section.tsx` / `Pricing.tsx` / `ToolPricingSection.tsx` import the same `lib/pricing.ts` helpers/tiers, so they compile and render the new trader tiers with the new prices — they just lack the Trader/Agency toggle. Polish for a follow-up (mirror `PricingPage.tsx`). `Pricing.tsx` is dead/unrouted — ignore; `ToolPricingSection.tsx` is for parked tools — no Agency toggle needed.
+- `UpgradeModal` / `PLAN_DEFINITIONS` prices: still stale BDT — will be reworked alongside self-serve Stripe checkout (v1.1 backlog).
+
+**The pricing restructure is complete** as of `c56b4e01`. The only loose ends (above) are explicitly v1.1 / polish and not launch-blocking.
 
 **Locked numbers (do not re-derive):**
 
@@ -225,6 +246,6 @@ Run as a one-off data migration (or a backfill script) alongside the `entitlemen
 
 Localization multipliers off USD (same as the current `lib/pricing.ts` table): **BDT ×86, INR ×69, PKR ×172, EUR ×0.93, GBP ×0.80, AED ×3.67, SGD ×1.35, AUD ×1.55**; round to clean figures.
 
-### 🔲 Pending — public `/api/check` endpoint + `/check` page (deferred to a focused follow-up)
+### Done — public `/api/check` endpoint + `/check` page
 
-Deferred because it's the most plumbing-heavy piece, it's a lead magnet (not the launch-blocker), and a half-wired public endpoint without solid rate-limiting is itself a free-LLM-spend cost risk. Scope unchanged from §3.1 / §4.1 / §4.2. The validation pipeline already uses `get_user_optional` (lenient auth), so `/api/check` can mirror `POST /api/validate/` (in `validate_run.py::validate_doc`) with: forced full run (no intake_only/extract_only), `current_user=None`, IP rate-limit (1/IP/24h, existing rate-limiter middleware), and a trimmed response (`{verdict, finding_count, top_findings:[≤2 × {title, severity}], signup_cta:true}` — withhold the full structured result + PDF + full finding list). New `/check` page in `apps/web` (public, brand-themed, marketing shell, not auth-gated).
+Shipped in `a0efcb81` (see the "✅ Shipped — public `/api/check` + `/check` page" subsection above). Note vs the original deferral plan: `get_user_optional` actually *raises* 401 without a token (it's the *pipeline* — `prepare_validation_session` etc. — that tolerates an anonymous owner), and `execute_validation_pipeline` has a couple of unguarded `current_user.company` / `current_user.email` accesses — so rather than `current_user=None` the endpoint passes the existing `demo@trdrhub.com` sentinel user (which the pipeline's billing/quota/usage code already special-cases), needing zero pipeline edits. The IP rate-limit is a new Redis-backed per-IP-per-path counter (`app/utils/anon_rate_limit.py`), not the in-memory `RateLimiterMiddleware` (which can't do a 24h path-scoped window).

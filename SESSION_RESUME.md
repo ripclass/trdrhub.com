@@ -1,37 +1,32 @@
 # Session resume — UI/UX housekeeping + pricing restructure (2026-05-10)
 
 **Last updated:** 2026-05-10
-**State at commit:** `0cda613d` (TRDR landing pricing fix) — branch `master`, pushed. Migration `20260510` applied on Render (see below).
-**Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~10 weeks to 2026-07-25). This session: brand housekeeping + importer-dashboard bug fixes + a clean-sheet LCopilot pricing restructure (backend ✅ + frontend reconciliation ✅ — only the public `/check` lead-magnet + a couple of secondary-pricing-component polish items remain).
+**State at commit:** `c56b4e01` (billing-UI tier labels) — branch `master`, pushed. Migration `20260510` applied on Render (see below).
+**Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~10 weeks to 2026-07-25). This session shipped: brand housekeeping + importer-dashboard bug fixes + the clean-sheet LCopilot pricing restructure — **now complete end-to-end** (backend ✅ + frontend reconciliation ✅ + TRDR landing ✅ + public `/api/check` + `/check` lead-magnet ✅ + billing-UI tier labels ✅). The only remaining pricing-restructure loose ends are v1.1 / polish (Agency toggle on the secondary pricing components, real prices in `UpgradeModal` — both deferred with self-serve Stripe checkout).
 
 ---
 
 ## Resume prompt
 
 ```
-Finish the LCopilot pricing restructure tail. Core is shipped + live: backend
-(f16e9ae5) + migration 20260510 applied on Render + frontend reconciliation
-(64277e47, 120ed3c9) + TRDR landing fix (0cda613d). Read
-docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md §8 (locked
-numbers + remaining items). Two items left, both fresh-session sized:
-(1) Public LC checker — POST /api/check (no auth; the validate pipeline already
-tolerates current_user=None via get_user_optional) + a trimmed response
-{verdict, finding_count, top_findings:[≤2], signup_cta} + a /check page in apps/web.
-NOTE: the existing RateLimiterMiddleware is in-memory, per-IP, generic-request-count
-only — it CANNOT do "1 req/IP/24h" per-path. You'll need a small Redis-backed
-per-IP-per-path counter for the abuse limit (this is the cost-critical bit — an
-un-rate-limited public LLM endpoint = unbounded free spend). Render already has Redis.
-(2) Billing UI labels — swap PlanType for the raw company.tier + a display-name map
-(see QuotaStrip.TIER_DISPLAY_NAMES) across PlanCard / AlertBanner / UpgradeModal /
-UsageSummaryGrid so "Business" reads as "Business" not "Professional" (currently
-normalizePlanType maps business→PROFESSIONAL as a stopgap — works, just mislabels).
+The LCopilot pricing restructure is complete (last commit c56b4e01). Nothing
+left on it except v1.1/polish: the Trader/Agency toggle on the secondary pricing
+components (trdr-pricing-section.tsx — Pricing.tsx is dead, ToolPricingSection is
+parked tools), and real prices in UpgradeModal/PLAN_DEFINITIONS (will be reworked
+with self-serve Stripe checkout, v1.1 backlog). So pick from the launch-prep
+options instead — see memory: project_launch_prep_options_2026_05_02.md and the
+LAUNCH_CHECKLIST_2026_07_25.md / EXECUTION_PLAN_PATH_A_2026_04_25.md at repo root.
+Standing rules still in force: push every commit immediately; new backend
+migration -> `render jobs create srv-d41dio8dl3ps73db8gpg --start-command
+"alembic upgrade head"` then verify /health/db-schema; keep Sonnet 4.6 / Opus,
+never downgrade models for cost.
 ```
 
 **Migration 20260510 — ✅ APPLIED on Render trdrhub-api 2026-05-10 13:52 UTC.** First attempt failed on the pre-existing `ck_companies_tier_valid` CHECK constraint (it only allowed `('solo','sme','enterprise')`) → fixed in commit `5b665fac` (drop → UPDATE → re-create constraint with the 7 new values), redeployed, re-ran, succeeded. `/health/db-schema` = ok. **141 company rows migrated `sme` → `business`** (25 LCs/mo, was 50) — mostly auto-created/test rows, but if any are real paying SME customers, grandfather them (`company.quota_limit = 50` or bump to `enterprise`). Future backend deploys with a new migration still need a manual `render jobs create srv-d41dio8dl3ps73db8gpg --start-command "alembic upgrade head"` (no auto hook).
 
 ---
 
-## What shipped today (17 commits, `93c8a394..0cda613d`)
+## What shipped today (19 commits, `93c8a394..c56b4e01`)
 
 ### Brand-drift housekeeping (the "everything's bluish, not our brand" complaint)
 | Commit | What |
@@ -58,8 +53,10 @@ normalizePlanType maps business→PROFESSIONAL as a stopgap — works, just misl
 | `120ed3c9` | **Frontend pt 2.** `PricingPage.tsx` Trader/Agency toggle + shared `<PricingCard>` + Enterprise/Agency-Enterprise wide card + FAQ rewrite (no "14-day free trial"). `QuotaStrip.tsx` 7-value tiers, three states (pool bar + overage line / PAYG line / agency "Unlimited (fair use)" pill), brand-lime bar. `entitlementsApi.ts` `overage_rate_usd`. `types/billing.ts` `normalizePlanType` folds the 7 new tiers into `PlanType`. |
 | `5b665fac` | **Migration fix + applied.** First migration run failed on the pre-existing `ck_companies_tier_valid` CHECK constraint; migration now drops → updates → re-creates it with the 7 new tier values. Redeployed + re-ran on Render → succeeded. **141 company rows `sme` → `business`** (mostly test rows; grandfather any real paying ones). `/health/db-schema` ok. |
 | `0cda613d` | **TRDR landing pricing block.** `trdr-pricing-section.tsx` (the `/trdr` platform landing) — Enterprise now shows its real $699/mo + "volume bands above 150 LCs/mo" (was mislabeled "Custom"); "14-day free trial" copy (×3) → "pay-as-you-go from $12/LC, no card to start, metered per LC presentation"; CTAs → "Start <tier>" / "Talk to Sales"; stray `border-gray` → `border-border`. |
+| `a0efcb81` | **Public free LC checker — the lead magnet.** Backend: `app/routers/public_check.py` (`POST /api/check` — multipart, runs the full pipeline anonymously via the `demo@trdrhub.com` sentinel user so the pipeline's billing/quota/usage code already special-cases it → zero pipeline edits → returns the trimmed `{verdict, verdict_label, verdict_color, finding_count, top_findings:[≤2], signup_cta}`; `GET /api/check/availability` non-consuming probe; kill switch `settings.PUBLIC_LC_CHECK_ENABLED`). `app/utils/anon_rate_limit.py` — Redis-backed per-IP-per-path 1/24h counter (the generic in-memory `RateLimiterMiddleware` can't do that; un-rate-limited public LLM endpoint = unbounded spend); fails closed (503) if Redis is configured-but-unreachable, open if not configured (local). `main.py` mounts it + CSRF/audit-exempt. `tests/public_lc_check_test.py` — 12 tests. Frontend: `pages/CheckPage.tsx` (public, brand-themed, marketing shell, drag/drop → trimmed verdict card → sign-up gate; handles the 1/IP/24h limit), `lib/lcopilot/publicCheckApi.ts` (plain-fetch, no auth/CSRF), `/check` route in `App.tsx`, "try it free" callout on `PricingPage`. No new migration. |
+| `c56b4e01` | **Billing-UI tier labels.** `lib/billing/tierDisplay.ts` — shared `BILLING_TIER_DISPLAY_NAMES` + `tierDisplayName(rawTier)` + `isAgencyBillingTier()`. `QuotaStrip.tsx` drops its local copies, imports the shared module. `types/billing.ts` — `PLAN_DEFINITIONS` realigned (`STARTER`→"Solo", `PROFESSIONAL`→"Business"+`popular`, Enterprise features; FREE→/check; price/currency left stale BDT with a note — real prices land with v1.1 checkout). `PlanCard.tsx` (+ Compact) — prefers `tierDisplayName(billingInfo.tier)` for the title+badge. `AlertBanner.tsx` — new `tierName` prop; `BillingOverviewPage.tsx` passes `currentTierName`. `UpgradeModal` labels fixed for free by the `PLAN_DEFINITIONS` rename. |
 
-Remaining for the pricing restructure (see spec §8, both fresh-session sized): (1) public `POST /api/check` + `/check` page — the free LC-check lead magnet; needs a small Redis-backed per-IP-per-path "1 req/24h" counter (the existing in-memory `RateLimiterMiddleware` can't do per-path long-window limits, and this is the cost-critical part). (2) Swap `PlanType` for the raw `company.tier` + a display-name map across the billing UI (`PlanCard`/`AlertBanner`/`UpgradeModal`/`UsageSummaryGrid`) so "Business" labels as "Business" not "Professional" — currently `normalizePlanType` maps `business→PROFESSIONAL` as a working stopgap. (`Pricing.tsx` is dead/unrouted — ignore; `ToolPricingSection.tsx` is for parked tools — no Agency toggle needed.)
+Pricing restructure: **complete.** Remaining loose ends are v1.1 / polish only — Trader/Agency toggle on the secondary pricing components (`trdr-pricing-section.tsx`; `Pricing.tsx` is dead/unrouted, `ToolPricingSection.tsx` is parked tools), and real prices in `UpgradeModal`/`PLAN_DEFINITIONS` (reworked with self-serve Stripe checkout, v1.1 backlog). Neither is launch-blocking.
 
 Also: `reference_competitor_tradingdocs_ai.md` + `reference_lcopilot_pricing_model.md` saved to memory.
 
@@ -79,14 +76,9 @@ Also: `reference_competitor_tradingdocs_ai.md` + `reference_lcopilot_pricing_mod
 
 ---
 
-## Still pending — pricing restructure frontend (see spec §8 for full detail)
+## Pricing restructure — DONE (see spec §8 for the full per-commit detail)
 
-1. `apps/web/src/lib/pricing.ts` — rewrite `PRICING_TIERS` (3 trader tiers) + add `AGENCY_TIERS` + `track`/`seatBased`/`overageRateUsd` fields; `PAY_PER_USE.lc_validation` USD 8 → 12; keep all helper exports (5 files import them).
-2. `apps/web/src/pages/Index.tsx` — import trader tiers from `lib/pricing.ts`; fix the 2-vs-5-free-LC FAQ contradiction.
-3. `PricingPage.tsx` + `components/sections/trdr-pricing-section.tsx` — Trader ↔ Agency toggle.
-4. `components/entitlements/QuotaStrip.tsx` — new tiers + overage line + "Unlimited (fair use)" for agency.
-5. `types/billing.ts` + `BillingOverviewPage.tsx` — `normalizePlanType` / tier handling for the 7-value model.
-6. **Deferred follow-up:** `POST /api/check` (public, no-auth, IP rate-limited, trimmed result) + `/check` page.
+All of: `lib/pricing.ts` single source of truth (`64277e47`), `Index.tsx` cards + FAQ scrub (`64277e47`), `PricingPage.tsx` Trader/Agency toggle (`120ed3c9`), `QuotaStrip.tsx` 7-value tiers (`120ed3c9`), `types/billing.ts` / `BillingOverviewPage.tsx` 7-value handling (`120ed3c9` + `c56b4e01`), TRDR landing block (`0cda613d`), public `/api/check` + `/check` page (`a0efcb81`), billing-UI tier labels via shared `tierDisplay.ts` (`c56b4e01`). **v1.1 / polish leftovers** (not launch-blocking): Trader/Agency toggle on `trdr-pricing-section.tsx`; real prices in `UpgradeModal` / `PLAN_DEFINITIONS` (with self-serve Stripe checkout).
 
 ## Ops note
 Migration `20260510_pricing_restructure_tier` is **applied** (Render trdrhub-api, 2026-05-10 13:52 UTC; `/health/db-schema` ok; 141 `sme`→`business` rows — grandfather any real paying SME customers via `quota_limit=50`). For future backend deploys with a new migration: trdrhub-api has no pre/post-deploy hook (`reference_render_migrations.md`), so run `render jobs create srv-d41dio8dl3ps73db8gpg --start-command "alembic upgrade head"` manually, then verify `/health/db-schema`.
