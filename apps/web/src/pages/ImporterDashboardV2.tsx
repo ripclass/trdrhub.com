@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useMemo } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -49,19 +49,40 @@ import { BillingOverviewPage } from "./BillingOverviewPage";
 // Data helpers
 // ---------------------------------------------------------------------------
 
+// Per-row "View →" target depends on the workflow that produced the session:
+// importer (draft-LC or supplier-docs) reviews live at /lcopilot/import-results
+// where ImportResults handles the importer payload shape and renders inside
+// its own results layout. Exporter presentations route into the exporter
+// dashboard's own reviews section so the user keeps the exporter sidebar +
+// shell instead of landing on the standalone, sidebar-less ExporterResultsV2
+// page (which is also what triggered the "Error loading results" + "Back to
+// legacy upload" path that broke the importer flow before this fix).
+function resolveResultsHref(workflowType: string, id: string): string | undefined {
+  if (!id) return undefined;
+  if (
+    workflowType === "importer_draft_lc" ||
+    workflowType === "importer_supplier_docs"
+  ) {
+    return `/lcopilot/import-results/${id}`;
+  }
+  return `/lcopilot/exporter-dashboard?section=reviews&jobId=${id}`;
+}
+
 function sessionsToRows(sessions: ValidationSession[]): ReviewsTableSession[] {
   return sessions.slice(0, 10).map((s: any) => {
     const id = s.id ?? s.session_id ?? "";
+    const idStr = String(id);
+    const workflowType = s.workflow_type ?? "exporter_presentation";
     return {
-      id: String(id),
+      id: idStr,
       lcNumber:
         s.lc_number ??
         s.lcNumber ??
         (typeof id === "string" ? id.slice(0, 8) : ""),
       createdAt: s.created_at ?? s.createdAt ?? new Date().toISOString(),
       verdict: s.verdict ?? s.status ?? "pending",
-      workflowType: s.workflow_type ?? "exporter_presentation",
-      resultsHref: id ? `/lcopilot/results-v2/${id}` : undefined,
+      workflowType,
+      resultsHref: resolveResultsHref(workflowType, idStr),
     };
   });
 }
@@ -246,17 +267,9 @@ export default function ImporterDashboardV2() {
         </section>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Recent Activity</CardTitle>
-              <CardDescription>Last 10 reviews.</CardDescription>
-            </div>
-            <Link
-              to="/reviews"
-              className="text-sm text-primary hover:underline"
-            >
-              View all →
-            </Link>
+          <CardHeader>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>Last 10 reviews.</CardDescription>
           </CardHeader>
           <CardContent>
             {rows.length === 0 ? (

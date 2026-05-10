@@ -406,9 +406,9 @@ export default function ExporterResultsV2() {
             {error instanceof Error ? error.message : 'Failed to load validation results'}
           </AlertDescription>
         </Alert>
-        <Button onClick={() => navigate('/lcopilot/upload')} className="mt-4">
+        <Button onClick={() => navigate('/lcopilot/dashboard')} className="mt-4">
           <Home className="mr-2 h-4 w-4" />
-          Back to Upload
+          Back to Dashboard
         </Button>
       </div>
     );
