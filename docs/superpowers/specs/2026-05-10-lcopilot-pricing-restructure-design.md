@@ -1,7 +1,7 @@
 # LCopilot Pricing Restructure — Design
 
 **Date:** 2026-05-10
-**Status:** **In progress.** Backend shipped (`f16e9ae5`); frontend reconciliation + public `/check` endpoint still pending — see §8 Implementation status.
+**Status:** **Mostly shipped.** Backend (`f16e9ae5`) + frontend reconciliation (`64277e47`, `120ed3c9`) done; remaining: public `/check` endpoint + `/check` page, and the Agency toggle on the secondary pricing components — see §8.
 **Owner:** Ripon
 **Scope:** Clean-sheet redesign of the LCopilot pricing model, shipped pre-launch (target launch 2026-07-25), and full reconciliation of the three currently-contradictory pricing definitions in the codebase.
 
@@ -193,7 +193,20 @@ Run as a one-off data migration (or a backfill script) alongside the `entitlemen
 - `app/services/billing_service.py` — `_resolve_tier` recognises the 7 new tiers, maps legacy plan/size strings (incl. legacy `sme` → `business`), defaults to `business`.
 - `alembic/versions/20260510_pricing_restructure_tier.py` — rewrites `companies.tier` `'sme'` → `'business'`, changes column default `'sme'` → `'payg'`, logs the `'sme'` row count first. **Must be run on Render after deploy** (trdrhub-api has no auto-migrate hook — `reference_render_migrations`).
 
-### 🔲 Pending — frontend reconciliation + public checker
+### ✅ Shipped — frontend reconciliation (commits `64277e47`, `120ed3c9`, pushed)
+
+- `apps/web/src/lib/pricing.ts` — rewritten as the single source of truth: `PRICING_TIERS` = the 3 trader tiers (solo/business/enterprise) with 9-currency localized monthly+yearly maps, `overageRateUsd`, `upgradeToId`; `AGENCY_TIERS` = the 3 agency per-seat tiers; `PriceTier` gained `track`/`seatBased`/`custom`/`overageRateUsd`/`upgradeToId`; `PAY_PER_USE.lc_validation` USD 8→12 + localized; all existing helper exports preserved; new `getPayPerUseDisplay` / `tiersForTrack` / `ALL_PRICING_TIERS` / `PricingTrack`.
+- `apps/web/src/pages/Index.tsx` — landing-page pricing cards derived from `PRICING_TIERS` + `PAY_PER_USE` (no longer a hardcoded array); removed the "Free $0/forever" card; scrubbed the "2 free LCs" / "5 free validations" / "Free tier gives you 5 validations/month" copy → "$12 per LC · no commitment · no card to start".
+- `apps/web/src/pages/PricingPage.tsx` — Trader ↔ Agency persona toggle; trader = PAYG callout + Solo + Business⭐ cards + Enterprise wide card; agency = Agency Starter + Agency Pro⭐ (per-seat) + Agency Enterprise (Custom) wide card; shared `<PricingCard>` component; FAQ + header copy rewritten (no "14-day free trial").
+- `apps/web/src/components/entitlements/QuotaStrip.tsx` — 7-value tier display names; three states (trader pool → bar + overage line + upgrade hint; PAYG → "$12 per LC" line + "See plans"; agency → "Unlimited (fair use)" pill); bar recolored brand lime.
+- `apps/web/src/lib/lcopilot/entitlementsApi.ts` — `CurrentEntitlements.overage_rate_usd`.
+- `apps/web/src/types/billing.ts` — `normalizePlanType` folds the 7 new tier strings into the `PlanType` enum (payg/solo→STARTER, business/agency_*→PROFESSIONAL, enterprise/agency_enterprise→ENTERPRISE) + keeps legacy mappings; in-comment note that the billing UI should eventually swap `PlanType` for the raw tier + a display-name map (the labels currently read Starter/Professional/Enterprise).
+
+### 🔲 Pending — public `/api/check` + `/check` page · Agency toggle on secondary pricing components
+
+- `trdr-pricing-section.tsx` / `Pricing.tsx` / `ToolPricingSection.tsx` import the same `lib/pricing.ts` helpers/tiers, so they compile and render the new trader tiers with the new prices — they just lack the Trader/Agency toggle. Polish for the follow-up (mirror `PricingPage.tsx`).
+- The billing UI (`BillingOverviewPage` + `PlanCard`/`AlertBanner`/`UpgradeModal`) still labels tiers Starter/Professional/Enterprise via `normalizePlanType` — swap to the raw `company.tier` + a display-name map (see `QuotaStrip.TIER_DISPLAY_NAMES`).
+- Public `/api/check` endpoint + `/check` page — see the next subsection.
 
 **Locked numbers (do not re-derive):**
 
@@ -211,13 +224,6 @@ Run as a one-off data migration (or a backfill script) alongside the `entitlemen
 | Agency Enterprise | custom | custom | unlimited | negotiated |
 
 Localization multipliers off USD (same as the current `lib/pricing.ts` table): **BDT ×86, INR ×69, PKR ×172, EUR ×0.93, GBP ×0.80, AED ×3.67, SGD ×1.35, AUD ×1.55**; round to clean figures.
-
-**Frontend work items:**
-1. `apps/web/src/lib/pricing.ts` — rewrite `PRICING_TIERS` to the 3 trader subscription tiers (`solo`/`business`/`enterprise`); add `AGENCY_TIERS` (the 3 agency tiers); add a `track: 'trader' | 'agency'` field + `seatBased?: boolean` + `overageRateUsd?: number` to `PriceTier`; update `PAY_PER_USE.lc_validation` USD → 12 (currently 8) and the localized figures off the ×multipliers; keep all existing helper exports (`getPrice`, `getPriceDisplay`, `getPayPerUsePrice`, `getCurrencyFromCountry`, `getTierById`, `formatPrice`) so `HubBilling.tsx` / `trdr-pricing-section.tsx` / `PricingPage.tsx` / `Pricing.tsx` / `ToolPricingSection.tsx` don't break. `limits.price_checks` is vestigial (Price Verify is parked) — keep the field, set reasonable values.
-2. `apps/web/src/pages/Index.tsx` — delete the hardcoded `pricing` array, import the trader tiers from `lib/pricing.ts`; fix the FAQ self-contradiction ("2 free LCs" card vs "5 validations/month" FAQ answer — there is no monthly free tier now; replace with "free public LC check, then plans from $49/mo").
-3. `apps/web/src/pages/PricingPage.tsx` + `apps/web/src/components/sections/trdr-pricing-section.tsx` — add a Trader ↔ Agency toggle (default Trader); each track shows its tiers + the PAYG card + a "free LC check" callout linking to `/check`.
-4. `apps/web/src/components/entitlements/QuotaStrip.tsx` — read the new `company.tier` + the `overage_rate_usd` field; show "X of Y LCs used — extra LCs at $Z, or upgrade to <next tier>"; agency tiers show "Unlimited (fair use)".
-5. `apps/web/src/types/billing.ts` + `apps/web/src/pages/BillingOverviewPage.tsx` — rework `normalizePlanType` / the `tier` handling (added 2026-05-10 in `d69fa73a`) for the 7-value model. The old `PlanType` enum is FREE/STARTER/PROFESSIONAL/ENTERPRISE; map `solo→STARTER`, `business→PROFESSIONAL`, `enterprise→ENTERPRISE`, `payg→STARTER` (or introduce a PAYG label), `agency_*→PROFESSIONAL`-ish; legacy `sme→PROFESSIONAL`. Or — cleaner — replace `PlanType` usage in the billing UI with the raw tier string + a display-name map. Decide during impl.
 
 ### 🔲 Pending — public `/api/check` endpoint + `/check` page (deferred to a focused follow-up)
 

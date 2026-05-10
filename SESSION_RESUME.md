@@ -1,28 +1,32 @@
 # Session resume — UI/UX housekeeping + pricing restructure (2026-05-10)
 
 **Last updated:** 2026-05-10
-**State at commit:** `f16e9ae5` (backend pricing restructure) — branch `master`, pushed
-**Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~10 weeks to 2026-07-25). This session was brand housekeeping + importer-dashboard bug fixes + a clean-sheet LCopilot pricing restructure (backend done, frontend pending).
+**State at commit:** `120ed3c9` (pricing restructure frontend, part 3) — branch `master`, pushed
+**Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~10 weeks to 2026-07-25). This session: brand housekeeping + importer-dashboard bug fixes + a clean-sheet LCopilot pricing restructure (backend ✅ + frontend reconciliation ✅ — only the public `/check` lead-magnet + a couple of secondary-pricing-component polish items remain).
 
 ---
 
 ## Resume prompt
 
 ```
-Continue the LCopilot pricing restructure. Backend is shipped at f16e9ae5 (7-value
-company.tier billing enum + entitlements.py rewrite + migration 20260510). Read
-docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md §8 — it has
-the locked numbers and the exact pending frontend work items. Pending: (1) rewrite
-apps/web/src/lib/pricing.ts to the 3 trader tiers + AGENCY_TIERS + track field, (2)
-repoint Index.tsx + fix the 2-vs-5-free FAQ contradiction, (3) PricingPage Trader/Agency
-toggle, (4) QuotaStrip new tiers + overage line, (5) normalizePlanType/types/billing.ts
-for the 7-value model. Then the deferred public /api/check endpoint + /check page.
-Also: run alembic upgrade head on Render after the backend deploy lands (no auto hook).
+Finish the LCopilot pricing restructure tail. Backend (f16e9ae5) + frontend
+reconciliation (64277e47, 120ed3c9) are shipped. Read
+docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md §8 (locked
+numbers + remaining items). Remaining: (1) public POST /api/check endpoint (no auth,
+mirror validate_run.py::validate_doc with current_user=None, IP rate-limit 1/IP/24h,
+trimmed response) + a public /check page in apps/web; (2) add the Trader/Agency toggle
+to trdr-pricing-section.tsx / Pricing.tsx / ToolPricingSection.tsx (they already render
+the new trader tiers, just no toggle — mirror PricingPage.tsx); (3) swap PlanType for
+the raw tier + a display-name map in the billing UI (BillingOverviewPage etc.) so
+"Business" shows as "Business" not "Professional".
+Also: run `alembic upgrade head` on Render trdrhub-api after the backend deploy lands
+(no auto hook) — check the migration's "sme row count" log line; grandfather any real
+sme customers (business=25 LCs/mo vs old sme=50).
 ```
 
 ---
 
-## What shipped today (12 commits, `93c8a394..f16e9ae5`)
+## What shipped today (14 commits, `93c8a394..120ed3c9`)
 
 ### Brand-drift housekeeping (the "everything's bluish, not our brand" complaint)
 | Commit | What |
@@ -40,13 +44,17 @@ Also: run alembic upgrade head on Render after the backend deploy lands (no auto
 | `c3dfa8bb` | Remove the placeholder Settings tab from the importer sidebar (was a dead-end "No importer-specific settings yet" card — violated the no-placeholder-dashboards rule) |
 | `d69fa73a` | Billing tab showed "Billing data is temporarily unavailable" for most users — root cause was a frontend↔backend enum drift (backend `Company.plan` ∈ free/pay_per_check/monthly_basic/monthly_pro/enterprise; frontend `normalizePlanType` only matched FREE/ENTERPRISE → returned null → empty fallback). Added a `tier` field to `/billing/company` (derived from `company.tier`, falls back to mapping `plan`); broadened `normalizePlanType` to accept all three string shapes; `BillingOverviewPage` prefers `info.tier`. *(Note: the new pricing restructure below supersedes the tier-name mapping introduced here — see the spec §8 item 5.)* |
 
-### Pricing restructure — backend (the big one)
+### Pricing restructure — the big one
 | Commit | What |
 |---|---|
 | `dde0df78` | Design spec: `docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md` (brainstorming session) |
-| `f16e9ae5` | **Backend implementation.** `company.tier` is now the 7-value billing enum (`payg`/`solo`/`business`/`enterprise`/`agency_starter`/`agency_pro`/`agency_enterprise`); new `BusinessSize` enum for the onboarding Q3 "company size" answer + `starting_billing_tier()` mapping; `entitlements.py` rewrite (quota/seat/overage maps for all 7 tiers, agency fair-use soft-cap advisory log, default → `business`); `/api/entitlements/current` returns `overage_rate_usd`; `billing_service._resolve_tier` updated; migration `20260510_pricing_restructure_tier` (`sme`→`business`, default→`payg`, logs `sme` count). |
+| `f16e9ae5` | **Backend.** `company.tier` is now the 7-value billing enum (`payg`/`solo`/`business`/`enterprise`/`agency_starter`/`agency_pro`/`agency_enterprise`); new `BusinessSize` enum for the onboarding Q3 "company size" answer + `starting_billing_tier()` mapping; `entitlements.py` rewrite (quota/seat/overage maps for all 7 tiers, agency fair-use soft-cap advisory log, default → `business`); `/api/entitlements/current` returns `overage_rate_usd`; `billing_service._resolve_tier` updated; migration `20260510_pricing_restructure_tier` (`sme`→`business`, default→`payg`, logs `sme` count). |
+| `64277e47` | **Frontend pt 1.** `lib/pricing.ts` rewritten as the single source of truth — `PRICING_TIERS` = 3 trader tiers + `AGENCY_TIERS` + `track`/`seatBased`/`custom`/`overageRateUsd`/`upgradeToId`; `PAY_PER_USE.lc_validation` 8→12; helper exports preserved. `Index.tsx` pricing cards derived from it; "Free $0/forever" card + the "2 vs 5 free LCs" self-contradiction scrubbed. |
+| `120ed3c9` | **Frontend pt 2.** `PricingPage.tsx` Trader/Agency toggle + shared `<PricingCard>` + Enterprise/Agency-Enterprise wide card + FAQ rewrite (no "14-day free trial"). `QuotaStrip.tsx` 7-value tiers, three states (pool bar + overage line / PAYG line / agency "Unlimited (fair use)" pill), brand-lime bar. `entitlementsApi.ts` `overage_rate_usd`. `types/billing.ts` `normalizePlanType` folds the 7 new tiers into `PlanType`. |
 
-Also: `reference_competitor_tradingdocs_ai.md` saved to memory (Dubai competitor, page-credit pricing model, $299 entry).
+Remaining for the pricing restructure (see spec §8): public `POST /api/check` + `/check` page (the free LC-check lead magnet); Trader/Agency toggle on `trdr-pricing-section.tsx` / `Pricing.tsx` / `ToolPricingSection.tsx` (they render the new trader tiers fine, just no toggle); swap `PlanType` for the raw tier + display-name map in the billing UI so "Business" reads as "Business".
+
+Also: `reference_competitor_tradingdocs_ai.md` + `reference_lcopilot_pricing_model.md` saved to memory.
 
 ---
 
