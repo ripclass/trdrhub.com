@@ -1,7 +1,7 @@
 # Session resume — UI/UX housekeeping + pricing restructure (2026-05-10)
 
 **Last updated:** 2026-05-10
-**State at commit:** `5b665fac` (migration constraint fix) — branch `master`, pushed. Migration applied on Render (see below).
+**State at commit:** `0cda613d` (TRDR landing pricing fix) — branch `master`, pushed. Migration `20260510` applied on Render (see below).
 **Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~10 weeks to 2026-07-25). This session: brand housekeeping + importer-dashboard bug fixes + a clean-sheet LCopilot pricing restructure (backend ✅ + frontend reconciliation ✅ — only the public `/check` lead-magnet + a couple of secondary-pricing-component polish items remain).
 
 ---
@@ -9,23 +9,29 @@
 ## Resume prompt
 
 ```
-Finish the LCopilot pricing restructure tail. Backend (f16e9ae5) + frontend
-reconciliation (64277e47, 120ed3c9) are shipped. Read
+Finish the LCopilot pricing restructure tail. Core is shipped + live: backend
+(f16e9ae5) + migration 20260510 applied on Render + frontend reconciliation
+(64277e47, 120ed3c9) + TRDR landing fix (0cda613d). Read
 docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md §8 (locked
-numbers + remaining items). Remaining: (1) public POST /api/check endpoint (no auth,
-mirror validate_run.py::validate_doc with current_user=None, IP rate-limit 1/IP/24h,
-trimmed response) + a public /check page in apps/web; (2) add the Trader/Agency toggle
-to trdr-pricing-section.tsx / Pricing.tsx / ToolPricingSection.tsx (they already render
-the new trader tiers, just no toggle — mirror PricingPage.tsx); (3) swap PlanType for
-the raw tier + a display-name map in the billing UI (BillingOverviewPage etc.) so
-"Business" shows as "Business" not "Professional".
+numbers + remaining items). Two items left, both fresh-session sized:
+(1) Public LC checker — POST /api/check (no auth; the validate pipeline already
+tolerates current_user=None via get_user_optional) + a trimmed response
+{verdict, finding_count, top_findings:[≤2], signup_cta} + a /check page in apps/web.
+NOTE: the existing RateLimiterMiddleware is in-memory, per-IP, generic-request-count
+only — it CANNOT do "1 req/IP/24h" per-path. You'll need a small Redis-backed
+per-IP-per-path counter for the abuse limit (this is the cost-critical bit — an
+un-rate-limited public LLM endpoint = unbounded free spend). Render already has Redis.
+(2) Billing UI labels — swap PlanType for the raw company.tier + a display-name map
+(see QuotaStrip.TIER_DISPLAY_NAMES) across PlanCard / AlertBanner / UpgradeModal /
+UsageSummaryGrid so "Business" reads as "Business" not "Professional" (currently
+normalizePlanType maps business→PROFESSIONAL as a stopgap — works, just mislabels).
 ```
 
 **Migration 20260510 — ✅ APPLIED on Render trdrhub-api 2026-05-10 13:52 UTC.** First attempt failed on the pre-existing `ck_companies_tier_valid` CHECK constraint (it only allowed `('solo','sme','enterprise')`) → fixed in commit `5b665fac` (drop → UPDATE → re-create constraint with the 7 new values), redeployed, re-ran, succeeded. `/health/db-schema` = ok. **141 company rows migrated `sme` → `business`** (25 LCs/mo, was 50) — mostly auto-created/test rows, but if any are real paying SME customers, grandfather them (`company.quota_limit = 50` or bump to `enterprise`). Future backend deploys with a new migration still need a manual `render jobs create srv-d41dio8dl3ps73db8gpg --start-command "alembic upgrade head"` (no auto hook).
 
 ---
 
-## What shipped today (16 commits, `93c8a394..5b665fac`)
+## What shipped today (17 commits, `93c8a394..0cda613d`)
 
 ### Brand-drift housekeeping (the "everything's bluish, not our brand" complaint)
 | Commit | What |
@@ -51,8 +57,9 @@ the raw tier + a display-name map in the billing UI (BillingOverviewPage etc.) s
 | `64277e47` | **Frontend pt 1.** `lib/pricing.ts` rewritten as the single source of truth — `PRICING_TIERS` = 3 trader tiers + `AGENCY_TIERS` + `track`/`seatBased`/`custom`/`overageRateUsd`/`upgradeToId`; `PAY_PER_USE.lc_validation` 8→12; helper exports preserved. `Index.tsx` pricing cards derived from it; "Free $0/forever" card + the "2 vs 5 free LCs" self-contradiction scrubbed. |
 | `120ed3c9` | **Frontend pt 2.** `PricingPage.tsx` Trader/Agency toggle + shared `<PricingCard>` + Enterprise/Agency-Enterprise wide card + FAQ rewrite (no "14-day free trial"). `QuotaStrip.tsx` 7-value tiers, three states (pool bar + overage line / PAYG line / agency "Unlimited (fair use)" pill), brand-lime bar. `entitlementsApi.ts` `overage_rate_usd`. `types/billing.ts` `normalizePlanType` folds the 7 new tiers into `PlanType`. |
 | `5b665fac` | **Migration fix + applied.** First migration run failed on the pre-existing `ck_companies_tier_valid` CHECK constraint; migration now drops → updates → re-creates it with the 7 new tier values. Redeployed + re-ran on Render → succeeded. **141 company rows `sme` → `business`** (mostly test rows; grandfather any real paying ones). `/health/db-schema` ok. |
+| `0cda613d` | **TRDR landing pricing block.** `trdr-pricing-section.tsx` (the `/trdr` platform landing) — Enterprise now shows its real $699/mo + "volume bands above 150 LCs/mo" (was mislabeled "Custom"); "14-day free trial" copy (×3) → "pay-as-you-go from $12/LC, no card to start, metered per LC presentation"; CTAs → "Start <tier>" / "Talk to Sales"; stray `border-gray` → `border-border`. |
 
-Remaining for the pricing restructure (see spec §8): public `POST /api/check` + `/check` page (the free LC-check lead magnet); Trader/Agency toggle on `trdr-pricing-section.tsx` / `Pricing.tsx` / `ToolPricingSection.tsx` (they render the new trader tiers fine, just no toggle); swap `PlanType` for the raw tier + display-name map in the billing UI so "Business" reads as "Business".
+Remaining for the pricing restructure (see spec §8, both fresh-session sized): (1) public `POST /api/check` + `/check` page — the free LC-check lead magnet; needs a small Redis-backed per-IP-per-path "1 req/24h" counter (the existing in-memory `RateLimiterMiddleware` can't do per-path long-window limits, and this is the cost-critical part). (2) Swap `PlanType` for the raw `company.tier` + a display-name map across the billing UI (`PlanCard`/`AlertBanner`/`UpgradeModal`/`UsageSummaryGrid`) so "Business" labels as "Business" not "Professional" — currently `normalizePlanType` maps `business→PROFESSIONAL` as a working stopgap. (`Pricing.tsx` is dead/unrouted — ignore; `ToolPricingSection.tsx` is for parked tools — no Agency toggle needed.)
 
 Also: `reference_competitor_tradingdocs_ai.md` + `reference_lcopilot_pricing_model.md` saved to memory.
 
