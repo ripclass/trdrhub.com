@@ -30,6 +30,14 @@ class CompanyBillingInfo(BaseModel):
     id: UUID
     name: str
     plan: PlanType
+    # Phase A4 marketing tier — single source of truth aligned with
+    # services.entitlements (solo / sme / enterprise). Derived from
+    # company.tier when set, else mapped from the legacy plan column. The
+    # frontend prefers `tier` over `plan` for gating + render so legacy
+    # plan values like pay_per_check / monthly_basic / monthly_pro stop
+    # falling through `normalizePlanType` and triggering the
+    # "Billing data is temporarily unavailable" empty state.
+    tier: Optional[str] = None
     quota_limit: Optional[int] = None
     quota_used: int = 0
     quota_remaining: Optional[int] = None

@@ -734,6 +734,28 @@ class BillingService:
         self.db.add(audit_entry)
 
 
+    # Legacy PlanType → marketing tier mapping. Used as a fallback when
+    # company.tier is unset (e.g. pre-Phase-A4 rows). Confirmed by Ripon
+    # 2026-05-10: free / pay_per_check / monthly_basic → solo,
+    # monthly_pro → sme, enterprise → enterprise. Anything else → sme
+    # (matches the entitlements default tier).
+    _PLAN_TO_TIER_FALLBACK: Dict[str, str] = {
+        "free": "solo",
+        "pay_per_check": "solo",
+        "monthly_basic": "solo",
+        "monthly_pro": "sme",
+        "enterprise": "enterprise",
+    }
+
+    def _resolve_tier(self, company: "Company") -> str:
+        """Marketing tier for billing UI. Prefer company.tier, else map plan."""
+        explicit = (getattr(company, "tier", None) or "").strip().lower()
+        if explicit in {"solo", "sme", "enterprise"}:
+            return explicit
+        plan_value = getattr(company.plan, "value", company.plan)
+        plan_str = str(plan_value or "").strip().lower()
+        return self._PLAN_TO_TIER_FALLBACK.get(plan_str, "sme")
+
     def get_company_billing_info(self, company_id: uuid.UUID) -> Dict[str, Any]:
         """Get company billing information for API response."""
         company = self.db.query(Company).filter(Company.id == company_id).first()
@@ -747,6 +769,7 @@ class BillingService:
             "id": company.id,
             "name": company.name,
             "plan": company.plan,
+            "tier": self._resolve_tier(company),
             "quota_limit": company.quota_limit,
             "quota_used": total_usage,
             "quota_remaining": company.quota_limit - total_usage if company.quota_limit else None,

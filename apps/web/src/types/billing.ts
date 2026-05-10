@@ -38,6 +38,12 @@ export interface CompanyBillingInfo {
   id: string;
   name: string;
   plan: PlanType;
+  // Phase A4 marketing tier — single source of truth aligned with the
+  // backend services.entitlements module (solo / sme / enterprise). Prefer
+  // this field for gating + render. Backend derives it from company.tier
+  // when set, else maps the legacy plan column. Optional only because old
+  // mock fixtures may not include it; live backend always returns a value.
+  tier?: string | null;
   quota_limit: number | null;
   quota_used: number;
   quota_remaining: number | null;
@@ -367,6 +373,14 @@ export function isUnlimitedPlan(plan: PlanType): boolean {
   return PLAN_DEFINITIONS[plan].quota === null;
 }
 
+// Accepts three input shapes and folds them into PlanType so the billing
+// UI keeps working regardless of which column the backend surfaces:
+//   1. Frontend PlanType strings (FREE / STARTER / PROFESSIONAL / ENTERPRISE)
+//   2. Backend Phase A4 tier strings (solo / sme / enterprise)
+//   3. Legacy backend plan strings (free / pay_per_check / monthly_basic /
+//      monthly_pro / enterprise) — confirmed mapping per Ripon 2026-05-10:
+//      free + pay_per_check + monthly_basic → STARTER (Solo tier),
+//      monthly_pro → PROFESSIONAL (SME tier), enterprise → ENTERPRISE.
 export function normalizePlanType(plan: PlanType | string | null | undefined): PlanType | null {
   if (!plan) {
     return null;
@@ -375,6 +389,7 @@ export function normalizePlanType(plan: PlanType | string | null | undefined): P
   const normalized = String(plan).toUpperCase();
 
   switch (normalized) {
+    // Frontend PlanType passthrough
     case PlanType.FREE:
       return PlanType.FREE;
     case PlanType.STARTER:
@@ -383,6 +398,17 @@ export function normalizePlanType(plan: PlanType | string | null | undefined): P
       return PlanType.PROFESSIONAL;
     case PlanType.ENTERPRISE:
       return PlanType.ENTERPRISE;
+    // Backend tier strings (Phase A4)
+    case "SOLO":
+      return PlanType.STARTER;
+    case "SME":
+      return PlanType.PROFESSIONAL;
+    // Legacy backend plan strings
+    case "PAY_PER_CHECK":
+    case "MONTHLY_BASIC":
+      return PlanType.STARTER;
+    case "MONTHLY_PRO":
+      return PlanType.PROFESSIONAL;
     default:
       return null;
   }

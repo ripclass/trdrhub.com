@@ -140,7 +140,13 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
     );
   }
 
-  const normalizedPlan = normalizePlanType(billingInfo?.plan);
+  // Prefer the Phase A4 marketing tier (solo / sme / enterprise) over the
+  // legacy plan column (free / pay_per_check / monthly_basic / monthly_pro
+  // / enterprise). normalizePlanType folds both shapes into a PlanType so
+  // we don't trip the "Billing data is temporarily unavailable" empty
+  // state for users whose backend row only carries a legacy plan value.
+  const normalizedPlan =
+    normalizePlanType(billingInfo?.tier) ?? normalizePlanType(billingInfo?.plan);
   const normalizedBillingInfo = billingInfo && normalizedPlan
     ? { ...billingInfo, plan: normalizedPlan }
     : null;
