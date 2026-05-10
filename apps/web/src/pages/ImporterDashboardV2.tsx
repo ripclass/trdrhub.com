@@ -135,11 +135,13 @@ function parseSidebarSection(
     v === "dashboard" ||
     v === "draft-lc" ||
     v === "supplier-docs" ||
-    v === "billing" ||
-    v === "settings"
+    v === "billing"
   ) {
     return v;
   }
+  // Settings tab was removed 2026-05-10 — placeholder card violated the
+  // "no placeholder dashboards" rule. Old ?section=settings links fall
+  // back to the dashboard.
   return LEGACY_SECTION_MAP[v] ?? "dashboard";
 }
 
@@ -205,23 +207,6 @@ export default function ImporterDashboardV2() {
   const body = (() => {
     if (activeSection === "billing") {
       return <BillingOverviewPage />;
-    }
-    if (activeSection === "settings") {
-      return (
-        <Card>
-          <CardHeader>
-            <CardTitle>Settings</CardTitle>
-            <CardDescription>
-              Account, team, and retention preferences live in the dedicated
-              settings pages. This inline surface is a placeholder for
-              importer-scoped switches added later.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            No importer-specific settings yet.
-          </CardContent>
-        </Card>
-      );
     }
 
     // Default: Dashboard skeleton

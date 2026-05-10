@@ -15,7 +15,6 @@ import {
   BarChart3,
   FileText,
   ShieldCheck,
-  Settings,
   Building2,
   CreditCard,
   LogOut,
@@ -38,8 +37,7 @@ export type ImporterSidebarSection =
   | "dashboard"
   | "draft-lc"
   | "supplier-docs"
-  | "billing"
-  | "settings";
+  | "billing";
 
 interface ImporterSidebarProps extends React.ComponentProps<typeof Sidebar> {
   activeSection: ImporterSidebarSection;
@@ -139,17 +137,6 @@ export function ImporterSidebar({
                 >
                   <CreditCard />
                   <span>Billing</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeSection === "settings"}
-                  onClick={() => onSectionChange("settings")}
-                  tooltip="Settings"
-                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
-                >
-                  <Settings />
-                  <span>Settings</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
