@@ -17,6 +17,7 @@ import APIPage from './pages/resources/APIPage'
 import UCP600Page from './pages/resources/UCP600Page'
 import BlogPage from './pages/resources/BlogPage'
 import PricingPage from './pages/PricingPage'
+import CheckPage from './pages/CheckPage'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
 import PrivacyPage from './pages/legal/PrivacyPage'
@@ -222,6 +223,7 @@ function App() {
         <Route path="/guides/ucp600" element={<UCP600Page />} />
         <Route path="/blog" element={<BlogPage />} />
         <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/check" element={<CheckPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/careers" element={<CareersPage />} />
         <Route path="/contact" element={<ContactPage />} />

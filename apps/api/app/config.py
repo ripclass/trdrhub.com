@@ -150,6 +150,14 @@ class Settings(BaseSettings):
     STUB_STATUS_TOKEN: Optional[str] = None
     ENABLE_PUBLIC_VALIDATE_DEMO: bool = False
 
+    # Public, no-auth LC checker (the free lead-magnet at POST /api/check + /check).
+    # Kill switch — flip to False if anonymous model spend spikes. The Redis
+    # per-IP-per-24h limiter (app.utils.anon_rate_limit) is the primary cost
+    # control; this flag is the hard off-switch.
+    PUBLIC_LC_CHECK_ENABLED: bool = True
+    PUBLIC_LC_CHECK_WINDOW_SECONDS: int = 24 * 60 * 60
+    PUBLIC_LC_CHECK_LIMIT_PER_WINDOW: int = 1
+
     # SSLCommerz configuration
     SSLCOMMERZ_STORE_ID: Optional[str] = None
     SSLCOMMERZ_STORE_PASSWORD: Optional[str] = None

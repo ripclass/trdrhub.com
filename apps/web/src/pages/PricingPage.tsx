@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { Button } from "@/components/ui/button";
-import { Check, ArrowRight, ChevronDown, HelpCircle, Building2, Zap } from "lucide-react";
+import { Check, ArrowRight, ChevronDown, HelpCircle, Building2, Zap, Sparkles } from "lucide-react";
 import {
   getPriceDisplay,
   getPrice,
@@ -319,6 +319,24 @@ const PricingPage = () => {
               </div>
             </div>
           )}
+
+          {/* Free LC check callout — the public, no-account lead magnet */}
+          <div className="max-w-6xl mx-auto mb-8">
+            <div className="bg-[#B2F273]/[0.06] border border-[#B2F273]/25 rounded-2xl px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-[#B2F273]/15 rounded-lg flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4 text-[#B2F273]" />
+                </div>
+                <div>
+                  <p className="text-white font-semibold text-sm">Want to try it first? Run a free LC check — no account needed.</p>
+                  <p className="text-[#EDF5F2]/50 text-xs">Upload an LC and its documents, get the verdict and the top findings. One free check per day.</p>
+                </div>
+              </div>
+              <Button size="sm" className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-semibold border-none shrink-0" asChild>
+                <Link to="/check">Check an LC free</Link>
+              </Button>
+            </div>
+          </div>
 
           {/* Pricing Grid */}
           <div className={cn(

@@ -55,7 +55,7 @@ except ImportError:
 # Import application modules
 from app.database import Base, engine
 from sqlalchemy.exc import UnsupportedCompilationError, CompileError
-from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions, agency, lc_lifecycle, bulk_validate, discrepancy_workflow, user_notifications, handhold, entitlements, services_persona, enterprise, platform_status
+from app.routers import auth, sessions, fake_s3, documents, lc_versions, audit, admin, analytics, billing, bank, bank_workflow, bank_users, bank_policy, bank_queue, bank_auth, bank_compliance, bank_sla, bank_evidence, bank_bulk_jobs, bank_ai, bank_duplicates, bank_saved_views, bank_tokens, bank_webhooks, bank_orgs, validate, rules_admin, onboarding, sme, sme_templates, workspace_sharing, company_profile, support, importer, exporter, jobs_public, price_verify, price_verify_admin, usage, members, admin_banks, tracking, doc_generator, doc_generator_catalog, doc_generator_advanced, lc_builder, hs_code, sanctions, agency, lc_lifecycle, bulk_validate, discrepancy_workflow, user_notifications, handhold, entitlements, services_persona, enterprise, platform_status, public_check
 
 # V2 Pipeline removed - using V1 with enhanced features
 from app.routes.health import router as health_router
@@ -327,6 +327,7 @@ if settings.is_development() or settings.USE_STUBS:
 # Production routes
 app.include_router(documents.router)
 app.include_router(validate.router)
+app.include_router(public_check.router)  # Public, no-auth LC checker (free lead magnet) — POST /api/check
 app.include_router(rules_admin.router)
 app.include_router(rules_admin.rules_router)
 
@@ -395,6 +396,7 @@ app.add_middleware(
             "/auth/register",
             "/auth/csrf-token",  # Temporarily exempt to avoid audit logging issues
             "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
+            "/api/check",  # Public, no-auth LC checker (free lead magnet) — anonymous, no audit trail
         ],
 )
 
@@ -420,6 +422,7 @@ if not settings.USE_STUBS:
             "/auth/register",
             "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
             "/price-verify",  # Price verification API (public tool)
+            "/api/check",  # Public, no-auth LC checker (free lead magnet) — POST /api/check + GET /api/check/availability
             "/members/admin/seed-existing-users",  # One-time setup endpoint
         },
         exempt_methods={"GET", "HEAD", "OPTIONS"},
