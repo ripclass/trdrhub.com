@@ -4,13 +4,14 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, ArrowRight, Globe, ChevronDown } from "lucide-react";
-import { 
-  PRICING_TIERS, 
-  getPriceDisplay, 
-  getPrice, 
+import {
+  PRICING_TIERS,
+  getPriceDisplay,
+  getPrice,
+  getPayPerUseDisplay,
   getCurrencyFromCountry,
   CURRENCIES,
-  type CurrencyCode 
+  type CurrencyCode,
 } from "@/lib/pricing";
 
 // Currency options for manual selection
@@ -89,7 +90,7 @@ export function TRDRPricingSection() {
             </span>
           </h2>
           <p className="text-lg text-muted-foreground max-w-3xl mx-auto mb-8">
-            Choose the plan that fits your business needs. All plans include a 14-day free trial.
+            Pay-as-you-go from {getPayPerUseDisplay("lc_validation", currency)} per LC — no commitment, no card to start. Subscribe and save up to ~50% per LC.
           </p>
 
           {/* Currency & Billing Toggle */}
@@ -161,9 +162,9 @@ export function TRDRPricingSection() {
               <Card 
                 key={plan.id} 
                 className={`relative border transition-all duration-300 hover:shadow-medium ${
-                  plan.popular 
-                    ? "border-primary/50 shadow-medium scale-105" 
-                    : "border-gray-200/50 hover:border-primary/20"
+                  plan.popular
+                    ? "border-primary/50 shadow-medium scale-105"
+                    : "border-border hover:border-primary/20"
                 }`}
               >
                 {plan.popular && (
@@ -180,19 +181,13 @@ export function TRDRPricingSection() {
                     {plan.description}
                   </CardDescription>
                   <div className="mt-4">
-                    {plan.id === "enterprise" ? (
-                      <>
-                        <span className="text-4xl font-bold text-foreground">Custom</span>
-                        <span className="text-muted-foreground ml-2">pricing</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-4xl font-bold text-foreground">{priceDisplay}</span>
-                        <span className="text-muted-foreground ml-2">/month</span>
-                      </>
-                    )}
+                    <span className="text-4xl font-bold text-foreground">{priceDisplay}</span>
+                    <span className="text-muted-foreground ml-2">/month</span>
                   </div>
-                  {billingPeriod === "yearly" && plan.id !== "enterprise" && price > 0 && (
+                  {plan.id === "enterprise" && (
+                    <p className="text-xs text-muted-foreground mt-1">Volume bands above 150 LCs/mo</p>
+                  )}
+                  {billingPeriod === "yearly" && price > 0 && (
                     <p className="text-xs text-primary mt-1">
                       {currencyInfo?.symbol}{yearlyTotal.toLocaleString()} billed annually
                     </p>
@@ -218,7 +213,7 @@ export function TRDRPricingSection() {
                     asChild
                   >
                     <a href={plan.id === "enterprise" ? "mailto:sales@trdrhub.com?subject=Enterprise Plan Inquiry" : "/register"} className="flex items-center justify-center">
-                      {plan.id === "enterprise" ? "Contact Sales" : "Start Free Trial"}
+                      {plan.id === "enterprise" ? "Talk to Sales" : `Start ${plan.name}`}
                       <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
                     </a>
                   </Button>
@@ -230,13 +225,13 @@ export function TRDRPricingSection() {
 
         <div className="text-center mt-12">
           <p className="text-sm text-muted-foreground mb-4">
-            🎯 <strong>14-day free trial</strong> on all plans • No credit card required
+            🎯 <strong>No card required to start</strong> • Pay-as-you-go from {getPayPerUseDisplay("lc_validation", currency)}/LC • Metered per LC presentation
           </p>
           <p className="text-xs text-muted-foreground">
             {currency === "BDT" && "Local payment via SSLCommerz available • "}
             {currency === "INR" && "Local payment via Razorpay available • "}
             Prices shown in {currencyInfo?.name || "USD"}
-            {currency !== "USD" && " • Enterprise pricing customized to your requirements"}
+            {currency !== "USD" && " • Enterprise volume pricing available above 150 LCs/mo"}
           </p>
         </div>
       </div>
