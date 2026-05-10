@@ -34,6 +34,7 @@ import {
   isUnlimitedPlan
 } from '@/types/billing';
 import type { CompanyBillingInfo } from '@/types/billing';
+import { tierDisplayName } from '@/lib/billing/tierDisplay';
 
 interface PlanCardProps {
   billingInfo: CompanyBillingInfo;
@@ -51,6 +52,9 @@ export function PlanCard({
   const { plan } = billingInfo;
   const planDef = PLAN_DEFINITIONS[plan];
   const isUnlimited = isUnlimitedPlan(plan);
+  // Prefer the raw backend `company.tier` for the human label — `PlanType`
+  // collapses payg→STARTER and business→PROFESSIONAL, which mislabels.
+  const planLabel = billingInfo.tier ? tierDisplayName(billingInfo.tier) : getPlanDisplayName(plan);
 
   const getPlanIcon = () => {
     switch (plan) {
@@ -87,31 +91,31 @@ export function PlanCard({
       case PlanType.FREE:
         return (
           <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-            Free Plan
+            {planLabel}
           </Badge>
         );
       case PlanType.STARTER:
         return (
           <Badge variant="default" className="bg-blue-100 text-blue-600">
-            Starter
+            {planLabel}
           </Badge>
         );
       case PlanType.PROFESSIONAL:
         return (
           <Badge variant="default" className="bg-purple-100 text-purple-600">
-            Professional
+            {planLabel}
           </Badge>
         );
       case PlanType.ENTERPRISE:
         return (
           <Badge variant="default" className="bg-gold-100 text-gold-600">
-            Enterprise
+            {planLabel}
           </Badge>
         );
       default:
         return (
           <Badge variant="secondary">
-            {getPlanDisplayName(plan)}
+            {planLabel}
           </Badge>
         );
     }
@@ -140,7 +144,7 @@ export function PlanCard({
           <div className="flex items-center space-x-2">
             {getPlanIcon()}
             <CardTitle className={cn('text-lg', getPlanColor())}>
-              {getPlanDisplayName(plan)}
+              {planLabel}
             </CardTitle>
           </div>
           {getPlanBadge()}
@@ -258,6 +262,7 @@ export function PlanCardCompact({
 }: PlanCardProps) {
   const { plan } = billingInfo;
   const planDef = PLAN_DEFINITIONS[plan];
+  const planLabel = billingInfo.tier ? tierDisplayName(billingInfo.tier) : getPlanDisplayName(plan);
 
   const getPlanIcon = () => {
     switch (plan) {
@@ -280,7 +285,7 @@ export function PlanCardCompact({
         {getPlanIcon()}
         <div>
           <div className="text-sm font-medium">
-            {getPlanDisplayName(plan)}
+            {planLabel}
           </div>
           <div className="text-xs text-muted-foreground">
             {planDef.price > 0 ? formatCurrency(planDef.price) + '/month' : 'Free'}

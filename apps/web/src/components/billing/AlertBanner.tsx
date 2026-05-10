@@ -43,6 +43,9 @@ import type { UsageStats, PlanType, InvoiceStatus } from '@/types/billing';
 interface AlertBannerProps {
   usage: UsageStats;
   plan: PlanType;
+  /** Human label for the raw `company.tier` — preferred over the `PlanType`
+   * name (which collapses payg→Solo, business→Business). */
+  tierName?: string;
   lastInvoiceStatus?: InvoiceStatus;
   onUpgrade?: () => void;
   onRetryPayment?: () => void;
@@ -68,6 +71,7 @@ interface Alert {
 export function AlertBanner({
   usage,
   plan,
+  tierName,
   lastInvoiceStatus,
   onUpgrade,
   onRetryPayment,
@@ -76,6 +80,7 @@ export function AlertBanner({
   className
 }: AlertBannerProps) {
   const alerts: Alert[] = [];
+  const planLabel = tierName || getPlanDisplayName(plan);
 
   // Quota exceeded alert
   if (usage.quota_limit && usage.quota_used >= usage.quota_limit) {
@@ -83,7 +88,7 @@ export function AlertBanner({
       id: 'quota-exceeded',
       type: 'error',
       title: 'Quota Exceeded',
-      description: `You've used all ${usage.quota_limit} validations in your ${getPlanDisplayName(plan)} plan. Upgrade to continue validation services.`,
+      description: `You've used all ${usage.quota_limit} validations in your ${planLabel} plan. Upgrade to continue validation services.`,
       icon: XCircle,
       action: onUpgrade ? {
         label: 'Upgrade Plan',
@@ -100,7 +105,7 @@ export function AlertBanner({
       id: 'quota-critical',
       type: 'warning',
       title: 'Quota Almost Exceeded',
-      description: `Only ${remaining} validations remaining in your ${getPlanDisplayName(plan)} plan. Consider upgrading to avoid service interruption.`,
+      description: `Only ${remaining} validations remaining in your ${planLabel} plan. Consider upgrading to avoid service interruption.`,
       icon: AlertTriangle,
       action: onUpgrade ? {
         label: 'Upgrade Plan',
@@ -117,7 +122,7 @@ export function AlertBanner({
       id: 'quota-warning',
       type: 'info',
       title: 'Quota Usage High',
-      description: `${remaining} validations remaining in your ${getPlanDisplayName(plan)} plan. You're at ${Math.round((usage.quota_used / usage.quota_limit) * 100)}% of your monthly limit.`,
+      description: `${remaining} validations remaining in your ${planLabel} plan. You're at ${Math.round((usage.quota_used / usage.quota_limit) * 100)}% of your monthly limit.`,
       icon: Clock,
       action: onUpgrade ? {
         label: 'View Plans',

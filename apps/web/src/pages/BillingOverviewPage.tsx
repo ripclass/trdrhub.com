@@ -33,7 +33,8 @@ import {
 import { useAuth } from '@/hooks/use-auth';
 
 // Types
-import { InvoiceStatus, PlanType, normalizePlanType, type BankContract } from '@/types/billing';
+import { InvoiceStatus, PlanType, normalizePlanType, getPlanDisplayName, type BankContract } from '@/types/billing';
+import { tierDisplayName } from '@/lib/billing/tierDisplay';
 import { billingApi } from '@/api/billing';
 
 export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange?: (tab: string) => void; mode?: 'sme' | 'bank' }) {
@@ -150,6 +151,14 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
   const normalizedBillingInfo = billingInfo && normalizedPlan
     ? { ...billingInfo, plan: normalizedPlan }
     : null;
+  // Human label off the raw `company.tier` (e.g. "Business", not "Professional";
+  // "Pay-as-you-go", not "Solo"). Falls back to the PlanType name only when the
+  // backend row carries no tier string.
+  const currentTierName = billingInfo?.tier
+    ? tierDisplayName(billingInfo.tier)
+    : normalizedPlan
+      ? getPlanDisplayName(normalizedPlan)
+      : undefined;
   const hasUsageStats = Boolean(usageStats);
   const canRenderAlertBanner = Boolean(usageStats && normalizedPlan);
   const companyDisplayName =
@@ -199,6 +208,7 @@ export function BillingOverviewPage({ onTabChange, mode = 'sme' }: { onTabChange
         <AlertBanner
           usage={usageStats}
           plan={normalizedPlan}
+          tierName={currentTierName}
           lastInvoiceStatus={getLastInvoiceStatus()}
           onUpgrade={handleUpgradeClick}
           onRetryPayment={() => {

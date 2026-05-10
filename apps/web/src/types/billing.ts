@@ -153,35 +153,45 @@ export interface PlanFeatures {
   popular?: boolean;
 }
 
+// NOTE: names / quotas / features below reflect the 2026-05-10 pricing
+// restructure (Trader track — Solo / Business / Enterprise; metering unit = one
+// LC presentation). The `price` / `currency` fields are STALE BDT placeholders
+// that predate the USD model and are only surfaced in the half-built
+// UpgradeModal — canonical, localized pricing lives in `lib/pricing.ts`, and
+// self-serve checkout (with real prices) is v1.1. `PlanType.FREE` is retained
+// only as a legacy fallback; the new "free" mechanism is the public /check
+// checker, not an in-app plan.
 export const PLAN_DEFINITIONS: Record<PlanType, PlanFeatures> = {
   [PlanType.FREE]: {
     name: 'Free',
-    quota: 5,
+    quota: 0,
     price: 0,
     currency: Currency.BDT,
-    features: ['5 LC validations per month', 'Basic validation features', 'Email support']
+    features: ['Try a free LC check at /check', 'No in-app monthly quota — subscribe for a pool']
   },
+  // Maps to backend tier `solo`.
   [PlanType.STARTER]: {
-    name: 'Starter',
-    quota: 100,
-    price: 15000,
+    name: 'Solo',
+    quota: 5,
+    price: 15000, // stale — see note above
     currency: Currency.BDT,
-    features: ['100 LC validations per month', 'Standard features', 'Priority email support', 'Usage analytics'],
-    popular: true
+    features: ['5 LC presentations / month', '1 seat', 'Excel export', 'Validation history', 'Email support']
   },
+  // Maps to backend tier `business` (and the agency tiers, via normalizePlanType).
   [PlanType.PROFESSIONAL]: {
-    name: 'Professional',
-    quota: 500,
-    price: 45000,
+    name: 'Business',
+    quota: 25,
+    price: 45000, // stale — see note above
     currency: Currency.BDT,
-    features: ['500 LC validations per month', 'Advanced features', 'Phone support', 'Custom integrations', 'Advanced analytics']
+    features: ['25 LC presentations / month', '5 seats', 'API access', 'Custom branding', 'Analytics', 'Priority support'],
+    popular: true
   },
   [PlanType.ENTERPRISE]: {
     name: 'Enterprise',
-    quota: null, // unlimited
+    quota: null, // 100 included + negotiated volume bands above ~150; `null` keeps isUnlimitedPlan() true for the meter
     price: 0, // custom pricing
     currency: Currency.BDT,
-    features: ['Unlimited validations', 'All features included', 'Dedicated support', 'Custom workflows', 'SLA guarantees']
+    features: ['100 LC presentations / month (volume bands above ~150)', '10 seats', 'Integrations', 'On-prem option', 'Custom rule sets', 'Dedicated account manager', 'SLA']
   }
 };
 

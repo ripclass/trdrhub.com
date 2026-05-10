@@ -23,20 +23,12 @@ import {
   getCurrentEntitlements,
   type CurrentEntitlements,
 } from "@/lib/lcopilot/entitlementsApi";
+import {
+  isAgencyBillingTier as isAgencyTier,
+  tierDisplayName,
+} from "@/lib/billing/tierDisplay";
 
 const POLL_INTERVAL_MS = 60_000;
-
-const TIER_DISPLAY_NAMES: Record<string, string> = {
-  payg: "Pay-as-you-go",
-  solo: "Solo",
-  business: "Business",
-  enterprise: "Enterprise",
-  agency_starter: "Agency Starter",
-  agency_pro: "Agency Pro",
-  agency_enterprise: "Agency Enterprise",
-  sme: "Business", // legacy — should be migrated, here as a safety net
-  smoke_bypass: "Smoke test",
-};
 
 // Which tier you'd upgrade to from here (for the "or upgrade to X" hint).
 const UPGRADE_HINT: Record<string, string> = {
@@ -45,18 +37,6 @@ const UPGRADE_HINT: Record<string, string> = {
   business: "Enterprise",
   agency_starter: "Agency Pro",
 };
-
-function tierDisplayName(tier: string | null): string {
-  if (!tier) return "";
-  return (
-    TIER_DISPLAY_NAMES[tier] ||
-    tier.charAt(0).toUpperCase() + tier.slice(1).replace(/_/g, " ")
-  );
-}
-
-function isAgencyTier(tier: string | null): boolean {
-  return !!tier && tier.startsWith("agency");
-}
 
 export function QuotaStrip() {
   const [data, setData] = useState<CurrentEntitlements | null>(null);
