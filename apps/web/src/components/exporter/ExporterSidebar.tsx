@@ -61,7 +61,7 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <div className="flex items-center gap-3">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-exporter/10 text-exporter">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-[#B2F273]/10 text-[#B2F273]">
                   <Building2 className="size-4" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
@@ -74,15 +74,16 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="px-2">
         <SidebarGroup>
-          <SidebarGroupLabel>Main</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-[#B2F273] font-mono text-xs tracking-wider uppercase">Main</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={activeSection === "dashboard"}
                   onClick={() => onSectionChange("dashboard")}
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <BarChart3 />
                   <span>Dashboard</span>
@@ -93,6 +94,7 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
                   isActive={activeSection === "upload"}
                   onClick={() => onSectionChange("upload")}
                   tooltip="Upload"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Upload />
                   <span>Upload</span>
@@ -110,6 +112,7 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
                   isActive={activeSection === "billing"}
                   onClick={() => onSectionChange("billing")}
                   tooltip="Billing"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <CreditCard />
                   <span>Billing</span>
@@ -120,6 +123,7 @@ export function ExporterSidebar({ activeSection, onSectionChange, user: propUser
                   isActive={activeSection === "settings"}
                   onClick={() => onSectionChange("settings")}
                   tooltip="Settings"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Settings />
                   <span>Settings</span>

@@ -99,8 +99,8 @@ function AgencySidebar({
     { key: "reports", label: "Reports", Icon: BarChart3 },
   ];
   return (
-    <nav className="space-y-1 p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-2 mb-2">
+    <nav className="space-y-1 p-3 bg-[#00261C] min-h-full">
+      <p className="text-[#B2F273] font-mono text-xs tracking-wider uppercase px-2 mb-2">
         Agency
       </p>
       {items.map(({ key, label, Icon, count }) => (
@@ -110,8 +110,8 @@ function AgencySidebar({
           onClick={() => onChange(key)}
           className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
             active === key
-              ? "bg-neutral-200/70 dark:bg-neutral-800 text-foreground"
-              : "text-muted-foreground hover:bg-neutral-100 dark:hover:bg-neutral-800/40 hover:text-foreground"
+              ? "bg-[#B2F273]/10 text-[#B2F273]"
+              : "text-[#EDF5F2]/80 hover:bg-[#00382E] hover:text-white"
           }`}
         >
           <span className="flex items-center gap-2">
@@ -119,7 +119,7 @@ function AgencySidebar({
             {label}
           </span>
           {count != null && (
-            <span className="text-[10px] tabular-nums text-muted-foreground">
+            <span className="text-[10px] tabular-nums text-[#EDF5F2]/50">
               {count}
             </span>
           )}

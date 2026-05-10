@@ -17,6 +17,9 @@ import {
 import { useBankAuth } from "@/lib/bank/auth";
 import { Button } from "@/components/ui/button";
 
+const MENU_ITEM_CLASS = "text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]";
+const SECTION_LABEL_CLASS = "text-[#B2F273] font-mono text-xs tracking-wider uppercase";
+
 const navMain = [
   {
     title: "Dashboard",
@@ -169,7 +172,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link to="/lcopilot">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-[#B2F273]/10 text-[#B2F273]">
                   <Building2 className="size-4" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
@@ -185,9 +188,9 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
         </div>
       </SidebarHeader>
       
-      <SidebarContent>
+      <SidebarContent className="px-2">
         <SidebarGroup>
-          <SidebarGroupLabel>Main Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel className={SECTION_LABEL_CLASS}>Main Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navMain.map((item) => (
@@ -196,6 +199,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
                     asChild
                     isActive={isActive(item.url)}
                     tooltip={item.title}
+                    className={MENU_ITEM_CLASS}
                   >
                     <Link to={item.url}>
                       <item.icon />
@@ -207,9 +211,9 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        
+
         <SidebarGroup>
-          <SidebarGroupLabel>Analytics & Reporting</SidebarGroupLabel>
+          <SidebarGroupLabel className={SECTION_LABEL_CLASS}>Analytics & Reporting</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navAnalytics.map((item) => (
@@ -218,6 +222,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
                     asChild
                     isActive={isActive(item.url)}
                     tooltip={item.title}
+                    className={MENU_ITEM_CLASS}
                   >
                     <Link to={item.url}>
                       <item.icon />
@@ -229,9 +234,9 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        
+
         <SidebarGroup>
-          <SidebarGroupLabel>Operations</SidebarGroupLabel>
+          <SidebarGroupLabel className={SECTION_LABEL_CLASS}>Operations</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navOperations.filter(item => item.title !== 'Policy' || isBankAdmin).map((item) => (
@@ -240,6 +245,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
                     asChild
                     isActive={isActive(item.url)}
                     tooltip={item.title}
+                    className={MENU_ITEM_CLASS}
                   >
                     <Link to={item.url}>
                       <item.icon />
@@ -251,9 +257,9 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        
+
         <SidebarGroup>
-          <SidebarGroupLabel>Billing & Finance</SidebarGroupLabel>
+          <SidebarGroupLabel className={SECTION_LABEL_CLASS}>Billing & Finance</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navBilling.map((item) => (
@@ -262,6 +268,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
                     asChild
                     isActive={isActive(item.url)}
                     tooltip={item.title}
+                    className={MENU_ITEM_CLASS}
                   >
                     <Link to={item.url}>
                       <item.icon />
@@ -273,9 +280,9 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        
+
         <SidebarGroup>
-          <SidebarGroupLabel>AI & Tools</SidebarGroupLabel>
+          <SidebarGroupLabel className={SECTION_LABEL_CLASS}>AI & Tools</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navAITools.map((item) => (
@@ -284,6 +291,7 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
                     asChild
                     isActive={isActive(item.url)}
                     tooltip={item.title}
+                    className={MENU_ITEM_CLASS}
                   >
                     <Link to={item.url}>
                       <item.icon />
@@ -295,13 +303,13 @@ export function BankSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) 
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        
+
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
               {navSecondary.filter(item => item.title !== 'Users' || isBankAdmin).map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)}>
+                  <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)} className={MENU_ITEM_CLASS}>
                     <Link to={item.url}>
                       <item.icon />
                       <span>{item.title}</span>

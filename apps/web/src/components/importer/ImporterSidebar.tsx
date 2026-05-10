@@ -82,7 +82,7 @@ export function ImporterSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <div className="flex items-center gap-3">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-importer/10 text-importer">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-[#B2F273]/10 text-[#B2F273]">
                   <Building2 className="size-4" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
@@ -97,7 +97,7 @@ export function ImporterSidebar({
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="px-2">
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -106,6 +106,7 @@ export function ImporterSidebar({
                   isActive={activeSection === "dashboard"}
                   onClick={() => onSectionChange("dashboard")}
                   tooltip="Dashboard"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <BarChart3 />
                   <span>Dashboard</span>
@@ -116,6 +117,7 @@ export function ImporterSidebar({
                   isActive={activeSection === "draft-lc"}
                   onClick={() => onSectionChange("draft-lc")}
                   tooltip="Upload Draft LC"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <FileText />
                   <span>Upload Draft LC</span>
@@ -126,6 +128,7 @@ export function ImporterSidebar({
                   isActive={activeSection === "supplier-docs"}
                   onClick={() => onSectionChange("supplier-docs")}
                   tooltip="Upload Supplier Docs"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <ShieldCheck />
                   <span>Upload Supplier Docs</span>
@@ -143,6 +146,7 @@ export function ImporterSidebar({
                   isActive={activeSection === "billing"}
                   onClick={() => onSectionChange("billing")}
                   tooltip="Billing"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <CreditCard />
                   <span>Billing</span>
@@ -153,6 +157,7 @@ export function ImporterSidebar({
                   isActive={activeSection === "settings"}
                   onClick={() => onSectionChange("settings")}
                   tooltip="Settings"
+                  className="text-[#EDF5F2]/80 hover:text-white hover:bg-[#00382E] data-[active=true]:bg-[#B2F273]/10 data-[active=true]:text-[#B2F273]"
                 >
                   <Settings />
                   <span>Settings</span>
