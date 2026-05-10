@@ -734,27 +734,38 @@ class BillingService:
         self.db.add(audit_entry)
 
 
-    # Legacy PlanType → marketing tier mapping. Used as a fallback when
-    # company.tier is unset (e.g. pre-Phase-A4 rows). Confirmed by Ripon
-    # 2026-05-10: free / pay_per_check / monthly_basic → solo,
-    # monthly_pro → sme, enterprise → enterprise. Anything else → sme
-    # (matches the entitlements default tier).
+    # Recognised billing tiers (the 7-value BusinessTier enum). company.tier
+    # holds one of these post-migration.
+    _KNOWN_TIERS = {
+        "payg", "solo", "business", "enterprise",
+        "agency_starter", "agency_pro", "agency_enterprise",
+    }
+
+    # Legacy PlanType / legacy size → billing tier fallback. Used only when
+    # company.tier is missing or stale (pre-2026-05-10 rows that escaped the
+    # migration). free / pay_per_check / monthly_basic → solo,
+    # monthly_pro → business, enterprise → enterprise; legacy size "sme" →
+    # business; anything else → business (the common paying tier).
     _PLAN_TO_TIER_FALLBACK: Dict[str, str] = {
         "free": "solo",
         "pay_per_check": "solo",
         "monthly_basic": "solo",
-        "monthly_pro": "sme",
+        "monthly_pro": "business",
         "enterprise": "enterprise",
+        "sme": "business",          # legacy company-size value
     }
 
     def _resolve_tier(self, company: "Company") -> str:
-        """Marketing tier for billing UI. Prefer company.tier, else map plan."""
+        """Billing tier for the billing UI. Prefer company.tier; else map the
+        legacy plan/size string; else default to business."""
         explicit = (getattr(company, "tier", None) or "").strip().lower()
-        if explicit in {"solo", "sme", "enterprise"}:
+        if explicit in self._KNOWN_TIERS:
             return explicit
+        if explicit in self._PLAN_TO_TIER_FALLBACK:
+            return self._PLAN_TO_TIER_FALLBACK[explicit]
         plan_value = getattr(company.plan, "value", company.plan)
         plan_str = str(plan_value or "").strip().lower()
-        return self._PLAN_TO_TIER_FALLBACK.get(plan_str, "sme")
+        return self._PLAN_TO_TIER_FALLBACK.get(plan_str, "business")
 
     def get_company_billing_info(self, company_id: uuid.UUID) -> Dict[str, Any]:
         """Get company billing information for API response."""

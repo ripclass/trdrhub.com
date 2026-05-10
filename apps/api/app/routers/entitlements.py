@@ -23,6 +23,7 @@ from ..services.entitlements import (
     EntitlementService,
     TIER_QUOTA_LIMITS,
     TIER_SEAT_LIMITS,
+    resolve_overage_rate,
     resolve_quota_limit,
     resolve_seat_limit,
 )
@@ -42,6 +43,7 @@ class CurrentEntitlementsResponse(BaseModel):
     quota_pct_used: Optional[float]  # 0..1
     period_start: Optional[str]
     seat_limit: Optional[int]
+    overage_rate_usd: Optional[float]  # per-LC overage rate for display; None if tier has no overage
     upgrade_url: str
 
 
@@ -63,6 +65,7 @@ async def get_current_entitlements(
 
     quota_limit = resolve_quota_limit(company)
     seat_limit = resolve_seat_limit(company)
+    overage_rate = resolve_overage_rate(company)
 
     used = 0
     remaining: Optional[int] = None
@@ -86,6 +89,7 @@ async def get_current_entitlements(
         quota_pct_used=pct,
         period_start=period_start,
         seat_limit=seat_limit,
+        overage_rate_usd=float(overage_rate) if overage_rate is not None else None,
         upgrade_url="/pricing",
     )
 

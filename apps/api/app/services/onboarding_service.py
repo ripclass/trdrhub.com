@@ -12,6 +12,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from ..models import Company, User
+from ..models.company import starting_billing_tier
 from ..schemas.onboarding import OnboardingCompletePayload
 
 
@@ -75,7 +76,16 @@ def complete_onboarding(
 
     company.business_activities = sorted_activities
     company.country = payload.country
-    company.tier = payload.tier
+    # payload.tier is the wizard's company-SIZE answer (solo/sme/enterprise).
+    # Company.tier stores the BILLING tier — map size + primary persona → it.
+    # agent/services personas land on the agency track; everyone else on the
+    # trader track. The raw size answer is still preserved below in
+    # event_metadata["company_size"] and onboarding_data["tier"] for analytics.
+    primary_for_track = sorted_activities[0]
+    company.tier = starting_billing_tier(
+        payload.tier,
+        is_agency=primary_for_track in {"agent", "services"},
+    )
 
     # Mirror the primary activity into event_metadata so legacy status-restore
     # path (routers/onboarding.py::get_status) stays coherent for old clients.

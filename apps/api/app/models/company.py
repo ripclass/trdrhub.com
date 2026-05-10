@@ -56,15 +56,60 @@ class BusinessActivity(str, enum.Enum):
     SERVICES = "services"  # freight forwarder / customs broker / LC consultant
 
 
-class BusinessTier(str, enum.Enum):
-    """Pricing tier — drives feature set (SSO, audit log, RBAC), NOT dashboard layout."""
+class BusinessSize(str, enum.Enum):
+    """Self-reported company size — the onboarding-wizard Q3 answer. Kept for
+    analytics + as the input that maps to a starting billing tier. NOT the
+    billing tier itself (see BusinessTier)."""
 
     SOLO = "solo"            # 1–3 people
     SME = "sme"              # 4–20 people
-    ENTERPRISE = "enterprise"  # 21+, multi-office, SSO + audit log + RBAC
+    ENTERPRISE = "enterprise"  # 21+, multi-office
+
+
+class BusinessTier(str, enum.Enum):
+    """Billing tier stored on Company.tier — the single source of truth that
+    services.entitlements reads for quota / seat / overage enforcement.
+
+    Two tracks (the persona, i.e. Company.business_activities, decides which
+    pricing page a user sees; the tier decides what they actually get):
+
+      Trader track (exporter / importer):
+        payg        — no included pool, $12 per LC presentation
+        solo        — 5 LC presentations / mo, 1 seat
+        business    — 25 / mo, 5 seats, API
+        enterprise  — 100 / mo, 10 seats, integrations + SLA
+
+      Agency / Services track (agent / services personas):
+        agency_starter      — per operator seat, "unlimited" LCs (fair-use cap)
+        agency_pro          — per seat, unlimited LCs, white-label + API
+        agency_enterprise   — per seat w/ volume discounts, dedicated AM + SLA
+    """
+
+    PAYG = "payg"
+    SOLO = "solo"
+    BUSINESS = "business"
+    ENTERPRISE = "enterprise"
+    AGENCY_STARTER = "agency_starter"
+    AGENCY_PRO = "agency_pro"
+    AGENCY_ENTERPRISE = "agency_enterprise"
+
+
+# Maps the onboarding-wizard size answer (+ whether the persona is an
+# agency/services one) to the starting billing tier written onto Company.tier.
+def starting_billing_tier(company_size: str, *, is_agency: bool) -> str:
+    if is_agency:
+        return BusinessTier.AGENCY_STARTER.value
+    size = (company_size or "").strip().lower()
+    if size == BusinessSize.SOLO.value:
+        return BusinessTier.SOLO.value
+    if size == BusinessSize.ENTERPRISE.value:
+        return BusinessTier.ENTERPRISE.value
+    # "sme" or anything unrecognised → Business (the common paying tier).
+    return BusinessTier.BUSINESS.value
 
 
 BUSINESS_ACTIVITY_VALUES = tuple(a.value for a in BusinessActivity)
+BUSINESS_SIZE_VALUES = tuple(s.value for s in BusinessSize)
 BUSINESS_TIER_VALUES = tuple(t.value for t in BusinessTier)
 
 
@@ -95,10 +140,14 @@ class Company(Base):
         nullable=False,
         server_default="{exporter}",
     )
+    # Billing tier — see BusinessTier. New companies default to PAYG (pay per
+    # LC presentation) until onboarding maps their size → a tier, or sales
+    # provisions a plan. Migration 20260510 changes the DB default sme → payg
+    # and rewrites existing 'sme' rows to 'business'.
     tier = Column(
         String(20),
         nullable=False,
-        server_default=BusinessTier.SME.value,
+        server_default=BusinessTier.PAYG.value,
     )
 
     # Billing configuration

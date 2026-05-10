@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..models.company import BUSINESS_ACTIVITY_VALUES, BUSINESS_TIER_VALUES
+from ..models.company import BUSINESS_ACTIVITY_VALUES, BUSINESS_SIZE_VALUES
 
 
 class CompanyPayload(BaseModel):
@@ -63,7 +63,10 @@ class OnboardingCompletePayload(BaseModel):
 
     activities: List[str] = Field(..., min_length=1, description="1+ business activities")
     country: str = Field(..., min_length=2, max_length=2, description="ISO 3166-1 alpha-2")
-    tier: str = Field(..., description="Pricing tier: solo | sme | enterprise")
+    # Q3 of the wizard is "how big is your company" — a size, not a billing
+    # tier. It maps to a starting billing tier via
+    # company.starting_billing_tier() in onboarding_service.complete_onboarding.
+    tier: str = Field(..., description="Company size: solo | sme | enterprise")
     company_name: Optional[str] = Field(
         None, description="Optional override. Falls back to existing Company.name."
     )
@@ -96,9 +99,9 @@ class OnboardingCompletePayload(BaseModel):
     @field_validator("tier")
     @classmethod
     def _validate_tier(cls, value: str) -> str:
-        allowed = set(BUSINESS_TIER_VALUES)
+        allowed = set(BUSINESS_SIZE_VALUES)
         normalized = value.strip().lower()
         if normalized not in allowed:
-            raise ValueError(f"Invalid tier {value!r}. Allowed: {sorted(allowed)}")
+            raise ValueError(f"Invalid company size {value!r}. Allowed: {sorted(allowed)}")
         return normalized
 

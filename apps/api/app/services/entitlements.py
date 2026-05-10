@@ -44,26 +44,66 @@ def _smoke_bypass_result(action: UsageAction) -> "EntitlementResult":
     )
 
 
-# Phase A4 — tier-aware monthly quota.
+# Pricing-restructure 2026-05-10 — tier-aware monthly quota across the
+# 7-value BusinessTier enum (see app.models.company.BusinessTier).
 #
 # Order of precedence for the effective limit:
 #   1. Company.quota_limit when set (admin override or legacy value).
 #   2. TIER_QUOTA_LIMITS[company.tier] when tier is recognised.
-#   3. TIER_QUOTA_LIMITS["sme"] (the default tier per onboarding).
+#   3. TIER_QUOTA_LIMITS["business"] (the common paying tier — default for
+#      unrecognised / un-migrated tier strings).
 #
-# `None` means unlimited — Enterprise tier or admin-cleared limit.
+# `None` means unlimited (agency-track tiers, or an admin-cleared limit).
+# A quota of 0 (PAYG) means "no included pool — every validation is a
+# billable $12 event"; the quota gate still blocks PAYG until a usage
+# charge is recorded, which the validation pipeline does up front.
 TIER_QUOTA_LIMITS: dict[str, Optional[int]] = {
-    "solo": 10,
-    "sme": 50,
-    "enterprise": None,
+    "payg": 0,
+    "solo": 5,
+    "business": 25,
+    "enterprise": 100,
+    "agency_starter": None,      # "unlimited" within the fair-use soft cap below
+    "agency_pro": None,
+    "agency_enterprise": None,
 }
 
 # Per-tier max seats (members + invites). None = unlimited.
 TIER_SEAT_LIMITS: dict[str, Optional[int]] = {
+    "payg": 1,
     "solo": 1,
-    "sme": 5,
-    "enterprise": None,
+    "business": 5,
+    "enterprise": 10,
+    "agency_starter": None,
+    "agency_pro": None,
+    "agency_enterprise": None,
 }
+
+# Per-LC overage rate (USD) shown to a Trader-track customer once they've
+# burned their included pool ("5 of 5 used — extra LCs at $10, or upgrade").
+# NOT auto-charged yet: self-serve metered billing is v1.1, so for now the
+# quota gate still hard-blocks at the included amount and this map is
+# display-only. When metered billing lands, switch enforce_quota to
+# allow-and-charge using these rates. PAYG has no overage — it IS per-use.
+TIER_OVERAGE_RATE_USD: dict[str, Decimal] = {
+    "solo": Decimal("10.00"),
+    "business": Decimal("7.00"),
+    "enterprise": Decimal("5.00"),
+}
+
+# Agency-track tiers advertise "unlimited LCs per seat" but carry a fair-use
+# soft cap (LCs / seat / month). It is NOT hard-enforced — crossing it logs
+# an internal alert so sales can have a volume conversation. Implemented as a
+# company-level monthly threshold (cap × seat count); see _soft_cap_alert.
+AGENCY_FAIR_USE_SOFT_CAP: dict[str, int] = {
+    "agency_starter": 50,
+    "agency_pro": 50,
+}
+
+_DEFAULT_TIER = "business"
+
+
+def _company_tier(company: Optional[Company]) -> str:
+    return (getattr(company, "tier", None) or _DEFAULT_TIER).strip().lower()
 
 
 def resolve_quota_limit(company: Optional[Company]) -> Optional[int]:
@@ -72,20 +112,28 @@ def resolve_quota_limit(company: Optional[Company]) -> Optional[int]:
         return None
     if company.quota_limit is not None:
         return int(company.quota_limit)
-    tier = (getattr(company, "tier", None) or "sme").strip().lower()
+    tier = _company_tier(company)
     if tier in TIER_QUOTA_LIMITS:
         return TIER_QUOTA_LIMITS[tier]
-    return TIER_QUOTA_LIMITS["sme"]
+    return TIER_QUOTA_LIMITS[_DEFAULT_TIER]
 
 
 def resolve_seat_limit(company: Optional[Company]) -> Optional[int]:
     """Effective seat cap for this company. None = unlimited."""
     if company is None:
         return None
-    tier = (getattr(company, "tier", None) or "sme").strip().lower()
+    tier = _company_tier(company)
     if tier in TIER_SEAT_LIMITS:
         return TIER_SEAT_LIMITS[tier]
-    return TIER_SEAT_LIMITS["sme"]
+    return TIER_SEAT_LIMITS[_DEFAULT_TIER]
+
+
+def resolve_overage_rate(company: Optional[Company]) -> Optional[Decimal]:
+    """Per-LC overage rate (USD) for display, or None if the tier has no
+    overage concept (PAYG, agency tiers)."""
+    if company is None:
+        return None
+    return TIER_OVERAGE_RATE_USD.get(_company_tier(company))
 
 
 @dataclass
@@ -204,6 +252,28 @@ class EntitlementService:
         ``enforce_bulk_quota``."""
         return self._get_usage(company, action)
 
+    def _maybe_soft_cap_alert(self, company: Company, used: int) -> None:
+        """Agency-track tiers are 'unlimited' but carry a fair-use soft cap
+        (LCs / seat / month). This does NOT block — it logs a warning when the
+        company's monthly usage exceeds (cap × seat count) so sales can have
+        the volume conversation. No-op for non-agency tiers."""
+        tier = (getattr(company, "tier", None) or "").strip().lower()
+        soft_cap = AGENCY_FAIR_USE_SOFT_CAP.get(tier)
+        if soft_cap is None:
+            return
+        seats = (
+            self.db.query(func.count(CompanyMember.id))
+            .filter(CompanyMember.company_id == company.id)
+            .scalar()
+        ) or 1
+        threshold = soft_cap * max(1, int(seats))
+        if int(used) > threshold:
+            logger.warning(
+                "Agency fair-use soft cap exceeded: company=%s tier=%s used=%d "
+                "threshold=%d (%d LCs/seat × %d seats)",
+                company.id, tier, int(used), threshold, soft_cap, int(seats),
+            )
+
     def enforce_quota(self, company: Company, action: UsageAction) -> EntitlementResult:
         """Ensure company has remaining quota for the action."""
 
@@ -228,6 +298,7 @@ class EntitlementService:
             )
 
         result = self._get_usage(company, action)
+        self._maybe_soft_cap_alert(company, result.used)
         if result.limit is not None and result.used >= result.limit:
             raise EntitlementError(
                 "You have reached the validation limit for your current plan.",
@@ -261,6 +332,7 @@ class EntitlementService:
                 code="company_inactive",
             )
         result = self._get_usage(company, action)
+        self._maybe_soft_cap_alert(company, result.used + max(0, int(count)))
         if result.limit is not None and result.used + max(0, int(count)) > result.limit:
             raise EntitlementError(
                 (
