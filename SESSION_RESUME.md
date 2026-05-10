@@ -1,146 +1,83 @@
-# Session resume — Path A launch-prep (2026-05-02 evening)
+# Session resume — UI/UX housekeeping + pricing restructure (2026-05-10)
 
-**Last updated:** 2026-05-02 evening
-**State frozen at commit:** `8524587e` (chore: untrack conversation prompt.md)
-**Branch:** `master`
-**Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~12 weeks to 2026-07-25 launch).
+**Last updated:** 2026-05-10
+**State at commit:** `f16e9ae5` (backend pricing restructure) — branch `master`, pushed
+**Active phase:** Path A build = 100% shipped (A1-A13). Launch-prep in flight (~10 weeks to 2026-07-25). This session was brand housekeeping + importer-dashboard bug fixes + a clean-sheet LCopilot pricing restructure (backend done, frontend pending).
 
 ---
 
 ## Resume prompt
 
 ```
-Resume Path A launch-prep. Read SESSION_RESUME.md and project_session_2026_05_02_smoke_findings.md
-+ project_rulhub_500_2026_05_02.md. Today: importer corpus fully fixed, smoke matrix
-load-bearing, RulHub 500-ing on server side (handed to rulhub Claude with 4 ref_ids +
-sanitized payload preview). Two of four corridors hit truly clean baseline. Remaining:
-(a) wait for rulhub Claude to patch /v1/validate/set, (b) re-verify expected
-DRAFT_RISKY findings appear once rulhub is back, (c) UAT customer outreach,
-(d) bug bash week scheduling, (e) Pingdom + Sentry wiring.
+Continue the LCopilot pricing restructure. Backend is shipped at f16e9ae5 (7-value
+company.tier billing enum + entitlements.py rewrite + migration 20260510). Read
+docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md §8 — it has
+the locked numbers and the exact pending frontend work items. Pending: (1) rewrite
+apps/web/src/lib/pricing.ts to the 3 trader tiers + AGENCY_TIERS + track field, (2)
+repoint Index.tsx + fix the 2-vs-5-free FAQ contradiction, (3) PricingPage Trader/Agency
+toggle, (4) QuotaStrip new tiers + overage line, (5) normalizePlanType/types/billing.ts
+for the 7-value model. Then the deferred public /api/check endpoint + /check page.
+Also: run alembic upgrade head on Render after the backend deploy lands (no auto hook).
 ```
 
 ---
 
-## What shipped today (17 commits)
+## What shipped today (12 commits, `93c8a394..f16e9ae5`)
 
-### Importer corpus structurally complete
+### Brand-drift housekeeping (the "everything's bluish, not our brand" complaint)
 | Commit | What |
 |---|---|
-| `715905c8` | **Renderer fix** — single-line `:TAG: VALUE` per field. Root cause of `amount=41` extraction garbage |
-| `64821c84` | Regenerate 36 PDFs with fixed renderer |
-| `6b3d248d` | Align LC 32B amount with goods_line_items sum + module-load invariant |
-| `53d70ab9` | Add Beneficiary Cert + Fumigation Cert + Draft BoE renderers (corridor-data-driven, not per-corridor hardcoded) |
+| `9e513911` | LcopilotRouter post-login splash + `index.css` light-mode sidebar tokens → brand (`#00261C` deep green / `#B2F273` lime / `#EDF5F2` mint). The CSS token change flips every shadcn sidebar brand-true in light mode in one edit. |
+| `292064cc` | Adopt the DocGenerator sidebar pattern (hardcoded brand classes) in Exporter / Importer / Agency / Bank sidebars |
+| `64c9b82f` | Retire `/hub` — `/hub` + `/hub/*` now redirect to `/lcopilot/dashboard` (kills the off-brand multicolor "all tools" grid); strip "Back to Hub" links from the sidebars. Hub page files left as dead code (other tools launch over 6 months). |
+| `c487424c` | Delete legacy `Dashboard.tsx` (mock "Dhaka Exports Ltd" data); `/dashboard` → redirect; recolor the 3 highest-drift LCopilot results components (`HowToFixSection`, `ExporterIssueCard`, `ExtractionReview`) to brand |
+| `3a4cfcb2` | Two more loaders missed in `9e513911` — `LcopilotBetaRoute` + `RequireAuth` ("Loading your dashboard…" / "Checking your session…") were still slate-blue |
 
-### Engine spine fixes
+### Importer dashboard bugs (Ripon walked the dashboard and found broken paths)
 | Commit | What |
 |---|---|
-| `5c7146a3` | Gate "Missing X document" findings on `workflow_type=importer_draft_lc` |
-| `5cd0c96c` | Doc classifier: detect Draft BoE before `commercial_invoice` (was matching `'draft'` substring) |
-| `34f090d9` | Forward `beneficiary_certificate` / `inspection_certificate` / `fumigation_certificate` / `draft` to AI validator (was rendering as "(not submitted)" despite docs being uploaded) |
+| `bdc4fea3` | "View all →" linked to non-existent `/reviews` (404) → removed. Per-row "View →" hardcoded `/lcopilot/results-v2/${id}` for every session → now branches by `workflow_type`: importer rows → `/lcopilot/import-results/${id}`, exporter rows → `/lcopilot/exporter-dashboard?section=reviews&jobId=${id}` (keeps the sidebar). `ExporterResultsV2` error-state "Back to Upload" went to legacy `/lcopilot/upload` → now `/lcopilot/dashboard`. |
+| `c3dfa8bb` | Remove the placeholder Settings tab from the importer sidebar (was a dead-end "No importer-specific settings yet" card — violated the no-placeholder-dashboards rule) |
+| `d69fa73a` | Billing tab showed "Billing data is temporarily unavailable" for most users — root cause was a frontend↔backend enum drift (backend `Company.plan` ∈ free/pay_per_check/monthly_basic/monthly_pro/enterprise; frontend `normalizePlanType` only matched FREE/ENTERPRISE → returned null → empty fallback). Added a `tier` field to `/billing/company` (derived from `company.tier`, falls back to mapping `plan`); broadened `normalizePlanType` to accept all three string shapes; `BillingOverviewPage` prefers `info.tier`. *(Note: the new pricing restructure below supersedes the tier-name mapping introduced here — see the spec §8 item 5.)* |
 
-### Diagnostic infrastructure
+### Pricing restructure — backend (the big one)
 | Commit | What |
 |---|---|
-| `d3ebc3b8` | `_db_rules_debug.path` self-reports `rulhub` / `db_tiered_rulhub_failed` / `db_tiered` |
-| `d42f22ec` | Preserve RulHub `reference_id` from 5xx responses (Sentry handle) |
-| `44325abf` | Sanitized request preview on rulhub-failure path |
-| `3162361a` | Show ALL field keys in preview (not first-30 cap) |
+| `dde0df78` | Design spec: `docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md` (brainstorming session) |
+| `f16e9ae5` | **Backend implementation.** `company.tier` is now the 7-value billing enum (`payg`/`solo`/`business`/`enterprise`/`agency_starter`/`agency_pro`/`agency_enterprise`); new `BusinessSize` enum for the onboarding Q3 "company size" answer + `starting_billing_tier()` mapping; `entitlements.py` rewrite (quota/seat/overage maps for all 7 tiers, agency fair-use soft-cap advisory log, default → `business`); `/api/entitlements/current` returns `overage_rate_usd`; `billing_service._resolve_tier` updated; migration `20260510_pricing_restructure_tier` (`sme`→`business`, default→`payg`, logs `sme` count). |
 
-### Smoke + ops
-| Commit | What |
-|---|---|
-| `38842a79` | Track scripts/smoke_importer.sh + env-overridable creds |
-| `1449419c` | smoke_matrix.py multi-persona (`--tokens-file` / `--users-file`) |
-| `046fc9f2` | CORRIDOR env override on smoke_importer.sh |
-| `3528f8af` | **Semantic diff** in smoke_importer.sh + non-zero exit on fail |
-| `b2a82c82` | **SMOKE_TEST_EMAILS** quota bypass (no more HTTP 402 on repeated runs) |
-| `a56a5df4` | `RULHUB_API_ENABLED` env-driven (was hardcoded False in rule_loader.py) |
-| `15203579` | Untrack .claude/scheduled_tasks.lock + gitignore |
-| `8524587e` | Untrack conversation prompt.md scratchpad |
+Also: `reference_competitor_tradingdocs_ai.md` saved to memory (Dubai competitor, page-credit pricing model, $299 entry).
 
 ---
 
-## Cross-corridor smoke matrix — final state today
+## The locked pricing model (so the frontend doesn't re-derive)
 
-| Corridor | M1 issues | M2 issues | Semantic-diff | Notes |
-|---|---|---|---|---|
-| US-VN | 1 minor | 0–1 minor | 0 | clean |
-| UK-IN | 1 minor | **0** | 0 | ✅ truly clean |
-| DE-CN | 2 minor | **0**–5 (variance) | 0 | clean (AI Examiner run-to-run variance) |
-| BD-CN | 6 minor | 1 minor | 0 | clean-ish |
+**Trader track** (exporter + importer personas): PAYG **$12/LC set** · Solo **$49/mo, 5 LCs, 1 seat** · Business **$149/mo, 25 LCs, 5 seats** · Enterprise **$699/mo, 100 LCs, 10 seats**. Overage rates (display only — quota gate still hard-blocks; metered billing is v1.1): $10 / $7 / $5 per LC. Yearly ≈ 16% off (Solo $41, Business $125, Enterprise $587 per month).
 
-Zero criticals + zero majors anywhere. All findings are minor or AI Examiner stochastic noise.
+**Agency/Services track** (agent + services personas): per operator seat — Agency Starter **$199/seat/mo** · Agency Pro **$299/seat/mo** · Agency Enterprise **custom**. "Unlimited" LCs per seat within a ~50 LCs/seat/mo fair-use soft cap (advisory, not enforced). Yearly: $167 / $251 per seat/mo.
 
----
+**"Free"** = a public logged-out LC checker at `/check` (1 anonymous run / IP / 24h, trimmed results, sign-up gate). No in-app monthly free quota. `/api/check` endpoint + `/check` page = deferred follow-up.
 
-## RulHub status — handed to rulhub Claude
+**Localization** multipliers off USD: BDT ×86, INR ×69, PKR ×172, EUR ×0.93, GBP ×0.80, AED ×3.67, SGD ×1.35, AUD ×1.55. Keep the 9-currency table.
 
-**api.rulhub.com `/v1/validate/set` returning HTTP 500 universally.** Trdrhub correctly detects + falls back to local DB tiered validator → customer never sees the failure but loses RulHub's deterministic UCP600 rule layer.
-
-Reference IDs captured for rulhub Sentry lookup:
-- `0a9d75ca74cd` — DRAFT_RISKY (1 doc)
-- `77a432e2c6c4` — SHIPMENT_CLEAN (10 docs)
-- `c07081ef103c` — DRAFT_RISKY (1 doc, deploy verification)
-- `0a09383ec495` — DRAFT_RISKY (1 doc, full preview captured)
-
-Sanitized payload preview attached to last refid — see `_db_rules_debug.rulhub_request_preview` in any 500 response. The 1-doc paradox is real: trdrhub IS sending exactly 1 doc on importer_draft_lc workflow; rulhub side should 400 (Pydantic min_length=2) but is 500-ing instead → real rulhub bug.
-
-**Next move:** rulhub Claude triages from refid + payload preview. Once they patch, trdrhub re-runs DRAFT_RISKY and the 4 expected findings (5-day presentation period, FREIGHT COLLECT/Incoterm mismatch, missing origin marking, missing 47A sanctions) should finally appear.
+**Best-judgement calls made on the spec §6 open items:** (1) `sme`→`business` migration with a row-count log so real accounts can be grandfathered manually; (2) no Solo hard-block opt-out — always allow + (eventually) charge overage; (3) keep the existing FX multipliers; (4) `/check` at top level.
 
 ---
 
-## Render env vars set today (per Ripon)
+## Still pending — pricing restructure frontend (see spec §8 for full detail)
 
-```
-SMOKE_TEST_EMAILS=imran@iec.com         # quota bypass
-RULHUB_API_ENABLED=true                 # rule-catalog fetch from api.rulhub.com
-USE_RULHUB_API=true                     # /v1/validate/set call (was already true)
-RULHUB_API_KEY=<rh_live_*>              # was already set
-```
+1. `apps/web/src/lib/pricing.ts` — rewrite `PRICING_TIERS` (3 trader tiers) + add `AGENCY_TIERS` + `track`/`seatBased`/`overageRateUsd` fields; `PAY_PER_USE.lc_validation` USD 8 → 12; keep all helper exports (5 files import them).
+2. `apps/web/src/pages/Index.tsx` — import trader tiers from `lib/pricing.ts`; fix the 2-vs-5-free-LC FAQ contradiction.
+3. `PricingPage.tsx` + `components/sections/trdr-pricing-section.tsx` — Trader ↔ Agency toggle.
+4. `components/entitlements/QuotaStrip.tsx` — new tiers + overage line + "Unlimited (fair use)" for agency.
+5. `types/billing.ts` + `BillingOverviewPage.tsx` — `normalizePlanType` / tier handling for the 7-value model.
+6. **Deferred follow-up:** `POST /api/check` (public, no-auth, IP rate-limited, trimmed result) + `/check` page.
 
----
-
-## Remaining launch-prep tasks
-
-| Task | Status |
-|---|---|
-| Migrations on Render (3 pending from A3/A5/A8) | ✅ done 2026-04-29 |
-| Env vars on Render (SMTP, FRONTEND_URL) | ✅ done 2026-04-30 |
-| Vercel feature flags (7 of 7) | ✅ done 2026-04-30 |
-| Smoke matrix — single token (17/17) | ✅ done 2026-04-30 |
-| Smoke matrix — multi-persona | 🟡 unblocked today (1449419c); needs fixture-account creator |
-| **30-combo persona × tier × country matrix** | 🔲 not started |
-| Real-data prod smoke (4-corridor) | ✅ all green today |
-| RulHub 500 triage | 🔲 handed to rulhub Claude |
-| Bug bash week (2026-07-20 → 23) | 🔲 needs internal team scheduling |
-| UAT week (5 friendly customers) | 🔲 needs customer outreach |
-| Pingdom + Sentry wiring | 🔲 not configured |
-| Roll-back plan | 🔲 needs final review |
+## Ops note
+Backend deploy lands on Render via push → **run `alembic upgrade head` manually** afterward (trdrhub-api has no pre/post-deploy hook — `reference_render_migrations.md`). Verify via `/health/db-schema`. Migration `20260510_pricing_restructure_tier` logs the count of `sme` rows it rewrites — check that line; if any are real paying customers, grandfather them (bump to `enterprise` or set `quota_limit=50`) since `business` = 25 LCs/mo vs the old `sme` 50.
 
 ---
 
-## Standing rules reaffirmed today
-
-| Rule | Memory file |
-|---|---|
-| Don't downgrade models for cost — trade finance is real money | `feedback_quality_over_cost_real_money.md` |
-| Push every commit immediately | `feedback_push_every_commit.md` |
-| Update memory after each big milestone | `feedback_update_memory_per_milestone.md` |
-| Session handoff at ~75% context | `feedback_session_handoff_at_75pct.md` |
-| trdrhub-only — never touch rulhub repo | `feedback_scope_trdrhub_only.md` |
-| No placeholder dashboards | `feedback_no_placeholder_dashboards.md` |
-| Render migration is manual + may need re-run | `reference_render_migrations.md` |
-| Ignore Vercel plugin nags (Vite SPA, FastAPI Python — not Next.js) | CLAUDE.md |
-
----
-
-## v1.1 backlog (deferred, don't gate launch on these)
-
-- AI Examiner `temperature=0` for deterministic findings (run-to-run variance currently ±5 minor findings)
-- AI extraction occasional `regex_fallback` on supporting docs (doesn't affect correctness)
-- `lc_reference: 'erence'` regex artifact (visible in fallback path only)
-- Failure-mode degradation queue (auto-retry on LLM 429)
-- Settings UX completeness (notif prefs, default issuing bank, branding)
-- Real Stripe checkout on QuotaStrip "Upgrade" CTA
-- Multi-entity enterprise hierarchy
-- Cross-device persistence for first-session coachmark
+## Other launch-prep items still open (unchanged from 2026-05-02)
+- RulHub `/v1/validate/set` returning HTTP 500 universally → handed to rulhub Claude (separate workspace `J:\Enso Intelligence\ICC Rule Engine\`), 4 ref_ids + sanitized payload preview provided. trdrhub falls back to local DB tiered, so no customer-facing breakage, but the deterministic UCP600 layer isn't firing.
+- UAT customer outreach · bug-bash week (2026-07-20→23) · Pingdom + Sentry wiring · roll-back plan review.

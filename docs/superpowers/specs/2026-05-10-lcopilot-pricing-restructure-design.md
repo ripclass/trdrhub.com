@@ -1,7 +1,7 @@
 # LCopilot Pricing Restructure — Design
 
 **Date:** 2026-05-10
-**Status:** Approved (design phase). Implementation plan to follow.
+**Status:** **In progress.** Backend shipped (`f16e9ae5`); frontend reconciliation + public `/check` endpoint still pending — see §8 Implementation status.
 **Owner:** Ripon
 **Scope:** Clean-sheet redesign of the LCopilot pricing model, shipped pre-launch (target launch 2026-07-25), and full reconciliation of the three currently-contradictory pricing definitions in the codebase.
 
@@ -178,3 +178,47 @@ Run as a one-off data migration (or a backfill script) alongside the `entitlemen
 - The other TRDR Hub tools' pricing (LC Builder, Doc Generator, Sanctions Screener, HS Code Finder, etc.) — they are parked; this spec is LCopilot-only. When they launch over the next 6 months they get their own pricing pass.
 - Bank-portal pricing (parked).
 - Any change to the validation pipeline itself — `/api/check` reuses it as-is.
+
+---
+
+## 8. Implementation status (2026-05-10)
+
+### ✅ Shipped — backend (commit `f16e9ae5`, pushed)
+
+- `app/models/company.py` — `BusinessTier` is now the 7-value billing-tier enum (`payg`/`solo`/`business`/`enterprise`/`agency_starter`/`agency_pro`/`agency_enterprise`); new `BusinessSize` enum (`solo`/`sme`/`enterprise`) for the onboarding Q3 answer; `starting_billing_tier(company_size, *, is_agency)` maps size+persona → starting billing tier; `companies.tier` column default changed `sme` → `payg`.
+- `app/schemas/onboarding.py` — `OnboardingCompletePayload.tier` validated against `BUSINESS_SIZE_VALUES` (it's a size answer, not a billing tier).
+- `app/services/onboarding_service.py` — `complete_onboarding` writes `company.tier = starting_billing_tier(payload.tier, is_agency=primary_activity in {agent, services})`; raw size still preserved in `event_metadata["company_size"]` / `onboarding_data["tier"]`.
+- `app/services/entitlements.py` — `TIER_QUOTA_LIMITS` (payg 0 / solo 5 / business 25 / enterprise 100 / agency_* None), `TIER_SEAT_LIMITS` (1 / 1 / 5 / 10 / None), `TIER_OVERAGE_RATE_USD` (solo $10 / business $7 / enterprise $5 — **display-only**, the quota gate still hard-blocks at the included amount; metered billing is v1.1), `AGENCY_FAIR_USE_SOFT_CAP` (agency_starter/pro 50 LCs/seat/mo — advisory log via `_maybe_soft_cap_alert`, never blocks); unrecognised tier → `business` default; `resolve_overage_rate()` helper.
+- `app/routers/entitlements.py` — `GET /api/entitlements/current` now also returns `overage_rate_usd`.
+- `app/services/billing_service.py` — `_resolve_tier` recognises the 7 new tiers, maps legacy plan/size strings (incl. legacy `sme` → `business`), defaults to `business`.
+- `alembic/versions/20260510_pricing_restructure_tier.py` — rewrites `companies.tier` `'sme'` → `'business'`, changes column default `'sme'` → `'payg'`, logs the `'sme'` row count first. **Must be run on Render after deploy** (trdrhub-api has no auto-migrate hook — `reference_render_migrations`).
+
+### 🔲 Pending — frontend reconciliation + public checker
+
+**Locked numbers (do not re-derive):**
+
+| Trader tier | USD/mo | yearly/mo (~16% off) | LCs incl. | seats | overage |
+|---|---|---|---|---|---|
+| Pay-as-you-go | $12 / LC set | — | — | 1 | n/a |
+| Solo | $49 | $41 | 5 | 1 | $10/LC (display only) |
+| Business ⭐ | $149 | $125 | 25 | 5 | $7/LC (display only) |
+| Enterprise | $699 | $587 | 100 | 10 | $5/LC (display only) |
+
+| Agency/Services tier | USD / seat / mo | yearly/seat/mo | LCs / seat | soft cap |
+|---|---|---|---|---|
+| Agency Starter | $199 | $167 | unlimited | 50/seat/mo |
+| Agency Pro ⭐ | $299 | $251 | unlimited | 50/seat/mo |
+| Agency Enterprise | custom | custom | unlimited | negotiated |
+
+Localization multipliers off USD (same as the current `lib/pricing.ts` table): **BDT ×86, INR ×69, PKR ×172, EUR ×0.93, GBP ×0.80, AED ×3.67, SGD ×1.35, AUD ×1.55**; round to clean figures.
+
+**Frontend work items:**
+1. `apps/web/src/lib/pricing.ts` — rewrite `PRICING_TIERS` to the 3 trader subscription tiers (`solo`/`business`/`enterprise`); add `AGENCY_TIERS` (the 3 agency tiers); add a `track: 'trader' | 'agency'` field + `seatBased?: boolean` + `overageRateUsd?: number` to `PriceTier`; update `PAY_PER_USE.lc_validation` USD → 12 (currently 8) and the localized figures off the ×multipliers; keep all existing helper exports (`getPrice`, `getPriceDisplay`, `getPayPerUsePrice`, `getCurrencyFromCountry`, `getTierById`, `formatPrice`) so `HubBilling.tsx` / `trdr-pricing-section.tsx` / `PricingPage.tsx` / `Pricing.tsx` / `ToolPricingSection.tsx` don't break. `limits.price_checks` is vestigial (Price Verify is parked) — keep the field, set reasonable values.
+2. `apps/web/src/pages/Index.tsx` — delete the hardcoded `pricing` array, import the trader tiers from `lib/pricing.ts`; fix the FAQ self-contradiction ("2 free LCs" card vs "5 validations/month" FAQ answer — there is no monthly free tier now; replace with "free public LC check, then plans from $49/mo").
+3. `apps/web/src/pages/PricingPage.tsx` + `apps/web/src/components/sections/trdr-pricing-section.tsx` — add a Trader ↔ Agency toggle (default Trader); each track shows its tiers + the PAYG card + a "free LC check" callout linking to `/check`.
+4. `apps/web/src/components/entitlements/QuotaStrip.tsx` — read the new `company.tier` + the `overage_rate_usd` field; show "X of Y LCs used — extra LCs at $Z, or upgrade to <next tier>"; agency tiers show "Unlimited (fair use)".
+5. `apps/web/src/types/billing.ts` + `apps/web/src/pages/BillingOverviewPage.tsx` — rework `normalizePlanType` / the `tier` handling (added 2026-05-10 in `d69fa73a`) for the 7-value model. The old `PlanType` enum is FREE/STARTER/PROFESSIONAL/ENTERPRISE; map `solo→STARTER`, `business→PROFESSIONAL`, `enterprise→ENTERPRISE`, `payg→STARTER` (or introduce a PAYG label), `agency_*→PROFESSIONAL`-ish; legacy `sme→PROFESSIONAL`. Or — cleaner — replace `PlanType` usage in the billing UI with the raw tier string + a display-name map. Decide during impl.
+
+### 🔲 Pending — public `/api/check` endpoint + `/check` page (deferred to a focused follow-up)
+
+Deferred because it's the most plumbing-heavy piece, it's a lead magnet (not the launch-blocker), and a half-wired public endpoint without solid rate-limiting is itself a free-LLM-spend cost risk. Scope unchanged from §3.1 / §4.1 / §4.2. The validation pipeline already uses `get_user_optional` (lenient auth), so `/api/check` can mirror `POST /api/validate/` (in `validate_run.py::validate_doc`) with: forced full run (no intake_only/extract_only), `current_user=None`, IP rate-limit (1/IP/24h, existing rate-limiter middleware), and a trimmed response (`{verdict, finding_count, top_findings:[≤2 × {title, severity}], signup_cta:true}` — withhold the full structured result + PDF + full finding list). New `/check` page in `apps/web` (public, brand-themed, marketing shell, not auth-gated).
