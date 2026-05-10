@@ -28,6 +28,12 @@ import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import {
+  PRICING_TIERS,
+  getPriceDisplay,
+  getPayPerUseDisplay,
+  type PriceTier,
+} from "@/lib/pricing";
 
 const stats = [
   { value: "45", unit: "sec", label: "Average validation time" },
@@ -84,81 +90,56 @@ const features = [
   },
 ];
 
+// Landing-page pricing cards — derived from the canonical trader-track tiers
+// in lib/pricing.ts (single source of truth) so they can't drift again. The
+// first card is pay-as-you-go ($12 / LC set), then Solo / Business /
+// Enterprise. There is no permanent free plan; the free LC check lives on
+// the public /check page.
+const DASHBOARD_HREF = "/lcopilot/exporter-dashboard";
+
+function effectivePerLc(tier: PriceTier): string | null {
+  const monthly = tier.prices.monthly.USD;
+  const incl = tier.limits.lc_validations;
+  if (typeof incl !== "number" || incl <= 0 || monthly <= 0) return null;
+  return `$${(monthly / incl).toFixed(2)}`;
+}
+
 const pricing = [
   {
-    name: "Free",
-    price: "$0",
-    period: "forever",
-    description: "Try before you buy",
-    included: "2 LCs/month",
-    perLc: null,
-    features: [
-      "2 LC validations per month",
-      "Basic UCP600 rules",
-      "PDF reports",
-      "Email support",
-    ],
-    cta: "Start Free",
-    href: "/lcopilot/exporter-dashboard",
-    popular: false,
-    badge: null,
-  },
-  {
     name: "Pay-as-you-go",
-    price: "$12",
-    period: "/LC",
-    description: "No commitment required",
+    price: getPayPerUseDisplay("lc_validation"),
+    period: "/LC set",
+    description: "No commitment — pay per LC presentation",
     included: "Pay per use",
-    perLc: "$12",
+    perLc: null as string | null,
     features: [
-      "All 3,500+ rules",
+      "Full UCP600 / ISBP rule coverage",
       "Sanctions screening included",
-      "Full PDF reports",
-      "No monthly commitment",
+      "Full PDF report",
+      "No monthly commitment, no card to start",
+      "Subscribe later to cut the per-LC cost",
     ],
-    cta: "Buy Credits",
-    href: "/lcopilot/exporter-dashboard",
+    cta: "Get Started",
+    href: DASHBOARD_HREF,
     popular: false,
-    badge: null,
+    badge: null as string | null,
   },
-  {
-    name: "Professional",
-    price: "$79",
+  ...PRICING_TIERS.map((tier) => ({
+    name: tier.name,
+    price: getPriceDisplay(tier, "USD", "monthly"),
     period: "/month",
-    description: "For regular exporters",
-    included: "10 LCs included",
-    perLc: "$7.90",
-    features: [
-      "10 LCs included ($7.90/each)",
-      "Extra LCs at $8/each",
-      "All 3,500+ rules",
-      "Priority support",
-      "API access",
-    ],
-    cta: "Start Professional",
-    href: "/lcopilot/exporter-dashboard",
-    popular: true,
-    badge: "Most Popular",
-  },
-  {
-    name: "Business",
-    price: "$199",
-    period: "/month",
-    description: "For trading houses",
-    included: "40 LCs included",
-    perLc: "$4.98",
-    features: [
-      "40 LCs included ($4.98/each)",
-      "Extra LCs at $5/each",
-      "Team accounts (5 users)",
-      "Custom rule sets",
-      "Dedicated support",
-    ],
-    cta: "Start Business",
-    href: "/lcopilot/exporter-dashboard",
-    popular: false,
-    badge: "Best Value",
-  },
+    description: tier.description,
+    included:
+      typeof tier.limits.lc_validations === "number"
+        ? `${tier.limits.lc_validations} LCs/month`
+        : "Unlimited LCs",
+    perLc: effectivePerLc(tier),
+    features: tier.features.slice(0, 6),
+    cta: `Start ${tier.name}`,
+    href: DASHBOARD_HREF,
+    popular: !!tier.popular,
+    badge: tier.popular ? "Most Popular" : null,
+  })),
 ];
 
 const testimonials = [
@@ -200,7 +181,7 @@ const faqs = [
   },
   {
     question: "Can I try before I buy?",
-    answer: "Yes! Our Free tier gives you 5 validations per month, forever. No credit card required. Upgrade to Pro anytime for unlimited validations and full rule coverage.",
+    answer: "There's no permanent free plan, but pay-as-you-go is just $12 per LC set with zero commitment and no card to start — and you can run a quick LC check before you sign up. Subscriptions start at $49/mo (Solo, 5 LCs); the per-LC cost drops to ~$6 on Business and lower on Enterprise.",
   },
   {
     question: "How is this different from manual checking?",
@@ -257,7 +238,7 @@ const Index = () => {
                   asChild
                 >
                   <Link to="/login">
-                    Validate Your LC Free
+                    Validate Your LC
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
@@ -282,7 +263,7 @@ const Index = () => {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
-                  <span>2 free LCs</span>
+                  <span>$12 per LC · no commitment</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
@@ -529,7 +510,7 @@ const Index = () => {
                 Pay per LC. Save with volume.
               </h2>
               <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
-                Start with 2 free LCs. Scale as you grow.
+                Pay-as-you-go from $12 per LC set. Subscribe and save up to ~50% per LC.
               </p>
             </div>
 
@@ -796,14 +777,14 @@ const Index = () => {
               </h2>
               
               <p className="text-xl text-[#EDF5F2]/60 mb-8 max-w-xl mx-auto">
-                Join 500+ exporters who validate LCs with confidence. Start free, no credit card required.
+                Join 500+ exporters who validate LCs with confidence. No card to start — pay only when you validate.
               </p>
 
               {/* Trust checklist */}
               <div className="flex flex-wrap justify-center gap-x-8 gap-y-3 mb-8 text-sm text-[#EDF5F2]/40">
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-[#B2F273]" />
-                  5 free validations
+                  $12 per LC · no commitment
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-[#B2F273]" />
@@ -826,7 +807,7 @@ const Index = () => {
                   asChild
                 >
                   <Link to="/login">
-                    Validate Your LC Free
+                    Validate Your LC
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
