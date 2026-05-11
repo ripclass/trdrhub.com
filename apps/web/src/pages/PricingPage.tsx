@@ -1,16 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { Button } from "@/components/ui/button";
-import { Check, ArrowRight, ChevronDown, HelpCircle, Building2, Zap, Sparkles } from "lucide-react";
+import { Check, ArrowRight, HelpCircle, Building2, Zap, Sparkles } from "lucide-react";
 import {
   getPriceDisplay,
   getPrice,
   getPayPerUseDisplay,
-  getCurrencyFromCountry,
   tiersForTrack,
-  CURRENCIES,
-  type CurrencyCode,
   type PricingTrack,
   type PriceTier,
 } from "@/lib/pricing";
@@ -18,18 +15,6 @@ import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 
 const ENTERPRISE_IDS = new Set(["enterprise", "agency_enterprise"]);
-
-// Currency options for manual selection
-const CURRENCY_OPTIONS: { code: CurrencyCode; flag: string; label: string }[] = [
-  { code: "USD", flag: "🇺🇸", label: "USD ($)" },
-  { code: "BDT", flag: "🇧🇩", label: "Bangladesh (৳)" },
-  { code: "INR", flag: "🇮🇳", label: "India (₹)" },
-  { code: "PKR", flag: "🇵🇰", label: "Pakistan (Rs)" },
-  { code: "EUR", flag: "🇪🇺", label: "Euro (€)" },
-  { code: "GBP", flag: "🇬🇧", label: "UK (£)" },
-  { code: "AED", flag: "🇦🇪", label: "UAE (د.إ)" },
-  { code: "SGD", flag: "🇸🇬", label: "Singapore (S$)" },
-];
 
 const faqs = [
   {
@@ -52,20 +37,16 @@ const faqs = [
 
 function PricingCard({
   tier,
-  currency,
   billingPeriod,
-  currencySymbol,
 }: {
   tier: PriceTier;
-  currency: CurrencyCode;
   billingPeriod: "monthly" | "yearly";
-  currencySymbol?: string;
 }) {
   const priceDisplay = tier.custom
     ? "Custom"
-    : getPriceDisplay(tier, currency, billingPeriod);
-  const price = tier.custom ? 0 : getPrice(tier, currency, billingPeriod);
-  const yearlyTotal = tier.custom ? 0 : getPrice(tier, currency, "yearly") * 12;
+    : getPriceDisplay(tier, "USD", billingPeriod);
+  const price = tier.custom ? 0 : getPrice(tier, "USD", billingPeriod);
+  const yearlyTotal = tier.custom ? 0 : getPrice(tier, "USD", "yearly") * 12;
   const period = tier.seatBased ? "/seat/mo" : "/mo";
 
   return (
@@ -97,7 +78,7 @@ function PricingCard({
         </div>
         {!tier.custom && billingPeriod === "yearly" && price > 0 && (
           <p className="text-xs text-[#B2F273] mt-2 font-mono">
-            Billed {currencySymbol}{yearlyTotal.toLocaleString()}/yr{tier.seatBased ? " per seat" : ""}
+            Billed ${yearlyTotal.toLocaleString()}/yr{tier.seatBased ? " per seat" : ""}
           </p>
         )}
       </div>
@@ -134,49 +115,15 @@ function PricingCard({
 }
 
 const PricingPage = () => {
-  const [currency, setCurrency] = useState<CurrencyCode>("USD");
-  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
   const [track, setTrack] = useState<PricingTrack>("trader");
-
-  // Auto-detect currency
-  useEffect(() => {
-    async function detectCurrency() {
-      try {
-        const res = await fetch("/api/geo");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.country && data.detected) {
-            setCurrency(getCurrencyFromCountry(data.country));
-            return;
-          }
-        }
-      } catch {
-        // Fallback to timezone
-        try {
-          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          if (tz.includes("Dhaka")) setCurrency("BDT");
-          else if (tz.includes("Kolkata") || tz.includes("Mumbai")) setCurrency("INR");
-          else if (tz.includes("Karachi")) setCurrency("PKR");
-          else if (tz.includes("Dubai")) setCurrency("AED");
-          else if (tz.includes("Singapore")) setCurrency("SGD");
-          else if (tz.includes("London")) setCurrency("GBP");
-          else if (tz.includes("Europe/")) setCurrency("EUR");
-        } catch {}
-      }
-    }
-    detectCurrency();
-  }, []);
-
-  const selectedCurrencyOption = CURRENCY_OPTIONS.find(c => c.code === currency) || CURRENCY_OPTIONS[0];
-  const currencyInfo = CURRENCIES[currency];
 
   // Tier set for the selected persona track. Enterprise (or Agency
   // Enterprise) renders in the wide card below; the rest go in the grid.
   const trackTiers = tiersForTrack(track);
   const gridTiers = trackTiers.filter(t => !ENTERPRISE_IDS.has(t.id));
   const enterpriseTier = trackTiers.find(t => ENTERPRISE_IDS.has(t.id));
-  const paygDisplay = getPayPerUseDisplay("lc_validation", currency);
+  const paygDisplay = getPayPerUseDisplay("lc_validation");
 
   return (
     <div className="min-h-screen bg-[#00261C]">
@@ -231,49 +178,14 @@ const PricingPage = () => {
 
             {/* Controls */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              {/* Currency Selector */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowCurrencyPicker(!showCurrencyPicker)}
-                  className="flex items-center gap-2 bg-[#00382E] border border-[#EDF5F2]/10 hover:border-[#B2F273]/50 rounded-full px-4 py-2.5 text-sm transition-all text-white min-w-[160px] justify-between"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{selectedCurrencyOption.flag}</span>
-                    <span>{selectedCurrencyOption.label}</span>
-                  </div>
-                  <ChevronDown className={cn("w-4 h-4 text-[#EDF5F2]/40 transition-transform", showCurrencyPicker && "rotate-180")} />
-                </button>
-                
-                {showCurrencyPicker && (
-                  <div className="absolute top-full left-0 mt-2 bg-[#00382E] border border-[#EDF5F2]/10 rounded-xl shadow-xl z-50 min-w-[180px] overflow-hidden py-1">
-                    {CURRENCY_OPTIONS.map((option) => (
-                      <button
-                        key={option.code}
-                        onClick={() => {
-                          setCurrency(option.code);
-                          setShowCurrencyPicker(false);
-                        }}
-                        className={cn(
-                          "w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-[#B2F273]/10 transition-colors text-left",
-                          currency === option.code ? "text-[#B2F273]" : "text-[#EDF5F2]/80"
-                        )}
-                      >
-                        <span className="text-lg">{option.flag}</span>
-                        <span>{option.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               {/* Billing Toggle */}
               <div className="flex items-center gap-3 bg-[#00382E] border border-[#EDF5F2]/10 rounded-full px-1.5 py-1.5">
                 <button
                   onClick={() => setBillingPeriod("monthly")}
                   className={cn(
                     "px-4 py-1.5 rounded-full text-sm font-medium transition-all",
-                    billingPeriod === "monthly" 
-                      ? "bg-[#B2F273] text-[#00261C]" 
+                    billingPeriod === "monthly"
+                      ? "bg-[#B2F273] text-[#00261C]"
                       : "text-[#EDF5F2]/60 hover:text-white"
                   )}
                 >
@@ -283,8 +195,8 @@ const PricingPage = () => {
                   onClick={() => setBillingPeriod("yearly")}
                   className={cn(
                     "px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2",
-                    billingPeriod === "yearly" 
-                      ? "bg-[#B2F273] text-[#00261C]" 
+                    billingPeriod === "yearly"
+                      ? "bg-[#B2F273] text-[#00261C]"
                       : "text-[#EDF5F2]/60 hover:text-white"
                   )}
                 >
@@ -298,6 +210,13 @@ const PricingPage = () => {
                 </button>
               </div>
             </div>
+
+            {/* Currency note — Stripe Adaptive Pricing presents the visitor's
+                local currency at checkout; we don't try to maintain our own
+                FX table any more. */}
+            <p className="text-[#EDF5F2]/40 text-xs mt-4 font-mono max-w-xl mx-auto">
+              Charged in USD. At checkout, Stripe lets you pay in your local currency at today's FX rate (~1% conversion fee).
+            </p>
           </div>
 
           {/* Pay-as-you-go callout (trader track only) */}
@@ -347,9 +266,7 @@ const PricingPage = () => {
               <PricingCard
                 key={plan.id}
                 tier={plan}
-                currency={currency}
                 billingPeriod={billingPeriod}
-                currencySymbol={currencyInfo?.symbol}
               />
             ))}
           </div>
@@ -391,7 +308,7 @@ const PricingPage = () => {
                       ) : (
                         <>
                           <span className="text-3xl font-bold text-white font-display">
-                            {getPriceDisplay(enterpriseTier, currency, billingPeriod)}
+                            {getPriceDisplay(enterpriseTier, "USD", billingPeriod)}
                           </span>
                           <span className="text-[#EDF5F2]/40 text-sm">/mo</span>
                           <p className="text-[#EDF5F2]/40 text-xs mt-1">Volume bands above 150 LCs/mo</p>

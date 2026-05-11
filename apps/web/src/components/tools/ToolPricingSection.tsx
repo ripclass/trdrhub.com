@@ -1,42 +1,11 @@
-"use client";
-
-import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, ArrowRight, Globe, ChevronDown } from "lucide-react";
-import { 
-  getCurrencyFromCountry,
-  CURRENCIES,
-  type CurrencyCode 
-} from "@/lib/pricing";
-
-// Currency options for manual selection
-const CURRENCY_OPTIONS: { code: CurrencyCode; flag: string; label: string }[] = [
-  { code: "BDT", flag: "🇧🇩", label: "Bangladesh (৳)" },
-  { code: "INR", flag: "🇮🇳", label: "India (₹)" },
-  { code: "PKR", flag: "🇵🇰", label: "Pakistan (Rs)" },
-  { code: "USD", flag: "🇺🇸", label: "USD ($)" },
-  { code: "EUR", flag: "🇪🇺", label: "Euro (€)" },
-  { code: "GBP", flag: "🇬🇧", label: "UK (£)" },
-];
-
-// Conversion rates from USD (approximate, for display only)
-const CONVERSION_RATES: Record<CurrencyCode, number> = {
-  USD: 1,
-  BDT: 85,      // 1 USD ≈ 85 BDT
-  INR: 69,      // 1 USD ≈ 69 INR  (local pricing makes it ~₹1999 for $29)
-  PKR: 172,     // 1 USD ≈ 172 PKR
-  EUR: 0.92,
-  GBP: 0.79,
-  AED: 3.67,
-  SGD: 1.35,
-  AUD: 1.55,
-};
+import { Check, ArrowRight } from "lucide-react";
 
 interface PricingTier {
   tier: string;
-  price: string;           // Base USD price like "$49/mo" or "$0"
+  price: string;           // USD price string like "$49/mo" or "$0"
   description?: string;
   features: string[];
   popular?: boolean;
@@ -59,147 +28,57 @@ interface ToolPricingSectionProps {
   toolSlug?: string;
 }
 
-// Parse USD price string to number
-function parseUSDPrice(priceStr: string): number | null {
-  const match = priceStr.match(/\$(\d+)/);
-  return match ? parseInt(match[1]) : null;
-}
-
-// Convert USD to local currency
-function convertPrice(usdPrice: number, currency: CurrencyCode): number {
-  // Apply special fixed pricing for key markets
-  if (currency === "BDT") {
-    // BD pricing is ~86x multiplier from USD (৳2500 for $29)
-    return Math.round(usdPrice * 86);
-  }
-  if (currency === "INR") {
-    // IN pricing is ~69x multiplier from USD (₹1999 for $29)
-    return Math.round(usdPrice * 69);
-  }
-  if (currency === "PKR") {
-    // PK pricing is ~172x multiplier from USD (Rs4999 for $29)
-    return Math.round(usdPrice * 172);
-  }
-  // Default conversion for other currencies
-  return Math.round(usdPrice * CONVERSION_RATES[currency]);
-}
-
-// Format price in local currency
-function formatLocalPrice(priceStr: string, currency: CurrencyCode): string {
-  const usdPrice = parseUSDPrice(priceStr);
-  if (usdPrice === null || usdPrice === 0) {
-    return priceStr.includes("0") ? "Free" : priceStr;
-  }
-
-  const localPrice = convertPrice(usdPrice, currency);
-  const currencyInfo = CURRENCIES[currency];
-  const period = priceStr.includes("/mo") ? "/mo" : "";
-
-  if (currencyInfo?.position === "after") {
-    return `${localPrice.toLocaleString()} ${currencyInfo.symbol}${period}`;
-  }
-  return `${currencyInfo?.symbol || "$"}${localPrice.toLocaleString()}${period}`;
-}
-
-export function ToolPricingSection({ 
+/**
+ * Generic per-tool pricing section. Used by tool landing pages (currently
+ * only `/price-verify`, which is a parked tool — Price Verify launches
+ * later in the roadmap).
+ *
+ * USD-only since 2026-05-11 (Phase 1 of "lock to USD") — Stripe Adaptive
+ * Pricing handles local-currency conversion at checkout. The previous
+ * version maintained its own per-currency conversion table (USD/BDT/INR/
+ * PKR/EUR/GBP) with stale FX multipliers; that's gone.
+ */
+export function ToolPricingSection({
   title = "Simple, Transparent Pricing",
-  subtitle = "Start free, upgrade as you grow",
+  subtitle = "Pay-as-you-go from $12 per LC. Subscriptions starting at $49/mo.",
   tiers,
-  toolSlug
 }: ToolPricingSectionProps) {
-  const [currency, setCurrency] = useState<CurrencyCode>("USD");
-  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
-
-  useEffect(() => {
-    async function detectCurrency() {
-      try {
-        const res = await fetch("/api/geo");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.country && data.detected) {
-            setCurrency(getCurrencyFromCountry(data.country));
-            return;
-          }
-        }
-      } catch {
-        // Geo API failed
-      }
-      
-      // Fallback: detect from timezone
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (tz.includes("Dhaka")) setCurrency("BDT");
-        else if (tz.includes("Kolkata") || tz.includes("Mumbai")) setCurrency("INR");
-        else if (tz.includes("Karachi")) setCurrency("PKR");
-        else if (tz.includes("London")) setCurrency("GBP");
-        else if (tz.includes("Europe/")) setCurrency("EUR");
-      } catch {
-        // Default to USD
-      }
-    }
-    detectCurrency();
-  }, []);
-
-  const currencyInfo = CURRENCIES[currency];
-  const selectedCurrencyOption = CURRENCY_OPTIONS.find(c => c.code === currency) || CURRENCY_OPTIONS[3];
-
   return (
     <section className="py-20 bg-muted/30">
       <div className="container mx-auto px-4">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold text-foreground mb-4">{title}</h2>
-          <p className="text-lg text-muted-foreground mb-4">{subtitle}</p>
-          
-          {/* Currency Selector */}
-          <div className="inline-flex justify-center relative">
-            <button
-              onClick={() => setShowCurrencyPicker(!showCurrencyPicker)}
-              className="flex items-center gap-2 bg-muted/50 hover:bg-muted/70 rounded-full px-4 py-2 text-sm transition-colors"
-            >
-              <span>{selectedCurrencyOption.flag}</span>
-              <span className="text-foreground">{selectedCurrencyOption.label}</span>
-              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showCurrencyPicker ? 'rotate-180' : ''}`} />
-            </button>
-            
-            {showCurrencyPicker && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-card border rounded-lg shadow-lg z-50 min-w-[180px]">
-                {CURRENCY_OPTIONS.map((option) => (
-                  <button
-                    key={option.code}
-                    onClick={() => {
-                      setCurrency(option.code);
-                      setShowCurrencyPicker(false);
-                    }}
-                    className={`w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-muted/50 transition-colors first:rounded-t-lg last:rounded-b-lg ${
-                      currency === option.code ? "bg-muted/30 text-primary" : "text-foreground"
-                    }`}
-                  >
-                    <span>{option.flag}</span>
-                    <span>{option.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <p className="text-lg text-muted-foreground mb-2">{subtitle}</p>
+          <p className="text-xs text-muted-foreground max-w-xl mx-auto">
+            Charged in USD. At checkout, Stripe lets you pay in your local currency at today's FX rate (~1% conversion fee).
+          </p>
         </div>
 
-        <div className={`grid gap-6 max-w-5xl mx-auto ${
-          tiers.length === 3 ? "md:grid-cols-3" : 
-          tiers.length === 4 ? "md:grid-cols-4" : 
-          "md:grid-cols-3"
-        }`}>
+        <div
+          className={`grid gap-6 max-w-5xl mx-auto ${
+            tiers.length === 4 ? "md:grid-cols-4" : "md:grid-cols-3"
+          }`}
+        >
           {tiers.map((tier, index) => {
-            const localPrice = formatLocalPrice(tier.price, currency);
-            const usageLimit = tier.checks || tier.lookups || tier.docs || tier.lcs || 
-                              tier.screens || tier.searches || tier.reports || 
-                              tier.containers || tier.calcs || tier.comparisons;
+            const isFree = tier.price === "$0" || /^\$0\b/.test(tier.price);
+            const usageLimit =
+              tier.checks ||
+              tier.lookups ||
+              tier.docs ||
+              tier.lcs ||
+              tier.screens ||
+              tier.searches ||
+              tier.reports ||
+              tier.containers ||
+              tier.calcs ||
+              tier.comparisons;
 
             return (
-              <Card 
-                key={index} 
+              <Card
+                key={index}
                 className={`relative transition-all duration-300 hover:shadow-lg ${
-                  tier.popular 
-                    ? "border-primary shadow-lg scale-105 z-10" 
+                  tier.popular
+                    ? "border-primary shadow-lg scale-105 z-10"
                     : "border-gray-200"
                 }`}
               >
@@ -208,7 +87,7 @@ export function ToolPricingSection({
                     Most Popular
                   </Badge>
                 )}
-                
+
                 <CardHeader className="text-center pb-4">
                   <CardTitle className="text-xl font-bold">{tier.tier}</CardTitle>
                   {tier.description && (
@@ -218,9 +97,9 @@ export function ToolPricingSection({
                   )}
                   <div className="mt-4">
                     <span className="text-3xl font-bold text-foreground">
-                      {localPrice.replace("/mo", "")}
+                      {tier.price.replace("/mo", "")}
                     </span>
-                    {localPrice.includes("/mo") && (
+                    {tier.price.includes("/mo") && (
                       <span className="text-muted-foreground">/mo</span>
                     )}
                   </div>
@@ -239,13 +118,13 @@ export function ToolPricingSection({
                     ))}
                   </ul>
 
-                  <Button 
+                  <Button
                     className={`w-full group ${tier.popular ? "bg-primary" : ""}`}
                     variant={tier.popular ? "default" : "outline"}
                     asChild
                   >
                     <a href="/register">
-                      {tier.price === "$0" ? "Get Started" : "Start Free Trial"}
+                      {isFree ? "Get Started" : `Start ${tier.tier}`}
                       <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
                     </a>
                   </Button>
@@ -254,16 +133,7 @@ export function ToolPricingSection({
             );
           })}
         </div>
-
-        <div className="text-center mt-8">
-          <p className="text-sm text-muted-foreground">
-            🎯 All paid plans include 14-day free trial • No credit card required
-            {currency === "BDT" && " • Pay with bKash/Nagad via SSLCommerz"}
-            {currency === "INR" && " • Pay with UPI/Cards via Razorpay"}
-          </p>
-        </div>
       </div>
     </section>
   );
 }
-

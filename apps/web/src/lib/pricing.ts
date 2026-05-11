@@ -1,53 +1,48 @@
 /**
- * LCopilot Pricing — single source of truth.
+ * LCopilot Pricing — single source of truth (USD-only as of 2026-05-11).
  *
- * Restructured 2026-05-10 (spec:
- * docs/superpowers/specs/2026-05-10-lcopilot-pricing-restructure-design.md).
+ * Phase 1 of "lock to USD". The previous version carried a hardcoded
+ * 9-currency price table derived from a fixed FX multiplier (BDT ×86,
+ * INR ×69, PKR ×172, …). Those multipliers were three years stale —
+ * USD/BDT had drifted from 86 → ~117, USD/INR from 69 → ~85, USD/PKR
+ * from 172 → ~280 — so BD/IN/PK customers were being shown prices ~20–40%
+ * under USD-equivalent. Rather than maintain a multiplier table (or build a
+ * live-FX layer just for marketing), we stopped pretending we know the FX
+ * rate at all and rely on Stripe Adaptive Pricing at checkout: the customer
+ * sees their local currency at the moment of payment, Stripe handles the
+ * FX (~1% conversion fee), we settle in USD.
  *
- * Two persona tracks. The persona (Company.business_activities) decides which
- * pricing page a user sees; the billing tier decides what they get.
+ * Net effect: one canonical price per tier, zero drift risk, ~400 lines of
+ * stale price tables gone.
  *
- *   Trader track (exporter / importer):
- *     Pay-as-you-go — $12 per LC presentation, no commitment (see PAY_PER_USE)
- *     Solo       — $49/mo,  5 LC presentations/mo, 1 seat
- *     Business   — $149/mo, 25/mo, 5 seats, API
- *     Enterprise — $699/mo, 100/mo, 10 seats, integrations + SLA
+ * Trader track: PAYG $12/LC · Solo $49/mo (5 LCs, 1 seat) · Business
+ * $149/mo (25 LCs, 5 seats, popular) · Enterprise $699/mo (100 LCs, 10
+ * seats; volume bands above 150).
  *
- *   Agency / Services track (agent / services personas) — priced PER SEAT,
- *   "unlimited" LCs/seat within a fair-use soft cap:
- *     Agency Starter    — $199/seat/mo
- *     Agency Pro        — $299/seat/mo
- *     Agency Enterprise — custom (per-seat with volume discounts)
+ * Agency / Services track (per operator seat, "unlimited" within ~50 LCs/
+ * seat/mo fair-use): Agency Starter $199/seat · Agency Pro $299/seat ·
+ * Agency Enterprise custom.
  *
- * Localized figures are derived from the USD figure via fixed multipliers:
- *   BDT ×86 · INR ×69 · PKR ×172 · EUR ×0.93 · GBP ×0.80 · AED ×3.67 ·
- *   SGD ×1.35 · AUD ×1.55, then rounded to clean values. Yearly billing is
- *   ~16% off the monthly figure (the `yearly` map is per-month-when-billed-
- *   yearly).
+ * `yearly` is the per-month figure when billed annually (~16% off monthly).
  *
- * Backend enforcement of these tiers lives in
- * apps/api/app/services/entitlements.py (TIER_QUOTA_LIMITS etc.) — keep the
- * numbers here in lockstep with that.
+ * Backend enforcement in `apps/api/app/services/entitlements.py` is
+ * already USD-only — no backend change needed for this lock.
+ *
+ * NOTE: `CURRENCIES`, `CurrencyCode`, `getCurrencyFromCountry`,
+ * `formatPrice(_, currency)` etc. are stub-retained so older / parked
+ * surfaces (HubBilling, PriceVerifyLanding, Pricing.tsx) keep compiling.
+ * Every callable now returns USD regardless of what is passed in.
  */
 
-// Supported currencies with their symbols
+// Stub-retained for backwards compat. Every surface now renders USD.
 export const CURRENCIES = {
   USD: { symbol: '$', position: 'before', name: 'US Dollar' },
-  BDT: { symbol: '৳', position: 'before', name: 'Bangladeshi Taka' },
-  INR: { symbol: '₹', position: 'before', name: 'Indian Rupee' },
-  PKR: { symbol: 'Rs', position: 'before', name: 'Pakistani Rupee' },
-  EUR: { symbol: '€', position: 'before', name: 'Euro' },
-  GBP: { symbol: '£', position: 'before', name: 'British Pound' },
-  AED: { symbol: 'د.إ', position: 'after', name: 'UAE Dirham' },
-  SGD: { symbol: 'S$', position: 'before', name: 'Singapore Dollar' },
-  AUD: { symbol: 'A$', position: 'before', name: 'Australian Dollar' },
 } as const;
 
 export type CurrencyCode = keyof typeof CURRENCIES;
 
 export type PricingTrack = 'trader' | 'agency';
 
-// Pricing tiers with local pricing
 export interface PriceTier {
   id: string;
   name: string;
@@ -58,7 +53,7 @@ export interface PriceTier {
   popular?: boolean;
   /** Agency tiers are priced per operator seat — display "$X / seat / mo". */
   seatBased?: boolean;
-  /** Price is "Contact us" (Agency Enterprise) — prices map is zeroed. */
+  /** Price is "Contact us" (Agency Enterprise) — `prices` is zeroed. */
   custom?: boolean;
   /** Per-LC overage rate (USD) shown once the included pool is used.
    *  Display-only for now — the quota gate hard-blocks at the included
@@ -67,8 +62,10 @@ export interface PriceTier {
   /** Tier this one upgrades to (for "or upgrade to X" CTAs). */
   upgradeToId?: string;
   prices: {
-    monthly: Record<CurrencyCode, number>;
-    yearly: Record<CurrencyCode, number>; // Per month when billed yearly
+    /** Monthly price in USD. */
+    monthly: number;
+    /** Per-month figure when billed yearly (USD). */
+    yearly: number;
   };
   limits: {
     /** LC presentations per month. 'unlimited' for agency tiers (fair use). */
@@ -103,10 +100,7 @@ export const PRICING_TIERS: PriceTier[] = [
       'Email support',
       'Extra LCs at $10 each',
     ],
-    prices: {
-      monthly: { USD: 49, BDT: 4200, INR: 3400, PKR: 8400, EUR: 45, GBP: 39, AED: 180, SGD: 66, AUD: 76 },
-      yearly:  { USD: 41, BDT: 3500, INR: 2850, PKR: 7050, EUR: 38, GBP: 33, AED: 151, SGD: 55, AUD: 64 },
-    },
+    prices: { monthly: 49, yearly: 41 },
     limits: { lc_validations: 5, price_checks: 15, team_members: 1 },
   },
   {
@@ -127,10 +121,7 @@ export const PRICING_TIERS: PriceTier[] = [
       'Priority support',
       'Extra LCs at $7 each',
     ],
-    prices: {
-      monthly: { USD: 149, BDT: 12800, INR: 10300, PKR: 25600, EUR: 139, GBP: 119, AED: 547, SGD: 201, AUD: 231 },
-      yearly:  { USD: 125, BDT: 10750, INR: 8600,  PKR: 21500, EUR: 116, GBP: 100, AED: 459, SGD: 169, AUD: 194 },
-    },
+    prices: { monthly: 149, yearly: 125 },
     limits: { lc_validations: 25, price_checks: 80, team_members: 5 },
   },
   {
@@ -150,10 +141,7 @@ export const PRICING_TIERS: PriceTier[] = [
       '99.9% SLA',
       'Extra LCs at $5 each · volume bands above 150/mo',
     ],
-    prices: {
-      monthly: { USD: 699, BDT: 60100, INR: 48200, PKR: 120200, EUR: 650, GBP: 559, AED: 2565, SGD: 944, AUD: 1083 },
-      yearly:  { USD: 587, BDT: 50500, INR: 40500, PKR: 101000, EUR: 546, GBP: 470, AED: 2154, SGD: 792, AUD: 910  },
-    },
+    prices: { monthly: 699, yearly: 587 },
     limits: { lc_validations: 100, price_checks: 'unlimited', team_members: 10 },
   },
 ];
@@ -179,10 +167,7 @@ export const AGENCY_TIERS: PriceTier[] = [
       'Email support',
       '*fair use — ~50 LCs/seat/mo, beyond which we talk volume pricing',
     ],
-    prices: {
-      monthly: { USD: 199, BDT: 17100, INR: 13700, PKR: 34200, EUR: 185, GBP: 159, AED: 730, SGD: 269, AUD: 308 },
-      yearly:  { USD: 167, BDT: 14400, INR: 11500, PKR: 28700, EUR: 155, GBP: 134, AED: 613, SGD: 225, AUD: 259 },
-    },
+    prices: { monthly: 199, yearly: 167 },
     limits: { lc_validations: 'unlimited', price_checks: 'unlimited', team_members: 'unlimited' },
   },
   {
@@ -202,10 +187,7 @@ export const AGENCY_TIERS: PriceTier[] = [
       'Priority support',
       '*fair use — ~50 LCs/seat/mo, beyond which we talk volume pricing',
     ],
-    prices: {
-      monthly: { USD: 299, BDT: 25700, INR: 20600, PKR: 51400, EUR: 278, GBP: 239, AED: 1097, SGD: 404, AUD: 463 },
-      yearly:  { USD: 251, BDT: 21600, INR: 17300, PKR: 43200, EUR: 233, GBP: 201, AED: 921,  SGD: 339, AUD: 389 },
-    },
+    prices: { monthly: 299, yearly: 251 },
     limits: { lc_validations: 'unlimited', price_checks: 'unlimited', team_members: 'unlimited' },
   },
   {
@@ -223,10 +205,7 @@ export const AGENCY_TIERS: PriceTier[] = [
       'Custom SLA',
       'Negotiated fair-use limits',
     ],
-    prices: {
-      monthly: { USD: 0, BDT: 0, INR: 0, PKR: 0, EUR: 0, GBP: 0, AED: 0, SGD: 0, AUD: 0 },
-      yearly:  { USD: 0, BDT: 0, INR: 0, PKR: 0, EUR: 0, GBP: 0, AED: 0, SGD: 0, AUD: 0 },
-    },
+    prices: { monthly: 0, yearly: 0 },
     limits: { lc_validations: 'unlimited', price_checks: 'unlimited', team_members: 'unlimited' },
   },
 ];
@@ -235,103 +214,71 @@ export const AGENCY_TIERS: PriceTier[] = [
 export const ALL_PRICING_TIERS: PriceTier[] = [...PRICING_TIERS, ...AGENCY_TIERS];
 
 // ---------------------------------------------------------------------------
-// Pay-as-you-go / overage rates (per unit, premium to nudge subscription)
+// Pay-as-you-go / overage rates (USD per unit, premium to nudge subscription)
 // ---------------------------------------------------------------------------
 
 export const PAY_PER_USE = {
-  // $12 per LC presentation (the whole doc set). Trader-track on-ramp + the
-  // overage rate when a subscription pool runs out.
-  lc_validation: {
-    USD: 12, BDT: 1030, INR: 830, PKR: 2060, EUR: 11, GBP: 10, AED: 44, SGD: 16, AUD: 19,
-  },
+  /** $12 per LC presentation (the whole doc set). Trader-track on-ramp +
+   *  the overage rate when a subscription pool runs out. */
+  lc_validation: 12,
   // The tools below are parked (Price Verify, HS Code Finder, Sanctions
   // Screener launch over the next 6 months) — kept so existing consumers
   // don't break; not advertised.
-  price_check: {
-    USD: 1, BDT: 86, INR: 69, PKR: 172, EUR: 0.93, GBP: 0.80, AED: 3.67, SGD: 1.35, AUD: 1.55,
-  },
-  hs_lookup: {
-    USD: 0.50, BDT: 43, INR: 35, PKR: 86, EUR: 0.46, GBP: 0.40, AED: 1.84, SGD: 0.68, AUD: 0.78,
-  },
-  sanctions_screen: {
-    USD: 2, BDT: 172, INR: 138, PKR: 344, EUR: 1.86, GBP: 1.60, AED: 7.34, SGD: 2.70, AUD: 3.10,
-  },
-};
+  price_check: 1,
+  hs_lookup: 0.5,
+  sanctions_screen: 2,
+} as const;
+
+export type PayPerUseUnit = keyof typeof PAY_PER_USE;
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers — every callable returns USD. The `currency` parameters are kept
+// in the signatures only so older / parked call sites keep compiling.
 // ---------------------------------------------------------------------------
 
 export function formatPrice(
   amount: number,
-  currency: CurrencyCode = 'USD',
-  options?: { showCurrency?: boolean }
+  _currency: CurrencyCode = 'USD',
+  _options?: { showCurrency?: boolean },
 ): string {
-  const currencyInfo = CURRENCIES[currency] || CURRENCIES.USD;
-  const formattedAmount = amount.toLocaleString();
-
-  if (currencyInfo.position === 'after') {
-    return options?.showCurrency
-      ? `${formattedAmount} ${currencyInfo.symbol}`
-      : `${formattedAmount}${currencyInfo.symbol}`;
-  }
-
-  return `${currencyInfo.symbol}${formattedAmount}`;
+  return `$${amount.toLocaleString()}`;
 }
 
 export function getPrice(
   tier: PriceTier,
-  currency: CurrencyCode = 'USD',
-  billing: 'monthly' | 'yearly' = 'monthly'
+  _currency: CurrencyCode = 'USD',
+  billing: 'monthly' | 'yearly' = 'monthly',
 ): number {
-  return tier.prices[billing][currency] ?? tier.prices[billing].USD;
+  return tier.prices[billing];
 }
 
 export function getPriceDisplay(
   tier: PriceTier,
-  currency: CurrencyCode = 'USD',
-  billing: 'monthly' | 'yearly' = 'monthly'
+  _currency: CurrencyCode = 'USD',
+  billing: 'monthly' | 'yearly' = 'monthly',
 ): string {
   if (tier.custom) return 'Custom';
-  const price = getPrice(tier, currency, billing);
-  return formatPrice(price, currency);
+  return formatPrice(getPrice(tier, 'USD', billing));
 }
 
 export function getPayPerUsePrice(
-  type: 'lc_validation' | 'price_check' | 'hs_lookup' | 'sanctions_screen',
-  currency: CurrencyCode = 'USD'
+  type: PayPerUseUnit,
+  _currency: CurrencyCode = 'USD',
 ): number {
-  return PAY_PER_USE[type][currency] ?? PAY_PER_USE[type].USD;
+  return PAY_PER_USE[type];
 }
 
 export function getPayPerUseDisplay(
-  type: 'lc_validation' | 'price_check' | 'hs_lookup' | 'sanctions_screen',
-  currency: CurrencyCode = 'USD'
+  type: PayPerUseUnit,
+  _currency: CurrencyCode = 'USD',
 ): string {
-  return formatPrice(getPayPerUsePrice(type, currency), currency);
+  return formatPrice(getPayPerUsePrice(type));
 }
 
-// Get currency from country code
-export function getCurrencyFromCountry(countryCode: string): CurrencyCode {
-  const countryToCurrency: Record<string, CurrencyCode> = {
-    BD: 'BDT',
-    IN: 'INR',
-    PK: 'PKR',
-    US: 'USD',
-    GB: 'GBP',
-    DE: 'EUR',
-    FR: 'EUR',
-    IT: 'EUR',
-    ES: 'EUR',
-    NL: 'EUR',
-    AE: 'AED',
-    SA: 'AED', // Use AED for Saudi too
-    SG: 'SGD',
-    AU: 'AUD',
-    NZ: 'AUD', // Use AUD for NZ
-  };
-
-  return countryToCurrency[countryCode] || 'USD';
+/** Stub-retained — every country now resolves to USD. Stripe Adaptive
+ *  Pricing handles local-currency presentation at checkout. */
+export function getCurrencyFromCountry(_countryCode: string): CurrencyCode {
+  return 'USD';
 }
 
 // Get tier by ID across both tracks

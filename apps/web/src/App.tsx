@@ -111,7 +111,6 @@ import CareersPage from './pages/CareersPage'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
-import LcopilotLanding from './pages/LcopilotLanding'
 import LcopilotRouter from './pages/LcopilotRouter'
 // Legacy Dashboard.tsx (mock-data, "Dhaka Exports Ltd" hardcodes) deleted
 // 2026-05-10. /dashboard now redirects to /lcopilot/dashboard.

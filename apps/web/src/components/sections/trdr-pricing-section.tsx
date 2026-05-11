@@ -1,83 +1,19 @@
-"use client";
-
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, ArrowRight, Globe, ChevronDown } from "lucide-react";
+import { Check, ArrowRight } from "lucide-react";
 import {
   PRICING_TIERS,
   getPriceDisplay,
   getPrice,
   getPayPerUseDisplay,
-  getCurrencyFromCountry,
-  CURRENCIES,
-  type CurrencyCode,
 } from "@/lib/pricing";
 
-// Currency options for manual selection
-const CURRENCY_OPTIONS: { code: CurrencyCode; flag: string; label: string }[] = [
-  { code: "BDT", flag: "🇧🇩", label: "Bangladesh (৳)" },
-  { code: "INR", flag: "🇮🇳", label: "India (₹)" },
-  { code: "PKR", flag: "🇵🇰", label: "Pakistan (Rs)" },
-  { code: "USD", flag: "🇺🇸", label: "USD ($)" },
-  { code: "EUR", flag: "🇪🇺", label: "Euro (€)" },
-  { code: "GBP", flag: "🇬🇧", label: "UK (£)" },
-  { code: "AED", flag: "🇦🇪", label: "UAE (د.إ)" },
-  { code: "SGD", flag: "🇸🇬", label: "Singapore (S$)" },
-];
-
 export function TRDRPricingSection() {
-  const [currency, setCurrency] = useState<CurrencyCode>("USD");
-  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
 
-  // Try to auto-detect country/currency on mount
-  useEffect(() => {
-    async function detectCurrency() {
-      try {
-        // Try geo API first
-        const res = await fetch("/api/geo");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.country && data.detected) {
-            setCurrency(getCurrencyFromCountry(data.country));
-            return;
-          }
-        }
-      } catch {
-        // Geo API failed, try timezone detection as fallback
-      }
-      
-      // Fallback: detect from timezone
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (tz.includes("Dhaka") || tz.includes("Asia/Dhaka")) {
-          setCurrency("BDT");
-        } else if (tz.includes("Kolkata") || tz.includes("Asia/Kolkata") || tz.includes("Mumbai")) {
-          setCurrency("INR");
-        } else if (tz.includes("Karachi") || tz.includes("Asia/Karachi")) {
-          setCurrency("PKR");
-        } else if (tz.includes("Dubai") || tz.includes("Asia/Dubai")) {
-          setCurrency("AED");
-        } else if (tz.includes("Singapore")) {
-          setCurrency("SGD");
-        } else if (tz.includes("London") || tz.includes("Europe/London")) {
-          setCurrency("GBP");
-        } else if (tz.includes("Europe/")) {
-          setCurrency("EUR");
-        }
-        // else stay USD
-      } catch {
-        // Default to USD
-      }
-    }
-    detectCurrency();
-  }, []);
-
-  const displayPlans = PRICING_TIERS.filter(t => t.id !== "free"); // Hide free tier on landing
-
-  const currencyInfo = CURRENCIES[currency];
-  const selectedCurrencyOption = CURRENCY_OPTIONS.find(c => c.code === currency) || CURRENCY_OPTIONS[3];
+  const displayPlans = PRICING_TIERS;
+  const paygDisplay = getPayPerUseDisplay("lc_validation");
 
   return (
     <section id="pricing" className="py-20">
@@ -90,53 +26,21 @@ export function TRDRPricingSection() {
             </span>
           </h2>
           <p className="text-lg text-muted-foreground max-w-3xl mx-auto mb-8">
-            Pay-as-you-go from {getPayPerUseDisplay("lc_validation", currency)} per LC — no commitment, no card to start. Subscribe and save up to ~50% per LC.
+            Pay-as-you-go from {paygDisplay} per LC — no commitment, no card to start. Subscribe and save up to ~50% per LC.
           </p>
 
-          {/* Currency & Billing Toggle */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
-            {/* Currency Selector */}
-            <div className="relative">
-              <button
-                onClick={() => setShowCurrencyPicker(!showCurrencyPicker)}
-                className="flex items-center gap-2 bg-muted/50 hover:bg-muted/70 rounded-full px-4 py-2 text-sm transition-colors"
-              >
-                <span>{selectedCurrencyOption.flag}</span>
-                <span className="text-foreground">{selectedCurrencyOption.label}</span>
-                <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showCurrencyPicker ? 'rotate-180' : ''}`} />
-              </button>
-              
-              {showCurrencyPicker && (
-                <div className="absolute top-full left-0 mt-2 bg-card border rounded-lg shadow-lg z-50 min-w-[180px]">
-                  {CURRENCY_OPTIONS.map((option) => (
-                    <button
-                      key={option.code}
-                      onClick={() => {
-                        setCurrency(option.code);
-                        setShowCurrencyPicker(false);
-                      }}
-                      className={`w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-muted/50 transition-colors first:rounded-t-lg last:rounded-b-lg ${
-                        currency === option.code ? "bg-muted/30 text-primary" : "text-foreground"
-                      }`}
-                    >
-                      <span>{option.flag}</span>
-                      <span>{option.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Billing Period Toggle */}
+          {/* Billing Period Toggle */}
+          <div className="flex items-center justify-center gap-4 mb-4">
             <div className="flex items-center gap-3 bg-muted/50 rounded-full px-4 py-2">
               <span className={`text-sm ${billingPeriod === "monthly" ? "text-foreground font-medium" : "text-muted-foreground"}`}>
                 Monthly
               </span>
               <button
-                onClick={() => setBillingPeriod(p => p === "monthly" ? "yearly" : "monthly")}
+                onClick={() => setBillingPeriod((p) => (p === "monthly" ? "yearly" : "monthly"))}
                 className={`w-12 h-6 rounded-full p-1 transition-colors ${
                   billingPeriod === "yearly" ? "bg-primary" : "bg-muted"
                 }`}
+                aria-label="Toggle yearly billing"
               >
                 <div
                   className={`w-4 h-4 rounded-full bg-white transition-transform ${
@@ -146,21 +50,26 @@ export function TRDRPricingSection() {
               </button>
               <span className={`text-sm flex items-center gap-1 ${billingPeriod === "yearly" ? "text-foreground font-medium" : "text-muted-foreground"}`}>
                 Yearly
-                <span className="text-xs text-primary font-medium">Save ~15%</span>
+                <span className="text-xs text-primary font-medium">Save ~16%</span>
               </span>
             </div>
           </div>
+
+          {/* Currency note — Stripe Adaptive Pricing handles local currency at checkout */}
+          <p className="text-xs text-muted-foreground max-w-xl mx-auto">
+            Charged in USD. At checkout, Stripe lets you pay in your local currency at today's FX rate (~1% conversion fee).
+          </p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
-          {displayPlans.map((plan, index) => {
-            const price = getPrice(plan, currency, billingPeriod);
-            const priceDisplay = getPriceDisplay(plan, currency, billingPeriod);
-            const yearlyTotal = getPrice(plan, currency, "yearly") * 12;
+          {displayPlans.map((plan) => {
+            const price = getPrice(plan, "USD", billingPeriod);
+            const priceDisplay = getPriceDisplay(plan, "USD", billingPeriod);
+            const yearlyTotal = getPrice(plan, "USD", "yearly") * 12;
 
             return (
-              <Card 
-                key={plan.id} 
+              <Card
+                key={plan.id}
                 className={`relative border transition-all duration-300 hover:shadow-medium ${
                   plan.popular
                     ? "border-primary/50 shadow-medium scale-105"
@@ -174,7 +83,7 @@ export function TRDRPricingSection() {
                     </div>
                   </div>
                 )}
-                
+
                 <CardHeader className="pb-4">
                   <CardTitle className="text-2xl font-bold">{plan.name}</CardTitle>
                   <CardDescription className="text-muted-foreground">
@@ -189,11 +98,11 @@ export function TRDRPricingSection() {
                   )}
                   {billingPeriod === "yearly" && price > 0 && (
                     <p className="text-xs text-primary mt-1">
-                      {currencyInfo?.symbol}{yearlyTotal.toLocaleString()} billed annually
+                      ${yearlyTotal.toLocaleString()} billed annually
                     </p>
                   )}
                 </CardHeader>
-                
+
                 <CardContent className="pt-0">
                   <ul className="space-y-3 mb-6">
                     {plan.features.map((feature, featureIndex) => (
@@ -203,11 +112,11 @@ export function TRDRPricingSection() {
                       </li>
                     ))}
                   </ul>
-                  
-                  <Button 
+
+                  <Button
                     className={`w-full group ${
-                      plan.popular 
-                        ? "bg-gradient-primary hover:opacity-90" 
+                      plan.popular
+                        ? "bg-gradient-primary hover:opacity-90"
                         : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
                     }`}
                     asChild
@@ -225,13 +134,10 @@ export function TRDRPricingSection() {
 
         <div className="text-center mt-12">
           <p className="text-sm text-muted-foreground mb-4">
-            🎯 <strong>No card required to start</strong> • Pay-as-you-go from {getPayPerUseDisplay("lc_validation", currency)}/LC • Metered per LC presentation
+            🎯 <strong>No card required to start</strong> • Pay-as-you-go from {paygDisplay}/LC • Metered per LC presentation
           </p>
           <p className="text-xs text-muted-foreground">
-            {currency === "BDT" && "Local payment via SSLCommerz available • "}
-            {currency === "INR" && "Local payment via Razorpay available • "}
-            Prices shown in {currencyInfo?.name || "USD"}
-            {currency !== "USD" && " • Enterprise volume pricing available above 150 LCs/mo"}
+            Local payment via SSLCommerz (BDT) and Razorpay (INR) supported at checkout • Enterprise volume pricing available above 150 LCs/mo
           </p>
         </div>
       </div>
