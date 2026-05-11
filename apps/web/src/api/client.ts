@@ -254,6 +254,36 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
+// Public marketing/lead-magnet routes where a logged-out visitor is expected.
+// A 401 from a session-bootstrap call (e.g. /auth/me on a stale Supabase
+// session) MUST NOT bounce a visitor off these pages.
+const PUBLIC_PAGE_PATHS = [
+  '/', '/check', '/pricing', '/about', '/contact', '/careers',
+  '/privacy', '/terms', '/security',
+  '/tools', '/technology', '/docs', '/api', '/blog', '/guides',
+  '/trdr', '/lc-demo', '/status', '/lcopilot',
+  '/sanctions', '/hs-code', '/doc-generator', '/lc-builder',
+  '/price-verify',
+]
+
+const isPublicMarketingPath = (path: string): boolean => {
+  if (!path) return false
+  // exact match for '/' (don't let it pass via prefix-match)
+  if (path === '/') return true
+  return PUBLIC_PAGE_PATHS.some((p) => p !== '/' && (path === p || path.startsWith(`${p}/`)))
+}
+
+// 401s from these endpoints are session-bootstrap probes — clear the bad
+// session, never redirect. Treating these like a "you tried to do something
+// authed and failed" call would bounce every logged-out visitor with a stale
+// localStorage token off the public marketing pages.
+const SESSION_BOOTSTRAP_PATHS = ['/auth/me']
+
+const isSessionBootstrapEndpoint = (urlPath: string): boolean => {
+  if (!urlPath) return false
+  return SESSION_BOOTSTRAP_PATHS.some((p) => urlPath === p || urlPath.endsWith(p))
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -274,6 +304,11 @@ api.interceptors.response.use(
               window.location.href = '/admin/login'
             }
           }
+        } else if (isSessionBootstrapEndpoint(urlPath) || isPublicMarketingPath(currentPath)) {
+          // Session-bootstrap probe (e.g. useAuth() loading /auth/me with a
+          // stale Supabase token) OR the visitor is on a public marketing
+          // page — silently clear the bad session, never bounce them off.
+          clearSupabaseSession()
         } else {
           clearSupabaseSession()
           if (typeof window !== 'undefined' && !currentPath.startsWith('/login')) {
