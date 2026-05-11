@@ -285,7 +285,7 @@ export default function CheckPage() {
                             Create free account <ArrowRight className="ml-1.5 w-4 h-4" />
                           </Link>
                         </Button>
-                        <Button asChild variant="outline" className="border-[#EDF5F2]/20 text-white hover:bg-[#EDF5F2]/10">
+                        <Button asChild variant="outline" className="border-[#EDF5F2]/20 bg-transparent text-white hover:bg-[#EDF5F2]/10 hover:text-white">
                           <Link to="/login">I already have one</Link>
                         </Button>
                       </div>
@@ -334,7 +334,7 @@ export default function CheckPage() {
                   <Button
                     onClick={() => inputRef.current?.click()}
                     variant="outline"
-                    className="mt-5 border-[#EDF5F2]/20 text-white hover:bg-[#EDF5F2]/10"
+                    className="mt-5 border-[#EDF5F2]/20 bg-transparent text-white hover:bg-[#EDF5F2]/10 hover:text-white"
                   >
                     Choose files
                   </Button>
@@ -441,7 +441,7 @@ function RateLimitedCard({ retryAfter }: { retryAfter: number }) {
             Create free account <ArrowRight className="ml-1.5 w-4 h-4" />
           </Link>
         </Button>
-        <Button asChild variant="outline" className="border-[#EDF5F2]/20 text-white hover:bg-[#EDF5F2]/10">
+        <Button asChild variant="outline" className="border-[#EDF5F2]/20 bg-transparent text-white hover:bg-[#EDF5F2]/10 hover:text-white">
           <Link to="/login">Log in</Link>
         </Button>
       </div>
