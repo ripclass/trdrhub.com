@@ -26,12 +26,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   PRICING_TIERS,
+  CURRENCIES,
+  getPrice,
   getPriceDisplay,
   getPayPerUseDisplay,
+  getCurrencyFromCountry,
+  type CurrencyCode,
   type PriceTier,
 } from "@/lib/pricing";
 
@@ -95,52 +99,62 @@ const features = [
 // first card is pay-as-you-go ($12 / LC set), then Solo / Business /
 // Enterprise. There is no permanent free plan; the free LC check lives on
 // the public /check page.
+//
+// Localization: prices auto-detect the visitor's currency (mirroring
+// PricingPage.tsx's pattern — /api/geo with a timezone fallback). The full
+// currency picker lives on /pricing; here we just show the right symbol +
+// link out so the LCopilot landing doesn't grow into a second pricing page.
 const DASHBOARD_HREF = "/lcopilot/exporter-dashboard";
 
-function effectivePerLc(tier: PriceTier): string | null {
-  const monthly = tier.prices.monthly.USD;
+function effectivePerLcDisplay(tier: PriceTier, currency: CurrencyCode): string | null {
+  const monthly = tier.prices.monthly[currency];
   const incl = tier.limits.lc_validations;
-  if (typeof incl !== "number" || incl <= 0 || monthly <= 0) return null;
-  return `$${(monthly / incl).toFixed(2)}`;
+  if (typeof incl !== "number" || incl <= 0 || !monthly || monthly <= 0) return null;
+  const symbol = CURRENCIES[currency]?.symbol ?? "$";
+  const position = CURRENCIES[currency]?.position ?? "before";
+  const value = (monthly / incl).toFixed(2);
+  return position === "after" ? `${value}${symbol}` : `${symbol}${value}`;
 }
 
-const pricing = [
-  {
-    name: "Pay-as-you-go",
-    price: getPayPerUseDisplay("lc_validation"),
-    period: "/LC set",
-    description: "No commitment — pay per LC presentation",
-    included: "Pay per use",
-    perLc: null as string | null,
-    features: [
-      "Full UCP600 / ISBP rule coverage",
-      "Sanctions screening included",
-      "Full PDF report",
-      "No monthly commitment, no card to start",
-      "Subscribe later to cut the per-LC cost",
-    ],
-    cta: "Get Started",
-    href: DASHBOARD_HREF,
-    popular: false,
-    badge: null as string | null,
-  },
-  ...PRICING_TIERS.map((tier) => ({
-    name: tier.name,
-    price: getPriceDisplay(tier, "USD", "monthly"),
-    period: "/month",
-    description: tier.description,
-    included:
-      typeof tier.limits.lc_validations === "number"
-        ? `${tier.limits.lc_validations} LCs/month`
-        : "Unlimited LCs",
-    perLc: effectivePerLc(tier),
-    features: tier.features.slice(0, 6),
-    cta: `Start ${tier.name}`,
-    href: DASHBOARD_HREF,
-    popular: !!tier.popular,
-    badge: tier.popular ? "Most Popular" : null,
-  })),
-];
+function buildPricing(currency: CurrencyCode) {
+  return [
+    {
+      name: "Pay-as-you-go",
+      price: getPayPerUseDisplay("lc_validation", currency),
+      period: "/LC set",
+      description: "No commitment — pay per LC presentation",
+      included: "Pay per use",
+      perLc: null as string | null,
+      features: [
+        "Full UCP600 / ISBP rule coverage",
+        "Sanctions screening included",
+        "Full PDF report",
+        "No monthly commitment, no card to start",
+        "Subscribe later to cut the per-LC cost",
+      ],
+      cta: "Get Started",
+      href: DASHBOARD_HREF,
+      popular: false,
+      badge: null as string | null,
+    },
+    ...PRICING_TIERS.map((tier) => ({
+      name: tier.name,
+      price: getPriceDisplay(tier, currency, "monthly"),
+      period: "/month",
+      description: tier.description,
+      included:
+        typeof tier.limits.lc_validations === "number"
+          ? `${tier.limits.lc_validations} LCs/month`
+          : "Unlimited LCs",
+      perLc: effectivePerLcDisplay(tier, currency),
+      features: tier.features.slice(0, 6),
+      cta: `Start ${tier.name}`,
+      href: DASHBOARD_HREF,
+      popular: !!tier.popular,
+      badge: tier.popular ? "Most Popular" : null,
+    })),
+  ];
+}
 
 const testimonials = [
   {
@@ -195,6 +209,48 @@ const faqs = [
 
 const Index = () => {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [currency, setCurrency] = useState<CurrencyCode>("USD");
+
+  // Mirror PricingPage.tsx — try /api/geo first, fall back to the browser's
+  // resolved timezone. Silent on failure (USD remains the default).
+  useEffect(() => {
+    let cancelled = false;
+    async function detectCurrency() {
+      try {
+        const res = await fetch("/api/geo");
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && data?.country && data?.detected) {
+            setCurrency(getCurrencyFromCountry(data.country));
+            return;
+          }
+        }
+      } catch {
+        /* fall through to timezone */
+      }
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (cancelled) return;
+        if (tz.includes("Dhaka")) setCurrency("BDT");
+        else if (tz.includes("Kolkata") || tz.includes("Mumbai")) setCurrency("INR");
+        else if (tz.includes("Karachi")) setCurrency("PKR");
+        else if (tz.includes("Dubai")) setCurrency("AED");
+        else if (tz.includes("Singapore")) setCurrency("SGD");
+        else if (tz.includes("London")) setCurrency("GBP");
+        else if (tz.includes("Europe/")) setCurrency("EUR");
+      } catch {
+        /* keep USD */
+      }
+    }
+    detectCurrency();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const pricing = buildPricing(currency);
+  const paygDisplay = getPayPerUseDisplay("lc_validation", currency);
+  const currencyName = CURRENCIES[currency]?.name ?? "US Dollar";
 
   return (
     <div className="min-h-screen bg-[#00261C]">
@@ -510,7 +566,11 @@ const Index = () => {
                 Pay per LC. Save with volume.
               </h2>
               <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-base sm:text-lg px-4">
-                Pay-as-you-go from $12 per LC set. Subscribe and save up to ~50% per LC.
+                Pay-as-you-go from {paygDisplay} per LC set. Subscribe and save up to ~50% per LC.
+              </p>
+              <p className="text-[#EDF5F2]/40 text-xs mt-3 font-mono">
+                Prices in {currencyName} ({currency}) ·{" "}
+                <Link to="/pricing" className="text-[#B2F273] hover:underline">switch currency on /pricing</Link>
               </p>
             </div>
 
