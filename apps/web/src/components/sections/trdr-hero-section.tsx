@@ -52,21 +52,29 @@ export function TRDRHeroSection() {
             <span className="text-[#B2F273] font-normal"> Stop losing money to errors.</span>
           </p>
 
-          {/* CTA Buttons */}
+          {/* CTA Buttons — primary lead magnet is the public LC checker (no signup), secondary is pricing. */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-20 animate-fade-in-up delay-300">
-            <Button 
-              size="lg" 
+            <Button
+              size="lg"
               className="bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] text-lg px-8 py-7 h-auto font-bold group border-none shadow-[0_0_20px_rgba(178,242,115,0.3)] hover:shadow-[0_0_30px_rgba(178,242,115,0.5)] transition-all duration-300"
               asChild
             >
-              <Link to="/login">
-                Start Free
+              <Link to="/check">
+                Try a free LC check
                 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>
-            <Button 
-              variant="outline" 
-              size="lg" 
+            <Button
+              size="lg"
+              variant="outline"
+              className="border-[#EDF5F2]/20 bg-transparent text-[#EDF5F2] hover:bg-[#EDF5F2]/5 hover:text-white hover:border-[#EDF5F2]/40 text-lg px-8 py-7 h-auto backdrop-blur-sm transition-all duration-300"
+              asChild
+            >
+              <Link to="/pricing">See pricing</Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
               className="border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 hover:border-[#EDF5F2]/40 text-lg px-8 py-7 h-auto bg-transparent backdrop-blur-sm transition-all duration-300"
               onClick={scrollToProblems}
             >
@@ -74,7 +82,8 @@ export function TRDRHeroSection() {
             </Button>
           </div>
 
-          {/* Trust metrics */}
+          {/* Trust metrics — last column was a stale "$0 To Start" implying a free tier we don't offer.
+              The free mechanism is the /check lead magnet; the on-ramp price is $12/LC PAYG. */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto border-t border-[#EDF5F2]/10 pt-12 animate-fade-in-up delay-500">
             <div className="text-center group hover:-translate-y-1 transition-transform duration-300">
               <div className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-2 font-display group-hover:text-[#B2F273] transition-colors">15</div>
@@ -89,8 +98,8 @@ export function TRDRHeroSection() {
               <div className="text-xs sm:text-sm text-[#EDF5F2]/60 font-mono uppercase tracking-wider">Countries</div>
             </div>
             <div className="text-center group hover:-translate-y-1 transition-transform duration-300">
-              <div className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-2 font-display group-hover:text-[#B2F273] transition-colors">$0</div>
-              <div className="text-xs sm:text-sm text-[#EDF5F2]/60 font-mono uppercase tracking-wider">To Start</div>
+              <div className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-2 font-display group-hover:text-[#B2F273] transition-colors">$12</div>
+              <div className="text-xs sm:text-sm text-[#EDF5F2]/60 font-mono uppercase tracking-wider">Per LC, no card</div>
             </div>
           </div>
 

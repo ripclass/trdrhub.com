@@ -21,7 +21,7 @@ const faqs = [
   },
   {
     question: "What happens if the AI misses a discrepancy?",
-    answer: "While rare, if our system misses a discrepancy that results in a bank rejection, we offer a discrepancy fee guarantee for Pro and Enterprise customers. We'll reimburse the bank's discrepancy fee up to $150 per incident.",
+    answer: "While rare, if our system misses a discrepancy that results in a bank rejection, we offer a discrepancy fee guarantee for Business and Enterprise customers. We'll reimburse the bank's discrepancy fee up to $150 per incident.",
   },
   {
     question: "Can I integrate this with my existing systems?",
@@ -33,7 +33,7 @@ const faqs = [
   },
   {
     question: "What's the pricing model?",
-    answer: "We offer flexible pricing: Free tier for up to 5 validations/month, Pro at $49/month for unlimited validations, and Enterprise with custom pricing for high-volume users. No per-document fees on paid plans.",
+    answer: "Try a free LC check at /check — no account, one run per visitor per day. After that: pay-as-you-go from $12 per LC presentation with no commitment, or subscribe — Solo $49/mo (5 LCs, 1 seat), Business $149/mo (25 LCs, 5 seats, most popular), Enterprise $699/mo (100 LCs, 10 seats; volume bands above 150). Agency / Services teams pay per operator seat from $199. The per-LC cost drops the more you commit.",
   },
 ];
 

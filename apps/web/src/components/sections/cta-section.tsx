@@ -24,37 +24,38 @@ export function CTASection() {
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-20">
         <div className="max-w-3xl mx-auto text-center">
-          {/* Main CTA */}
+          {/* Main CTA — primary is the public /check lead magnet (no card, no signup, one run/day),
+              secondary is /pricing. Talk-to-Sales lives in the pricing page now. */}
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-[#00261C] mb-6 leading-tight font-display">
-            Ready to validate your
+            Want to check your
             <br />
             <span className="text-[#00261C]">
-              first LC for free?
+              first LC right now?
             </span>
           </h2>
           <p className="text-xl text-[#00261C]/80 mb-10 max-w-xl mx-auto">
-            No credit card required. Get your first 5 validations free, forever.
+            No card, no signup. Run one free LC check per day at <span className="font-semibold">/check</span> — subscriptions from $49/mo for 5 LCs.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-            <Button 
-              size="lg" 
+            <Button
+              size="lg"
               className="bg-[#00261C] text-[#B2F273] hover:bg-[#00382E] text-lg px-8 py-6 h-auto font-semibold group border-none shadow-xl"
               asChild
             >
-              <Link to="/lcopilot">
-                Start Validating Now
+              <Link to="/check">
+                Run a free LC check
                 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>
-            <Button 
-              variant="outline" 
-              size="lg" 
+            <Button
+              variant="outline"
+              size="lg"
               className="border-[#00261C]/20 text-[#00261C] hover:bg-[#00261C] hover:text-[#B2F273] hover:border-[#00261C] text-lg px-8 py-6 h-auto bg-transparent transition-colors"
               asChild
             >
-              <Link to="/contact">
-                Talk to Sales
+              <Link to="/pricing">
+                See pricing
               </Link>
             </Button>
           </div>
