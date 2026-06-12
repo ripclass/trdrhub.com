@@ -154,10 +154,8 @@ import BulkValidateTest from './pages/lcopilot/BulkValidateTest'
 import RepaperRecipient from './pages/lcopilot/RepaperRecipient'
 import { RequireAuth } from './components/lcopilot/RequireAuth'
 // /hub retired 2026-05-10 — single-product framing means LCopilot is the home.
-// HubLayout/HubHome/HubBilling/HubTeam/HubSettings/HubUsage are no longer
-// imported; the route below redirects /hub and all subroutes to
-// /lcopilot/dashboard. The page files remain in src/pages/hub/ as dead code
-// pending a future cleanup pass.
+// The route below redirects /hub and all subroutes to /lcopilot/dashboard.
+// The src/pages/hub/ page files were deleted in 607a1705.
 import { 
   TrackingLayout, 
   TrackingOverview, 
