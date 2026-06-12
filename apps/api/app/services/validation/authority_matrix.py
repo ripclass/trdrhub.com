@@ -370,18 +370,50 @@ def _normalize_comparable(value: str) -> str:
     return re.sub(r"[^A-Z0-9]+", " ", value.upper()).strip()
 
 
+# ``'doc.field' ('VALUE')`` pairs inside finding messages — the shape
+# RulHub's conditional_logic rules use. Those findings carry NO
+# expected/found evidence fields (the values live only in the message),
+# which let ISBP821-C9 incoterm majors sail past the semantic screen on
+# three corridors (2026-06-12).
+_MSG_VALUE_PAIR_RE = re.compile(r"'[a-z][a-z_]+\.[a-z_]+'\s*\('([^']*)'\)")
+
+
 def _concrete_values_of(finding: Dict[str, Any]) -> Optional[Tuple[str, str]]:
-    """Both comparison values when the finding carries the
-    ``<path> = <value>`` two-sided shape; None otherwise."""
+    """Both comparison values when the finding is a two-sided comparison.
+
+    Primary: the ``<path> = <value>`` expected/found shape. Fallback:
+    exactly two ``'doc.field' ('VALUE')`` pairs in the message text
+    (conditional_logic findings have empty expected/found).
+    """
     exp = str(finding.get("expected") or "").strip()
     found = str(finding.get("found") or finding.get("actual") or "").strip()
-    if "=" not in exp or "=" not in found:
+    if "=" in exp and "=" in found:
+        a = exp.split("=", 1)[1].strip()
+        b = found.split("=", 1)[1].strip()
+        if a and b:
+            return a, b
+    msg = str(finding.get("message") or finding.get("title") or "")
+    pairs = _MSG_VALUE_PAIR_RE.findall(msg)
+    if len(pairs) == 2 and pairs[0] and pairs[1]:
+        return pairs[0], pairs[1]
+    return None
+
+
+_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
+
+
+def _single_number_of(value: str) -> Optional[str]:
+    """The value's single numeric token, normalized — None when the value
+    has no number, several numbers, or looks like a date."""
+    if re.search(r"\d[-/]\d", value):
+        return None  # date-like
+    nums = _NUMBER_RE.findall(value)
+    if len(nums) != 1:
         return None
-    a = exp.split("=", 1)[1].strip()
-    b = found.split("=", 1)[1].strip()
-    if not a or not b:
-        return None
-    return a, b
+    normalized = nums[0].replace(",", "")
+    if normalized.endswith(".00"):
+        normalized = normalized[:-3]
+    return normalized
 
 
 def screen_semantic_findings(
@@ -404,10 +436,38 @@ def screen_semantic_findings(
 
     out: List[Dict[str, Any]] = []
     for det in det_findings:
-        if not isinstance(det, dict) or classify_finding(det) != "semantic":
+        if not isinstance(det, dict):
             out.append(det)
             continue
+        cls = classify_finding(det)
         values = _concrete_values_of(det)
+        # Numeric equivalence applies to ANY two-sided comparison class:
+        # '2 cartons' vs '2', '45 CTNS' vs '45', '455,400.00' vs '455400'
+        # — same number, different unit/format rendering. Equal numbers
+        # are not a discrepancy, whatever the field class.
+        if values:
+            n1, n2 = _single_number_of(values[0]), _single_number_of(values[1])
+            if n1 is not None and n1 == n2 and values[0].strip() != values[1].strip():
+                det = dict(det)
+                original_severity = det.get("severity")
+                det["severity"] = "advisory"
+                det["needs_review"] = True
+                _emit({
+                    "event": "authority_semantic_demote",
+                    "rule": det.get("rule") or det.get("rule_id"),
+                    "title": str(det.get("title") or det.get("message") or "")[:160],
+                    "severity_from": original_severity,
+                    "severity_to": "advisory",
+                    "relation": "numeric_equal",
+                    "value_short": str(values[0])[:80],
+                    "value_long": str(values[1])[:120],
+                    "reason": "both sides carry the same number — unit/format rendering difference, not a mismatch",
+                })
+                out.append(det)
+                continue
+        if cls != "semantic":
+            out.append(det)
+            continue
         if not values:
             out.append(det)
             continue

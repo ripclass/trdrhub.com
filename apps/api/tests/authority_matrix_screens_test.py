@@ -270,3 +270,54 @@ def test_incoterm_code_prefix_requires_word_boundary():
     )
     assert out[0]["severity"] == "major"
     assert events == []
+
+
+def test_conditional_logic_message_values_parsed():
+    # conditional_logic findings carry no expected/found — values live in
+    # the message. This is the live ISBP821-C9 shape that bypassed the
+    # incoterm demotion on three corridors.
+    f = {
+        "rule": "ISBP821-C9",
+        "message": "Conditional consequence failed: 'invoice.incoterm' ('FCA SHANGHAI (INCOTERMS 2020)') does not match 'lc.incoterm' ('FCA')",
+        "severity": "major",
+    }
+    events = []
+    out = screen_semantic_findings([f], events_out=events)
+    assert out[0]["severity"] == "advisory"
+    assert events[0]["relation"] == "incoterm_code_prefix"
+
+
+def test_numeric_equal_with_unit_demoted():
+    f = {
+        "rule": "CROSSDOC-PKL-LC-4",
+        "message": "'packing_list.total_cartons' ('2 cartons') does not match 'bl.number_of_packages' ('2')",
+        "severity": "major",
+    }
+    events = []
+    out = screen_semantic_findings([f], events_out=events)
+    assert out[0]["severity"] == "advisory"
+    assert events[0]["relation"] == "numeric_equal"
+
+
+def test_different_numbers_not_demoted():
+    f = {
+        "rule": "CROSSDOC-PKL-LC-4",
+        "message": "'packing_list.total_cartons' ('45 cartons') does not match 'bl.number_of_packages' ('300')",
+        "severity": "major",
+    }
+    events = []
+    out = screen_semantic_findings([f], events_out=events)
+    assert out[0]["severity"] == "major"
+    assert events == []
+
+
+def test_dates_never_numeric_demoted():
+    f = {
+        "rule": "X-DATE",
+        "message": "'bl.on_board_date' ('2026-10-02') does not match 'lc.latest_shipment_date' ('2026-10-02 LATEST')",
+        "severity": "major",
+    }
+    events = []
+    out = screen_semantic_findings([f], events_out=events)
+    assert out[0]["severity"] == "major"  # date-like values excluded
+    assert events == []
