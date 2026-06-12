@@ -38,7 +38,8 @@ class BulkProcessor:
     """Service for managing bulk LC processing jobs"""
 
     def __init__(self):
-        self.s3_client = boto3.client('s3')
+        from app.utils.s3_client import get_s3_client
+        self.s3_client = get_s3_client()
         self.queue = get_queue('bulk_processing')
         self.max_batch_size = 200
         self.max_file_size = 100 * 1024 * 1024  # 100MB
@@ -73,7 +74,7 @@ class BulkProcessor:
             created_by=created_by,
             priority=priority,
             status=JobStatus.PENDING,
-            s3_manifest_bucket=settings.S3_BUCKET if s3_manifest_key else None,
+            s3_manifest_bucket=settings.S3_BUCKET_NAME if s3_manifest_key else None,
             s3_manifest_key=s3_manifest_key
         )
 
@@ -578,7 +579,7 @@ class BulkProcessor:
         try:
             # Download manifest from S3
             response = self.s3_client.get_object(
-                Bucket=settings.S3_BUCKET,
+                Bucket=settings.S3_BUCKET_NAME,
                 Key=s3_key
             )
 

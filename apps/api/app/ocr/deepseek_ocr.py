@@ -105,7 +105,8 @@ class DeepSeekOCRAdapter(OCRAdapter):
     
     def _download_from_s3(self, s3_bucket: str, s3_key: str) -> bytes:
         """Download document from S3."""
-        s3_client = boto3.client('s3')
+        from app.utils.s3_client import get_s3_client
+        s3_client = get_s3_client()
         response = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
         return response['Body'].read()
     

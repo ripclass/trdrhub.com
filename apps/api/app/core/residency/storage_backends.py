@@ -110,7 +110,8 @@ class S3Backend(StorageBackend):
 
     def __init__(self, region_name: str = None, kms_service: KMSService = None, db: Session = None):
         self.region_name = region_name or settings.AWS_DEFAULT_REGION
-        self.client = boto3.client('s3', region_name=self.region_name)
+        from app.utils.s3_client import get_s3_client
+        self.client = get_s3_client(region_name=self.region_name)
         self.kms_service = kms_service or get_kms_service(db)
         self.db = db or next(get_db())
 

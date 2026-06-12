@@ -40,7 +40,8 @@ class S3Service:
             print("Using stub S3 service for local development")
         else:
             # Real S3 implementation
-            self.s3_client = boto3.client('s3', region_name=settings.AWS_REGION)
+            from app.utils.s3_client import get_s3_client
+            self.s3_client = get_s3_client(region_name=settings.AWS_REGION)
             self.bucket_name = settings.S3_BUCKET_NAME
             self.region = settings.AWS_REGION
             print(f"Using real S3 service (bucket: {self.bucket_name})")

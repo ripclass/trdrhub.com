@@ -127,12 +127,8 @@ class ExportService:
         self.db = db
         self.s3_client = None
         if settings.AWS_ACCESS_KEY_ID:
-            self.s3_client = boto3.client(
-                's3',
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                region_name=settings.AWS_REGION
-            )
+            from app.utils.s3_client import get_s3_client
+            self.s3_client = get_s3_client(region_name=settings.AWS_REGION)
 
     async def export_bank_portfolio(
         self,

@@ -191,8 +191,9 @@ class HealthChecker:
             if not bucket_name:
                 raise Exception("S3_BUCKET_NAME not configured")
 
-            # Create S3 client
-            s3_client = boto3.client('s3')
+            # Create S3 client (honors S3_ENDPOINT_URL for non-AWS stores)
+            from app.utils.s3_client import get_s3_client
+            s3_client = get_s3_client()
 
             # Check if bucket exists and is accessible
             s3_client.head_bucket(Bucket=bucket_name)

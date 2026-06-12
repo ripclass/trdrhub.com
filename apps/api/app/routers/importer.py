@@ -58,10 +58,10 @@ def _upload_fix_pack_and_sign(
         return f"/api/importer/supplier-fix-pack/{session_id}/download"
 
     try:
-        import boto3  # type: ignore[import-not-found]
+        from app.utils.s3_client import get_s3_client
 
         key = f"fix-packs/{session_id}/{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.zip"
-        s3 = boto3.client("s3")
+        s3 = get_s3_client()
         s3.put_object(
             Bucket=bucket,
             Key=key,

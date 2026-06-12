@@ -985,8 +985,8 @@ async def preview_document(
         raise HTTPException(status_code=404, detail="Document file not available")
 
     try:
-        from app.services.document_storage import DocumentStorage
-        storage = DocumentStorage()
+        from app.services.document_storage import get_document_storage
+        storage = get_document_storage()
         signed_url = await storage.get_signed_url(
             doc.s3_key,
             expires_in=3600,

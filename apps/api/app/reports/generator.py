@@ -33,7 +33,8 @@ class ReportGenerator:
 
     def __init__(self):
         self.template = ReportTemplate()
-        self.s3_client = boto3.client('s3')
+        from app.utils.s3_client import get_s3_client
+        self.s3_client = get_s3_client()
         self.bucket_name = os.getenv('S3_BUCKET_NAME', 'lcopilot-documents')
         self.region = os.getenv('AWS_REGION', 'us-east-1')
         self.static_dir = Path(__file__).parent.parent.parent / "static"

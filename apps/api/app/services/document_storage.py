@@ -52,16 +52,8 @@ class DocumentStorageService:
     def client(self):
         """Lazy-load S3 client"""
         if self._client is None:
-            if AWS_ACCESS_KEY and AWS_SECRET_KEY:
-                self._client = boto3.client(
-                    's3',
-                    aws_access_key_id=AWS_ACCESS_KEY,
-                    aws_secret_access_key=AWS_SECRET_KEY,
-                    config=S3_CONFIG
-                )
-            else:
-                # Use default credentials (IAM role, env vars, etc.)
-                self._client = boto3.client('s3', config=S3_CONFIG)
+            from app.utils.s3_client import get_s3_client
+            self._client = get_s3_client(config=S3_CONFIG)
         return self._client
     
     def _generate_s3_key(
