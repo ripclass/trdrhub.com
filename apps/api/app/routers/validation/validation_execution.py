@@ -2589,6 +2589,22 @@ async def execute_validation_pipeline(
                 "primary_jurisdiction": primary_jurisdiction,
                 "detected_jurisdictions": list(detected_jurisdictions),
                 "insurance_rule_context_source": insurance_rule_context_source,
+                # Diagnostic (2026-06-12): field NAMES only — which keys the
+                # resolved insurance context carries and which keys each doc
+                # actually shipped to RulHub. Chasing a currency_code that
+                # provably exists in the snapshot but never reaches the wire.
+                "insurance_rule_context_keys": (
+                    sorted(insurance_rule_context.keys())[:30]
+                    if isinstance(insurance_rule_context, dict) else None
+                ),
+                "rulhub_sent_fields": (
+                    {
+                        d.get("type"): sorted((d.get("fields") or {}).keys())[:40]
+                        for d in _rulhub_docs
+                    }
+                    if '_rulhub_docs' in dir() and isinstance(_rulhub_docs, list)
+                    else None
+                ),
                 "insurance_rule_context_originals_presented": (
                     insurance_rule_context.get("originals_presented")
                     if isinstance(insurance_rule_context, dict)
