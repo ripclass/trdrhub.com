@@ -1,0 +1,42 @@
+# Production health monitor.
+#
+# Replaces the "wire up Pingdom" launch-checklist item with a zero-vendor
+# probe: every 15 minutes, /health/ready must return HTTP 200. That endpoint
+# checks database + S3 connectivity and (since 95bbae57) actually returns 503
+# when either is down — during the 2026-06-11 DB outage every health surface
+# returned 200, so nothing alerted for ~16 hours. This workflow failing sends
+# a GitHub email to the workflow author.
+#
+# curl --retry covers transient blips (it retries 408/429/5xx and timeouts),
+# so a single flaky probe does not page anyone; a persistent failure does.
+
+name: prod-health-monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: /health/ready must be 200 (database + S3)
+        run: |
+          code=$(curl -sS -o /tmp/ready.json -w '%{http_code}' \
+            --max-time 30 --retry 3 --retry-delay 20 \
+            https://api.trdrhub.com/health/ready) || code=000
+          echo "HTTP $code"
+          cat /tmp/ready.json || true
+          test "$code" = "200"
+
+      - name: /health/db-schema must be 200 (no schema drift)
+        if: ${{ always() }}
+        run: |
+          code=$(curl -sS -o /tmp/schema.json -w '%{http_code}' \
+            --max-time 30 --retry 3 --retry-delay 20 \
+            https://api.trdrhub.com/health/db-schema) || code=000
+          echo "HTTP $code"
+          cat /tmp/schema.json || true
+          test "$code" = "200"
