@@ -20,7 +20,10 @@ def _load_insurance_rule_context_symbols() -> Dict[str, Any]:
             for target in node.targets:
                 if (
                     isinstance(target, ast.Name)
-                    and target.id == "_INSURANCE_RULE_DOCUMENT_TYPES"
+                    and target.id in {
+                        "_INSURANCE_RULE_DOCUMENT_TYPES",
+                        "_INSURANCE_PRIMARY_DOCUMENT_TYPES",
+                    }
                 ):
                     selected_nodes.append(node)
                     break
@@ -136,3 +139,51 @@ def test_rebuilt_context_preserves_raw_extracted_fields() -> None:
     # hygiene: private/empty keys not forwarded
     assert "_extraction_method" not in payload["insurance_certificate"]
     assert "empty_field" not in payload["insurance_certificate"]
+
+
+def test_real_insurance_doc_outranks_beneficiary_certificate() -> None:
+    """Regression (2026-06-12): with a beneficiary cert sorted BEFORE the
+    insurance cert, the rebuild loop matched the beneficiary cert first
+    and its projection replaced payload["insurance_certificate"] — the
+    real cert's currency/insured_amount vanished and RulHub flagged
+    UCP600-28D currency_code missing. Real insurance docs win now."""
+    namespace = _load_insurance_rule_context_symbols()
+    resolve_insurance_rule_context = namespace["_resolve_insurance_rule_context"]
+
+    beneficiary_cert = {
+        "document_type": "beneficiary_certificate",
+        "filename": "Beneficiary_Certificate.pdf",
+        "extracted_fields": {"brand_new": "YES", "manufacture_year": "2026"},
+        "extraction_artifacts_v1": {"raw_text": "Presented Originals: 1"},
+    }
+    insurance_cert = {
+        "document_type": "insurance_certificate",
+        "filename": "Insurance_Certificate.pdf",
+        "extracted_fields": {"currency": "USD", "insured_amount": "455400"},
+        "extraction_artifacts_v1": {"raw_text": "Presented Originals: 1"},
+    }
+    payload = {"documents": [beneficiary_cert, insurance_cert]}
+
+    resolved, source = resolve_insurance_rule_context(payload, {})
+
+    assert source == "rebuilt_from_documents"
+    assert payload["insurance_certificate"]["currency"] == "USD"
+    assert "manufacture_year" not in payload["insurance_certificate"]
+
+
+def test_beneficiary_certificate_used_when_no_insurance_doc() -> None:
+    namespace = _load_insurance_rule_context_symbols()
+    resolve_insurance_rule_context = namespace["_resolve_insurance_rule_context"]
+
+    beneficiary_cert = {
+        "document_type": "beneficiary_certificate",
+        "filename": "Beneficiary_Certificate.pdf",
+        "extracted_fields": {"attestation_text": "insurance covered by buyer"},
+        "extraction_artifacts_v1": {"raw_text": "Presented Originals: 1"},
+    }
+    payload = {"documents": [beneficiary_cert]}
+
+    resolved, source = resolve_insurance_rule_context(payload, {})
+
+    assert source == "rebuilt_from_documents"
+    assert resolved["originals_presented"] == 1

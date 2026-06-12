@@ -148,6 +148,19 @@ _INSURANCE_RULE_DOCUMENT_TYPES = {
     "beneficiary_statement",
 }
 
+# Real insurance documents outrank beneficiary attestations when both are
+# in the presentation. The rebuild loop used to take the FIRST type match
+# in document order — a beneficiary cert sorted before the insurance cert
+# would shadow it, and its projection then overwrote
+# payload["insurance_certificate"], silently replacing the real cert's
+# fields (currency / insured_amount / risks_covered) with attestation
+# fields (brand_new / manufacture_year). Found live 2026-06-12 via the
+# rulhub_sent_fields diagnostic.
+_INSURANCE_PRIMARY_DOCUMENT_TYPES = {
+    "insurance_certificate",
+    "insurance_policy",
+}
+
 
 _FALSE_POSITIVE_MISSING_PATTERNS = re.compile(
     r"(?:not\s+(?:available|provided|submitted|found|included|present|uploaded))"
@@ -444,16 +457,23 @@ def _resolve_insurance_rule_context(
     if isinstance(existing, dict) and existing and _insurance_rule_context_has_originals(existing):
         return existing, "existing_alias"
 
-    for document_group in (
+    # Two priority tiers: a real insurance document always wins; the
+    # beneficiary-certificate/statement tier only applies when the
+    # presentation has no insurance doc at all (e.g. FOB attestation).
+    for _allowed_types in (
+        _INSURANCE_PRIMARY_DOCUMENT_TYPES,
+        _INSURANCE_RULE_DOCUMENT_TYPES - _INSURANCE_PRIMARY_DOCUMENT_TYPES,
+    ):
+      for document_group in (
         payload.get("documents"),
         extracted_context.get("documents"),
-    ):
+      ):
         if not isinstance(document_group, list):
             continue
         for document in document_group:
             if not isinstance(document, dict):
                 continue
-            if _insurance_document_type(document) not in _INSURANCE_RULE_DOCUMENT_TYPES:
+            if _insurance_document_type(document) not in _allowed_types:
                 continue
 
             fact_graph = document.get("fact_graph_v1") or document.get("factGraphV1")
