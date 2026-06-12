@@ -97,3 +97,42 @@ def test_resolve_insurance_rule_context_reuses_existing_alias_when_originals_are
 
     assert source == "existing_alias"
     assert resolved["originals_presented"] == 2
+
+
+def test_rebuilt_context_preserves_raw_extracted_fields() -> None:
+    """Regression (2026-06-12): the rebuilt projection used to REPLACE the
+    raw insurance doc in the payload, silently dropping currency /
+    insured_party / certificate fields — RulHub then flagged
+    `insurance_doc.currency_code (missing)` as a major on certs that
+    plainly show the currency. The projection must merge OVER the raw
+    fields (projection wins conflicts), never substitute for them."""
+    namespace = _load_insurance_rule_context_symbols()
+    resolve_insurance_rule_context = namespace["_resolve_insurance_rule_context"]
+
+    insurance_document = {
+        "documentType": "insurance_certificate",
+        "filename": "Insurance_Certificate.pdf",
+        "extracted_fields": {
+            "currency": "USD",
+            "insured_amount": "455400",
+            "insured_party": "HAI LONG FURNITURE EXPORT JSC",
+            "certificate_number": "GDI-2026-MAR-04471",
+            "_extraction_method": "multimodal",  # underscore keys stay out
+            "empty_field": "",  # empty values stay out
+        },
+        "extraction_artifacts_v1": {"raw_text": "Presented Originals: 1"},
+    }
+    payload = {"documents": [insurance_document]}
+
+    resolved, source = resolve_insurance_rule_context(payload, {})
+
+    assert source == "rebuilt_from_documents"
+    # projection fields still present and authoritative
+    assert resolved["originals_presented"] == 1
+    # raw extracted fields survive the rebuild
+    assert payload["insurance_certificate"]["currency"] == "USD"
+    assert payload["insurance_certificate"]["insured_party"] == "HAI LONG FURNITURE EXPORT JSC"
+    assert payload["insurance_certificate"]["certificate_number"] == "GDI-2026-MAR-04471"
+    # hygiene: private/empty keys not forwarded
+    assert "_extraction_method" not in payload["insurance_certificate"]
+    assert "empty_field" not in payload["insurance_certificate"]

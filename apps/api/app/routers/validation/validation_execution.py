@@ -468,6 +468,25 @@ def _resolve_insurance_rule_context(
             if not isinstance(projected, dict) or not projected:
                 continue
 
+            # Merge the document's full extracted fields UNDER the
+            # projection (projection wins conflicts). Assigning the
+            # narrow projection alone replaced the raw insurance doc in
+            # the payload — currency / insured_party / certificate
+            # fields silently vanished downstream, and RulHub flagged
+            # `insurance_doc.currency_code (missing)` as a major on
+            # certs that plainly show the currency (live 2026-06-12).
+            _doc_fields = (
+                document.get("extracted_fields")
+                or document.get("extractedFields")
+            )
+            if isinstance(_doc_fields, dict) and _doc_fields:
+                _merged = {
+                    k: v for k, v in _doc_fields.items()
+                    if not str(k).startswith("_") and v not in (None, "", [])
+                }
+                _merged.update(projected)
+                projected = _merged
+
             payload["insurance"] = projected
             payload["insurance_certificate"] = projected
             extracted_context["insurance"] = projected
