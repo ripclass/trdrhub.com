@@ -143,12 +143,60 @@ def _date_fields_of(finding: Dict[str, Any]) -> Set[str]:
     return fields
 
 
+# ``'doc.field' (missing)`` and ``Required field 'doc.field' is missing``
+_MISSING_PAREN_RE = re.compile(r"'([a-z][a-z_]+)\.([a-z][a-z_]+)'\s*\(missing\)")
+_MISSING_REQUIRED_RE = re.compile(r"required field\s+'([a-z][a-z_]+)\.([a-z][a-z_]+)'\s+is missing")
+
+# field tokens that mark a comparison as semantic (party identity, goods
+# wording, addresses) — judgment territory under ISBP, not strict equality
+_SEMANTIC_FIELD_TOKENS = (
+    "applicant",
+    "beneficiary",
+    "buyer",
+    "seller",
+    "consignee",
+    "shipper",
+    "notify",
+    "exporter",
+    "importer",
+    "issuer_name",
+    "insured",
+    "goods",
+    "description",
+    "address",
+)
+
+
+def missing_refs(finding: Dict[str, Any]) -> Set[Tuple[str, str]]:
+    """(doc, field) pairs the finding claims are missing from the payload."""
+    text = _text_of(finding)
+    refs: Set[Tuple[str, str]] = set()
+    for doc, fld in _MISSING_PAREN_RE.findall(text):
+        norm = _DOC_NORMALIZE.get(doc)
+        if norm:
+            refs.add((norm, fld))
+    for doc, fld in _MISSING_REQUIRED_RE.findall(text):
+        norm = _DOC_NORMALIZE.get(doc)
+        if norm:
+            refs.add((norm, fld))
+    return refs
+
+
+def _semantic_fields_of(finding: Dict[str, Any]) -> Set[str]:
+    fields: Set[str] = set()
+    for _doc, fld in _field_paths_of(finding):
+        if any(t in fld for t in _SEMANTIC_FIELD_TOKENS):
+            fields.add(fld)
+    return fields
+
+
 def classify_finding(finding: Dict[str, Any]) -> str:
     """Coarse finding-class for authority routing.
 
-    v1 classifies only the two classes where the deterministic layer is
-    unconditionally authoritative (arithmetic, dates). Presence and
-    semantic classes land with items 4/5.
+    Classes: arithmetic | presence_payload | dates | semantic | other.
+    Order matters — an explicit "(missing)" marker beats everything but
+    arithmetic, because a missing-from-payload claim is a presence
+    problem regardless of which field is missing.
     """
     if not isinstance(finding, dict):
         return "other"
@@ -158,16 +206,200 @@ def classify_finding(finding: Dict[str, Any]) -> str:
     text = _text_of(finding)
     if any(h in text for h in _ARITHMETIC_TEXT_HINTS):
         return "arithmetic"
+    if missing_refs(finding):
+        return "presence_payload"
     if any(t in rule for t in _DATE_RULE_TOKENS):
         return "dates"
     if _date_fields_of(finding):
         return "dates"
+    if _semantic_fields_of(finding):
+        return "semantic"
     return "other"
 
 
 # ---------------------------------------------------------------------------
 # Reconciliation
 # ---------------------------------------------------------------------------
+
+
+def build_extracted_lookup(doc_payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Canonical doc-name → raw extracted-field dict, from the merged
+    per-doc payload (db_rule_payload shape: source-doc-key → dict)."""
+    lookup: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(doc_payload, dict):
+        return lookup
+    for src_key, doc in doc_payload.items():
+        if not isinstance(doc, dict) or not doc:
+            continue
+        canon = _DOC_NORMALIZE.get(str(src_key).strip().lower())
+        if not canon:
+            continue
+        merged = lookup.setdefault(canon, {})
+        for k, v in doc.items():
+            if v not in (None, "", [], {}):
+                merged.setdefault(str(k).lower(), v)
+    return lookup
+
+
+_FIELD_SUFFIXES = ("_name", "_code", "_number", "_no", "_type")
+
+
+def _field_token(field: str) -> str:
+    token = field.lower()
+    for suffix in _FIELD_SUFFIXES:
+        if token.endswith(suffix):
+            token = token[: -len(suffix)]
+            break
+    return token
+
+
+def _extraction_has_field(extracted: Dict[str, Any], field: str) -> Optional[str]:
+    """Key under which extraction captured ``field``, or None.
+
+    Token match: ``carrier_name`` matches extracted keys containing
+    ``carrier``; ``currency_code`` matches ``currency``. Conservative —
+    a token shorter than 4 chars never matches (too many collisions).
+    """
+    token = _field_token(field)
+    if len(token) < 4:
+        return None
+    if field.lower() in extracted:
+        return field.lower()
+    for key in extracted:
+        if token in key:
+            return key
+    return None
+
+
+def screen_presence_findings(
+    det_findings: List[Dict[str, Any]],
+    extracted_lookup: Dict[str, Dict[str, Any]],
+    events_out: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Authority-matrix presence cell (item 4): rules win on payload
+    presence — but when a finding says ``doc.field (missing)`` and the
+    extraction layer DID capture that field, the "missing" is our own
+    payload plumbing (alias drift), not the customer's discrepancy.
+
+    Mid-pipeline re-extraction is impossible (uploads are processed in
+    memory and never persisted), and unnecessary here: the extracted
+    payload IS the record of what extraction saw. A finding whose every
+    missing-claim is contradicted by extraction is demoted to advisory
+    (verdict-neutral) with an authority_presence_conflict event naming
+    the alias gap — the free to-fix list for the RulHub field mapper.
+    Findings with any genuinely-missing ref keep their severity.
+    """
+    def _emit(event: Dict[str, Any]) -> None:
+        if events_out is not None:
+            events_out.append(event)
+        logger.info("authority_veto_event %s", json.dumps(event, default=str))
+
+    out: List[Dict[str, Any]] = []
+    for det in det_findings:
+        if not isinstance(det, dict) or classify_finding(det) != "presence_payload":
+            out.append(det)
+            continue
+        refs = missing_refs(det)
+        # lc-side refs are checked too when the LC context is in the lookup
+        contradicted: List[Tuple[str, str, str]] = []
+        genuinely_missing = False
+        for doc, field in refs:
+            extracted = extracted_lookup.get(doc) or {}
+            key = _extraction_has_field(extracted, field) if extracted else None
+            if key:
+                contradicted.append((doc, field, key))
+            else:
+                genuinely_missing = True
+        if contradicted and not genuinely_missing:
+            det = dict(det)
+            original_severity = det.get("severity")
+            det["severity"] = "advisory"
+            det["needs_review"] = True
+            det["_authority_presence_conflict"] = [
+                {"doc": d, "field": f, "extracted_under": k} for d, f, k in contradicted
+            ]
+            _emit({
+                "event": "authority_presence_conflict",
+                "rule": det.get("rule") or det.get("rule_id"),
+                "title": str(det.get("title") or det.get("message") or "")[:160],
+                "severity_from": original_severity,
+                "severity_to": "advisory",
+                "contradicted": [
+                    {"doc": d, "field": f, "extracted_under": k}
+                    for d, f, k in contradicted
+                ],
+                "reason": "extraction captured the field the rules payload lacked — alias gap, not a discrepancy",
+            })
+        out.append(det)
+    return out
+
+
+def _normalize_comparable(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", " ", value.upper()).strip()
+
+
+def _concrete_values_of(finding: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+    """Both comparison values when the finding carries the
+    ``<path> = <value>`` two-sided shape; None otherwise."""
+    exp = str(finding.get("expected") or "").strip()
+    found = str(finding.get("found") or finding.get("actual") or "").strip()
+    if "=" not in exp or "=" not in found:
+        return None
+    a = exp.split("=", 1)[1].strip()
+    b = found.split("=", 1)[1].strip()
+    if not a or not b:
+        return None
+    return a, b
+
+
+def screen_semantic_findings(
+    det_findings: List[Dict[str, Any]],
+    events_out: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Authority-matrix semantic cell (item 5): party identity / goods
+    wording is judgment territory — strict equality over-flags. The
+    deterministic near-match demotion: when one side is contained in
+    the other after normalization (name vs name-with-address, LC goods
+    text vs invoice's fuller description — ISBP allows both), demote to
+    advisory with an ai-assessed/needs-review label. Real mismatches
+    (no containment) keep their severity and go to the veto for
+    judgment instead of auto-confirming.
+    """
+    def _emit(event: Dict[str, Any]) -> None:
+        if events_out is not None:
+            events_out.append(event)
+        logger.info("authority_veto_event %s", json.dumps(event, default=str))
+
+    out: List[Dict[str, Any]] = []
+    for det in det_findings:
+        if not isinstance(det, dict) or classify_finding(det) != "semantic":
+            out.append(det)
+            continue
+        values = _concrete_values_of(det)
+        if not values:
+            out.append(det)
+            continue
+        a, b = (_normalize_comparable(values[0]), _normalize_comparable(values[1]))
+        shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+        if len(shorter) >= 8 and shorter in longer:
+            det = dict(det)
+            original_severity = det.get("severity")
+            det["severity"] = "advisory"
+            det["ai_assessed"] = True
+            det["needs_review"] = True
+            _emit({
+                "event": "authority_semantic_demote",
+                "rule": det.get("rule") or det.get("rule_id"),
+                "title": str(det.get("title") or det.get("message") or "")[:160],
+                "severity_from": original_severity,
+                "severity_to": "advisory",
+                "relation": "containment",
+                "value_short": shorter[:80],
+                "value_long": longer[:120],
+                "reason": "one value contains the other after normalization — name-with-address / fuller-description pattern, not a mismatch",
+            })
+        out.append(det)
+    return out
 
 
 def reconcile_findings(

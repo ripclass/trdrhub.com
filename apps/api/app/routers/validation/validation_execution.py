@@ -2667,23 +2667,49 @@ async def execute_validation_pipeline(
             # _db_rules_debug.authority_veto_events.
             _authority_events: List[Dict[str, Any]] = []
 
-            # ---- Authority-matrix reconciliation (item 3) -------------
-            # For mechanical fact classes (arithmetic, dates) the
-            # deterministic layer is authoritative: drop AI copies of
-            # facts RulHub / the local rules already raised, BEFORE the
-            # auto-confirm partition so duplicates can't surface twice.
-            # Conservative matching; every drop is an authority_dedup
-            # event, never a silent delete.
-            from app.services.validation.authority_matrix import reconcile_findings
+            # ---- Authority-matrix passes (items 3-5) ------------------
+            # 3. reconcile: arithmetic/dates — deterministic wins, AI
+            #    duplicates dropped (authority_dedup events).
+            # 4. presence screen: a det "(missing)" finding contradicted
+            #    by the extraction payload is our alias gap, not the
+            #    customer's discrepancy — demoted to advisory.
+            # 5. semantic screen: near-match (containment) party/goods
+            #    comparisons demoted to advisory; real semantic
+            #    mismatches are routed to the veto instead of
+            #    auto-confirming (judgment territory).
+            # All passes log to _authority_events; nothing is silent.
+            from app.services.validation.authority_matrix import (
+                build_extracted_lookup,
+                classify_finding as _am_classify,
+                reconcile_findings,
+                screen_presence_findings,
+                screen_semantic_findings,
+            )
+            _extracted_lookup = build_extracted_lookup(
+                db_rule_payload if 'db_rule_payload' in dir() else {}
+            )
+            _det_dict_list = screen_presence_findings(
+                _det_dict_list, _extracted_lookup, events_out=_authority_events,
+            )
+            _det_dict_list = screen_semantic_findings(
+                _det_dict_list, events_out=_authority_events,
+            )
             _ai_dict_list = reconcile_findings(
                 _ai_dict_list, _det_dict_list, events_out=_authority_events,
             )
 
+            def _auto_confirmable(f: Dict[str, Any]) -> bool:
+                # Concrete two-sided mismatches are deterministic facts —
+                # EXCEPT semantic-class comparisons (party names, goods
+                # wording), where strict inequality still needs judgment
+                # (ISBP tolerates variants). Those go to the veto.
+                return _has_concrete_value_mismatch(f) and _am_classify(f) != "semantic"
+
             _auto_confirm = [
-                f for f in (_ai_dict_list + _det_dict_list) if _has_concrete_value_mismatch(f)
+                f for f in (_ai_dict_list + _det_dict_list) if _auto_confirmable(f)
             ]
-            _ai_for_veto = [f for f in _ai_dict_list if not _has_concrete_value_mismatch(f)]
-            _det_for_veto = [f for f in _det_dict_list if not _has_concrete_value_mismatch(f)]
+            _ai_for_veto = [f for f in _ai_dict_list if not _auto_confirmable(f)]
+            _det_for_veto = [f for f in _det_dict_list if not _auto_confirmable(f)]
 
             if _auto_confirm:
                 logger.info(
