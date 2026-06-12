@@ -2662,6 +2662,23 @@ async def execute_validation_pipeline(
                     _ai_dict_list.append(_coerced)
             _det_dict_list = [i for i in (db_rule_issues or []) if isinstance(i, dict)]
 
+            # Authority-matrix event accumulator — shared by the
+            # reconciliation pass below and the veto. Lands in
+            # _db_rules_debug.authority_veto_events.
+            _authority_events: List[Dict[str, Any]] = []
+
+            # ---- Authority-matrix reconciliation (item 3) -------------
+            # For mechanical fact classes (arithmetic, dates) the
+            # deterministic layer is authoritative: drop AI copies of
+            # facts RulHub / the local rules already raised, BEFORE the
+            # auto-confirm partition so duplicates can't surface twice.
+            # Conservative matching; every drop is an authority_dedup
+            # event, never a silent delete.
+            from app.services.validation.authority_matrix import reconcile_findings
+            _ai_dict_list = reconcile_findings(
+                _ai_dict_list, _det_dict_list, events_out=_authority_events,
+            )
+
             _auto_confirm = [
                 f for f in (_ai_dict_list + _det_dict_list) if _has_concrete_value_mismatch(f)
             ]
@@ -2685,12 +2702,6 @@ async def execute_validation_pipeline(
                     _f["_origin_layer"] = "ai"
                 for _f in _det_for_veto:
                     _f["_origin_layer"] = "deterministic"
-                # Authority-matrix disagreement log: every veto decision
-                # against another layer's finding (drop / downgrade /
-                # blocked upgrade / blocked create) lands here, then in
-                # _db_rules_debug.authority_veto_events. AI-vs-rules
-                # disagreements are the extraction-quality signal.
-                _veto_events: List[Dict[str, Any]] = []
                 try:
                     vetted_findings = await _asyncio.wait_for(
                         _run_opus_veto_pass(
@@ -2698,7 +2709,7 @@ async def execute_validation_pipeline(
                             document_type=primary_doc_type if 'primary_doc_type' in dir() else "letter_of_credit",
                             ai_findings=_ai_for_veto,
                             deterministic_findings=_det_for_veto,
-                            events_out=_veto_events,
+                            events_out=_authority_events,
                         ),
                         timeout=_veto_timeout,
                     )
@@ -2736,13 +2747,6 @@ async def execute_validation_pipeline(
                     logger.warning("Opus veto timed out after %ss — keeping unvetted findings", _veto_timeout)
                 except Exception as _veto_exc:
                     logger.warning("Opus veto failed — keeping unvetted findings: %s", _veto_exc)
-                # Surface the disagreement log in the response sidecar
-                # regardless of veto outcome (empty list = veto ran with
-                # zero interventions; key absent = veto disabled/skipped).
-                try:
-                    db_rules_debug["authority_veto_events"] = _veto_events
-                except NameError:
-                    pass
             elif _veto_enabled:
                 # Veto enabled but nothing ambiguous to review.
                 ai_issues = []
@@ -2752,6 +2756,19 @@ async def execute_validation_pipeline(
                         "Opus veto skipped: %d auto-confirmed, 0 ambiguous",
                         len(_auto_confirm),
                     )
+            elif any(e.get("event") == "authority_dedup" for e in _authority_events):
+                # Veto disabled but the reconciliation pass dropped AI
+                # duplicates — propagate the deduped list (dict form,
+                # which downstream already handles on the veto path).
+                ai_issues = _ai_dict_list
+            # Surface the authority-matrix disagreement log (dedup +
+            # veto events) in the response sidecar regardless of veto
+            # outcome. Empty list = passes ran with zero interventions;
+            # key absent = this section didn't execute.
+            try:
+                db_rules_debug["authority_veto_events"] = _authority_events
+            except NameError:
+                pass
         except Exception:
             pass  # Veto is advisory — never block the pipeline
 
