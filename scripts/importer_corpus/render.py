@@ -452,6 +452,15 @@ def render_bill_of_lading(c: Dict[str, Any], out: Path) -> None:
 
     flow.append(Paragraph("Particulars furnished by the shipper", _STYLE_SECTION))
     total_qty = sum(i["qty"] for i in c["goods_line_items"])
+    # Labeled field lines FIRST — real BLs carry a "No. of Packages" box,
+    # and the vision extractor reliably transcribes labeled fields while
+    # it only sometimes captures counts embedded in prose (live run
+    # variance: bl.number_of_packages (missing) fired on BD-CN whenever
+    # the prose line was skipped).
+    flow.extend(_field_lines([
+        ("Number of Packages", f"{_total_cartons(c['goods_line_items'])} cartons"),
+        ("Total Quantity", f"{total_qty:,} pcs"),
+    ]))
     total_cartons = _total_cartons(c["goods_line_items"])
     gw = round(total_qty * 0.7, 2)
     nw = round(total_qty * 0.6, 2)
