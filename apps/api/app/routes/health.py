@@ -369,7 +369,7 @@ async def liveness_check(request: Request):
 
 
 @router.get("/ready", response_model=ReadinessStatus)
-async def readiness_check(request: Request, db: Session = Depends(get_db)):
+async def readiness_check(request: Request, http_response: Response, db: Session = Depends(get_db)):
     """
     Readiness probe - indicates if the service is ready to handle requests.
 
@@ -423,8 +423,10 @@ async def readiness_check(request: Request, db: Session = Depends(get_db)):
             check_results={k: v.get("status") for k, v in checks.items()}
         )
 
-        # Return 200 if healthy, 503 if not
-        status_code = 200 if overall_healthy else 503
+        # 503 on failed readiness so uptime monitors see the outage —
+        # the status code was previously computed but never applied, so
+        # this endpoint returned 200 even with the database unreachable.
+        http_response.status_code = 200 if overall_healthy else 503
 
         response = ReadinessStatus(
             status="ok" if overall_healthy else "error",
@@ -452,6 +454,7 @@ async def readiness_check(request: Request, db: Session = Depends(get_db)):
         )
 
         # Return error response
+        http_response.status_code = 503
         return ReadinessStatus(
             status="error",
             timestamp=datetime.now(timezone.utc).isoformat(),
