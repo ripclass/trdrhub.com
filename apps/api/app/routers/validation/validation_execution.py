@@ -74,6 +74,10 @@ _ICC_RULEBOOK_PREFIXES = {
 _ICC_RULE_ID_PATTERN = re.compile(
     r"^(?P<prefix>[A-Z0-9]+)-(?P<article>[A-Z]*\d+)(?P<suffix>[A-Z][A-Z0-9]*)?$"
 )
+class _RulHubSkipMinDocs(Exception):
+    """Document set is below RulHub validate-request v1.0.0's minItems=2."""
+
+
 _OVERLAP_DOC_ALIASES = {
     "air_waybill": "bill_of_lading",
     "bill_of_lading": "bill_of_lading",
@@ -1646,8 +1650,12 @@ async def execute_validation_pipeline(
                         "insurance_policy": "insurance_doc",
                         "insurance_doc": "insurance_doc",
                         "insurance": "insurance_doc",
-                        "inspection_certificate": "inspection_certificate",
-                        "beneficiary_certificate": "beneficiary_certificate",
+                        # validate-request v1.0.0 enum names (probed
+                        # 2026-06-12): the schema accepts "inspection" and
+                        # "beneficiary_cert", not the long forms — sending
+                        # the long forms 400s the whole set.
+                        "inspection_certificate": "inspection",
+                        "beneficiary_certificate": "beneficiary_cert",
                         "draft": "draft",
                     }
 
@@ -2195,6 +2203,18 @@ async def execute_validation_pipeline(
                         primary_jurisdiction,
                     )
 
+                    if len(_rulhub_docs) < 2:
+                        # validate-request v1.0.0 enforces minItems=2 on
+                        # documents[] (probed 2026-06-12: "List should have
+                        # at least 2 items"). Single-doc sets — e.g. the
+                        # importer draft-LC moment — would 400 every time,
+                        # so skip the call by design instead of eating a
+                        # guaranteed schema rejection.
+                        raise _RulHubSkipMinDocs(
+                            f"set has {len(_rulhub_docs)} document(s); "
+                            "validate-request v1.0.0 requires >= 2"
+                        )
+
                     _rulhub_adapter = RulHubRulesAdapter()
                     # Sanitized payload preview — captured BEFORE the call so
                     # we have it on the exception path. Field VALUES are
@@ -2484,6 +2504,10 @@ async def execute_validation_pipeline(
                         "RulHub /v1/validate/set → %d discrepancies + %d crossdoc = %d findings (deduped from %d)",
                         len(_disc), len(_cross), len(db_rule_issues), len(_raw_findings),
                     )
+                except _RulHubSkipMinDocs as _rulhub_skip:
+                    logger.info("RulHub skipped by design: %s", _rulhub_skip)
+                    _rulhub_error_msg = f"skipped: {_rulhub_skip}"
+                    _use_rulhub = False  # fall through to DB path below
                 except Exception as _rulhub_err:
                     logger.warning("RulHub API failed, falling back to DB rules: %s", _rulhub_err)
                     _rulhub_error_msg = f"{type(_rulhub_err).__name__}: {str(_rulhub_err)[:200]}"
@@ -2520,6 +2544,11 @@ async def execute_validation_pipeline(
             # firing or silently failing-over to the DB path.
             if _use_rulhub:
                 _path_taken = "rulhub"
+            elif _rulhub_configured and _rulhub_error_msg and _rulhub_error_msg.startswith("skipped:"):
+                # By-design skip (e.g. single-doc set under RulHub's
+                # minItems=2) — distinct from a failure so smoke tooling
+                # doesn't read it as an outage.
+                _path_taken = "db_tiered_rulhub_skipped"
             elif _rulhub_configured and _rulhub_error_msg:
                 _path_taken = "db_tiered_rulhub_failed"
             else:

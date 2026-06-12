@@ -225,21 +225,20 @@ PRESENTATION_FIELDS = {
     "date": "2026-09-25",
 }
 
-# Build full dual-prefix documents list — mirrors validation_execution.py.
-# Order matches what the 2026-04-17 session saw in the RulHub raw log.
+# Canonical-only documents list — mirrors validation_execution.py's
+# _CANONICAL_PREFIX_MAP after the validate-request v1.0.0 alignment
+# (2026-06-12). The old dual-prefix shape (credit/bill_of_lading/
+# insurance/presentation duplicates) now 400s against the strict type
+# enum; do not reintroduce it.
 DOCUMENTS = [
     {"type": "lc", "fields": LC_FIELDS},
-    {"type": "credit", "fields": LC_FIELDS},
     {"type": "invoice", "fields": INVOICE_FIELDS},
     {"type": "bl", "fields": BL_FIELDS},
-    {"type": "bill_of_lading", "fields": BL_FIELDS},
     {"type": "packing_list", "fields": PL_FIELDS},
     {"type": "coo", "fields": COO_FIELDS},
-    {"type": "insurance", "fields": INSURANCE_FIELDS},
     {"type": "insurance_doc", "fields": INSURANCE_FIELDS},
-    {"type": "inspection_certificate", "fields": INSPECTION_FIELDS},
-    {"type": "beneficiary_certificate", "fields": BEN_CERT_FIELDS},
-    {"type": "presentation", "fields": PRESENTATION_FIELDS},
+    {"type": "inspection", "fields": INSPECTION_FIELDS},
+    {"type": "beneficiary_cert", "fields": BEN_CERT_FIELDS},
 ]
 
 
