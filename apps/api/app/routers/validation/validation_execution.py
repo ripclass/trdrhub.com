@@ -2685,6 +2685,12 @@ async def execute_validation_pipeline(
                     _f["_origin_layer"] = "ai"
                 for _f in _det_for_veto:
                     _f["_origin_layer"] = "deterministic"
+                # Authority-matrix disagreement log: every veto decision
+                # against another layer's finding (drop / downgrade /
+                # blocked upgrade / blocked create) lands here, then in
+                # _db_rules_debug.authority_veto_events. AI-vs-rules
+                # disagreements are the extraction-quality signal.
+                _veto_events: List[Dict[str, Any]] = []
                 try:
                     vetted_findings = await _asyncio.wait_for(
                         _run_opus_veto_pass(
@@ -2692,6 +2698,7 @@ async def execute_validation_pipeline(
                             document_type=primary_doc_type if 'primary_doc_type' in dir() else "letter_of_credit",
                             ai_findings=_ai_for_veto,
                             deterministic_findings=_det_for_veto,
+                            events_out=_veto_events,
                         ),
                         timeout=_veto_timeout,
                     )
@@ -2729,6 +2736,13 @@ async def execute_validation_pipeline(
                     logger.warning("Opus veto timed out after %ss — keeping unvetted findings", _veto_timeout)
                 except Exception as _veto_exc:
                     logger.warning("Opus veto failed — keeping unvetted findings: %s", _veto_exc)
+                # Surface the disagreement log in the response sidecar
+                # regardless of veto outcome (empty list = veto ran with
+                # zero interventions; key absent = veto disabled/skipped).
+                try:
+                    db_rules_debug["authority_veto_events"] = _veto_events
+                except NameError:
+                    pass
             elif _veto_enabled:
                 # Veto enabled but nothing ambiguous to review.
                 ai_issues = []

@@ -14,11 +14,13 @@ This module implements the validation architecture Imran designed:
       tagged with source = "deterministic".
 
   Pass C — Opus veto
-      A single Claude Opus 4.6 call reviews the documents plus the
-      combined finding set from Passes A + B. Opus can confirm, drop, or
-      modify any finding, and can ADD new findings (TBML signals, fraud
-      patterns, structural anomalies that the rules and AI missed). Its
-      decision is final.
+      A single Claude Opus call reviews the documents plus the combined
+      finding set from Passes A + B. The veto is a FILTER, not a third
+      opinion (authority-matrix asymmetry rule): it may confirm, drop,
+      or modify findings — it may NOT create findings, and severity may
+      only be downgraded, never upgraded. Every drop / downgrade /
+      blocked-upgrade is recorded as a disagreement-log event
+      (authority_veto_events in _db_rules_debug).
 
 Each pass is failure-isolated: if any pass times out or errors, the
 others still produce their results and the function returns the best
@@ -471,6 +473,9 @@ _OPUS_VETO_SYSTEM_PROMPT = (
     "prompt clearly contradicts a finding's 'found' text, drop it with a "
     "reason. If a finding is substantively correct but phrased poorly, "
     "modify the title/severity. If in doubt, confirm.\n\n"
+    "Severity is asymmetric: you may DOWNGRADE a finding's severity, never "
+    "upgrade it. The pipeline ignores severity upgrades — the veto is a "
+    "filter, not a third opinion.\n\n"
     "IMPORTANT: Each document was extracted independently by a blind per-doc "
     "OCR transcriber. Field names may appear under variant aliases. A field "
     "absent from a document may simply not be printed on that doc type — do "
@@ -527,6 +532,7 @@ def _build_opus_veto_prompt(
         "- \"drop\" means delete it (false positive). Always include a reason.\n"
         "- \"modify\" means keep but adjust title/severity. Include updated_title and/or updated_severity.\n"
         "- You CANNOT add new findings. Confirm / drop / modify only.\n"
+        "- You may DOWNGRADE severity, never upgrade it — upgrades are ignored.\n"
         "- A finding that concerns a document other than the primary document type "
         "is NOT off-topic — every document in the presentation set is in scope. "
         "Do not drop a finding solely because it is about the packing list, "
@@ -551,6 +557,7 @@ async def _run_opus_veto_pass(
     document_type: str,
     ai_findings: List[Dict[str, Any]],
     deterministic_findings: List[Dict[str, Any]],
+    events_out: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Pass C: single Opus call that reviews and finalizes the finding set.
 
@@ -598,12 +605,13 @@ async def _run_opus_veto_pass(
     # no clause citation because they weren't rooted in this LC's 46A/47A —
     # they came from the LLM's general UCP600 training. Intentionally dropped
     # in C1 of the consolidation plan: deterministic is the only source.
-    final_ai = _apply_veto_actions(ai_findings, actions, "ai")
-    final_det = _apply_veto_actions(deterministic_findings, actions, "deterministic")
+    final_ai = _apply_veto_actions(ai_findings, actions, "ai", events_out=events_out)
+    final_det = _apply_veto_actions(deterministic_findings, actions, "deterministic", events_out=events_out)
 
     # If Opus emitted any "anomalies" anyway (ignoring the system prompt),
     # log their titles so we can spot regressions and tune the prompt — but
-    # never feed them back into the findings list.
+    # never feed them back into the findings list. (Asymmetry rule: the
+    # veto may suppress, never create.)
     stray_anomalies = parsed.get("anomalies") or []
     if stray_anomalies:
         logger.warning(
@@ -612,6 +620,15 @@ async def _run_opus_veto_pass(
             len(stray_anomalies),
             [str(a.get("title"))[:80] for a in stray_anomalies if isinstance(a, dict)],
         )
+        if events_out is not None:
+            events_out.append({
+                "event": "veto_create_blocked",
+                "count": len(stray_anomalies),
+                "titles": [
+                    str(a.get("title"))[:120]
+                    for a in stray_anomalies if isinstance(a, dict)
+                ][:10],
+            })
 
     overall = parsed.get("overall_assessment")
     if overall:
@@ -620,12 +637,46 @@ async def _run_opus_veto_pass(
     return [*final_ai, *final_det]
 
 
+# Authority-matrix asymmetry rule: the veto is a filter, not a third
+# opinion. It may suppress findings and downgrade severity — never create
+# findings, never upgrade severity. Ranks below order the severity
+# vocabulary across both engines (RulHub emits warning/fail/info; trdrhub
+# normalizes to critical/major/minor/advisory).
+_SEVERITY_RANK: Dict[str, int] = {
+    "critical": 4,
+    "high": 4,
+    "major": 3,
+    "fail": 3,
+    "warning": 2,
+    "minor": 2,
+    "low": 2,
+    "advisory": 1,
+    "info": 1,
+    "review": 1,
+    "note": 1,
+}
+
+
+def _severity_rank(value: Any) -> Optional[int]:
+    return _SEVERITY_RANK.get(str(value or "").strip().lower())
+
+
 def _apply_veto_actions(
     findings: List[Dict[str, Any]],
     actions: List[Any],
     source_label: str,
+    events_out: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Apply Opus veto actions to a finding list and return the survivors."""
+    """Apply Opus veto actions to a finding list and return the survivors.
+
+    Asymmetry enforcement: severity may only go down. An upgrade attempt
+    keeps the original severity and is recorded as a blocked event.
+
+    ``events_out`` (optional) accumulates one disagreement-log event per
+    drop / modify / blocked-upgrade — this is the authority-matrix
+    disagreement log: every veto decision against another layer's finding
+    is a data point on where the layers disagree.
+    """
     drop_set: set = set()
     modifications: Dict[int, Dict[str, Any]] = {}
 
@@ -644,6 +695,7 @@ def _apply_veto_actions(
         action_type = (action.get("action") or "").lower()
         if action_type == "drop":
             drop_set.add(idx)
+            modifications.pop(idx, None)
         elif action_type == "modify":
             modifications[idx] = {
                 "updated_title": action.get("updated_title"),
@@ -652,9 +704,29 @@ def _apply_veto_actions(
             }
         # "confirm" is the default — no-op
 
+    def _emit(event: Dict[str, Any]) -> None:
+        if events_out is not None:
+            events_out.append(event)
+        logger.info("authority_veto_event %s", json.dumps(event, default=str))
+
     survivors: List[Dict[str, Any]] = []
     for idx, finding in enumerate(findings):
         if idx in drop_set:
+            _emit({
+                "event": "veto_drop",
+                "source_layer": source_label,
+                "rule": finding.get("rule"),
+                "title": str(finding.get("title") or finding.get("message") or "")[:160],
+                "severity": finding.get("severity"),
+                "reason": next(
+                    (a.get("reason") for a in actions
+                     if isinstance(a, dict)
+                     and (a.get("source") or "").lower() == source_label
+                     and str(a.get("index")) == str(idx)
+                     and (a.get("action") or "").lower() == "drop"),
+                    None,
+                ),
+            })
             continue  # vetoed out
         finding = dict(finding)  # don't mutate caller's data
         if idx in modifications:
@@ -663,7 +735,33 @@ def _apply_veto_actions(
                 finding["title"] = mod["updated_title"]
                 finding["message"] = mod["updated_title"]
             if mod.get("updated_severity"):
-                finding["severity"] = mod["updated_severity"]
+                _orig = finding.get("severity")
+                _new = mod["updated_severity"]
+                orig_rank = _severity_rank(_orig)
+                new_rank = _severity_rank(_new)
+                if orig_rank is not None and new_rank is not None and new_rank <= orig_rank:
+                    finding["severity"] = _new
+                    _emit({
+                        "event": "veto_downgrade" if new_rank < orig_rank else "veto_relabel",
+                        "source_layer": source_label,
+                        "rule": finding.get("rule"),
+                        "title": str(finding.get("title") or "")[:160],
+                        "severity_from": _orig,
+                        "severity_to": _new,
+                        "reason": mod.get("reason"),
+                    })
+                else:
+                    # Upgrade (or unknown severity word) — blocked by the
+                    # asymmetry rule. Original severity stands.
+                    _emit({
+                        "event": "veto_upgrade_blocked",
+                        "source_layer": source_label,
+                        "rule": finding.get("rule"),
+                        "title": str(finding.get("title") or "")[:160],
+                        "severity_kept": _orig,
+                        "severity_attempted": _new,
+                        "reason": mod.get("reason"),
+                    })
             finding["_vetoed"] = True
             finding["_veto_reason"] = mod.get("reason")
         survivors.append(finding)
