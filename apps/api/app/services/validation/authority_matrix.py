@@ -164,7 +164,20 @@ _SEMANTIC_FIELD_TOKENS = (
     "goods",
     "description",
     "address",
+    "incoterm",
 )
+
+# Incoterms codes (2020 set + legacy still seen on real docs). An LC often
+# states the bare code while the invoice states code + named place —
+# "FCA" vs "FCA SHANGHAI (INCOTERMS 2020)" — which Incoterms itself
+# REQUIRES (the named place is mandatory). Strict equality flags the
+# more-correct document; the code-prefix relation below treats it as
+# consistent. (Live false-positive ISBP821-C9 on DE-CN + BD-CN corridors,
+# 2026-06-12.)
+_INCOTERM_CODES = {
+    "EXW", "FCA", "FAS", "FOB", "CFR", "CIF", "CPT", "CIP",
+    "DAP", "DPU", "DDP", "DAT", "DAF", "DES", "DEQ", "DDU",
+}
 
 
 def missing_refs(finding: Dict[str, Any]) -> Set[Tuple[str, str]]:
@@ -400,6 +413,31 @@ def screen_semantic_findings(
             continue
         a, b = (_normalize_comparable(values[0]), _normalize_comparable(values[1]))
         shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+        if any("incoterm" in fld for _doc, fld in _field_paths_of(det)):
+            # Incoterm relation: bare code vs code + named place is
+            # consistent; anything else (FOB vs CIF) is a real mismatch
+            # that keeps severity and goes to the veto.
+            if shorter in _INCOTERM_CODES and (
+                longer == shorter or longer.startswith(shorter + " ")
+            ):
+                det = dict(det)
+                original_severity = det.get("severity")
+                det["severity"] = "advisory"
+                det["ai_assessed"] = True
+                det["needs_review"] = True
+                _emit({
+                    "event": "authority_semantic_demote",
+                    "rule": det.get("rule") or det.get("rule_id"),
+                    "title": str(det.get("title") or det.get("message") or "")[:160],
+                    "severity_from": original_severity,
+                    "severity_to": "advisory",
+                    "relation": "incoterm_code_prefix",
+                    "value_short": shorter[:80],
+                    "value_long": longer[:120],
+                    "reason": "bare Incoterms code vs code + named place — the named place is mandatory under Incoterms, not a mismatch",
+                })
+            out.append(det)
+            continue
         if len(shorter) >= 8 and shorter in longer:
             det = dict(det)
             original_severity = det.get("severity")

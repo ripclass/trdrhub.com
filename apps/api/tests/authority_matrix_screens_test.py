@@ -221,3 +221,52 @@ def test_goods_description_fuller_invoice_text_demoted():
     out = screen_semantic_findings([f], events_out=events)
     assert out[0]["severity"] == "advisory"
     assert events[0]["event"] == "authority_semantic_demote"
+
+
+def _incoterm_finding(invoice_term: str, lc_term: str) -> dict:
+    return {
+        "rule": "ISBP821-C9",
+        "title": "Incoterm mismatch",
+        "message": f"'invoice.incoterm' ('{invoice_term}') does not match 'lc.incoterm' ('{lc_term}')",
+        "expected": f"lc.incoterm = {lc_term}",
+        "found": f"invoice.incoterm = {invoice_term}",
+        "severity": "major",
+        "documents": ["invoice", "lc"],
+    }
+
+
+def test_incoterm_code_vs_code_plus_place_demoted():
+    # Live ISBP821-C9 false positive (DE-CN + BD-CN, 2026-06-12): the
+    # invoice's "FCA SHANGHAI (INCOTERMS 2020)" is MORE correct than the
+    # LC's bare "FCA" — the named place is mandatory under Incoterms.
+    events = []
+    out = screen_semantic_findings(
+        [_incoterm_finding("FCA SHANGHAI (INCOTERMS 2020)", "FCA")], events_out=events,
+    )
+    assert out[0]["severity"] == "advisory"
+    assert events[0]["relation"] == "incoterm_code_prefix"
+
+    events = []
+    out = screen_semantic_findings(
+        [_incoterm_finding("CFR CHATTOGRAM (INCOTERMS 2020)", "CFR")], events_out=events,
+    )
+    assert out[0]["severity"] == "advisory"
+
+
+def test_real_incoterm_mismatch_keeps_severity():
+    events = []
+    out = screen_semantic_findings(
+        [_incoterm_finding("CIF LONG BEACH", "FOB")], events_out=events,
+    )
+    assert out[0]["severity"] == "major"  # FOB vs CIF — genuinely different terms
+    assert events == []
+
+
+def test_incoterm_code_prefix_requires_word_boundary():
+    # "FCASTLE ROAD" must not satisfy "FCA" — prefix needs the space.
+    events = []
+    out = screen_semantic_findings(
+        [_incoterm_finding("FCASTLE ROAD", "FCA")], events_out=events,
+    )
+    assert out[0]["severity"] == "major"
+    assert events == []
