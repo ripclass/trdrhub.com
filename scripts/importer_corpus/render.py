@@ -107,6 +107,22 @@ def _total_amount(items: List[Dict[str, Any]]) -> Decimal:
     return sum((_line_amount(i) for i in items), Decimal("0"))
 
 
+def _cartons_for(qty: int) -> int:
+    """Cartons for a line item — ~100 pcs per carton, minimum one.
+
+    THE single source of the carton formula. The packing list's
+    carton-wise breakdown and the bill of lading's package count must
+    both derive from this, or the SHIPMENT_CLEAN sets fail the PL↔BL
+    carton cross-check (live CROSSDOC-PKL-LC-4, 2026-06-12: BL said
+    "4,500 packages" — the piece count — while the PL said 45 cartons).
+    """
+    return max(1, qty // 100)
+
+
+def _total_cartons(items: List[Dict[str, Any]]) -> int:
+    return sum(_cartons_for(i["qty"]) for i in items)
+
+
 _STYLE_TAG_LINE = ParagraphStyle(
     "MT700TagLine",
     parent=_BASE_STYLES["BodyText"],
@@ -436,10 +452,12 @@ def render_bill_of_lading(c: Dict[str, Any], out: Path) -> None:
 
     flow.append(Paragraph("Particulars furnished by the shipper", _STYLE_SECTION))
     total_qty = sum(i["qty"] for i in c["goods_line_items"])
+    total_cartons = _total_cartons(c["goods_line_items"])
     gw = round(total_qty * 0.7, 2)
     nw = round(total_qty * 0.6, 2)
     flow.append(Paragraph(
-        f"{total_qty:,} packages containing {c['goods_description']} — "
+        f"{total_cartons:,} packages (cartons) containing {total_qty:,} pcs of "
+        f"{c['goods_description']} — "
         f"Gross Weight: {gw:,} KGS — Net Weight: {nw:,} KGS",
         _STYLE_BODY,
     ))
@@ -485,7 +503,7 @@ def render_packing_list(c: Dict[str, Any], out: Path) -> None:
     ctn_start = 1
     for item in c["goods_line_items"]:
         qty = item["qty"]
-        ctns = max(1, qty // 100)
+        ctns = _cartons_for(qty)
         per_ctn = qty // ctns
         gw = round(per_ctn * 0.65, 2)
         nw = round(per_ctn * 0.55, 2)
@@ -515,6 +533,19 @@ def render_packing_list(c: Dict[str, Any], out: Path) -> None:
         f"Total packages: {ctn_start - 1} cartons. "
         f"All cartons marked with applicant name, purchase-order reference, "
         f"and country of origin: {c['origin_country']}.",
+        _STYLE_BODY,
+    ))
+    # Cross-reference the BL's container/seal allocation. A real clean
+    # packing list shows which cartons went into which container; without
+    # this line SHIPMENT_CLEAN sets fail the PL↔BL container and seal
+    # cross-checks (live CROSSDOC-CONTAINER-1/2, 2026-06-12) — the
+    # "clean" corpus was structurally incapable of passing them.
+    flow.append(Paragraph(
+        "Container / Seal allocation: " + "; ".join(
+            f"Container {cn} (Seal {c['seal_numbers'][i] if i < len(c['seal_numbers']) else 'N/A'})"
+            for i, cn in enumerate(c["container_numbers"])
+        ) + f" — cartons 1-{ctn_start - 1} stuffed across "
+        f"{len(c['container_numbers'])} container(s).",
         _STYLE_BODY,
     ))
     flow.append(Spacer(1, 14))
