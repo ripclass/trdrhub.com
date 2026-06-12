@@ -2685,9 +2685,22 @@ async def execute_validation_pipeline(
                 screen_presence_findings,
                 screen_semantic_findings,
             )
-            _extracted_lookup = build_extracted_lookup(
-                db_rule_payload if 'db_rule_payload' in dir() else {}
-            )
+            # Union of the rule payload AND the raw per-doc extraction —
+            # db_rule_payload carries rebuilt contexts for some docs
+            # (e.g. insurance_rule_context), which would shadow the raw
+            # extracted fields the presence screen needs to consult.
+            # build_extracted_lookup unions fields per canonical doc, so
+            # feeding both sources gives the complete extraction record.
+            _lookup_src: Dict[str, Any] = {}
+            if 'payload' in dir() and isinstance(payload, dict):
+                _lookup_src.update({
+                    k: v for k, v in payload.items() if isinstance(v, dict) and v
+                })
+            if 'db_rule_payload' in dir() and isinstance(db_rule_payload, dict):
+                for _k, _v in db_rule_payload.items():
+                    if isinstance(_v, dict) and _v:
+                        _lookup_src.setdefault(_k, _v)
+            _extracted_lookup = build_extracted_lookup(_lookup_src)
             _det_dict_list = screen_presence_findings(
                 _det_dict_list, _extracted_lookup, events_out=_authority_events,
             )

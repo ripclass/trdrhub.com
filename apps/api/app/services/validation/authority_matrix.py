@@ -243,6 +243,19 @@ def build_extracted_lookup(doc_payload: Dict[str, Any]) -> Dict[str, Dict[str, A
 
 _FIELD_SUFFIXES = ("_name", "_code", "_number", "_no", "_type")
 
+# Doc-scoped equivalences the suffix-token match can't derive. Keep this
+# list to relationships that are true by document semantics, not by
+# coincidence — ``invoice.issuer_name`` IS the beneficiary/seller, but an
+# inspection cert's issuer is the inspection company, so the mapping is
+# keyed by (doc, field), never by field alone.
+_PRESENCE_FIELD_EQUIVALENTS: Dict[Tuple[str, str], Tuple[str, ...]] = {
+    ("invoice", "issuer_name"): ("seller", "exporter", "beneficiary"),
+    ("invoice", "buyer_name"): ("buyer", "applicant", "importer"),
+    ("bl", "carrier_name"): ("carrier", "shipping_line"),
+    ("bl", "original_set"): ("originals", "number_of_originals", "no_of_originals"),
+    ("insurance_doc", "insured_amount"): ("sum_insured", "coverage_amount"),
+}
+
 
 def _field_token(field: str) -> str:
     token = field.lower()
@@ -253,21 +266,27 @@ def _field_token(field: str) -> str:
     return token
 
 
-def _extraction_has_field(extracted: Dict[str, Any], field: str) -> Optional[str]:
+def _extraction_has_field(
+    extracted: Dict[str, Any], field: str, doc: str = "",
+) -> Optional[str]:
     """Key under which extraction captured ``field``, or None.
 
     Token match: ``carrier_name`` matches extracted keys containing
-    ``carrier``; ``currency_code`` matches ``currency``. Conservative —
-    a token shorter than 4 chars never matches (too many collisions).
+    ``carrier``; ``currency_code`` matches ``currency``. Doc-scoped
+    equivalents handle semantic aliases (invoice issuer = beneficiary).
+    Conservative — a token shorter than 4 chars never matches.
     """
-    token = _field_token(field)
-    if len(token) < 4:
-        return None
     if field.lower() in extracted:
         return field.lower()
-    for key in extracted:
-        if token in key:
-            return key
+    token = _field_token(field)
+    if len(token) >= 4:
+        for key in extracted:
+            if token in key:
+                return key
+    for equiv in _PRESENCE_FIELD_EQUIVALENTS.get((doc, field.lower()), ()):
+        for key in extracted:
+            if equiv in key:
+                return key
     return None
 
 
@@ -305,7 +324,7 @@ def screen_presence_findings(
         genuinely_missing = False
         for doc, field in refs:
             extracted = extracted_lookup.get(doc) or {}
-            key = _extraction_has_field(extracted, field) if extracted else None
+            key = _extraction_has_field(extracted, field, doc) if extracted else None
             if key:
                 contradicted.append((doc, field, key))
             else:

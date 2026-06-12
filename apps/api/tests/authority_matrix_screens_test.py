@@ -125,6 +125,38 @@ def test_mixed_refs_one_genuinely_missing_keeps_severity():
     assert events == []
 
 
+def test_doc_scoped_equivalent_invoice_issuer_is_beneficiary():
+    f = {
+        "rule": "CROSSDOC-INV-LC-4",
+        "message": "'invoice.issuer_name' (missing) does not match 'lc.beneficiary_name' ('HAI LONG FURNITURE')",
+        "severity": "major",
+    }
+    lookup = build_extracted_lookup({
+        "invoice": {"beneficiary": "HAI LONG FURNITURE EXPORT JSC", "amount": 414000},
+    })
+    events = []
+    out = screen_presence_findings([f], lookup, events_out=events)
+    assert out[0]["severity"] == "advisory"
+    assert events[0]["contradicted"][0]["extracted_under"] == "beneficiary"
+
+
+def test_equivalents_are_doc_scoped_not_global():
+    # An inspection cert's issuer is the inspection company — extraction
+    # having a "beneficiary" key must NOT satisfy issuer_name there.
+    f = {
+        "rule": "X-2",
+        "message": "'inspection.issuer_name' (missing)",
+        "severity": "major",
+    }
+    lookup = build_extracted_lookup({
+        "inspection_certificate": {"beneficiary": "SOMEONE", "result": "PASSED"},
+    })
+    events = []
+    out = screen_presence_findings([f], lookup, events_out=events)
+    assert out[0]["severity"] == "major"
+    assert events == []
+
+
 def test_non_presence_findings_untouched():
     events = []
     out = screen_presence_findings([_meridian()], {}, events_out=events)
