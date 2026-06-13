@@ -182,6 +182,24 @@ async def run_validate_pipeline(
             request_id=audit_context.get("correlation_id") if isinstance(audit_context, dict) else None,
         )
 
+    # Mirror each extracted doc into a per-doc-type payload key, the same
+    # way run_resume_pipeline does. execute_validation_pipeline (and the
+    # RulHub doc builder + authority-matrix screens) read supporting docs
+    # via payload.get("commercial_invoice") / ("bill_of_lading") / etc. —
+    # the resume path populates these explicitly, but the one-shot path
+    # only had whatever session_setup's payload.update(extracted_context)
+    # produced, which omits the flat doc-type keys. Without this, RulHub
+    # saw invoice/bl/insurance as empty and flagged every field "(missing)"
+    # → false REJECT on clean sets (bulk + public /api/check, 2026-06-13).
+    # Idempotent: only fills keys not already present.
+    _oneshot_docs = (setup_state.get("extracted_context") or {}).get("documents") or []
+    for _doc in _oneshot_docs:
+        if not isinstance(_doc, dict):
+            continue
+        _dt = _doc.get("document_type") or _doc.get("documentType") or ""
+        if _dt and _dt not in payload:
+            payload[_dt] = _doc.get("extracted_fields") or {}
+
     _set_pipeline_stage(runtime_context, "validation_execution", timings)
     try:
         execution_state = await execute_validation_pipeline(

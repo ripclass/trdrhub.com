@@ -416,6 +416,13 @@ def render_bill_of_lading(c: Dict[str, Any], out: Path) -> None:
     header_pairs = [
         ("B/L No.", c["bl_number"]),
         ("Date of Issue (On Board)", c["issue_date"]),
+        # Carrier name + full set of originals are UCP600 Art 20(a)(i)
+        # and 20(a)(iv) requirements — a realistic clean BL must carry
+        # both. Their absence made exporter_presentation correctly flag
+        # bl.carrier_name / bl.original_set missing on the corpus
+        # (2026-06-13).
+        ("Carrier", c["carrier_name"]),
+        ("No. of Original B/L", "THREE (3) ORIGINALS"),
         ("Vessel / Voyage", f"{c['vessel_name']} / {c['voyage_number']}"),
         ("Port of Loading", c["port_loading"]),
         ("Port of Discharge", c["port_discharge"]),

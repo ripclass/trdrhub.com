@@ -2442,6 +2442,13 @@ async def execute_validation_pipeline(
                         engine_error_phrases = (
                             "unknown condition type",
                             "one or both values are not numeric",
+                            # RulHub RGC-7: a numeric_comparison rule whose
+                            # operand resolved to a non-numeric/absent value.
+                            # No field_a/field_b evidence — pure engine noise,
+                            # surfaced as a bare major on clean sets
+                            # (exporter_presentation, 2026-06-13).
+                            "requires a numeric value",
+                            "numeric comparison requires",
                             "requires max_days",
                             "requires max_days/value",
                             "presentation_period requires",
