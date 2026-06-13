@@ -80,7 +80,13 @@ CUSTOMER_LC_VALIDATION_JOB_TYPE = "customer_lc_validation"
 # Hard caps. Keep them low enough that a runaway job can't take down a
 # production instance. Adjust via env if a customer is truly going to
 # bulk-validate hundreds at once.
-DEFAULT_CONCURRENCY = int(os.getenv("BULK_CONCURRENCY", "4"))
+# Each item runs the full LLM-bound pipeline (vision extraction + Sonnet
+# examiner + Opus veto). 4 concurrent items contend hard for the LLM
+# provider and intermittently blew the examiner timeout, degrading those
+# items to unscreened raw findings → false REJECT (2026-06-13). 2 is the
+# safer default; raise via BULK_CONCURRENCY once provider throughput is
+# confirmed.
+DEFAULT_CONCURRENCY = int(os.getenv("BULK_CONCURRENCY", "2"))
 DEFAULT_JOB_TIMEOUT_SECONDS = int(os.getenv("BULK_JOB_TIMEOUT_SECONDS", "1800"))
 DEFAULT_PER_ITEM_TIMEOUT_SECONDS = int(os.getenv("BULK_ITEM_TIMEOUT_SECONDS", "600"))
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
@@ -59,7 +60,12 @@ _SHARED_NAMES = [
 
 DB_RULE_TIMEOUT_SECONDS = 60.0
 PRICE_VERIFICATION_TIMEOUT_SECONDS = 25.0
-AI_VALIDATION_TIMEOUT_SECONDS = 45.0
+# 45s was too tight for a full multi-doc presentation examiner call
+# (Sonnet over the LC + 8-10 supporting docs' raw text). On the bulk /
+# one-shot path it timed out intermittently, skipping the examiner and
+# letting raw deterministic findings surface unscreened → false REJECT
+# on clean sets (2026-06-13). 90s gives ~2x headroom; env-overridable.
+AI_VALIDATION_TIMEOUT_SECONDS = float(os.getenv("AI_VALIDATION_TIMEOUT_SECONDS", "90"))
 BANK_POLICY_TIMEOUT_SECONDS = 20.0
 
 _ICC_RULEBOOK_PREFIXES = {
