@@ -164,7 +164,11 @@ export default function ReviewStatusPage() {
           <ChevronLeft className="h-4 w-4" /> Dashboard
         </Link>
 
-        <h1 className="text-2xl font-bold tracking-tight mb-1">Your LC pack review</h1>
+        <h1 className="text-2xl font-bold tracking-tight mb-1">
+          {(status?.workflow_type || "").includes("readiness")
+            ? "Your readiness report"
+            : "Your LC pack review"}
+        </h1>
         <p className="text-sm text-muted-foreground mb-8 font-mono">Reference: {jobId}</p>
 
         {loading ? (
@@ -286,11 +290,15 @@ export default function ReviewStatusPage() {
                         Download report (PDF)
                       </Button>
                     )}
-                    <Button variant={status.report_available ? "outline" : "default"} asChild>
-                      <Link to={resultsHref(status)}>
-                        View full results <ArrowRight className="h-4 w-4 ml-2" />
-                      </Link>
-                    </Button>
+                    {/* Readiness jobs have no LC results screen — the PDF is
+                        the deliverable. */}
+                    {!(status.workflow_type || "").includes("readiness") && (
+                      <Button variant={status.report_available ? "outline" : "default"} asChild>
+                        <Link to={resultsHref(status)}>
+                          View full results <ArrowRight className="h-4 w-4 ml-2" />
+                        </Link>
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

@@ -309,9 +309,27 @@ class RulHubClient:
     # -------------------------------------------------------------------------
 
     async def search_rules(self, query: str, **kwargs) -> Dict[str, Any]:
-        """POST /v1/rules/search — keyword search across 6,000 rules."""
+        """POST /v1/rules/search — keyword search across the rule corpus.
+
+        Valid body fields beyond ``query``: domain, industry, sub_domain,
+        jurisdiction, document_type, source, rule_family, include_superseded,
+        page, per_page (<=100). Schema R rejects unknown fields with 400.
+        """
         payload = {"query": query, **kwargs}
         result = await self._request("POST", "/v1/rules/search", json=payload)
+        return result.get("data", result)
+
+    async def lookup_rules(self, **params) -> Dict[str, Any]:
+        """GET /v1/rules/lookup — structured-filter rule retrieval.
+
+        Params: source (slug or alias — e.g. 'ucp600', 'cbam'), domain,
+        industry, sub_domain, jurisdiction, document_type, article, severity,
+        rule_family, include_superseded, page, per_page (<=100). Returns the
+        same RuleSearchResponse shape as /search ({results: [...],
+        corpus_stats: {...}}).
+        """
+        clean = {k: v for k, v in params.items() if v is not None}
+        result = await self._request("GET", "/v1/rules/lookup", params=clean)
         return result.get("data", result)
 
     # -------------------------------------------------------------------------

@@ -342,6 +342,10 @@ from app.routers import lcopilot_review  # noqa: E402
 app.include_router(lcopilot_review.router)
 app.include_router(lcopilot_review.admin_router)
 
+# Phase 3 — CBAM/EUDR readiness tools (free scope check + paid intake → queue)
+from app.routers import readiness  # noqa: E402
+app.include_router(readiness.router)
+
 # Note: Startup logging is now handled in the lifespan function
 
 # Add logging middleware (order matters - add first)

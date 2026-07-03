@@ -148,6 +148,9 @@ import { BankAuthProvider } from './lib/bank/auth'
 import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
 import AgencyDashboard from './pages/lcopilot/AgencyDashboard'
 import ReviewStatusPage from './pages/lcopilot/ReviewStatusPage'
+import CbamReadinessLanding from './pages/tools/readiness/CbamReadinessLanding'
+import EudrReadinessLanding from './pages/tools/readiness/EudrReadinessLanding'
+import ReadinessApply from './pages/tools/readiness/ReadinessApply'
 import GroupOverview from './pages/lcopilot/GroupOverview'
 import { ImporterValidationPage } from './pages/importer/ImporterValidationPage'
 import { isBulkValidationEnabled, isImporterV2Enabled } from './lib/lcopilot/featureFlags'
@@ -358,6 +361,10 @@ function App() {
         <Route path="/finance" element={<TradeFinanceLanding />} />
         <Route path="/insurance" element={<InsuranceQuoteLanding />} />
         <Route path="/lcopilot" element={<Index />} />
+        {/* Phase 3 — CBAM/EUDR readiness tools (SEO landings + paid intake) */}
+        <Route path="/tools/cbam-readiness-check" element={<CbamReadinessLanding />} />
+        <Route path="/tools/eudr-readiness-check" element={<EudrReadinessLanding />} />
+        <Route path="/tools/readiness/apply" element={<RequireAuth><ReadinessApply /></RequireAuth>} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/onboarding" element={

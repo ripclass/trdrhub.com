@@ -342,6 +342,64 @@ def mark_needs_info(
     return {"ok": True, "review_state": session.review_state}
 
 
+@admin_router.post("/{job_id}/rerun-engine")
+async def rerun_readiness_engine(
+    job_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_sysadmin),
+):
+    """Re-run the readiness engine on a queued CBAM/EUDR job.
+
+    Exists because intake can happen while RulHub is unreachable — the job
+    still enters the queue with ``_engine_error`` set and empty citations;
+    the operator re-runs here before Approve & Deliver. Readiness jobs only
+    (LC jobs re-run through the validation pipeline, not this).
+    """
+    from app.services.readiness import READINESS_WORKFLOWS, run_readiness_engine
+
+    session = _get_session_or_404(db, job_id)
+    tool_by_workflow = {v: k for k, v in READINESS_WORKFLOWS.items()}
+    tool = tool_by_workflow.get(str(session.workflow_type or ""))
+    if tool is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Not a readiness job — engine re-run only applies to CBAM/EUDR intakes")
+    if session.review_state not in _QUEUE_STATES:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Session not under review (state={session.review_state})")
+
+    sr = _structured(session)
+    answers = sr.get("intake_answers")
+    if not isinstance(answers, dict) or not answers:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="No stored intake answers on this session")
+
+    engine = await run_readiness_engine(tool, answers)
+    sr["issues"] = engine["issues"]
+    summary = sr.get("readiness_summary") or {}
+    gaps = sum(1 for i in engine["issues"] if i.get("severity") in ("critical", "major"))
+    partial = sum(1 for i in engine["issues"] if i.get("severity") == "minor")
+    summary.update({
+        "gaps": gaps,
+        "partial": partial,
+        "in_place": len(engine["issues"]) - gaps - partial,
+        "rules_consulted": engine.get("rules_consulted", 0),
+    })
+    sr["readiness_summary"] = summary
+    sr["verdict"] = "gaps found" if gaps else ("partially ready" if partial else "ready")
+    if engine.get("engine_error"):
+        sr["_engine_error"] = engine["engine_error"]
+    else:
+        sr.pop("_engine_error", None)
+    _persist_structured(db, session, sr)
+    db.commit()
+    return {
+        "ok": True,
+        "finding_count": len(engine["issues"]),
+        "rules_consulted": engine.get("rules_consulted", 0),
+        "engine_error": engine.get("engine_error"),
+    }
+
+
 @admin_router.post("/{job_id}/deliver")
 def approve_and_deliver(
     job_id: str,

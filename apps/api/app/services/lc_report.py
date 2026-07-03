@@ -56,6 +56,51 @@ def _collect_issues(structured_result: Dict[str, Any]) -> List[Dict[str, Any]]:
     return []
 
 
+# Report title/subtitle/reference-label per workflow_type. LC validation is
+# the default; the Phase 3 readiness reports reuse the same template with
+# their own framing (and cite EU regulations instead of UCP/ISBP).
+_REPORT_KINDS: Dict[str, Dict[str, str]] = {
+    "cbam_readiness": {
+        "title": "CBAM Supplier-Readiness Report",
+        "subtitle": "TRDR Hub — CBAM Check · Regulation (EU) 2023/956 readiness assessment",
+        "ref_label": "Reference",
+        "footer": (
+            "Advisory readiness assessment — not legal advice. This report reflects an "
+            "assessment of your intake answers against the CBAM regulatory corpus, "
+            "reviewed by a specialist. It is not a formal scope or compliance determination."
+        ),
+    },
+    "eudr_readiness": {
+        "title": "EUDR Readiness Report",
+        "subtitle": "TRDR Hub — EUDR Check · Regulation (EU) 2023/1115 readiness assessment",
+        "ref_label": "Reference",
+        "footer": (
+            "Advisory readiness assessment — not legal advice. This report reflects an "
+            "assessment of your intake answers against the EUDR regulatory corpus, "
+            "reviewed by a specialist. It is not a formal scope or compliance determination."
+        ),
+    },
+    "cbam_eudr_readiness": {
+        "title": "CBAM + EUDR Readiness Report",
+        "subtitle": "TRDR Hub — CBAM & EUDR Check · EU supply-chain regulation readiness",
+        "ref_label": "Reference",
+        "footer": (
+            "Advisory readiness assessment — not legal advice. This report reflects an "
+            "assessment of your intake answers against the CBAM and EUDR regulatory "
+            "corpora, reviewed by a specialist. It is not a formal scope or compliance "
+            "determination."
+        ),
+    },
+}
+
+_DEFAULT_KIND = {
+    "title": "LC Discrepancy Report",
+    "subtitle": "TRDR Hub · LCopilot — pre-presentation examination",
+    "ref_label": "LC Reference",
+    "footer": _ADVISORY_FOOTER,
+}
+
+
 def build_report_html(session, structured_result: Dict[str, Any], review_note: Optional[str]) -> str:
     """Build the standalone HTML for the cited report."""
     issues = _collect_issues(structured_result)
@@ -63,6 +108,7 @@ def build_report_html(session, structured_result: Dict[str, Any], review_note: O
     verdict_label = _esc(
         (verdict.get("status") if isinstance(verdict, dict) else verdict) or "reviewed"
     ).upper()
+    kind = _REPORT_KINDS.get(str(getattr(session, "workflow_type", "") or ""), _DEFAULT_KIND)
 
     by_sev: Dict[str, List[Dict[str, Any]]] = {}
     for issue in issues:
@@ -131,18 +177,18 @@ def build_report_html(session, structured_result: Dict[str, Any], review_note: O
       .footer {{ margin-top: 28px; padding-top: 12px; border-top: 1px solid #dde; color: #889; font-size: 9px; }}
     </style></head><body>
       <div class="hdr">
-        <h1>LC Discrepancy Report</h1>
-        <div class="sub">TRDR Hub · LCopilot — pre-presentation examination</div>
+        <h1>{_esc(kind["title"])}</h1>
+        <div class="sub">{_esc(kind["subtitle"])}</div>
       </div>
       <div class="meta-grid">
-        <div><b>LC Reference</b>{lc_number}</div>
+        <div><b>{_esc(kind["ref_label"])}</b>{lc_number}</div>
         <div><b>Verdict</b><span class="verdict">{verdict_label}</span></div>
         <div><b>Findings</b>{total}</div>
         <div><b>Generated</b>{_esc(generated)}</div>
       </div>
       {note_html}
       {''.join(rows)}
-      <div class="footer">{_esc(_ADVISORY_FOOTER)}</div>
+      <div class="footer">{_esc(kind["footer"])}</div>
     </body></html>"""
 
 

@@ -101,6 +101,12 @@ interface ReviewDetail {
   workflow_type: string | null;
   findings: Finding[];
   timeline: TimelineEvent[];
+  structured_result?: {
+    intake_answers?: Record<string, unknown>;
+    _engine_error?: string;
+    readiness_summary?: { gaps?: number; partial?: number; in_place?: number; rules_consulted?: number };
+    [key: string]: unknown;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +417,16 @@ export function ReviewQueue() {
     }, "Report delivered to customer");
   };
 
+  // CBAM/EUDR readiness jobs: re-run the rules engine (used when the intake
+  // arrived while the rules API was unreachable — findings lack citations).
+  const rerunEngine = () => {
+    if (!selectedId) return;
+    void runAction(async () => {
+      await api.post(`/api/admin/review-queue/${selectedId}/rerun-engine`);
+      await loadDetail(selectedId);
+    }, "Engine re-run complete");
+  };
+
   // ------------------------------------------------------------------ list
 
   if (!selectedId) {
@@ -643,6 +659,48 @@ export function ReviewQueue() {
 
           {/* Side panel: note + timeline */}
           <div className="space-y-6">
+            {/* Readiness jobs: engine health + intake answers for the operator */}
+            {(detail.workflow_type || "").includes("readiness") && (
+              <>
+                {detail.structured_result?._engine_error && (
+                  <Card className="border-orange-300 bg-orange-50">
+                    <CardContent className="py-4 space-y-3">
+                      <p className="text-sm font-medium text-orange-900 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" /> Rules engine was unreachable at intake
+                      </p>
+                      <p className="text-xs text-orange-800">
+                        Findings below lack citations. Re-run before delivering.
+                      </p>
+                      <Button size="sm" variant="outline" onClick={rerunEngine} disabled={busy}>
+                        <RefreshCw className={cn("h-4 w-4 mr-2", busy && "animate-spin")} />
+                        Re-run engine
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+                {detail.structured_result?.intake_answers && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm">Intake answers</CardTitle>
+                      <CardDescription className="text-xs">
+                        What the customer told us — the basis of every finding.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <dl className="space-y-2 text-xs max-h-72 overflow-y-auto">
+                        {Object.entries(detail.structured_result.intake_answers).map(([k, v]) => (
+                          <div key={k}>
+                            <dt className="font-medium text-muted-foreground">{k.replace(/_/g, " ")}</dt>
+                            <dd className="text-foreground">{String(v || "—")}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            )}
+
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Reviewer summary note</CardTitle>

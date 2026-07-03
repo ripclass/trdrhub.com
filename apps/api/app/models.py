@@ -111,6 +111,11 @@ class WorkflowType(str, Enum):
     EXPORTER_PRESENTATION = "exporter_presentation"
     IMPORTER_DRAFT_LC = "importer_draft_lc"
     IMPORTER_SUPPLIER_DOCS = "importer_supplier_docs"
+    # Phase 3 launch (2026-07) — CBAM/EUDR readiness reports ride the same
+    # ValidationSession + concierge review queue; there is no LC involved.
+    CBAM_READINESS = "cbam_readiness"
+    EUDR_READINESS = "eudr_readiness"
+    CBAM_EUDR_READINESS = "cbam_eudr_readiness"
 
 
 class DocumentType(str, Enum):

@@ -236,6 +236,52 @@ export interface ConciergeProduct {
   popular?: boolean;
 }
 
+// Phase 3 — CBAM/EUDR readiness reports (playbook §3.2). Same concierge
+// model: questionnaire intake → engine + specialist review → cited PDF.
+export const READINESS_REPORTS: ConciergeProduct[] = [
+  {
+    id: 'cbam_report',
+    name: 'CBAM Supplier-Readiness Report',
+    priceUsd: 149,
+    turnaround: 'Within 24 hours',
+    description: 'Clause-by-clause readiness against Regulation (EU) 2023/956',
+    features: [
+      'Your products, CN codes and volumes scoped line by line',
+      'Every gap cited to the regulation, with what to prepare',
+      'Emissions-data & monitoring readiness assessment',
+      'Specialist-reviewed before it ships',
+      'A PDF you can forward to your EU buyer',
+    ],
+  },
+  {
+    id: 'eudr_report',
+    name: 'EUDR Readiness Report',
+    priceUsd: 149,
+    turnaround: 'Within 24 hours',
+    description: 'Due-diligence readiness against Regulation (EU) 2023/1115',
+    features: [
+      'Commodity & product scope, cited to Annex I',
+      'Geolocation, cutoff-evidence and legality gaps mapped',
+      'What your buyer\'s due diligence statement needs from you',
+      'Specialist-reviewed before it ships',
+      'A PDF you can forward to your EU buyer',
+    ],
+  },
+  {
+    id: 'cbam_eudr_bundle',
+    name: 'CBAM + EUDR Bundle',
+    priceUsd: 249,
+    turnaround: 'Within 24 hours',
+    popular: true,
+    description: 'One supply chain, both regulations, one report',
+    features: [
+      'Everything in both reports',
+      'One intake covering your full EU exposure',
+      'Save $49 vs buying separately',
+    ],
+  },
+];
+
 export const CONCIERGE_REPORTS: ConciergeProduct[] = [
   {
     id: 'pack_review',
