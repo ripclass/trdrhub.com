@@ -17,17 +17,49 @@ import {
   Info,
 } from "lucide-react";
 
-interface BatchJob {
-  job_id: string;
-  status: "pending" | "processing" | "completed" | "failed";
+import { api } from "@/api/client";
+import { ScreeningDisclaimer, ScreeningUnavailableBanner, FAIL_CLOSED_MESSAGE } from "./screeningShared";
+
+interface BatchRowResult {
+  query: string;
+  status: string; // clear | potential_match | match | unavailable
+  risk_level?: string;
+  total_matches?: number;
+  highest_score?: number;
+  action?: string | null;
+  certificate_id?: string;
+  error?: string;
+}
+
+interface BatchResponse {
   total: number;
-  processed: number;
   clear: number;
   potential_match: number;
   match: number;
+  unavailable: number;
   errors: number;
-  started_at?: string;
-  completed_at?: string;
+  fail_closed_note?: string | null;
+  results: BatchRowResult[];
+}
+
+const MAX_BATCH_ROWS = 100;
+
+/** Parse a screening CSV (header row + data rows) into batch items. */
+function parseCsv(text: string, screeningType: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const rows: Record<string, string>[] = [];
+  for (const line of lines.slice(1)) {
+    const cells = line.split(",").map((c) => c.trim());
+    const row: Record<string, string> = {};
+    headers.forEach((h, i) => {
+      if (cells[i]) row[h] = cells[i];
+    });
+    // Every screening type needs a primary query column.
+    if (screeningType === "goods" ? row.description : row.name) rows.push(row);
+  }
+  return rows;
 }
 
 export default function SanctionsBatchUpload() {
@@ -36,7 +68,8 @@ export default function SanctionsBatchUpload() {
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [currentJob, setCurrentJob] = useState<BatchJob | null>(null);
+  const [batchResult, setBatchResult] = useState<BatchResponse | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -75,51 +108,53 @@ export default function SanctionsBatchUpload() {
     if (!file) return;
 
     setIsUploading(true);
+    setBatchResult(null);
+    setUnavailable(null);
 
     try {
-      // Simulate upload and processing
-      // In production, would POST to /api/sanctions/batch/upload-csv
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const mockJob: BatchJob = {
-        job_id: `batch-${Date.now()}`,
-        status: "processing",
-        total: 50,
-        processed: 0,
-        clear: 0,
-        potential_match: 0,
-        match: 0,
-        errors: 0,
-        started_at: new Date().toISOString(),
-      };
-
-      setCurrentJob(mockJob);
-
-      // Simulate progress
-      for (let i = 0; i <= 50; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        setCurrentJob(prev => prev ? {
-          ...prev,
-          processed: i,
-          clear: Math.floor(i * 0.8),
-          potential_match: Math.floor(i * 0.15),
-          match: Math.floor(i * 0.02),
-          errors: Math.floor(i * 0.03),
-          status: i === 50 ? "completed" : "processing",
-          completed_at: i === 50 ? new Date().toISOString() : undefined,
-        } : null);
+      const text = await file.text();
+      const rows = parseCsv(text, screeningType);
+      if (rows.length === 0) {
+        toast({
+          title: "No rows found",
+          description: "Check the CSV has a header row and at least one data row (see the template).",
+          variant: "destructive",
+        });
+        return;
+      }
+      let items = rows;
+      if (rows.length > MAX_BATCH_ROWS) {
+        items = rows.slice(0, MAX_BATCH_ROWS);
+        toast({
+          title: `Only the first ${MAX_BATCH_ROWS} rows will be screened`,
+          description: `Your file has ${rows.length} rows — split it and run the remainder as a second batch.`,
+        });
       }
 
+      // Goods rows key on `description`; party/vessel key on `name`.
+      const { data } = await api.post<BatchResponse>("/api/sanctions/screen/batch", {
+        items,
+        screening_type: screeningType,
+      });
+      setBatchResult(data);
+
+      if (data.unavailable > 0) {
+        setUnavailable(
+          data.fail_closed_note ||
+            `${data.unavailable} row(s) could not be screened — treat them as unscreened, not clear.`,
+        );
+      }
       toast({
         title: "Batch screening complete",
-        description: "50 entities screened successfully",
+        description: `${data.total} row(s): ${data.clear} clear, ${data.potential_match} review, ${data.match} match${data.unavailable ? `, ${data.unavailable} unscreened` : ""}`,
+        variant: data.match > 0 || data.unavailable > 0 ? "destructive" : undefined,
       });
-
     } catch (error) {
+      // Fail closed — the whole batch is unscreened.
+      setUnavailable(FAIL_CLOSED_MESSAGE);
       toast({
-        title: "Upload failed",
-        description: "Please try again",
+        title: "Batch screening unavailable",
+        description: "No rows were screened — do not treat any of them as clear.",
         variant: "destructive",
       });
     } finally {
@@ -144,18 +179,22 @@ export default function SanctionsBatchUpload() {
   };
 
   const handleDownloadResults = () => {
-    if (!currentJob) return;
+    if (!batchResult) return;
 
-    const csv = `name,status,risk_level,matches,certificate_id
-Sample Company 1,clear,low,0,TRDR-${currentJob.job_id}-001
-Sample Company 2,potential_match,medium,1,TRDR-${currentJob.job_id}-002
-`;
-
-    const blob = new Blob([csv], { type: "text/csv" });
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = "query,status,risk_level,matches,action,reference,note";
+    const rows = batchResult.results.map((r) =>
+      [r.query, r.status, r.risk_level ?? "", r.total_matches ?? "", r.action ?? "",
+       r.certificate_id ?? "", r.error ?? ""].map(esc).join(","),
+    );
+    const blob = new Blob([[header, ...rows].join("\n") + "\n"], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `screening_results_${currentJob.job_id}.csv`;
+    a.download = `screening_results_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -178,7 +217,7 @@ Sample Company 2,potential_match,medium,1,TRDR-${currentJob.job_id}-002
         <CardHeader>
           <CardTitle className="text-white">Upload CSV File</CardTitle>
           <CardDescription className="text-slate-400">
-            Upload up to 1,000 entities per file
+            Screen up to {MAX_BATCH_ROWS} entities per batch
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -290,99 +329,107 @@ Sample Company 2,potential_match,medium,1,TRDR-${currentJob.job_id}-002
         </CardContent>
       </Card>
 
-      {/* Progress / Results */}
-      {currentJob && (
+      {/* Results */}
+      {batchResult && (
         <Card className="bg-slate-900/50 border-slate-800">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-white flex items-center gap-2">
-                  {currentJob.status === "completed" ? (
-                    <CheckCircle className="w-5 h-5 text-emerald-400" />
-                  ) : currentJob.status === "failed" ? (
-                    <XCircle className="w-5 h-5 text-red-400" />
-                  ) : (
-                    <Loader2 className="w-5 h-5 text-red-400 animate-spin" />
-                  )}
-                  {currentJob.status === "completed" ? "Screening Complete" : "Processing..."}
+                  <CheckCircle className="w-5 h-5 text-emerald-400" />
+                  Screening Complete
                 </CardTitle>
                 <CardDescription className="text-slate-400">
-                  Job ID: {currentJob.job_id}
+                  {batchResult.total} row(s) screened against the covered lists
                 </CardDescription>
               </div>
-              <Badge className={`${
-                currentJob.status === "completed"
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : currentJob.status === "failed"
-                  ? "bg-red-500/20 text-red-400"
-                  : "bg-amber-500/20 text-amber-400"
-              }`}>
-                {currentJob.status}
-              </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Progress Bar */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Progress</span>
-                <span className="text-white">{currentJob.processed} / {currentJob.total}</span>
-              </div>
-              <Progress 
-                value={(currentJob.processed / currentJob.total) * 100} 
-                className="h-2"
-              />
-            </div>
-
             {/* Results Summary */}
             <div className="grid grid-cols-4 gap-3">
               <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/30 text-center">
                 <CheckCircle className="w-5 h-5 text-emerald-400 mx-auto mb-1" />
-                <p className="text-lg font-bold text-emerald-400">{currentJob.clear}</p>
+                <p className="text-lg font-bold text-emerald-400">{batchResult.clear}</p>
                 <p className="text-xs text-slate-400">Clear</p>
               </div>
               <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/30 text-center">
                 <AlertTriangle className="w-5 h-5 text-amber-400 mx-auto mb-1" />
-                <p className="text-lg font-bold text-amber-400">{currentJob.potential_match}</p>
+                <p className="text-lg font-bold text-amber-400">{batchResult.potential_match}</p>
                 <p className="text-xs text-slate-400">Review</p>
               </div>
               <div className="p-3 bg-red-500/10 rounded-lg border border-red-500/30 text-center">
                 <XCircle className="w-5 h-5 text-red-400 mx-auto mb-1" />
-                <p className="text-lg font-bold text-red-400">{currentJob.match}</p>
+                <p className="text-lg font-bold text-red-400">{batchResult.match}</p>
                 <p className="text-xs text-slate-400">Match</p>
               </div>
-              <div className="p-3 bg-slate-500/10 rounded-lg border border-slate-500/30 text-center">
-                <Info className="w-5 h-5 text-slate-400 mx-auto mb-1" />
-                <p className="text-lg font-bold text-slate-400">{currentJob.errors}</p>
-                <p className="text-xs text-slate-400">Errors</p>
+              <div className="p-3 bg-orange-500/10 rounded-lg border border-orange-500/30 text-center">
+                <Info className="w-5 h-5 text-orange-400 mx-auto mb-1" />
+                <p className="text-lg font-bold text-orange-400">{batchResult.unavailable}</p>
+                <p className="text-xs text-slate-400">Unscreened</p>
               </div>
             </div>
 
-            {/* Download Results */}
-            {currentJob.status === "completed" && (
-              <div className="flex gap-3">
-                <Button
-                  onClick={handleDownloadResults}
-                  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download Results (CSV)
-                </Button>
-                <Button
-                  variant="outline"
-                  className="border-slate-700 text-slate-400 hover:text-white"
-                  onClick={() => {
-                    setCurrentJob(null);
-                    setFile(null);
-                  }}
-                >
-                  New Batch
-                </Button>
-              </div>
-            )}
+            {/* Per-row results */}
+            <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-800">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-800/70 text-slate-400 text-left sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Query</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Risk</th>
+                    <th className="px-3 py-2 font-medium">Matches</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batchResult.results.map((row, idx) => (
+                    <tr key={idx} className="border-t border-slate-800">
+                      <td className="px-3 py-2 text-white truncate max-w-[220px]">{row.query}</td>
+                      <td className="px-3 py-2">
+                        <Badge className={
+                          row.status === "clear" ? "bg-emerald-500/20 text-emerald-400"
+                          : row.status === "match" ? "bg-red-500/20 text-red-400"
+                          : row.status === "potential_match" ? "bg-amber-500/20 text-amber-400"
+                          : "bg-orange-500/20 text-orange-400"
+                        }>
+                          {row.status === "unavailable" ? "unscreened" : row.status.replace("_", " ")}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2 text-slate-400">{row.risk_level ?? "—"}</td>
+                      <td className="px-3 py-2 text-slate-400">{row.total_matches ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                onClick={handleDownloadResults}
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download Results (CSV)
+              </Button>
+              <Button
+                variant="outline"
+                className="border-slate-700 text-slate-400 hover:text-white"
+                onClick={() => {
+                  setBatchResult(null);
+                  setUnavailable(null);
+                  setFile(null);
+                }}
+              >
+                New Batch
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
+
+      <ScreeningUnavailableBanner message={unavailable} />
+
+      <ScreeningDisclaimer />
 
       {/* Instructions */}
       <Card className="bg-slate-900/50 border-slate-800">

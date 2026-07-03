@@ -252,9 +252,41 @@ class RulHubClient:
     # Screening endpoints (NEVER cache)
     # -------------------------------------------------------------------------
 
-    async def screen_sanctions(self, parties: List[Dict[str, str]]) -> Dict[str, Any]:
-        """POST /v1/screen/sanctions — OFAC/EU/UN/UK screening."""
-        result = await self._request("POST", "/v1/screen/sanctions", json={"parties": parties})
+    async def screen_sanctions(
+        self,
+        entity: Optional[str] = None,
+        country: Optional[str] = None,
+        vessel: Optional[str] = None,
+        transaction: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """POST /v1/screen/sanctions — designated-party lists + programme rules.
+
+        One subject per call: ``entity`` (name), ``vessel`` (name or IMO), or a
+        ``transaction`` dict for goods/route context; ``country`` scopes the
+        programme rules. (The server schema is {entity, country, vessel,
+        transaction} — an earlier draft of this method sent {"parties": [...]},
+        which the server never accepted; it had no callers.)
+
+        Response is the server's ScreeningResult: {clear, risk_level, flags[],
+        rules_checked, processing_time_ms, domain, hits[], list_versions,
+        screening_scope[], coverage_warning}. NOTE the fail-closed semantics:
+        clear=true together with coverage_warning set, or with rules_checked=0
+        and no "list_match" in screening_scope, means NOTHING was evaluated —
+        treat as unavailable, never as a clear screen.
+
+        Test-mode sentinel names (rh_test_* keys): "RULHUB TEST HIT" (block),
+        "RULHUB TEST POSSIBLE MATCH" (review), "RULHUB TEST CLEAR".
+        """
+        payload: Dict[str, Any] = {}
+        if entity:
+            payload["entity"] = entity
+        if country:
+            payload["country"] = country
+        if vessel:
+            payload["vessel"] = vessel
+        if transaction:
+            payload["transaction"] = transaction
+        result = await self._request("POST", "/v1/screen/sanctions", json=payload)
         return result.get("data", result)
 
     async def screen_entity(self, entity: Dict[str, Any]) -> Dict[str, Any]:

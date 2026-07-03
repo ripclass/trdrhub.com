@@ -21,14 +21,26 @@ import {
   FileCheck,
 } from "lucide-react";
 
-const availableLists = [
-  { code: "OFAC_SDN", name: "OFAC SDN", jurisdiction: "US" },
-  { code: "OFAC_SSI", name: "OFAC Sectoral", jurisdiction: "US" },
-  { code: "EU_CONS", name: "EU Consolidated", jurisdiction: "EU" },
-  { code: "UN_SC", name: "UN Security Council", jurisdiction: "UN" },
-  { code: "UK_OFSI", name: "UK OFSI", jurisdiction: "UK" },
-  { code: "BIS_EL", name: "BIS Entity List", jurisdiction: "US" },
-];
+import {
+  COVERED_LISTS,
+  ScreeningDisclaimer,
+  ScreeningUnavailableBanner,
+  ScreeningUnavailableError,
+  formatScore,
+  screenPost,
+  statusColor,
+  statusHeadline,
+  statusIcon,
+  type SharedScreeningResult,
+} from "./screeningShared";
+
+// The engine screens every covered list on each call; the checkboxes are
+// informational (codes match the engine's list_source values).
+const availableLists = COVERED_LISTS.filter((l) => l.status === "active").map((l) => ({
+  code: l.code,
+  name: l.name,
+  jurisdiction: l.jurisdiction,
+}));
 
 const countries = [
   { code: "US", name: "United States" },
@@ -58,21 +70,7 @@ interface ScreeningMatch {
   remarks?: string;
 }
 
-interface ScreeningResult {
-  query: string;
-  screening_type: string;
-  screened_at: string;
-  status: "clear" | "potential_match" | "match";
-  risk_level: string;
-  lists_screened: string[];
-  matches: ScreeningMatch[];
-  total_matches: number;
-  highest_score: number;
-  flags: string[];
-  recommendation: string;
-  certificate_id: string;
-  processing_time_ms: number;
-}
+type ScreeningResult = SharedScreeningResult;
 
 export default function SanctionsScreenParty() {
   const { toast } = useToast();
@@ -81,6 +79,7 @@ export default function SanctionsScreenParty() {
   const [selectedLists, setSelectedLists] = useState<string[]>(availableLists.map(l => l.code));
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ScreeningResult | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
 
   const handleListToggle = (listCode: string) => {
     setSelectedLists(prev =>
@@ -102,27 +101,26 @@ export default function SanctionsScreenParty() {
 
     setIsLoading(true);
     setResult(null);
+    setUnavailable(null);
 
     try {
-      const response = await fetch("/api/sanctions/screen/party", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: partyName,
-          country: country || undefined,
-          lists: selectedLists,
-        }),
+      const data = await screenPost("/api/sanctions/screen/party", {
+        name: partyName,
+        country: country && country !== "none" ? country : undefined,
+        lists: selectedLists,
       });
 
-      if (!response.ok) throw new Error("Screening failed");
-
-      const data = await response.json();
+      if (data.status === "unavailable") {
+        // 200 but the engine evaluated nothing — fail closed.
+        setUnavailable(data.coverage_warning || data.recommendation);
+        return;
+      }
       setResult(data);
 
       if (data.status === "clear") {
         toast({
           title: "✅ No Matches Found",
-          description: `${partyName} is clear against ${selectedLists.length} lists`,
+          description: `${partyName} is clear on the screened lists`,
         });
       } else {
         toast({
@@ -132,9 +130,12 @@ export default function SanctionsScreenParty() {
         });
       }
     } catch (error) {
+      // Fail closed — never leave the user thinking "no result = no risk".
+      const message = error instanceof ScreeningUnavailableError ? error.message : null;
+      setUnavailable(message || "Screening failed — do not treat this as a clear result.");
       toast({
-        title: "Screening failed",
-        description: "Please try again or contact support",
+        title: "Screening unavailable",
+        description: "Do not treat this as a clear result.",
         variant: "destructive",
       });
     } finally {
@@ -147,25 +148,11 @@ export default function SanctionsScreenParty() {
     setCountry("");
     setSelectedLists(availableLists.map(l => l.code));
     setResult(null);
+    setUnavailable(null);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "clear": return "emerald";
-      case "potential_match": return "amber";
-      case "match": return "red";
-      default: return "slate";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "clear": return CheckCircle;
-      case "potential_match": return AlertTriangle;
-      case "match": return XCircle;
-      default: return Shield;
-    }
-  };
+  const getStatusColor = statusColor;
+  const getStatusIcon = statusIcon;
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
@@ -293,9 +280,7 @@ export default function SanctionsScreenParty() {
                 })()}
                 <div>
                   <CardTitle className="text-white">
-                    {result.status === "clear" && "✅ NO MATCHES FOUND"}
-                    {result.status === "potential_match" && "⚠️ POTENTIAL MATCH - REVIEW REQUIRED"}
-                    {result.status === "match" && "❌ MATCH FOUND - DO NOT PROCEED"}
+                    {statusHeadline(result.status)}
                   </CardTitle>
                   <CardDescription className="text-slate-400">
                     Party: "{result.query}" • Screened: {new Date(result.screened_at).toLocaleString()}
@@ -348,15 +333,24 @@ export default function SanctionsScreenParty() {
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-white">{match.list_name}</span>
-                      <Badge className={`${
-                        match.match_score >= 95
-                          ? "bg-red-500/20 text-red-400"
-                          : match.match_score >= 85
-                          ? "bg-amber-500/20 text-amber-400"
-                          : "bg-yellow-500/20 text-yellow-400"
-                      }`}>
-                        {match.match_score}% Match
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge className={
+                          match.action === "block"
+                            ? "bg-red-500/20 text-red-400"
+                            : "bg-amber-500/20 text-amber-400"
+                        }>
+                          {(match.action || "review").toUpperCase()}
+                        </Badge>
+                        <Badge className={`${
+                          match.match_score >= 0.95
+                            ? "bg-red-500/20 text-red-400"
+                            : match.match_score >= 0.85
+                            ? "bg-amber-500/20 text-amber-400"
+                            : "bg-yellow-500/20 text-yellow-400"
+                        }`}>
+                          {formatScore(match.match_score)} Match
+                        </Badge>
+                      </div>
                     </div>
                     <p className="text-sm text-slate-400">
                       <strong className="text-slate-300">Listed Entity:</strong> {match.matched_name}
@@ -371,11 +365,14 @@ export default function SanctionsScreenParty() {
                         <strong className="text-slate-300">Programs:</strong> {match.programs.join(", ")}
                       </p>
                     )}
-                    {match.listed_date && (
+                    {match.match_method && (
                       <p className="text-sm text-slate-400">
-                        <strong className="text-slate-300">Listed:</strong> {match.listed_date}
+                        <strong className="text-slate-300">Match method:</strong> {match.match_method}
                       </p>
                     )}
+                    {(match.caveats || []).map((caveat, ci) => (
+                      <p key={ci} className="text-xs text-amber-400/80 mt-1">⚠ {caveat}</p>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -406,26 +403,33 @@ export default function SanctionsScreenParty() {
               </p>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-              <div className="flex items-center gap-4 text-sm text-slate-500">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  {result.processing_time_ms}ms
+            {/* Screening reference */}
+            <div className="flex items-center gap-4 pt-4 border-t border-slate-800 text-sm text-slate-500">
+              <span className="flex items-center gap-1">
+                <Clock className="w-4 h-4" />
+                {result.processing_time_ms}ms
+              </span>
+              <span className="flex items-center gap-1">
+                <FileCheck className="w-4 h-4" />
+                Ref: {result.certificate_id}
+              </span>
+              {result.list_versions && Object.keys(result.list_versions).length > 0 && (
+                <span className="text-xs">
+                  Lists as of:{" "}
+                  {Object.entries(result.list_versions)
+                    .map(([code, date]) => `${code} ${date ?? "?"}`)
+                    .join(" · ")}
                 </span>
-                <span className="flex items-center gap-1">
-                  <FileCheck className="w-4 h-4" />
-                  {result.certificate_id}
-                </span>
-              </div>
-              <Button variant="outline" className="border-slate-700 text-slate-400 hover:text-white">
-                <Download className="w-4 h-4 mr-2" />
-                Download Certificate
-              </Button>
+              )}
             </div>
           </CardContent>
         </Card>
       )}
+
+      {/* Fail-closed banner */}
+      <ScreeningUnavailableBanner message={unavailable} />
+
+      <ScreeningDisclaimer />
     </div>
   );
 }

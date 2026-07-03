@@ -38,21 +38,17 @@ const destinationCountries = [
   { code: "BR", name: "Brazil" },
 ];
 
-interface ScreeningResult {
-  query: string;
-  screening_type: string;
-  screened_at: string;
-  status: "clear" | "potential_match" | "match";
-  risk_level: string;
-  lists_screened: string[];
-  matches: any[];
-  total_matches: number;
-  highest_score: number;
-  flags: string[];
-  recommendation: string;
-  certificate_id: string;
-  processing_time_ms: number;
-}
+import {
+  ScreeningDisclaimer,
+  ScreeningUnavailableBanner,
+  ScreeningUnavailableError,
+  screenPost,
+  statusColor,
+  statusHeadline,
+  type SharedScreeningResult,
+} from "./screeningShared";
+
+type ScreeningResult = SharedScreeningResult;
 
 export default function SanctionsScreenGoods() {
   const { toast } = useToast();
@@ -61,6 +57,7 @@ export default function SanctionsScreenGoods() {
   const [destinationCountry, setDestinationCountry] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ScreeningResult | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
 
   const handleScreen = async () => {
     if (!description.trim()) {
@@ -74,39 +71,39 @@ export default function SanctionsScreenGoods() {
 
     setIsLoading(true);
     setResult(null);
+    setUnavailable(null);
 
     try {
-      const response = await fetch("/api/sanctions/screen/goods", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description: description,
-          hs_code: hsCode || undefined,
-          destination_country: destinationCountry && destinationCountry !== "none" ? destinationCountry : undefined,
-        }),
+      const data = await screenPost("/api/sanctions/screen/goods", {
+        description: description,
+        hs_code: hsCode || undefined,
+        destination_country: destinationCountry && destinationCountry !== "none" ? destinationCountry : undefined,
       });
 
-      if (!response.ok) throw new Error("Screening failed");
-
-      const data = await response.json();
+      if (data.status === "unavailable") {
+        setUnavailable(data.coverage_warning || data.recommendation);
+        return;
+      }
       setResult(data);
 
       if (data.status === "clear") {
         toast({
-          title: "✅ No Export Control Issues",
-          description: "Goods passed screening",
+          title: "✅ No Programme Flags",
+          description: "No sanctions-programme issues found for these goods",
         });
       } else {
         toast({
-          title: "⚠️ Export Control Flags",
-          description: `${data.flags.length} issue(s) detected`,
+          title: "⚠️ Review Required",
+          description: `${data.flags.length + data.total_matches} issue(s) detected`,
           variant: "destructive",
         });
       }
     } catch (error) {
+      const message = error instanceof ScreeningUnavailableError ? error.message : null;
+      setUnavailable(message || "Screening failed — do not treat this as a clear result.");
       toast({
-        title: "Screening failed",
-        description: "Please try again or contact support",
+        title: "Screening unavailable",
+        description: "Do not treat this as a clear result.",
         variant: "destructive",
       });
     } finally {
@@ -119,16 +116,10 @@ export default function SanctionsScreenGoods() {
     setHsCode("");
     setDestinationCountry("");
     setResult(null);
+    setUnavailable(null);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "clear": return "emerald";
-      case "potential_match": return "amber";
-      case "match": return "red";
-      default: return "slate";
-    }
-  };
+  const getStatusColor = statusColor;
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
@@ -269,9 +260,7 @@ export default function SanctionsScreenGoods() {
                 </div>
                 <div>
                   <CardTitle className="text-white">
-                    {result.status === "clear" && "✅ NO EXPORT CONTROL FLAGS"}
-                    {result.status === "potential_match" && "⚠️ EXPORT CONTROL REVIEW REQUIRED"}
-                    {result.status === "match" && "❌ EXPORT PROHIBITED"}
+                    {statusHeadline(result.status)}
                   </CardTitle>
                   <CardDescription className="text-slate-400">
                     Screened: {new Date(result.screened_at).toLocaleString()}
@@ -336,26 +325,24 @@ export default function SanctionsScreenGoods() {
               </p>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-              <div className="flex items-center gap-4 text-sm text-slate-500">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  {result.processing_time_ms}ms
-                </span>
-                <span className="flex items-center gap-1">
-                  <FileCheck className="w-4 h-4" />
-                  {result.certificate_id}
-                </span>
-              </div>
-              <Button variant="outline" className="border-slate-700 text-slate-400 hover:text-white">
-                <Download className="w-4 h-4 mr-2" />
-                Download Report
-              </Button>
+            {/* Screening reference */}
+            <div className="flex items-center gap-4 pt-4 border-t border-slate-800 text-sm text-slate-500">
+              <span className="flex items-center gap-1">
+                <Clock className="w-4 h-4" />
+                {result.processing_time_ms}ms
+              </span>
+              <span className="flex items-center gap-1">
+                <FileCheck className="w-4 h-4" />
+                Ref: {result.certificate_id}
+              </span>
             </div>
           </CardContent>
         </Card>
       )}
+
+      <ScreeningUnavailableBanner message={unavailable} />
+
+      <ScreeningDisclaimer />
     </div>
   );
 }

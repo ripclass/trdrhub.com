@@ -40,21 +40,18 @@ const flagStates = [
   { code: "KP", name: "North Korea" },
 ];
 
-interface ScreeningResult {
-  query: string;
-  screening_type: string;
-  screened_at: string;
-  status: "clear" | "potential_match" | "match";
-  risk_level: string;
-  lists_screened: string[];
-  matches: any[];
-  total_matches: number;
-  highest_score: number;
-  flags: string[];
-  recommendation: string;
-  certificate_id: string;
-  processing_time_ms: number;
-}
+import {
+  ScreeningDisclaimer,
+  ScreeningUnavailableBanner,
+  ScreeningUnavailableError,
+  formatScore,
+  screenPost,
+  statusColor,
+  statusHeadline,
+  type SharedScreeningResult,
+} from "./screeningShared";
+
+type ScreeningResult = SharedScreeningResult;
 
 export default function SanctionsScreenVessel() {
   const { toast } = useToast();
@@ -64,6 +61,7 @@ export default function SanctionsScreenVessel() {
   const [flagCode, setFlagCode] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ScreeningResult | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
 
   const handleScreen = async () => {
     if (!vesselName.trim()) {
@@ -77,28 +75,26 @@ export default function SanctionsScreenVessel() {
 
     setIsLoading(true);
     setResult(null);
+    setUnavailable(null);
 
     try {
-      const response = await fetch("/api/sanctions/screen/vessel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: vesselName,
-          imo: imo || undefined,
-          mmsi: mmsi || undefined,
-          flag_code: flagCode && flagCode !== "none" ? flagCode : undefined,
-        }),
+      const data = await screenPost("/api/sanctions/screen/vessel", {
+        name: vesselName,
+        imo: imo || undefined,
+        mmsi: mmsi || undefined,
+        flag_code: flagCode && flagCode !== "none" ? flagCode : undefined,
       });
 
-      if (!response.ok) throw new Error("Screening failed");
-
-      const data = await response.json();
+      if (data.status === "unavailable") {
+        setUnavailable(data.coverage_warning || data.recommendation);
+        return;
+      }
       setResult(data);
 
       if (data.status === "clear") {
         toast({
           title: "✅ Vessel Clear",
-          description: `${vesselName} passed sanctions screening`,
+          description: `${vesselName} has no designated-party matches`,
         });
       } else {
         toast({
@@ -108,9 +104,11 @@ export default function SanctionsScreenVessel() {
         });
       }
     } catch (error) {
+      const message = error instanceof ScreeningUnavailableError ? error.message : null;
+      setUnavailable(message || "Screening failed — do not treat this as a clear result.");
       toast({
-        title: "Screening failed",
-        description: "Please try again or contact support",
+        title: "Screening unavailable",
+        description: "Do not treat this as a clear result.",
         variant: "destructive",
       });
     } finally {
@@ -124,16 +122,10 @@ export default function SanctionsScreenVessel() {
     setMmsi("");
     setFlagCode("");
     setResult(null);
+    setUnavailable(null);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "clear": return "emerald";
-      case "potential_match": return "amber";
-      case "match": return "red";
-      default: return "slate";
-    }
-  };
+  const getStatusColor = statusColor;
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
@@ -220,12 +212,12 @@ export default function SanctionsScreenVessel() {
               Vessel Screening Includes
             </h4>
             <ul className="text-sm text-slate-400 grid grid-cols-2 gap-1">
-              <li>• OFAC SDN vessel list</li>
-              <li>• EU sanctioned vessels</li>
-              <li>• Flag state risk assessment</li>
-              <li>• Paris MoU performance</li>
-              <li>• Ownership chain analysis</li>
-              <li>• Flags of convenience check</li>
+              <li>• OFAC SDN / Consolidated vessel entries</li>
+              <li>• UN Security Council list</li>
+              <li>• UK OFSI list</li>
+              <li>• IMO-number exact matching</li>
+              <li>• Name matching (exact → fuzzy)</li>
+              <li>• Flag-state programme rules</li>
             </ul>
           </div>
 
@@ -277,9 +269,7 @@ export default function SanctionsScreenVessel() {
                 </div>
                 <div>
                   <CardTitle className="text-white">
-                    {result.status === "clear" && "✅ VESSEL CLEAR"}
-                    {result.status === "potential_match" && "⚠️ REVIEW REQUIRED"}
-                    {result.status === "match" && "❌ VESSEL FLAGGED"}
+                    {statusHeadline(result.status)}
                   </CardTitle>
                   <CardDescription className="text-slate-400">
                     Vessel: "{result.query}" • Screened: {new Date(result.screened_at).toLocaleString()}
@@ -310,17 +300,33 @@ export default function SanctionsScreenVessel() {
                         )}
                         {match.list_name}
                       </span>
-                      <Badge className={`${
-                        match.match_score >= 90
-                          ? "bg-red-500/20 text-red-400"
-                          : "bg-amber-500/20 text-amber-400"
-                      }`}>
-                        {match.match_type === "risk_assessment" ? match.remarks?.split(" - ")[0] : `${match.match_score}% Match`}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge className={
+                          match.action === "block"
+                            ? "bg-red-500/20 text-red-400"
+                            : "bg-amber-500/20 text-amber-400"
+                        }>
+                          {(match.action || "review").toUpperCase()}
+                        </Badge>
+                        <Badge className={`${
+                          match.match_score >= 0.9
+                            ? "bg-red-500/20 text-red-400"
+                            : "bg-amber-500/20 text-amber-400"
+                        }`}>
+                          {formatScore(match.match_score)} Match
+                        </Badge>
+                      </div>
                     </div>
+                    <p className="text-sm text-slate-400">
+                      <strong className="text-slate-300">Listed:</strong> {match.matched_name}
+                      {match.match_method ? ` (${match.match_method})` : ""}
+                    </p>
                     {match.remarks && (
                       <p className="text-sm text-slate-400">{match.remarks}</p>
                     )}
+                    {(match.caveats || []).map((caveat, ci) => (
+                      <p key={ci} className="text-xs text-amber-400/80 mt-1">⚠ {caveat}</p>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -339,26 +345,24 @@ export default function SanctionsScreenVessel() {
               </p>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-              <div className="flex items-center gap-4 text-sm text-slate-500">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  {result.processing_time_ms}ms
-                </span>
-                <span className="flex items-center gap-1">
-                  <FileCheck className="w-4 h-4" />
-                  {result.certificate_id}
-                </span>
-              </div>
-              <Button variant="outline" className="border-slate-700 text-slate-400 hover:text-white">
-                <Download className="w-4 h-4 mr-2" />
-                Download Certificate
-              </Button>
+            {/* Screening reference */}
+            <div className="flex items-center gap-4 pt-4 border-t border-slate-800 text-sm text-slate-500">
+              <span className="flex items-center gap-1">
+                <Clock className="w-4 h-4" />
+                {result.processing_time_ms}ms
+              </span>
+              <span className="flex items-center gap-1">
+                <FileCheck className="w-4 h-4" />
+                Ref: {result.certificate_id}
+              </span>
             </div>
           </CardContent>
         </Card>
       )}
+
+      <ScreeningUnavailableBanner message={unavailable} />
+
+      <ScreeningDisclaimer />
     </div>
   );
 }
