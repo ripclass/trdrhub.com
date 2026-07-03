@@ -190,7 +190,14 @@ class User(Base):
     )
 
     # Relationships
-    validation_sessions = relationship("ValidationSession", back_populates="user")
+    # foreign_keys required: validation_sessions carries a second FK to users
+    # (reviewed_by, Phase 1 concierge) — without it SQLAlchemy raises
+    # AmbiguousForeignKeysError at mapper configuration.
+    validation_sessions = relationship(
+        "ValidationSession",
+        back_populates="user",
+        foreign_keys="ValidationSession.user_id",
+    )
     company = relationship("Company", back_populates="users")
     company_membership = relationship("CompanyMember", back_populates="user", uselist=False, foreign_keys="CompanyMember.user_id")
 
@@ -327,6 +334,20 @@ class ValidationSession(Base):
         nullable=True,
     )
 
+    # Concierge payment — Phase 5 launch (2026-07). Stripe Checkout fires at
+    # intake; the job holds at review_state=submitted (invisible to the
+    # operator queue) until checkout.session.completed stamps 'paid' and
+    # advances it. NULL = payment not required (legacy / flag off);
+    # 'pending' | 'paid' | 'refunded' otherwise. Managed by
+    # app/services/checkout.py — don't stamp these by hand.
+    payment_status = Column(String(20), nullable=True, index=True)
+    payment_product_id = Column(String(50), nullable=True)
+    stripe_checkout_session_id = Column(String(255), nullable=True, index=True)
+    stripe_payment_intent_id = Column(String(255), nullable=True, index=True)
+    amount_paid_cents = Column(Integer, nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+    refunded_at = Column(DateTime(timezone=True), nullable=True)
+
     # Bulk-validation back-references — Phase A1 part 2 (2026-04-26).
     # NULL for sessions created via the single-LC upload path. Populated
     # by BulkValidateProcessor right before it kicks the validation
@@ -380,7 +401,11 @@ class ValidationSession(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    user = relationship("User", back_populates="validation_sessions")
+    user = relationship(
+        "User",
+        back_populates="validation_sessions",
+        foreign_keys="ValidationSession.user_id",
+    )
     company = relationship("Company", back_populates="validation_sessions")
     documents = relationship("Document", back_populates="validation_session")
     # Phase A2 added Discrepancy.resolution_evidence_session_id which
@@ -390,7 +415,13 @@ class ValidationSession(Base):
         back_populates="validation_session",
         foreign_keys="Discrepancy.validation_session_id",
     )
-    reports = relationship("Report", back_populates="validation_session")
+    # foreign_keys required: review_report_id (Phase 1 concierge) added a
+    # second FK path between validation_sessions and reports.
+    reports = relationship(
+        "Report",
+        back_populates="validation_session",
+        foreign_keys="Report.validation_session_id",
+    )
     lc_version = relationship("LCVersion", back_populates="validation_session", uselist=False)
     usage_records = relationship("UsageRecord", back_populates="session")
 
@@ -512,7 +543,11 @@ class Report(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    validation_session = relationship("ValidationSession", back_populates="reports")
+    validation_session = relationship(
+        "ValidationSession",
+        back_populates="reports",
+        foreign_keys="Report.validation_session_id",
+    )
 
 
 class KYCDocument(Base):

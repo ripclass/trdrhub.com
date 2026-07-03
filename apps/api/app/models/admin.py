@@ -201,7 +201,10 @@ class AuditEvent(Base):
     actor_type = Column(String(50), nullable=False, default="user")
     resource_type = Column(String(100), nullable=False)
     resource_id = Column(String(255))
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    # Plain UUID on purpose — no `organizations` table has ever existed; the
+    # dangling ForeignKey("organizations.id") broke full FK resolution
+    # (configure_mappers/create_all). Tenancy lives on companies.
+    organization_id = Column(UUID(as_uuid=True))
     action = Column(String(100), nullable=False)
     changes = Column(JSONB)
     event_metadata = Column(JSONB, default=dict)
@@ -268,7 +271,10 @@ class JobQueue(Base):
     error_message = Column(Text)
     error_stack = Column(Text)
     worker_id = Column(String(255))
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    # Plain UUID on purpose — no `organizations` table has ever existed; the
+    # dangling ForeignKey("organizations.id") broke full FK resolution
+    # (configure_mappers/create_all). Tenancy lives on companies.
+    organization_id = Column(UUID(as_uuid=True))
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     lc_id = Column(String(255))
     created_at = Column(DateTime(timezone=True), default=func.now())
@@ -357,7 +363,8 @@ class BillingAdjustment(Base):
     __tablename__ = "billing_adjustments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    # Plain UUID on purpose — see the note on AuditEvent.organization_id.
+    organization_id = Column(UUID(as_uuid=True), nullable=False)
     type = Column(SQLEnum(AdjustmentType), nullable=False)
     amount_usd = Column(Numeric(12, 2), nullable=False)
     reason = Column(Text, nullable=False)
@@ -397,7 +404,8 @@ class Dispute(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     invoice_id = Column(UUID(as_uuid=True), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    # Plain UUID on purpose — see the note on AuditEvent.organization_id.
+    organization_id = Column(UUID(as_uuid=True), nullable=False)
     type = Column(SQLEnum(DisputeType), nullable=False)
     amount_usd = Column(Numeric(12, 2), nullable=False)
     reason = Column(Text, nullable=False)
@@ -516,7 +524,8 @@ class APIKey(Base):
     name = Column(String(200), nullable=False)
     key_hash = Column(String(255), nullable=False, unique=True)
     key_prefix = Column(String(20), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    # Plain UUID on purpose — see the note on AuditEvent.organization_id.
+    organization_id = Column(UUID(as_uuid=True), nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     scopes = Column(ARRAY(Text), nullable=False, default=list)
     rate_limit = Column(Integer, default=1000)
@@ -554,7 +563,10 @@ class IPAllowlist(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(200), nullable=False)
     description = Column(Text)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    # Plain UUID on purpose — no `organizations` table has ever existed; the
+    # dangling ForeignKey("organizations.id") broke full FK resolution
+    # (configure_mappers/create_all). Tenancy lives on companies.
+    organization_id = Column(UUID(as_uuid=True))
     ip_ranges = Column(JSONB, nullable=False)  # Array of CIDR blocks
     is_global = Column(Boolean, default=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
@@ -587,7 +599,8 @@ class DataResidencyPolicy(Base):
     __tablename__ = "data_residency_policies"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    # Plain UUID on purpose — see the note on AuditEvent.organization_id.
+    organization_id = Column(UUID(as_uuid=True), nullable=False)
     region = Column(SQLEnum(DataRegion), nullable=False)
     data_types = Column(ARRAY(Text), nullable=False)
     storage_location = Column(String(100), nullable=False)
@@ -629,7 +642,10 @@ class LegalHold(Base):
     case_number = Column(String(100), nullable=False, unique=True)
     title = Column(String(500), nullable=False)
     description = Column(Text)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    # Plain UUID on purpose — no `organizations` table has ever existed; the
+    # dangling ForeignKey("organizations.id") broke full FK resolution
+    # (configure_mappers/create_all). Tenancy lives on companies.
+    organization_id = Column(UUID(as_uuid=True))
     data_types = Column(ARRAY(Text), nullable=False)
     date_range_start = Column(Date)
     date_range_end = Column(Date)
@@ -693,7 +709,8 @@ class LLMBudget(Base):
     __tablename__ = "llm_budgets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    # Plain UUID on purpose — see the note on AuditEvent.organization_id.
+    organization_id = Column(UUID(as_uuid=True), nullable=False)
     model_name = Column(String(100), nullable=False)
     budget_period = Column(SQLEnum(BudgetPeriod), default=BudgetPeriod.MONTHLY)
     budget_usd = Column(Numeric(10, 2), nullable=False)
@@ -736,7 +753,10 @@ class FlagEvaluation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     flag_id = Column(UUID(as_uuid=True), ForeignKey("feature_flags.id"), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    # Plain UUID on purpose — no `organizations` table has ever existed; the
+    # dangling ForeignKey("organizations.id") broke full FK resolution
+    # (configure_mappers/create_all). Tenancy lives on companies.
+    organization_id = Column(UUID(as_uuid=True))
     evaluation_context = Column(JSONB, default=dict)
     result_value = Column(JSONB, nullable=False)
     evaluation_reason = Column(String(100))
