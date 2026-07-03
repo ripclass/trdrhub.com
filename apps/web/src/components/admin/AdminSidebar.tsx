@@ -49,6 +49,7 @@ import { UserMenu } from '@/components/layout/UserMenu';
 
 type AdminSection =
   | "overview"
+  | "review-queue"
   | "ops-monitoring"
   | "ops-jobs"
   | "ops-alerts"
@@ -80,7 +81,8 @@ type AdminSection =
   | "system-settings"
   | "rules-list"
   | "rules-upload"
-  | "rules-active";
+  | "rules-active"
+  | "rules-governance";
 
 interface AdminSidebarProps extends React.ComponentProps<typeof Sidebar> {
   activeSection: AdminSection;
@@ -105,6 +107,13 @@ const navigation: SidebarSection[] = [
     title: 'Overview',
     items: [
       { name: 'Dashboard', section: 'overview', icon: LayoutDashboard },
+    ],
+  },
+  {
+    title: 'Concierge',
+    items: [
+      // Backend enforces require_sysadmin; sysadmins carry the '*' permission.
+      { name: 'Review Queue', section: 'review-queue', icon: CheckSquare, permissions: ['review:read'] },
     ],
   },
   {

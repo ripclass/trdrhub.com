@@ -147,6 +147,7 @@ import AuthCallback from './pages/auth/Callback'
 import { BankAuthProvider } from './lib/bank/auth'
 import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
 import AgencyDashboard from './pages/lcopilot/AgencyDashboard'
+import ReviewStatusPage from './pages/lcopilot/ReviewStatusPage'
 import GroupOverview from './pages/lcopilot/GroupOverview'
 import { ImporterValidationPage } from './pages/importer/ImporterValidationPage'
 import { isBulkValidationEnabled, isImporterV2Enabled } from './lib/lcopilot/featureFlags'
@@ -375,6 +376,8 @@ function App() {
         <Route path="/hub/*" element={<Navigate to="/lcopilot/dashboard" replace />} />
         <Route path="/dashboard" element={<Navigate to="/lcopilot/dashboard" replace />} />
         <Route path="/settings/notifications" element={<RequireAuth><NotificationSettings /></RequireAuth>} />
+        {/* Phase 1 concierge — customer-facing review status tracker. */}
+        <Route path="/lcopilot/status/:jobId" element={<RequireAuth><ReviewStatusPage /></RequireAuth>} />
         <Route path="/lcopilot/services-dashboard" element={<RequireAuth><ServicesDashboard /></RequireAuth>} />
         <Route path="/lcopilot/group-overview" element={<RequireAuth><EnterpriseGroupOverview /></RequireAuth>} />
         <Route path="/lcopilot/audit-log" element={<RequireAuth><EnterpriseAuditLog /></RequireAuth>} />

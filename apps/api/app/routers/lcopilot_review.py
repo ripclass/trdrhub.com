@@ -99,6 +99,7 @@ def _status_payload(db: Session, session: ValidationSession) -> Dict[str, Any]:
     return {
         "job_id": str(session.id),
         "review_state": rs,
+        "workflow_type": session.workflow_type,
         "is_review_job": rs is not None,
         "delivered": delivered,
         "delivered_at": session.delivered_at.isoformat() if getattr(session, "delivered_at", None) else None,
@@ -112,14 +113,7 @@ def _status_payload(db: Session, session: ValidationSession) -> Dict[str, Any]:
 # Customer status page feed
 # ---------------------------------------------------------------------------
 
-@router.get("/api/lcopilot/status/{job_id}")
-def get_review_status(
-    job_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Owner-scoped status of a concierge submission (drives the status page)."""
-    session = _get_session_or_404(db, job_id)
+def _require_owner_or_admin(session: ValidationSession, current_user: User) -> None:
     is_admin = current_user.is_system_admin() or current_user.is_tenant_admin()
     owns = str(session.user_id) == str(current_user.id) or (
         session.company_id is not None
@@ -128,7 +122,55 @@ def get_review_status(
     )
     if not (owns or is_admin):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your submission")
+
+
+@router.get("/api/lcopilot/status/{job_id}")
+def get_review_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Owner-scoped status of a concierge submission (drives the status page)."""
+    session = _get_session_or_404(db, job_id)
+    _require_owner_or_admin(session, current_user)
     return _status_payload(db, session)
+
+
+@router.get("/api/lcopilot/status/{job_id}/report")
+def get_delivered_report_url(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Presigned download URL for the delivered cited report (owner-scoped)."""
+    import os
+
+    session = _get_session_or_404(db, job_id)
+    _require_owner_or_admin(session, current_user)
+
+    if session.review_state != ReportReviewState.DELIVERED.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Report not yet delivered")
+    report_id = getattr(session, "review_report_id", None)
+    if report_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No report on file")
+
+    from app.models import Report
+
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if report is None or not report.s3_key:
+        # Render/upload failed at delivery time — the results UI is still the
+        # cited surface, there is just no downloadable file.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report file unavailable")
+
+    from app.utils.s3_client import get_s3_client
+
+    bucket = os.getenv("S3_BUCKET_NAME", "lcopilot-documents")
+    url = get_s3_client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket, "Key": report.s3_key},
+        ExpiresIn=3600,
+    )
+    return {"url": url, "content_type": "application/pdf" if report.s3_key.endswith(".pdf") else "text/html"}
 
 
 # ---------------------------------------------------------------------------

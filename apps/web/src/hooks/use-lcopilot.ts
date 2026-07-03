@@ -314,8 +314,31 @@ const getValidationRetryDelayMs = (attempt: number): number => {
   return VALIDATE_RETRY_DELAYS_MS[index] ?? 0;
 };
 
+/**
+ * Phase 1 concierge gate — while a submission awaits specialist review,
+ * /api/results returns 403 {detail: {error_code: "under_review"}}. Send the
+ * customer to the status tracker instead of surfacing an error. Returns true
+ * when a redirect was issued (callers should stop processing).
+ */
+const redirectIfUnderReview = (err: unknown, jobId: string): boolean => {
+  const response = (err as { response?: { status?: number; data?: { detail?: { error_code?: string } } } })?.response;
+  if (response?.status === 403 && response?.data?.detail?.error_code === 'under_review') {
+    window.location.assign(`/lcopilot/status/${jobId}`);
+    return true;
+  }
+  return false;
+};
+
 export const fetchValidationResults = async (jobId: string): Promise<ValidationResults> => {
-  const response = await api.get(`/api/results/${jobId}`);
+  let response;
+  try {
+    response = await api.get(`/api/results/${jobId}`);
+  } catch (err) {
+    if (redirectIfUnderReview(err, jobId)) {
+      throw new Error('Report under specialist review — redirecting to status page');
+    }
+    throw err;
+  }
   const payload = response.data;
 
   if (payload?.telemetry?.timings) {
@@ -809,6 +832,16 @@ export const useResults = (currentJobId?: string | null) => {
       
       return normalized;
     } catch (err: any) {
+      if (redirectIfUnderReview(err, jobId)) {
+        setError(null);
+        throw {
+          type: 'server',
+          message: 'Report under specialist review — redirecting to status page.',
+          statusCode: 403,
+          errorCode: 'under_review',
+        } as ValidationError;
+      }
+
       let validationError: ValidationError;
 
       if (err.response) {

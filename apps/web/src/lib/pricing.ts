@@ -214,6 +214,73 @@ export const AGENCY_TIERS: PriceTier[] = [
 export const ALL_PRICING_TIERS: PriceTier[] = [...PRICING_TIERS, ...AGENCY_TIERS];
 
 // ---------------------------------------------------------------------------
+// Concierge report pricing — 2026-07 launch (GTM playbook §3.1).
+//
+// The launch offer is service-shaped: customer submits an LC pack, the engine
+// + a specialist review produce a cited discrepancy report within 24h. These
+// are one-off per-report prices, not subscriptions. Rendered on the /lcopilot
+// landing; Stripe Checkout (Phase 5) reads the same values.
+//
+// Deliberately NOT on this list (per playbook): $9 single-document check
+// (self-serve, post-launch) and the $299/mo retainer (offered privately at a
+// customer's 3rd repeat purchase, not advertised).
+// ---------------------------------------------------------------------------
+
+export interface ConciergeProduct {
+  id: string;
+  name: string;
+  priceUsd: number;
+  turnaround: string;
+  description: string;
+  features: string[];
+  popular?: boolean;
+}
+
+export const CONCIERGE_REPORTS: ConciergeProduct[] = [
+  {
+    id: 'pack_review',
+    name: 'LC Pack Review',
+    priceUsd: 29,
+    turnaround: 'Within 24 hours',
+    description: 'Your full presentation set, checked end to end',
+    features: [
+      'LC + invoice + bill of lading + packing list + CO / insurance',
+      'Every finding cited to UCP 600 / ISBP 821',
+      'The exact fix for each discrepancy',
+      'Specialist-reviewed before it ships',
+      'PDF report you can share with your team',
+    ],
+  },
+  {
+    id: 'pack_review_memo',
+    name: 'Pack Review + Bank Memo',
+    priceUsd: 49,
+    turnaround: 'Within 24 hours',
+    popular: true,
+    description: 'Everything in Pack Review, plus the document you forward',
+    features: [
+      'Everything in LC Pack Review',
+      'Bank-ready compliance memo',
+      'Written to forward to your bank or buyer as-is',
+      'Covers export and import LC sides',
+    ],
+  },
+  {
+    id: 'priority_review',
+    name: 'Priority Review',
+    priceUsd: 79,
+    turnaround: 'Within 6 hours',
+    description: 'For presentation deadlines that cannot wait',
+    features: [
+      'Everything in Pack Review + Bank Memo',
+      '6-hour turnaround',
+      'Front of the review queue',
+      'Direct email line to your reviewer',
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Pay-as-you-go / overage rates (USD per unit, premium to nudge subscription)
 // ---------------------------------------------------------------------------
 
