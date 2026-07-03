@@ -1,4 +1,4 @@
-# SESSION_RESUME — TRDR Hub launch mission (2026-07-03, session 2: Phases 1+2+3 code complete)
+# SESSION_RESUME — TRDR Hub launch mission (2026-07-03, session 2: Phases 1–4 code complete)
 
 **Mission:** 6-phase launch (audit → LCopilot e2e → sanctions → CBAM/EUDR → park tools → Stripe).
 Service-as-software / concierge model. Full brief + constraints in
@@ -6,22 +6,28 @@ Service-as-software / concierge model. Full brief + constraints in
 
 ## Resume prompt
 ```
-Resume the TRDR Hub launch mission. Phase 0 DONE (f29555b5). Phases 1-3 CODE
-COMPLETE (Phase 1: 98e85565 + c74931b8/2e940ce9/a2192a3b · Phase 2: 1cf4ec4c ·
-Phase 3: deea9b62). Read memory: project_launch_mission_2026_07 +
+Resume the TRDR Hub launch mission. Phase 0 DONE (f29555b5). Phases 1-4 CODE
+COMPLETE (P1: 98e85565 + c74931b8/2e940ce9/a2192a3b · P2: 1cf4ec4c · P3: deea9b62 ·
+P4: 16daaccd). Read memory: project_launch_mission_2026_07 +
 reference_concierge_review_queue + reference_sanctions_rulhub_wire +
-reference_readiness_tools. If RulHub billing has resumed (~Jul 5), run the blocked
-acceptances: (a) /v1/compliance/check live test, (b) Phase 1 acceptance (exporter +
-importer upload→delivered PDF through the queue, flag ON in test env) + Render
-migration job for 20260703_add_report_review, (c) sanctions sentinel e2e
-(scripts/sanctions_sentinel_e2e.py, rh_test_* key) + batch CSV of 10 names,
-(d) readiness live m13 citation test (one paid intake → findings carry
-clause_cited). Otherwise proceed to Phase 4: park unfit tools (keep LCopilot,
-Sanctions, CBAM Check, EUDR Check; evaluate DocGenerator + LC Builder against the
-works-e2e/zero-maintenance/no-dilution bar; parked landings → polite page, no dead
-links) + homepage rebuild (hero = LCopilot service framing, then 4 live tools, then
-RulGPT cross-link). Then Phase 5 (Stripe: products/prices, Checkout at intake,
-webhook → submitted, LAUNCH-NOTES.md).
+reference_readiness_tools + reference_phase4_parked_tools. Two workstreams left:
+
+(A) If RulHub billing has resumed (~Jul 5), run the blocked acceptances:
+/v1/compliance/check live test · Phase 1 acceptance (exporter + importer
+upload→delivered PDF through the queue, LCOPILOT_REVIEW_QUEUE_ENABLED=true in test
+env) + Render migration job for 20260703_add_report_review · sanctions sentinel e2e
+(scripts/sanctions_sentinel_e2e.py, rh_test_* key) + batch CSV of 10 names ·
+readiness live m13 citation test · crawl deployed site for dead links (Phase 4).
+
+(B) Phase 5 — Stripe launch-ready (acct Enso Intelligence Labs
+acct_1T4IAtBG8gnvAJXa): products/prices $29/$49/$79 (LCopilot) + $149/$149/$249
+(readiness) + hidden $299/mo retainer; Stripe Checkout (hosted) at intake — pay
+first, then job enters the queue; checkout.session.completed webhook flips job to
+submitted + confirmation email (billing.py webhook already signature-verified);
+refunds via dashboard reflected by webhook; receipts via Stripe built-ins (no
+custom invoicing); test-mode e2e; write LAUNCH-NOTES.md with Ripon's manual
+live-switch steps. Pricing values live in apps/web/src/lib/pricing.ts
+(CONCIERGE_REPORTS + READINESS_REPORTS).
 ```
 
 ## Done this session (2026-07-03, session 2) — Phase 1 frontend + wire
@@ -79,14 +85,18 @@ webhook → submitted, LAUNCH-NOTES.md).
 5. Phase 3 acceptance: one paid readiness intake → findings cite the m13 corpus
    (clause_cited populated); free scope check + landings already verified locally.
 
-## Next phases
-- **Phase 4** — Park all tools except LCopilot/Sanctions/CBAM Check/EUDR Check (evaluate
-  DocGenerator + LC Builder against the works-e2e/zero-maintenance/no-dilution bar);
-  parked landings → polite "not available" page, keep code, no dead links; homepage
-  rebuild (hero = LCopilot service framing → 4 live tools → RulGPT cross-link).
-- **Phase 5** — Stripe (acct Enso Intelligence Labs): products $29/$49/$79/$149/$149/$249
-  + hidden $299 retainer; Checkout at intake; checkout.session.completed → submitted +
-  confirmation email; refunds via dashboard reflected by webhook; LAUNCH-NOTES.md.
+## Also done this session — Phase 4: tools parked + homepage rebuilt (`16daaccd`)
+- 14 tools → `ParkedToolPage` via route wildcards (code in-tree). DocGenerator +
+  LC Builder evaluated (real backends, but no e2e pass + type rot + dilution) → parked.
+- Homepage: hero = LCopilot service framing + sample-PDF download; ToolsSection = 4
+  live tools + RulGPT (tfrules.com) cross-link; PartnersSection (fabricated bank
+  logos/certifications) removed; FAQ rewritten honest; fake newsletter form removed.
+- /tools index + footer rebuilt; ISBP745→821 sweep across 12 files (0 remaining).
+- Verified: build green, tsc error count identical to baseline (845), no live surface
+  links to parked routes.
+
+## Next phase
+- **Phase 5** — Stripe (see resume prompt B). Last build phase before launch cutover.
 
 ## Gotchas
 - Local full-app boot (`import main`) fails on PRE-EXISTING audit_events/organizations
