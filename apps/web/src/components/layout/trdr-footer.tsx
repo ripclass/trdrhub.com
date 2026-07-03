@@ -4,7 +4,8 @@ const navigation = {
   product: [
     { name: "LCopilot", href: "/lcopilot" },
     { name: "Sanctions Screener", href: "/sanctions" },
-    { name: "HS Code Finder", href: "/hs-code" },
+    { name: "CBAM Check", href: "/tools/cbam-readiness-check" },
+    { name: "EUDR Check", href: "/tools/eudr-readiness-check" },
     { name: "All Tools", href: "/tools" },
   ],
   resources: [

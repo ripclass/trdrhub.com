@@ -150,7 +150,7 @@ function ValidationProgressIndicator({ fileCount, variant = 'importer' }: { file
       </div>
       
       <p className="text-xs text-muted-foreground">
-        Analyzing LC terms, checking compliance with UCP600 & ISBP745, and screening parties.
+        Analyzing LC terms, checking compliance with UCP600 & ISBP 821, and screening parties.
       </p>
     </div>
   );

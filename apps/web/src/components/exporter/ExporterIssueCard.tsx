@@ -29,7 +29,7 @@ function humanizeRuleId(ruleId: string): string {
     "INS-": "Insurance",
     "SANCTIONS": "Sanctions Screening",
     "UCP-": "UCP600 Rule",
-    "ISBP-": "ISBP745 Rule",
+    "ISBP-": "ISBP 821 Rule",
   };
   
   for (const [prefix, label] of Object.entries(categoryMap)) {
@@ -41,7 +41,7 @@ function humanizeRuleId(ruleId: string): string {
   return ruleId.replace(/-/g, " ").replace(/_/g, " ").replace(/\d+$/, "").trim();
 }
 
-// NOTE: UCP600 and ISBP745 descriptions are now provided by the backend
+// NOTE: UCP600 and ISBP 821 descriptions are now provided by the backend
 // via issue.ucpDescription and issue.isbpDescription fields.
 // See: apps/api/app/constants/compliance_references.py
 
@@ -350,7 +350,7 @@ export function ExporterIssueCard({
               Bank Examiner Message:
             </p>
             <p className="text-sm text-foreground mt-1 font-mono">
-              {issue.title}. Per {issue.ucpReference ? `UCP600 ${issue.ucpReference.replace('UCP600 Article ', 'Art. ').replace('UCP600 ', '')}` : ''}{issue.ucpReference && issue.isbpReference ? '; ' : ''}{issue.isbpReference ? `ISBP745 ${issue.isbpReference.replace('ISBP745 ', '¶')}` : ''}.
+              {issue.title}. Per {issue.ucpReference ? `UCP600 ${issue.ucpReference.replace('UCP600 Article ', 'Art. ').replace('UCP600 ', '')}` : ''}{issue.ucpReference && issue.isbpReference ? '; ' : ''}{issue.isbpReference ? `ISBP 821 ${issue.isbpReference.replace('ISBP 821 ', '¶')}` : ''}.
             </p>
           </div>
         )}
@@ -389,7 +389,7 @@ export function ExporterIssueCard({
                         variant="secondary"
                         className="cursor-help bg-muted text-muted-foreground hover:bg-muted/70 border border-border"
                       >
-                        ISBP745 {issue.isbpReference.replace('ISBP745 ', '¶')}
+                        ISBP 821 {issue.isbpReference.replace('ISBP 821 ', '¶')}
                       </Badge>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">

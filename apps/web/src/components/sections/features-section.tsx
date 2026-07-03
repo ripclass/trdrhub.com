@@ -18,7 +18,7 @@ const features = [
   {
     icon: Shield,
     title: "3,500+ Compliance Rules",
-    description: "UCP600, ISBP745, ISP98, URDG758, plus 60+ country regulations. More rules than most banks use internally.",
+    description: "UCP600, ISBP 821, ISP98, URDG758, plus 60+ country regulations. More rules than most banks use internally.",
     benefits: ["ICC rule library included", "Country-specific checks", "Updated monthly"]
   },
   {

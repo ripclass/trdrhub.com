@@ -3,7 +3,7 @@ export function PartnersSection() {
   const standards = [
     "ICC Banking Commission",
     "UCP 600 Certified",
-    "ISBP 745 Compliant",
+    "ISBP 821 Compliant",
     "ISP98 Ready",
     "SWIFT Partner",
     "ISO 20022 Enabled",

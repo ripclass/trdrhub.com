@@ -28,7 +28,7 @@ const features = [
     icon: Shield,
     title: "Bank-Compliant Formats",
     description: "Templates designed to pass bank examination. Formatting, fonts, and layouts that banks expect to see.",
-    bullets: ["UCP600 compliant", "ISBP745 aligned", "Bank-specific templates", "Proper document dating"],
+    bullets: ["UCP600 compliant", "ISBP 821 aligned", "Bank-specific templates", "Proper document dating"],
   },
   {
     icon: Globe,
@@ -108,7 +108,7 @@ const faqs = [
   },
   {
     q: "Are the documents compliant with UCP600?",
-    a: "Yes, all templates are designed to meet UCP600 and ISBP745 requirements. We follow ICC guidelines for document formatting, dating, and content structure.",
+    a: "Yes, all templates are designed to meet UCP600 and ISBP 821 requirements. We follow ICC guidelines for document formatting, dating, and content structure.",
   },
   {
     q: "Can I edit documents after generation?",

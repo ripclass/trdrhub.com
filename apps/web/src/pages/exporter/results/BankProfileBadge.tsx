@@ -55,7 +55,7 @@ const strictnessLabels = {
 
 const strictnessDescriptions = {
   lenient: "This bank has relaxed validation policies. Minor discrepancies may be accepted.",
-  standard: "This bank follows standard UCP600/ISBP745 interpretation. Normal validation applies.",
+  standard: "This bank follows standard UCP600/ISBP 821 interpretation. Normal validation applies.",
   strict: "This bank has stringent validation policies. Extra care required with document details.",
 };
 
@@ -232,7 +232,7 @@ export function BankProfileBadge({ profile }: BankProfileBadgeProps) {
             {/* UCP600 Reference */}
             <div className="pt-2 border-t border-current/10">
               <p className="text-[10px] text-muted-foreground">
-                Bank profiles affect how UCP600/ISBP745 rules are interpreted during validation.
+                Bank profiles affect how UCP600/ISBP 821 rules are interpreted during validation.
               </p>
             </div>
           </div>

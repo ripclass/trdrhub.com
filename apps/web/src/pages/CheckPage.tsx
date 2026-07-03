@@ -204,7 +204,7 @@ export default function CheckPage() {
             </h1>
             <p className="mt-5 text-lg text-[#EDF5F2]/60">
               Upload the LC and your supporting documents. We run the same examiner the paid product uses —
-              UCP 600 / ISBP 745, cross-document checks, sanctions screening — and tell you whether the
+              UCP 600 / ISBP 821, cross-document checks, sanctions screening — and tell you whether the
               presentation is likely to clear. One free check, right here, nothing to install.
             </p>
           </div>
@@ -401,7 +401,7 @@ export default function CheckPage() {
                 {/* Trust strip */}
                 <div className="mt-12 grid sm:grid-cols-3 gap-4">
                   {[
-                    { icon: ShieldCheck, t: "UCP 600 / ISBP 745", d: "The same rulebook banks examine against." },
+                    { icon: ShieldCheck, t: "UCP 600 / ISBP 821", d: "The same rulebook banks examine against." },
                     { icon: CheckCircle2, t: "Cross-document checks", d: "Amounts, ports, dates and parties matched across the set." },
                     { icon: Sparkles, t: "AI examiner + sanctions", d: "Reads the LC's own 46A/47A clauses; screens parties and vessels." },
                   ].map((b) => (

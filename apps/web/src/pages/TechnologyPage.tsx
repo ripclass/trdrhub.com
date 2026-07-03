@@ -29,8 +29,8 @@ const techStack = [
   {
     icon: Database,
     title: "Universal Rule Engine",
-    description: "A deterministic validation layer encoding 3,500+ rules from UCP600, ISBP745, and 60+ country-specific regulations. It catches discrepancies that generic AI models miss.",
-    tags: ["Rule Engine", "UCP600", "ISBP745"]
+    description: "A deterministic validation layer encoding 4,000+ verified examination rules from UCP 600, ISBP 821, and 60+ country-specific regulations. It catches discrepancies that generic AI models miss.",
+    tags: ["Rule Engine", "UCP 600", "ISBP 821"]
   },
   {
     icon: Shield,

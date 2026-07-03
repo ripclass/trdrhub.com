@@ -47,7 +47,7 @@ function humanizeRuleId(ruleId: string): string {
     "INS-": "Insurance",
     "SANCTIONS": "Sanctions Check",
     "UCP-": "UCP600",
-    "ISBP-": "ISBP745",
+    "ISBP-": "ISBP 821",
   };
   
   // Find matching category

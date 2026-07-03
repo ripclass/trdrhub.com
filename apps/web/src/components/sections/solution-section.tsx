@@ -19,7 +19,7 @@ const solutions = [
   {
     icon: Globe,
     name: "Global Rulebook",
-    description: "Built-in compliance for 60+ countries and all major ICC standards (UCP600, ISBP745).",
+    description: "Built-in compliance for 60+ countries and all major ICC standards (UCP600, ISBP 821).",
   },
   {
     icon: Shield,

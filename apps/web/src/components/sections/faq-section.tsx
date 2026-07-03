@@ -2,38 +2,48 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Honest answers only (launch honesty rubric): no invented accuracy stats,
+// no unverified certifications, ISBP 821 (not 745), concierge-first pricing.
 const faqs = [
   {
-    question: "How accurate is the AI validation?",
-    answer: "Our engine achieves 99% accuracy on discrepancy detection. We validate against 3,500+ rules from UCP600, ISBP745, and 60+ country regulations. The AI has been trained on thousands of real LC documents and bank rejection patterns.",
+    question: "What exactly do I get back?",
+    answer:
+      "A cited discrepancy report: every finding referenced to the UCP 600 article or ISBP 821 paragraph it derives from, quoting the LC clause and the evidence in your document, with a suggested fix. A trade documentation specialist reviews every report before it ships — you're never handed raw machine output. Download the sample report to see the format.",
+  },
+  {
+    question: "How fast is the turnaround?",
+    answer:
+      "Standard reviews are delivered within 24 hours of submission — usually much faster. If you're up against a presentation deadline, Priority Review guarantees a 6-hour turnaround.",
   },
   {
     question: "Which document types do you support?",
-    answer: "We support all standard trade documents: Letters of Credit (MT700, ISO20022, PDF), Bills of Lading (paper and eBL formats including DCSA, BOLERO, essDOCS), Commercial Invoices, Packing Lists, Insurance Certificates, Certificates of Origin, and more.",
+    answer:
+      "All standard trade documents: Letters of Credit (MT700, ISO 20022, or plain PDF), Bills of Lading, Commercial Invoices, Packing Lists, Insurance Certificates, Certificates of Origin, and more. PDF, scan, or a phone photo — if we can't read something, we ask rather than guess.",
   },
   {
-    question: "How long does validation take?",
-    answer: "Average processing time is 45 seconds for a complete document set (6 documents). This includes OCR extraction, cross-document validation, and compliance report generation. Larger document sets scale linearly.",
+    question: "What rules do you check against?",
+    answer:
+      "UCP 600 and ISBP 821 for documentary credits, URDG 758 and ISP98 where relevant, plus sanctions screening against OFAC, UN and UK OFSI lists. The rules engine is deterministic — rule outcomes are never left to an AI's mood — and a specialist reviews the result.",
   },
   {
-    question: "Do you support my country's regulations?",
-    answer: "Yes. We have pre-built rules for 60+ countries including Singapore, UAE, Bangladesh, India, China, US, UK, EU, and more. Our engine covers country-specific requirements like Bangladesh LCAF, India IEC, Nigeria Form M, and regional trade agreements like RCEP, CPTPP, and USMCA.",
+    question: "Do you cover the import side too?",
+    answer:
+      "Yes. Exporters ask \"will my presentation comply?\"; importers ask \"is this LC safe to accept?\" — risky clauses, soft clauses, document requirements you can't actually meet. Same price, same turnaround, either side.",
   },
   {
-    question: "What happens if the AI misses a discrepancy?",
-    answer: "While rare, if our system misses a discrepancy that results in a bank rejection, we offer a discrepancy fee guarantee for Business and Enterprise customers. We'll reimburse the bank's discrepancy fee up to $150 per incident.",
+    question: "Is my data secure and confidential?",
+    answer:
+      "Documents are encrypted in transit and at rest, used only to produce your report, and never shared. We'll sign an NDA before you send anything if you prefer. Ask us to delete your documents at any time.",
   },
   {
-    question: "Can I integrate this with my existing systems?",
-    answer: "Yes. We offer a REST API for programmatic access, webhook notifications for automated workflows, and direct integrations with popular ERP systems. Enterprise customers get custom integration support.",
+    question: "What if I'm not satisfied?",
+    answer:
+      "Full refund, no questions. If a report doesn't help you present cleaner documents, we don't want your money.",
   },
   {
-    question: "Is my data secure?",
-    answer: "Absolutely. All documents are encrypted in transit (TLS 1.3) and at rest (AES-256). We're SOC 2 Type II compliant and GDPR ready. Documents are automatically deleted after 30 days unless you choose to retain them longer.",
-  },
-  {
-    question: "What's the pricing model?",
-    answer: "Try a free LC check at /check — no account, one run per visitor per day. After that: pay-as-you-go from $12 per LC presentation with no commitment, or subscribe — Solo $49/mo (5 LCs, 1 seat), Business $149/mo (25 LCs, 5 seats, most popular), Enterprise $699/mo (100 LCs, 10 seats; volume bands above 150). Agency / Services teams pay per operator seat from $199. The per-LC cost drops the more you commit.",
+    question: "What does it cost?",
+    answer:
+      "LC pack review $29 · pack review + bank-ready memo $49 · priority 6-hour review $79. CBAM or EUDR readiness reports are $149 each, or $249 for both. Prices in USD; pay in your local currency at checkout. Checking documents every week? Talk to us about a monthly arrangement.",
   },
 ];
 

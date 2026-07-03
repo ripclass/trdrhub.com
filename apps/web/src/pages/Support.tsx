@@ -18,7 +18,7 @@ const Support = () => {
     },
     {
       question: "How does the LC compliance checking work?",
-      answer: "Our AI-powered system uses advanced OCR to extract text from your documents, then applies machine learning and rule engines based on ICC UCP 600 and ISBP 745 guidelines to identify discrepancies. The entire process takes 2-3 minutes and provides detailed reports.",
+      answer: "Our AI-powered system uses advanced OCR to extract text from your documents, then applies machine learning and rule engines based on ICC UCP 600 and ISBP 821 guidelines to identify discrepancies. The entire process takes 2-3 minutes and provides detailed reports.",
       category: "process"
     },
     {

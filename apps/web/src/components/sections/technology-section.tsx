@@ -5,7 +5,7 @@ const techFeatures = [
     icon: Brain,
     stat: "3,500+",
     label: "Validation Rules",
-    description: "UCP600, ISBP745, ISP98, URDG758, and country-specific regulations",
+    description: "UCP600, ISBP 821, ISP98, URDG758, and country-specific regulations",
   },
   {
     icon: Globe2,
@@ -40,7 +40,7 @@ const techFeatures = [
 ];
 
 const standards = [
-  "UCP 600", "ISBP 745", "ISP98", "URDG 758", "URC 522", 
+  "UCP 600", "ISBP 821", "ISP98", "URDG 758", "URC 522", 
   "URR 725", "eUCP 2.1", "Incoterms 2020", "SWIFT MT700", "ISO 20022"
 ];
 

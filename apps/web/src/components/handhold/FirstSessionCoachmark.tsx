@@ -31,7 +31,7 @@ const STEPS: Step[] = [
   {
     title: "Upload your LC + supporting docs",
     body:
-      "Drag PDFs onto the upload page. We'll extract every field, compare against UCP 600 + ISBP 745, and surface every discrepancy with an exact LC clause + how to fix it.",
+      "Drag PDFs onto the upload page. We'll extract every field, compare against UCP 600 + ISBP 821, and surface every discrepancy with an exact LC clause + how to fix it.",
   },
   {
     title: "Resolve, comment, or re-paper",
