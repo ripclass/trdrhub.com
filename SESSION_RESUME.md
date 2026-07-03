@@ -1,4 +1,4 @@
-# SESSION_RESUME — TRDR Hub launch mission (2026-07-03, session 2: Phases 1–4 code complete)
+# SESSION_RESUME — TRDR Hub launch mission (2026-07-03, session 2: ALL PHASES 0–5 CODE COMPLETE)
 
 **Mission:** 6-phase launch (audit → LCopilot e2e → sanctions → CBAM/EUDR → park tools → Stripe).
 Service-as-software / concierge model. Full brief + constraints in
@@ -6,28 +6,27 @@ Service-as-software / concierge model. Full brief + constraints in
 
 ## Resume prompt
 ```
-Resume the TRDR Hub launch mission. Phase 0 DONE (f29555b5). Phases 1-4 CODE
-COMPLETE (P1: 98e85565 + c74931b8/2e940ce9/a2192a3b · P2: 1cf4ec4c · P3: deea9b62 ·
-P4: 16daaccd). Read memory: project_launch_mission_2026_07 +
+Resume the TRDR Hub launch mission. ALL BUILD PHASES 0-5 ARE CODE COMPLETE
+(P0: f29555b5 · P1: 98e85565 + c74931b8/2e940ce9/a2192a3b · P2: 1cf4ec4c ·
+P3: deea9b62 · P4: 16daaccd · P5: df0198b3 + e1658829). Read memory:
+project_launch_mission_2026_07 + reference_stripe_checkout +
 reference_concierge_review_queue + reference_sanctions_rulhub_wire +
-reference_readiness_tools + reference_phase4_parked_tools. Two workstreams left:
+reference_readiness_tools + reference_phase4_parked_tools. What remains is
+ACCEPTANCE + CUTOVER, driven by LAUNCH-NOTES.md (repo root):
 
-(A) If RulHub billing has resumed (~Jul 5), run the blocked acceptances:
-/v1/compliance/check live test · Phase 1 acceptance (exporter + importer
-upload→delivered PDF through the queue, LCOPILOT_REVIEW_QUEUE_ENABLED=true in test
-env) + Render migration job for 20260703_add_report_review · sanctions sentinel e2e
-(scripts/sanctions_sentinel_e2e.py, rh_test_* key) + batch CSV of 10 names ·
-readiness live m13 citation test · crawl deployed site for dead links (Phase 4).
-
-(B) Phase 5 — Stripe launch-ready (acct Enso Intelligence Labs
-acct_1T4IAtBG8gnvAJXa): products/prices $29/$49/$79 (LCopilot) + $149/$149/$249
-(readiness) + hidden $299/mo retainer; Stripe Checkout (hosted) at intake — pay
-first, then job enters the queue; checkout.session.completed webhook flips job to
-submitted + confirmation email (billing.py webhook already signature-verified);
-refunds via dashboard reflected by webhook; receipts via Stripe built-ins (no
-custom invoicing); test-mode e2e; write LAUNCH-NOTES.md with Ripon's manual
-live-switch steps. Pricing values live in apps/web/src/lib/pricing.ts
-(CONCIERGE_REPORTS + READINESS_REPORTS).
+0. Render service api.trdrhub.com is SUSPENDED (billing) — Ripon must resume it,
+   then run the migration job (`alembic upgrade head` — TWO pending migrations:
+   20260703_add_report_review, 20260703_add_payment_fields).
+1. Stripe test-mode e2e (needs sk_test key + webhook secret on Render, runbook
+   §1a): 4242-card purchase → paid job in review queue → deliver, for LCopilot
+   AND one readiness report; refund reflects.
+2. RulHub acceptances (billing resumes ~Jul 5): /v1/compliance/check live test ·
+   Phase 1 upload→delivered-PDF run (LCOPILOT_REVIEW_QUEUE_ENABLED=true) ·
+   sanctions sentinels (scripts/sanctions_sentinel_e2e.py, rh_test_* key) + batch
+   CSV of 10 · readiness m13 citation test.
+3. Deployed-site crawl (no 404s/dead links; parked tools show the parked page).
+4. Live cutover per LAUNCH-NOTES §1b/§2 (live keys, receipt emails, Adaptive
+   Pricing, flags ON).
 ```
 
 ## Done this session (2026-07-03, session 2) — Phase 1 frontend + wire
@@ -95,8 +94,31 @@ live-switch steps. Pricing values live in apps/web/src/lib/pricing.ts
 - Verified: build green, tsc error count identical to baseline (845), no live surface
   links to parked routes.
 
-## Next phase
-- **Phase 5** — Stripe (see resume prompt B). Last build phase before launch cutover.
+## Also done this session — Phase 5: Stripe checkout + latent bug fixes (`df0198b3` + `e1658829`)
+- **Pay-first checkout**: job holds at review_state=submitted + payment_status=pending
+  (invisible to the operator queue) until checkout.session.completed advances it.
+  `services/checkout.py` + `routers/checkout.py` + billing webhook wire-in + readiness
+  submit returns checkout_url + LC enrollment holds unpaid jobs + status-page tier
+  picker + refund reflection. Master switch STRIPE_CHECKOUT_ENABLED (off = old
+  behavior). Migration `20260703_add_payment_fields`. 10 pytest.
+- **`scripts/stripe_setup_products.py`** (7 products incl. hidden $299/mo retainer) +
+  **`LAUNCH-NOTES.md`** — Ripon's full manual cutover runbook.
+- **★ Latent prod-killers fixed** (`df0198b3`): Phase 1's reviewed_by/review_report_id
+  FKs made User↔ValidationSession and Session↔Report relationships ambiguous
+  (AmbiguousForeignKeysError at configure_mappers); models/admin.py had 10 dangling
+  ForeignKey("organizations.id") to a table that never existed. Both fixed — **full
+  `import main` boot + global configure_mappers now works locally (668 routes)**; the
+  old "verify via per-module import" gotcha is obsolete.
+- **Discovered: api.trdrhub.com is "Service Suspended"** (Render billing) — resume is
+  cutover step zero; the mapper bugs would have detonated on resume without df0198b3.
+- Test suite: our suites green (checkout 10, readiness 12, sanctions 9); 46 failures
+  in tests/ are pre-existing/environmental (stale entitlements tiers, ISO contract
+  drift, Postgres-requiring integration tests, Phase-0 auth 401s) — verified identical
+  at HEAD baseline via worktree.
+
+## Mission status
+All six build phases (0-5) are code complete. Remaining work is acceptance + cutover —
+see the resume prompt and LAUNCH-NOTES.md.
 
 ## Gotchas
 - Local full-app boot (`import main`) fails on PRE-EXISTING audit_events/organizations
