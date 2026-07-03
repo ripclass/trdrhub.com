@@ -96,11 +96,18 @@ def _status_payload(db: Session, session: ValidationSession) -> Dict[str, Any]:
         }
         for e in reversed(events)
     ]
+    from app.services.checkout import is_checkout_enabled
+
     return {
         "job_id": str(session.id),
         "review_state": rs,
         "workflow_type": session.workflow_type,
         "is_review_job": rs is not None,
+        # Phase 5 — drives the status page's pay CTA. payment_status NULL
+        # means payment isn't part of this job's flow.
+        "payment_status": getattr(session, "payment_status", None),
+        "payment_product_id": getattr(session, "payment_product_id", None),
+        "checkout_enabled": is_checkout_enabled(),
         "delivered": delivered,
         "delivered_at": session.delivered_at.isoformat() if getattr(session, "delivered_at", None) else None,
         "reviewer_note": session.review_note if delivered else None,
@@ -412,6 +419,11 @@ def approve_and_deliver(
     if session.review_state not in (ReportReviewState.UNDER_REVIEW.value, ReportReviewState.ENGINE_COMPLETE.value):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail=f"Session not deliverable (state={session.review_state})")
+    # Phase 5 safety: never deliver an unpaid job while checkout is live.
+    from app.services.checkout import is_checkout_enabled as _pay_on
+    if _pay_on() and getattr(session, "payment_status", None) == "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Job is awaiting payment — cannot deliver")
 
     if payload and payload.note:
         session.review_note = payload.note

@@ -541,6 +541,21 @@ async def stripe_webhook(
         # Parse webhook event
         import json
         event_data = json.loads(payload.decode())
+
+        # Phase 5 — concierge one-off purchases (pay first, then the job
+        # enters the review queue). Handled BEFORE the legacy subscription
+        # machinery; events carrying our trdr_job_id metadata never reach it.
+        event_type = event_data.get("type", "")
+        event_object = (event_data.get("data") or {}).get("object") or {}
+        if event_type == "checkout.session.completed":
+            from app.services.checkout import handle_checkout_completed
+            if handle_checkout_completed(db, event_object):
+                return {"status": "success"}
+        elif event_type == "charge.refunded":
+            from app.services.checkout import handle_charge_refunded
+            if handle_charge_refunded(db, event_object):
+                return {"status": "success"}
+
         webhook_event = payment_provider.parse_webhook_event(event_data)
 
         # Process payment webhook

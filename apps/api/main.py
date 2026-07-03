@@ -346,6 +346,10 @@ app.include_router(lcopilot_review.admin_router)
 from app.routers import readiness  # noqa: E402
 app.include_router(readiness.router)
 
+# Phase 5 — concierge payments (hosted Stripe Checkout at intake)
+from app.routers import checkout as checkout_router  # noqa: E402
+app.include_router(checkout_router.router)
+
 # Note: Startup logging is now handled in the lifespan function
 
 # Add logging middleware (order matters - add first)

@@ -90,6 +90,12 @@ export default function ReadinessApply() {
     setSubmitting(true);
     try {
       const { data } = await api.post("/api/readiness/submit", { tool, answers });
+      // Phase 5 — pay first: when checkout is live the backend returns the
+      // hosted Stripe URL; review starts after the payment webhook.
+      if (data.checkout_url) {
+        window.location.assign(data.checkout_url);
+        return;
+      }
       toast({
         title: "Intake received",
         description: "A specialist reviews every report — yours ships within 24 hours.",

@@ -157,6 +157,45 @@ def _make_json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _notify_payment_required(db, validation_session) -> None:
+    """Phase 5 — tell the customer to complete payment so review can begin.
+
+    Sent instead of the under-review notice when checkout is enabled and the
+    job is unpaid; the status page carries the pay CTA. Best-effort.
+    """
+    try:
+        from app.services.user_notifications import dispatch as _dispatch
+        from app.models.user_notifications import NotificationType
+        from app.models import User
+
+        owner = (
+            db.query(User).filter(User.id == validation_session.user_id).first()
+            if validation_session.user_id
+            else None
+        )
+        if owner is None:
+            return
+        _dispatch(
+            db,
+            owner,
+            NotificationType.REPORT_UNDER_REVIEW,
+            title="One step left — complete payment to start your review",
+            body=(
+                "Your LC pack has been checked by our engine. Complete payment on "
+                "your status page and a specialist will review and deliver your "
+                "cited report within 24 hours."
+            ),
+            link_url=f"/lcopilot/status/{validation_session.id}",
+            metadata={"validation_session_id": str(validation_session.id)},
+        )
+        db.commit()
+    except Exception:
+        logger.exception(
+            "payment-required notification skipped for session %s",
+            getattr(validation_session, "id", None),
+        )
+
+
 def _notify_report_under_review(db, validation_session) -> None:
     """Tell the customer their submission was received and is being reviewed.
 
@@ -1424,12 +1463,30 @@ async def finalize_validation_result(
                 _is_demo = bool(_owner and (_owner.email or "").lower() == "demo@trdrhub.com")
                 if _owner is not None and not _is_demo:
                     from app.services import report_review as _review
+                    from app.services.checkout import is_checkout_enabled as _pay_on
                     _review.begin_review(db, validation_session, reason="engine run submitted")
-                    _review.on_engine_complete(db, validation_session)
-                    db.commit()
-                    db.refresh(validation_session)
-                    _is_concierge = True
-                    _notify_report_under_review(db, validation_session)
+                    # Phase 5 — pay first, then the job enters the operator's
+                    # queue. With checkout enabled an unpaid job holds at
+                    # SUBMITTED (invisible to the operator queue); the
+                    # checkout.session.completed webhook advances it. The
+                    # customer picks their tier ($29/$49/$79) on the status
+                    # page. Checkout off = straight to the queue (operator
+                    # invoices manually).
+                    _unpaid = getattr(validation_session, "payment_status", None) != "paid"
+                    if _pay_on() and _unpaid:
+                        validation_session.payment_status = (
+                            validation_session.payment_status or "pending"
+                        )
+                        db.commit()
+                        db.refresh(validation_session)
+                        _is_concierge = True
+                        _notify_payment_required(db, validation_session)
+                    else:
+                        _review.on_engine_complete(db, validation_session)
+                        db.commit()
+                        db.refresh(validation_session)
+                        _is_concierge = True
+                        _notify_report_under_review(db, validation_session)
         except Exception:
             logger.exception(
                 "concierge review enrollment skipped for session %s",

@@ -151,6 +151,11 @@ class Settings(BaseSettings):
     STRIPE_PRICE_STARTER: Optional[str] = None
     STRIPE_PRICE_PROFESSIONAL: Optional[str] = None
     STRIPE_PRICE_ENTERPRISE: Optional[str] = None
+    # Phase 5 launch — pay-first concierge checkout. Off = jobs enter the
+    # review queue unpaid (operator invoices manually), exactly the pre-Phase-5
+    # behavior. Flip to True at launch cutover once live keys + the webhook
+    # endpoint are configured (see LAUNCH-NOTES.md).
+    STRIPE_CHECKOUT_ENABLED: bool = False
 
     # Stub tooling guard
     STUB_STATUS_TOKEN: Optional[str] = None

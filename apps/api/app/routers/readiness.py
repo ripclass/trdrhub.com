@@ -193,20 +193,49 @@ async def submit_readiness_intake(
     # so this is unconditional (not behind LCOPILOT_REVIEW_QUEUE_ENABLED).
     review.begin_review(db, session, actor_user_id=current_user.id,
                         reason=f"{t} readiness intake submitted")
-    review.on_engine_complete(
-        db, session, actor_user_id=current_user.id,
-        reason="readiness engine complete" if not engine.get("engine_error")
-        else "readiness engine DEGRADED — re-run before delivery",
-    )
-    db.commit()
 
-    _notify_submitted(db, current_user, session, t)
+    # Phase 5 — pay first, then the job enters the operator's queue. With
+    # checkout enabled the job holds at SUBMITTED (invisible to the operator,
+    # who lists engine_complete/under_review/needs_info) until the
+    # checkout.session.completed webhook advances it. Checkout off = straight
+    # to the queue, operator invoices manually (pre-Phase-5 behavior).
+    from app.services.checkout import (
+        READINESS_TOOL_PRODUCTS,
+        CheckoutError,
+        create_checkout_session,
+        is_checkout_enabled,
+    )
+
+    checkout_url: Optional[str] = None
+    if is_checkout_enabled():
+        db.commit()
+        try:
+            checkout_url = create_checkout_session(
+                db, session, current_user, READINESS_TOOL_PRODUCTS[t],
+            )
+        except CheckoutError as exc:
+            # Payment couldn't start — don't strand the customer: the status
+            # page offers a retry via POST /api/payments/checkout.
+            logger.error("readiness checkout creation failed for %s: %s", session.id, exc)
+            session.payment_status = "pending"
+            session.payment_product_id = READINESS_TOOL_PRODUCTS[t]
+            db.commit()
+    else:
+        review.on_engine_complete(
+            db, session, actor_user_id=current_user.id,
+            reason="readiness engine complete" if not engine.get("engine_error")
+            else "readiness engine DEGRADED — re-run before delivery",
+        )
+        db.commit()
+        _notify_submitted(db, current_user, session, t)
 
     return {
         "job_id": str(session.id),
         "reference": reference,
         "review_state": session.review_state,
         "status_url": f"/lcopilot/status/{session.id}",
+        "checkout_url": checkout_url,
+        "payment_status": session.payment_status,
         "engine_degraded": bool(engine.get("engine_error")),
     }
 

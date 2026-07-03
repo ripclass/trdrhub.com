@@ -47,6 +47,17 @@ interface ReviewStatus {
   reviewer_note: string | null;
   report_available: boolean;
   timeline: TimelineEvent[];
+  // Phase 5 — concierge payment
+  payment_status?: "pending" | "paid" | "refunded" | null;
+  payment_product_id?: string | null;
+  checkout_enabled?: boolean;
+}
+
+interface PurchasableProduct {
+  id: string;
+  name: string;
+  description: string;
+  amount_usd: number;
 }
 
 const POLL_MS = 30_000;
@@ -103,6 +114,13 @@ export default function ReviewStatusPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [products, setProducts] = useState<PurchasableProduct[]>([]);
+  const [payingProduct, setPayingProduct] = useState<string | null>(null);
+  // Just back from Stripe? Webhook may lag a few seconds behind the redirect.
+  const justPaid = typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("checkout") === "success";
+  const checkoutCancelled = typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("checkout") === "cancelled";
 
   const load = useCallback(async () => {
     if (!jobId) return;
@@ -124,12 +142,40 @@ export default function ReviewStatusPage() {
     void load();
   }, [load]);
 
-  // Poll until delivered.
+  // Poll until delivered. Poll fast while a just-completed payment's webhook
+  // is still in flight.
   useEffect(() => {
     if (status?.delivered) return;
-    const t = window.setInterval(() => void load(), POLL_MS);
+    const awaitingWebhook = justPaid && status?.payment_status === "pending";
+    const t = window.setInterval(() => void load(), awaitingWebhook ? 5_000 : POLL_MS);
     return () => window.clearInterval(t);
-  }, [status?.delivered, load]);
+  }, [status?.delivered, status?.payment_status, justPaid, load]);
+
+  // Unpaid job with checkout live → fetch what can be bought for it.
+  const needsPayment =
+    !!status && status.payment_status === "pending" && !!status.checkout_enabled && !justPaid;
+  useEffect(() => {
+    if (!needsPayment || !jobId) return;
+    api
+      .get<{ products: PurchasableProduct[] }>(`/api/payments/products/${jobId}`)
+      .then(({ data }) => setProducts(data.products ?? []))
+      .catch(() => setProducts([]));
+  }, [needsPayment, jobId]);
+
+  const startCheckout = async (productId: string) => {
+    if (!jobId) return;
+    setPayingProduct(productId);
+    try {
+      const { data } = await api.post<{ checkout_url: string }>("/api/payments/checkout", {
+        job_id: jobId,
+        product_id: productId,
+      });
+      window.location.assign(data.checkout_url);
+    } catch {
+      setPayingProduct(null);
+      window.alert("Couldn't start checkout — please try again, or email support@trdrhub.com.");
+    }
+  };
 
   const downloadReport = async () => {
     if (!jobId) return;
@@ -249,6 +295,70 @@ export default function ReviewStatusPage() {
                 </ol>
               </CardContent>
             </Card>
+
+            {/* Phase 5 — payment */}
+            {checkoutCancelled && status.payment_status === "pending" && (
+              <Card className="border-amber-300 bg-amber-50">
+                <CardContent className="py-4 text-sm text-amber-900">
+                  Checkout was cancelled — your documents are safe, and nothing starts until
+                  you pay. Pick an option below whenever you're ready.
+                </CardContent>
+              </Card>
+            )}
+            {justPaid && status.payment_status === "pending" && (
+              <Card className="border-blue-300 bg-blue-50">
+                <CardContent className="py-4 flex items-center gap-2 text-sm text-blue-900">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  Confirming your payment with Stripe — this usually takes a few seconds.
+                </CardContent>
+              </Card>
+            )}
+            {status.payment_status === "refunded" && (
+              <Card className="border-slate-300 bg-slate-100">
+                <CardContent className="py-4 text-sm text-slate-700">
+                  This purchase was refunded. If that's unexpected, contact
+                  {" "}<a className="underline" href="mailto:support@trdrhub.com">support@trdrhub.com</a>.
+                </CardContent>
+              </Card>
+            )}
+            {needsPayment && (
+              <Card className="border-blue-300">
+                <CardContent className="py-6">
+                  <p className="font-medium mb-1">Complete payment to start your review</p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Nothing enters the specialist queue until payment clears. You'll pay on
+                    Stripe's secure page — card details never touch our servers — and your
+                    receipt comes from Stripe.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-1">
+                    {products.map((p) => (
+                      <Button
+                        key={p.id}
+                        variant={p.id === (status.payment_product_id || products[0]?.id) ? "default" : "outline"}
+                        className="justify-between h-auto py-3"
+                        disabled={payingProduct !== null}
+                        onClick={() => startCheckout(p.id)}
+                      >
+                        <span className="text-left">
+                          <span className="block font-semibold">{p.name}</span>
+                          <span className="block text-xs opacity-70">{p.description}</span>
+                        </span>
+                        <span className="font-bold ml-4 shrink-0">
+                          {payingProduct === p.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            `$${p.amount_usd}`
+                          )}
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Full refund if the report doesn't help you.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Needs-info callout */}
             {needsInfo && (
