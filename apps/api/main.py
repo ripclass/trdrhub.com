@@ -221,12 +221,18 @@ if _auto_create_flag:
 else:
     print("Skipping Base.metadata.create_all(); rely on Alembic migrations instead.")
 
-# Create FastAPI app with lifespan events
+# Create FastAPI app with lifespan events.
+# In production the interactive docs and OpenAPI schema are disabled so the full
+# ~540-route surface (including /admin/*) is not enumerable by anonymous callers.
+_docs_enabled = not settings.is_production()
 app = FastAPI(
     title="LCopilot API",
     description="AI-powered Letter of Credit validation platform",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 

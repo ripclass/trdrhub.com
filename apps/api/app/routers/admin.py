@@ -9,7 +9,9 @@ import logging
 import importlib.util
 import sys
 from pathlib import Path
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from app.core.security import require_sysadmin
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +52,19 @@ db_audit = _import_submodule("db_audit")
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
+# System-admin-only gate for destructive / platform-ops sub-routers.
+# vault (secret rotation), dr (DB backup/restore/drill), and governance
+# (approval decisions) shipped with NO auth dependency — this restores it.
+# require_sysadmin (system_admin only) is used deliberately rather than
+# get_current_admin_user, which also admits tenant_admins.
+_SYSADMIN_ONLY = [Depends(require_sysadmin)]
+
 # Include all admin sub-routers
 router.include_router(dashboard.router)
 router.include_router(ops.router)
 router.include_router(audit.router)
-router.include_router(governance.router)
+router.include_router(governance.router, dependencies=_SYSADMIN_ONLY)
 router.include_router(jobs.router)
-router.include_router(dr.router)
-router.include_router(vault.router)
+router.include_router(dr.router, dependencies=_SYSADMIN_ONLY)
+router.include_router(vault.router, dependencies=_SYSADMIN_ONLY)
 router.include_router(db_audit.router)

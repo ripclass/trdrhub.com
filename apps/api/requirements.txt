@@ -3,8 +3,8 @@ uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 alembic==1.12.1
 psycopg2-binary==2.9.9
-python-multipart==0.0.6
-python-jose[cryptography]==3.3.0
+python-multipart==0.0.18  # was 0.0.6 — fixes ReDoS/DoS CVEs on the upload parser (PYSEC-2024-38 et al.)
+python-jose[cryptography]==3.4.0  # was 3.3.0 — fixes JWT algorithm-confusion + JWT-bomb DoS (PYSEC-2024-232/233)
 passlib[bcrypt]==1.7.4
 bcrypt>=4.1.2  # Required for passlib bcrypt_sha256 support (must have __about__ attribute)
 python-dotenv==1.0.0

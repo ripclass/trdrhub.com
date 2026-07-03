@@ -115,9 +115,14 @@ class PerformanceThresholds:
     # Maximum file size (bytes)
     MAX_FILE_SIZE_MB = 25
     MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-    
+
     # Maximum documents per session
     MAX_DOCUMENTS_PER_SESSION = 10
+
+    # Maximum total multipart request body (all files + fields) — the DoS guard
+    # for the upload endpoints. Sized to comfortably fit a full LC presentation
+    # set (MAX_DOCUMENTS_PER_SESSION * MAX_FILE_SIZE) with headroom.
+    MAX_TOTAL_UPLOAD_BYTES = MAX_DOCUMENTS_PER_SESSION * MAX_FILE_SIZE_BYTES
     
     # Rate limiting
     MAX_REQUESTS_PER_MINUTE = 30

@@ -3,6 +3,7 @@ Authentication API endpoints.
 """
 
 from datetime import timedelta
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -77,6 +78,26 @@ def _ensure_company_for_user(db: Session, user: User, user_data: UserCreate, fre
     user.company_id = company.id
 
 
+# Roles that must never be self-assignable through the public, unauthenticated
+# registration/onboarding surfaces. Platform-admin and bank roles grant access
+# beyond the caller's own tenant, so a public signup can only ever land on a
+# non-privileged persona regardless of what the client sends.
+_PUBLIC_PRIVILEGED_ROLES = {"system_admin", "bank_admin", "bank_officer", "bank"}
+
+
+def _clamp_public_role(requested_role: Optional[str]) -> str:
+    """Coerce any client-supplied role to a safe non-privileged default.
+
+    Used on public registration so an attacker cannot self-provision an admin
+    or bank account. Legit tenant personas (exporter/importer/tenant_admin) pass
+    through; anything privileged (or unknown) becomes 'exporter'.
+    """
+    normalized = (requested_role or "exporter").strip().lower()
+    if normalized in _PUBLIC_PRIVILEGED_ROLES:
+        return "exporter"
+    return normalized
+
+
 @router.post("/register", response_model=UserProfile, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: UserCreate,
@@ -102,7 +123,7 @@ async def register_user(
             user_data.role
             and (not existing_user.company_id or not existing_user.onboarding_completed)
         ):
-            existing_user.role = user_data.role
+            existing_user.role = _clamp_public_role(user_data.role)
 
         if not existing_user.hashed_password:
             safe_pw = (user_data.password or "")[:72]
@@ -143,7 +164,7 @@ async def register_user(
         email=user_data.email,
         hashed_password=hashed_password,
         full_name=user_data.full_name,
-        role=user_data.role,
+        role=_clamp_public_role(user_data.role),
         is_active=True,
         company_id=None,
         onboarding_data=onboarding_data if onboarding_data else None,
@@ -227,52 +248,6 @@ async def get_csrf_token(
     return response
 
 
-@router.post("/fix-password")  # TEMPORARY - Remove after fixing passwords
-async def fix_password_endpoint(
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """
-    TEMPORARY endpoint to fix password hashes.
-    TODO: Remove this after all test users have correct password hashes.
-    
-    Accepts JSON body: {"email": "...", "password": "..."}
-    Or form data: email=...&password=...
-    """
-    from ..core.security import hash_password, verify_password
-    
-    # Try to get from JSON body first
-    try:
-        body = await request.json()
-        email = body.get("email")
-        password = body.get("password")
-    except:
-        # Fallback to form data
-        form = await request.form()
-        email = form.get("email")
-        password = form.get("password")
-    
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="email and password are required")
-    
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Generate new hash
-    new_hash = hash_password(password)
-    user.hashed_password = new_hash
-    db.commit()
-    db.refresh(user)
-    
-    # Verify it works
-    if verify_password(password, new_hash):
-        return {"status": "success", "message": f"Password updated for {email}"}
-    else:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Password hash verification failed")
-
-
 @router.get("/me", response_model=UserProfile)
 async def get_user_profile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -295,10 +270,11 @@ async def get_user_profile(
             # Log full traceback for debugging
             error_trace = traceback.format_exc()
             logger.error(f"Unexpected error during authentication: {str(e)}\n{error_trace}")
-            # Return 500 with detailed error message for debugging
+            # Full detail is logged above; return a generic message to the client
+            # so internal error text / stack context does not leak to callers.
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Authentication error: {str(e)}. Check backend logs for details."
+                detail="Authentication error. Please try again."
             )
         
         # Ensure user is refreshed from database

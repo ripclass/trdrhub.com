@@ -25,19 +25,18 @@ router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 def _sanitize_role(role: str) -> str:
     role_normalized = role.lower()
+    # Self-service onboarding may only land a user on a non-privileged tenant
+    # persona. Platform-admin and bank roles (system_admin / bank_admin /
+    # bank_officer / bank) are deliberately excluded — granting them here let any
+    # authenticated user escalate to system_admin via PUT /onboarding/progress.
+    # Privileged roles are assigned only through admin-gated endpoints.
     allowed = {
         "exporter",
         "importer",
         "tenant_admin",
-        "bank_officer",
-        "bank_admin",
-        "system_admin",
-        "bank",
     }
     if role_normalized not in allowed:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported role selection")
-    if role_normalized == "bank":
-        return "bank_officer"
     return role_normalized
 
 

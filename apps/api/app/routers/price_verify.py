@@ -32,6 +32,8 @@ from app.services.pdf_export import (
 from app.services.market_data import get_market_data_service
 from app.services.audit_log import get_audit_service, AuditAction
 from app.database import get_db
+from app.core.security import get_current_user
+from app.models import User
 from app.models.commodity_prices import PriceVerification
 from app.utils.usage_tracker import record_usage_manual
 
@@ -40,7 +42,26 @@ logger = logging.getLogger(__name__)
 # Track request timing for audit
 import time
 
-router = APIRouter(prefix="/price-verify", tags=["Price Verification"])
+router = APIRouter(
+    prefix="/price-verify",
+    tags=["Price Verification"],
+    # Every endpoint requires an authenticated user. The history/analytics/report
+    # reads were previously anonymous and unscoped, leaking other customers'
+    # prices and document references. Router-level auth closes anonymous access;
+    # the record-returning endpoints additionally scope by the caller's company.
+    dependencies=[Depends(get_current_user)],
+)
+
+
+def _pv_owner_scope(current_user: User):
+    """SQLAlchemy filter condition restricting PriceVerification rows to the caller.
+
+    Prefers company-level scoping (team visibility); falls back to the user's own
+    rows when they have no company. Legacy rows with a null owner are excluded.
+    """
+    if getattr(current_user, "company_id", None):
+        return PriceVerification.company_id == current_user.company_id
+    return PriceVerification.user_id == current_user.id
 
 
 # =============================================================================
@@ -1288,6 +1309,7 @@ async def extract_batch_documents(
 @router.get("/history")
 async def get_verification_history(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     verdict: Optional[str] = Query(None, description="Filter by verdict (pass, warning, fail)"),
     risk_level: Optional[str] = Query(None, description="Filter by risk level"),
     commodity_code: Optional[str] = Query(None, description="Filter by commodity code"),
@@ -1302,8 +1324,9 @@ async def get_verification_history(
     Returns list of past verifications for the History page.
     """
     try:
-        query = db.query(PriceVerification)
-        
+        # Scope to the caller's own company/user — never other tenants' records.
+        query = db.query(PriceVerification).filter(_pv_owner_scope(current_user))
+
         # Apply filters
         if verdict:
             query = query.filter(PriceVerification.verdict == verdict)
@@ -1358,6 +1381,7 @@ async def get_verification_history(
 @router.get("/analytics")
 async def get_analytics(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     period_days: int = Query(30, ge=1, le=365, description="Analysis period in days"),
 ):
     """
@@ -1367,40 +1391,48 @@ async def get_analytics(
     """
     try:
         since = datetime.now(timezone.utc) - timedelta(days=period_days)
-        
+        # Restrict all aggregates to the caller's own company/user.
+        scope = _pv_owner_scope(current_user)
+
         # Total verifications
         total = db.query(func.count(PriceVerification.id)).filter(
+            scope,
             PriceVerification.created_at >= since
         ).scalar() or 0
-        
+
         # Verdict distribution
         passed = db.query(func.count(PriceVerification.id)).filter(
+            scope,
             PriceVerification.created_at >= since,
             PriceVerification.verdict == "pass"
         ).scalar() or 0
-        
+
         warnings = db.query(func.count(PriceVerification.id)).filter(
+            scope,
             PriceVerification.created_at >= since,
             PriceVerification.verdict == "warning"
         ).scalar() or 0
-        
+
         failed = db.query(func.count(PriceVerification.id)).filter(
+            scope,
             PriceVerification.created_at >= since,
             PriceVerification.verdict == "fail"
         ).scalar() or 0
-        
+
         # Average variance
         avg_variance = db.query(func.avg(func.abs(PriceVerification.variance_percent))).filter(
+            scope,
             PriceVerification.created_at >= since,
             PriceVerification.variance_percent.isnot(None)
         ).scalar() or 0
-        
+
         # TBML flags (critical risk level)
         tbml_count = db.query(func.count(PriceVerification.id)).filter(
+            scope,
             PriceVerification.created_at >= since,
             PriceVerification.risk_level == "critical"
         ).scalar() or 0
-        
+
         # Top commodities
         top_commodities_query = db.query(
             PriceVerification.commodity_name,
@@ -1408,6 +1440,7 @@ async def get_analytics(
             func.count(PriceVerification.id).label("count"),
             func.avg(case((PriceVerification.verdict == "pass", 1), else_=0)).label("pass_rate")
         ).filter(
+            scope,
             PriceVerification.created_at >= since
         ).group_by(
             PriceVerification.commodity_name,
@@ -1428,6 +1461,7 @@ async def get_analytics(
         risk_counts = {}
         for level in ["low", "medium", "high", "critical"]:
             risk_counts[level] = db.query(func.count(PriceVerification.id)).filter(
+                scope,
                 PriceVerification.created_at >= since,
                 PriceVerification.risk_level == level
             ).scalar() or 0

@@ -365,6 +365,14 @@ class Settings(BaseSettings):
                 missing.append("DATABASE_URL")
             if not values.SECRET_KEY or values.SECRET_KEY == "dev-secret-key-change-in-production":
                 missing.append("SECRET_KEY")
+            # JWT_SECRET_KEY signs local access tokens (app/core/security.py). It is
+            # read via os.getenv with a publicly-known default, so it is NOT a
+            # Settings field — guard it here so production fails fast rather than
+            # signing forgeable tokens with the default secret.
+            import os as _os
+            _jwt_secret = _os.getenv("JWT_SECRET_KEY")
+            if not _jwt_secret or _jwt_secret == "your-secret-key-change-in-production":
+                missing.append("JWT_SECRET_KEY")
             if missing:
                 raise ValueError(
                     "Missing required environment variables for production: "

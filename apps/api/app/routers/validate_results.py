@@ -59,13 +59,36 @@ def build_router(shared: Any) -> APIRouter:
                 detail=f"Validation session {session_id} not found"
             )
     
-        # Lenient access check - allow if:
-        # 1. User owns the session
-        # 2. User is admin
-        # 3. Session was created anonymously (demo user)
-        # For now, we allow access since sessions may have been created before auth was enforced
-        # TODO: Add stricter access control once session ownership is properly tracked
-    
+        # Access control: a user may read a session only if they own it, it
+        # belongs to their company, or they are an admin. This closes the IDOR
+        # where any authenticated user could fetch another tenant's results by
+        # guessing/enumerating a session_id.
+        _is_admin = bool(
+            current_user
+            and (current_user.is_system_admin() or current_user.is_tenant_admin())
+        )
+        if not _is_admin:
+            if current_user is not None:
+                owns_session = str(session.user_id) == str(current_user.id) or (
+                    session.company_id is not None
+                    and getattr(current_user, "company_id", None) is not None
+                    and str(session.company_id) == str(current_user.company_id)
+                )
+                if not owns_session:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="You do not have access to this validation session",
+                    )
+            else:
+                # No authenticated identity. Anonymous results access is only
+                # tolerated in non-production (demo); production is a hard deny.
+                from app.config import settings as _settings
+                if _settings.is_production():
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Authentication required to view these results",
+                    )
+
         # Get stored validation results
         raw_results = session.validation_results or {}
         if not raw_results:

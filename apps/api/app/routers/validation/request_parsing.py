@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, NamedTuple
 
 from app.core.lc_types import LCType, VALID_LC_TYPES, normalize_lc_type
+from app.constants.thresholds import PerformanceThresholds
 
 _SHARED_NAMES = [
     "Any",
@@ -157,6 +158,20 @@ async def parse_validate_request(request: Request) -> ParsedValidationRequest:
     payload: dict
     files_list = []  # Collect files for validation
 
+    # DoS guard: reject an oversized body via the declared Content-Length BEFORE
+    # reading the multipart form into memory. Without this a multi-GB upload
+    # would OOM the worker (the 25MB constant was previously dead code).
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > PerformanceThresholds.MAX_TOTAL_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Upload too large. Maximum total request size exceeded.",
+                )
+        except ValueError:
+            pass
+
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
         payload = {}
@@ -167,6 +182,23 @@ async def parse_validate_request(request: Request) -> ParsedValidationRequest:
                 file_obj = value
                 header_bytes = await file_obj.read(8)
                 await file_obj.seek(0)  # Reset for processing
+
+                # Per-file size cap (guards against a single oversized file even
+                # when the total-body check above passes).
+                try:
+                    file_obj.file.seek(0, 2)
+                    file_size = file_obj.file.tell()
+                    file_obj.file.seek(0)
+                except (AttributeError, OSError):
+                    file_size = 0
+                if file_size > PerformanceThresholds.MAX_FILE_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=(
+                            f"File {file_obj.filename} exceeds the "
+                            f"{PerformanceThresholds.MAX_FILE_SIZE_MB}MB per-file limit."
+                        ),
+                    )
 
                 # Content-based validation
                 is_valid, error_message = validate_upload_file(

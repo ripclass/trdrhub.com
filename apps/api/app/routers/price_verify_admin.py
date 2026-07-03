@@ -19,12 +19,20 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, or_
 
 from app.database import get_db
+from app.core.security import require_sysadmin
 from app.models.commodities import Commodity, CommodityRequest, HSCode
 from app.models.commodity_prices import PriceVerification
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/price-verify/admin", tags=["Price Verify Admin"])
+# Every endpoint under /price-verify/admin manages the global commodity catalog
+# and exposes audit logs (user_id + IP). It shipped with no auth dependency; a
+# router-level system-admin gate closes the whole surface at once.
+router = APIRouter(
+    prefix="/price-verify/admin",
+    tags=["Price Verify Admin"],
+    dependencies=[Depends(require_sysadmin)],
+)
 
 
 # =============================================================================

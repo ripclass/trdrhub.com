@@ -59,8 +59,8 @@ pytest-asyncio==0.23.8
 pytest-cov==7.0.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.0
-python-jose==3.3.0
-python-multipart==0.0.6
+python-jose==3.4.0
+python-multipart==0.0.18
 PyYAML==6.0.3
 realtime==2.5.3
 redis==5.0.1

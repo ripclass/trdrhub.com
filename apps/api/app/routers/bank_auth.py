@@ -112,9 +112,10 @@ async def request_2fa(
         }
     )
     
-    # In production, send code via SMS/email
-    # For now, return it in response (only for development/testing)
-    logger.info(f"2FA code for user {current_user.email}: {code} (session: {session_id[:8]}...)")
+    # In production, send code via SMS/email.
+    # Never log the OTP itself — logs are readable by ops/support and a logged
+    # code defeats the second factor. Log only that a code was issued.
+    logger.info(f"2FA code issued for user {current_user.email} (session: {session_id[:8]}...)")
     
     return {
         "success": True,

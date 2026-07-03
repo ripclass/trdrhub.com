@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 
 from ..models.lc_versions import LCVersion, LCVersionStatus
 from .. import models
@@ -19,6 +19,29 @@ from ..schemas.lc_versions import (
 
 class LCVersionCRUD:
     """CRUD operations for LC versions."""
+
+    @staticmethod
+    def _apply_owner_scope(base_query, user_id=None, company_id=None):
+        """Restrict an LCVersion query to rows the caller is allowed to see.
+
+        LCVersion has no company_id column; ownership is derived from the
+        associated ValidationSession (its company_id / user_id) plus the
+        version's own uploaded_by. When neither user_id nor company_id is
+        supplied (internal callers), the query is returned unscoped.
+        """
+        if user_id is None and company_id is None:
+            return base_query
+        scoped = base_query.join(
+            models.ValidationSession,
+            LCVersion.validation_session_id == models.ValidationSession.id,
+        )
+        conditions = []
+        if company_id is not None:
+            conditions.append(models.ValidationSession.company_id == company_id)
+        if user_id is not None:
+            conditions.append(LCVersion.uploaded_by == user_id)
+            conditions.append(models.ValidationSession.user_id == user_id)
+        return scoped.filter(or_(*conditions))
 
     @staticmethod
     def create_new_version(
@@ -73,37 +96,39 @@ class LCVersionCRUD:
         return version
 
     @staticmethod
-    def get_versions(db: Session, lc_number: str) -> List[LCVersion]:
+    def get_versions(db: Session, lc_number: str, user_id: UUID = None, company_id: UUID = None) -> List[LCVersion]:
         """
         Get all versions for an LC number, ordered by version number.
 
         Args:
             db: Database session
             lc_number: LC number to get versions for
+            user_id / company_id: caller identity for ownership scoping
 
         Returns:
             List of LCVersion instances
         """
-        return db.query(LCVersion)\
-            .filter(LCVersion.lc_number == lc_number)\
-            .order_by(LCVersion.version)\
-            .all()
+        query = db.query(LCVersion).filter(LCVersion.lc_number == lc_number)
+        query = LCVersionCRUD._apply_owner_scope(query, user_id=user_id, company_id=company_id)
+        return query.order_by(LCVersion.version).all()
 
     @staticmethod
-    def get_version_by_id(db: Session, version_id: UUID) -> Optional[LCVersion]:
+    def get_version_by_id(db: Session, version_id: UUID, user_id: UUID = None, company_id: UUID = None) -> Optional[LCVersion]:
         """
-        Get a specific version by ID.
+        Get a specific version by ID (scoped to the caller when identity given).
 
         Args:
             db: Database session
             version_id: Version ID
+            user_id / company_id: caller identity for ownership scoping
 
         Returns:
             LCVersion instance or None
         """
-        return db.query(LCVersion)\
-            .filter(LCVersion.id == version_id)\
-            .first()
+        return LCVersionCRUD._apply_owner_scope(
+            db.query(LCVersion).filter(LCVersion.id == version_id),
+            user_id=user_id, company_id=company_id
+        ).first()
 
     @staticmethod
     def get_version_by_session(db: Session, session_id: UUID) -> Optional[LCVersion]:
@@ -125,7 +150,9 @@ class LCVersionCRUD:
     def update_version(
         db: Session,
         version_id: UUID,
-        update_data: LCVersionUpdate
+        update_data: LCVersionUpdate,
+        user_id: UUID = None,
+        company_id: UUID = None
     ) -> Optional[LCVersion]:
         """
         Update a version's status or metadata.
@@ -134,13 +161,16 @@ class LCVersionCRUD:
             db: Database session
             version_id: Version ID to update
             update_data: Update data
+            user_id / company_id: caller identity for ownership scoping
 
         Returns:
-            Updated LCVersion instance or None
+            Updated LCVersion instance or None (also None when the version
+            exists but is not owned by the caller — callers surface this as 404)
         """
-        version = db.query(LCVersion)\
-            .filter(LCVersion.id == version_id)\
-            .first()
+        version = LCVersionCRUD._apply_owner_scope(
+            db.query(LCVersion).filter(LCVersion.id == version_id),
+            user_id=user_id, company_id=company_id
+        ).first()
 
         if not version:
             return None
@@ -187,23 +217,27 @@ class LCVersionCRUD:
         )
 
     @staticmethod
-    def get_all_amended_lcs(db: Session) -> List[AmendedLCInfo]:
+    def get_all_amended_lcs(db: Session, user_id: UUID = None, company_id: UUID = None) -> List[AmendedLCInfo]:
         """
-        Get all LCs that have multiple versions (amendments).
+        Get all LCs that have multiple versions (amendments), scoped to the
+        caller's company/user so this never dumps every LC on the platform.
 
         Args:
             db: Database session
+            user_id / company_id: caller identity for ownership scoping
 
         Returns:
             List of AmendedLCInfo
         """
-        # Query for LCs with more than one version
-        subquery = db.query(
+        # Query for LCs with more than one version, restricted to the caller.
+        base = db.query(
             LCVersion.lc_number,
             func.count(LCVersion.id).label('version_count'),
             func.max(LCVersion.version).label('max_version'),
             func.max(LCVersion.created_at).label('last_updated')
-        ).group_by(LCVersion.lc_number)\
+        )
+        base = LCVersionCRUD._apply_owner_scope(base, user_id=user_id, company_id=company_id)
+        subquery = base.group_by(LCVersion.lc_number)\
          .having(func.count(LCVersion.id) > 1)\
          .subquery()
 
@@ -225,7 +259,9 @@ class LCVersionCRUD:
         db: Session,
         lc_number: str,
         from_version: str,
-        to_version: str
+        to_version: str,
+        user_id: UUID = None,
+        company_id: UUID = None
     ) -> Optional[LCVersionComparison]:
         """
         Compare two versions of an LC and return differences.
@@ -235,6 +271,7 @@ class LCVersionCRUD:
             lc_number: LC number
             from_version: Source version (e.g., "V1", "V2")
             to_version: Target version (e.g., "V2", "V3")
+            user_id / company_id: caller identity for ownership scoping
 
         Returns:
             LCVersionComparison or None if versions not found
@@ -246,16 +283,20 @@ class LCVersionCRUD:
         except ValueError:
             return None
 
-        # Get the versions
-        from_lc_version = db.query(LCVersion)\
-            .filter(LCVersion.lc_number == lc_number)\
-            .filter(LCVersion.version == from_version_num)\
-            .first()
+        # Get the versions (scoped to the caller's company/user)
+        from_lc_version = LCVersionCRUD._apply_owner_scope(
+            db.query(LCVersion)
+            .filter(LCVersion.lc_number == lc_number)
+            .filter(LCVersion.version == from_version_num),
+            user_id=user_id, company_id=company_id
+        ).first()
 
-        to_lc_version = db.query(LCVersion)\
-            .filter(LCVersion.lc_number == lc_number)\
-            .filter(LCVersion.version == to_version_num)\
-            .first()
+        to_lc_version = LCVersionCRUD._apply_owner_scope(
+            db.query(LCVersion)
+            .filter(LCVersion.lc_number == lc_number)
+            .filter(LCVersion.version == to_version_num),
+            user_id=user_id, company_id=company_id
+        ).first()
 
         if not from_lc_version or not to_lc_version:
             return None

@@ -61,7 +61,12 @@ async def get_lc_versions(
 
     Returns versions ordered by version number with metadata.
     """
-    versions = LCVersionCRUD.get_versions(db=db, lc_number=lc_number)
+    versions = LCVersionCRUD.get_versions(
+        db=db,
+        lc_number=lc_number,
+        user_id=current_user.id,
+        company_id=getattr(current_user, "company_id", None),
+    )
 
     if not versions:
         raise HTTPException(
@@ -95,7 +100,9 @@ async def compare_lc_versions(
         db=db,
         lc_number=lc_number,
         from_version=from_version,
-        to_version=to_version
+        to_version=to_version,
+        user_id=current_user.id,
+        company_id=getattr(current_user, "company_id", None),
     )
 
     if not comparison:
@@ -132,9 +139,16 @@ async def get_amended_lcs(
 
     Returns LCs with version counts and latest version info.
     Used by the amendments tab in the dashboard.
-    Supports demo mode (optional authentication).
+    Scoped to the caller's own company/user — never all platform LCs.
     """
-    return LCVersionCRUD.get_all_amended_lcs(db=db)
+    if current_user is None:
+        # Anonymous callers get nothing rather than every tenant's LC list.
+        return []
+    return LCVersionCRUD.get_all_amended_lcs(
+        db=db,
+        user_id=current_user.id,
+        company_id=getattr(current_user, "company_id", None),
+    )
 
 
 @router.get("/versions/{version_id}", response_model=LCVersionRead)
@@ -148,7 +162,12 @@ async def get_version_by_id(
 
     Useful for direct version access and navigation.
     """
-    version = LCVersionCRUD.get_version_by_id(db=db, version_id=version_id)
+    version = LCVersionCRUD.get_version_by_id(
+        db=db,
+        version_id=version_id,
+        user_id=current_user.id,
+        company_id=getattr(current_user, "company_id", None),
+    )
 
     if not version:
         raise HTTPException(
@@ -174,7 +193,9 @@ async def update_version(
     version = LCVersionCRUD.update_version(
         db=db,
         version_id=version_id,
-        update_data=update_data
+        update_data=update_data,
+        user_id=current_user.id,
+        company_id=getattr(current_user, "company_id", None),
     )
 
     if not version:

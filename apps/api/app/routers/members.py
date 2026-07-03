@@ -14,6 +14,7 @@ This module provides:
 from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
+import logging
 import secrets
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -23,6 +24,7 @@ from sqlalchemy import and_
 
 from app.database import get_db
 from app.models import Company, User
+from app.core.security import require_sysadmin
 from app.services.entitlements import resolve_seat_limit
 from app.models.rbac import (
     CompanyMember,
@@ -36,6 +38,8 @@ from app.models.rbac import (
 from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/members", tags=["members"])
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -601,21 +605,22 @@ async def accept_invitation(
 async def seed_existing_users(
     secret: str = None,
     db: Session = Depends(get_db),
+    _admin: User = Depends(require_sysadmin),
 ):
     """
     One-time admin endpoint to create company_members records for existing users.
     Makes each user the OWNER of their associated company.
-    
-    Requires: Secret key (from environment)
+
+    Requires: authenticated system admin AND a matching ADMIN_SEED_SECRET
+    (no default — the env var must be explicitly set or the call fails closed).
     """
     import os
-    import traceback
-    
-    expected_secret = os.getenv("ADMIN_SEED_SECRET", "trdr-seed-2024")
-    
-    if secret != expected_secret:
+
+    expected_secret = os.getenv("ADMIN_SEED_SECRET")
+
+    if not expected_secret or secret != expected_secret:
         raise HTTPException(status_code=403, detail="Invalid secret key")
-    
+
     try:
         # First check if table exists
         from sqlalchemy import text
@@ -688,9 +693,6 @@ async def seed_existing_users(
             "errors": errors if errors else None,
         }
     except Exception as e:
-        return {
-            "error": "Seed failed",
-            "detail": str(e),
-            "traceback": traceback.format_exc()
-        }
+        logger.error("seed-existing-users failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Seed failed")
 
