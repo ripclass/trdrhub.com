@@ -2286,8 +2286,22 @@ async def execute_validation_pipeline(
                             # rulhub schema validators care about.)
                             return {k: _shape(val) for k, val in v.items()}
                         return f"<{type(v).__name__}>"
+                    # Phase 1 launch: prefer the /v1/compliance/check bundle
+                    # (validation + sanctions + export-controls + tbml + route
+                    # in one round-trip, single `decision`) over the plain
+                    # /v1/validate/set. The adapter flattens the bundle to the
+                    # validate/set response shape so everything downstream is
+                    # engine-agnostic. Any bundle failure (404 on older server
+                    # builds, 400 envelope mismatch, 5xx) falls back to
+                    # validate/set within the same request; rate limits
+                    # propagate straight to the DB-rules fallback since both
+                    # endpoints share the limiter. Kill switch:
+                    # RULHUB_USE_COMPLIANCE_CHECK=false.
+                    _prefer_bundle = os.getenv(
+                        "RULHUB_USE_COMPLIANCE_CHECK", "true"
+                    ).strip().lower() in ("1", "true", "yes")
                     _rulhub_request_preview = {
-                        "endpoint": "/v1/validate/set",
+                        "endpoint": "/v1/compliance/check" if _prefer_bundle else "/v1/validate/set",
                         "jurisdiction": primary_jurisdiction,
                         "doc_count": len(_rulhub_docs),
                         "doc_types": [d.get("type") for d in _rulhub_docs],
@@ -2296,10 +2310,31 @@ async def execute_validation_pipeline(
                             for d in _rulhub_docs
                         ],
                     }
-                    _rulhub_result = await _rulhub_adapter.validate_document_set(
-                        documents=_rulhub_docs,
-                        jurisdiction=primary_jurisdiction,
-                    )
+                    _rulhub_result = None
+                    if _prefer_bundle:
+                        from app.services.rulhub_client import (
+                            RulHubAPIError as _RulHubAPIError,
+                            RulHubRateLimited as _RulHubRateLimited,
+                        )
+                        try:
+                            _rulhub_result = await _rulhub_adapter.check_compliance_set(
+                                documents=_rulhub_docs,
+                                jurisdiction=primary_jurisdiction,
+                            )
+                        except _RulHubRateLimited:
+                            raise
+                        except _RulHubAPIError as _bundle_err:
+                            logger.warning(
+                                "RulHub /v1/compliance/check failed (%s) — "
+                                "falling back to /v1/validate/set",
+                                str(_bundle_err)[:200],
+                            )
+                            _rulhub_request_preview["endpoint"] = "/v1/validate/set"
+                    if _rulhub_result is None:
+                        _rulhub_result = await _rulhub_adapter.validate_document_set(
+                            documents=_rulhub_docs,
+                            jurisdiction=primary_jurisdiction,
+                        )
 
                     # /v1/validate/set returns { discrepancies: [...], cross_doc_issues: [...] }.
                     # RulHub's shape differs from the UI mapper's expectations:

@@ -519,6 +519,103 @@ class RulHubRulesAdapter:
             logger.error("RulHub validate_document_set failed: %s", exc)
             raise
 
+    async def check_compliance_set(
+        self,
+        documents: List[Dict[str, Any]],
+        jurisdiction: str = "global",
+    ) -> Dict[str, Any]:
+        """
+        Full compliance bundle via POST /v1/compliance/check — the preferred
+        call for LCopilot (Phase 1 launch): one round-trip runs document
+        validation AND sanctions / export-controls / TBML / route screening,
+        returning a single ``decision``.
+
+        Takes the same ``[{"type": ..., "fields": {...}}, ...]`` document list
+        as :meth:`validate_document_set` (the canonical short types — lc,
+        invoice, bl, insurance_doc, … — double as the nested envelope keys)
+        and returns a response flattened to the validate/set shape
+        (``discrepancies`` + ``cross_document_discrepancies`` at top level) so
+        the pipeline consumes either endpoint identically. Bundle-only extras
+        (``decision``, ``sanctions``, ``export_controls``, ``tbml``,
+        ``route``) ride along for downstream/operator use.
+
+        Raises RulHubAPIError / RulHubRateLimited so the caller can fall back
+        to /v1/validate/set (or the local DB engine).
+        """
+        envelope: Dict[str, Any] = {}
+        for doc in documents or []:
+            if not isinstance(doc, dict):
+                continue
+            key = doc.get("type") or doc.get("document_type") or doc.get("doc_type")
+            if not key:
+                continue
+            envelope[str(key)] = doc.get("fields") or {}
+
+        try:
+            result = await self.client.check_compliance(envelope, jurisdiction)
+        except RulHubRateLimited:
+            logger.warning("RulHub rate limited during check_compliance")
+            raise
+        except RulHubAPIError as exc:
+            logger.error("RulHub check_compliance failed: %s", exc)
+            raise
+
+        validation = result.get("validation") if isinstance(result.get("validation"), dict) else {}
+        flat: Dict[str, Any] = {
+            "discrepancies": (
+                validation.get("discrepancies")
+                or result.get("discrepancies")
+                or []
+            ),
+            "cross_document_discrepancies": (
+                validation.get("cross_document_discrepancies")
+                or validation.get("cross_doc_issues")
+                or result.get("cross_document_discrepancies")
+                or result.get("cross_doc_issues")
+                or []
+            ),
+            "rules_checked": validation.get("rules_checked") or result.get("rules_checked"),
+            "score": validation.get("score") or result.get("score"),
+            "compliant": validation.get("compliant", result.get("compliant")),
+            "decision": result.get("decision"),
+            "sanctions": result.get("sanctions"),
+            "export_controls": result.get("export_controls"),
+            "tbml": result.get("tbml"),
+            "route": result.get("route"),
+            "_engine": "compliance_check",
+        }
+
+        try:
+            _hits = (flat.get("sanctions") or {}).get("hits") or []
+            logger.info(
+                "RulHub compliance summary: decision=%s discrepancies=%d crossdoc=%d "
+                "sanctions_hits=%d rules_checked=%s",
+                flat.get("decision"),
+                len(flat.get("discrepancies") or []),
+                len(flat.get("cross_document_discrepancies") or []),
+                len(_hits),
+                flat.get("rules_checked", "?"),
+            )
+            # Screening escalations must be loud — the concierge operator
+            # reads Render logs; a block/reject or sanctions hit needs to be
+            # visible without opening the raw dump.
+            if flat.get("decision") in ("block", "reject") or _hits:
+                logger.warning(
+                    "RulHub compliance ESCALATION: decision=%s sanctions_hits=%d — "
+                    "operator review required before delivery",
+                    flat.get("decision"), len(_hits),
+                )
+        except Exception:  # defensive — never block on logging
+            logger.info("RulHub compliance summary log skipped (unexpected shape)")
+        try:
+            logger.info(
+                "RulHub compliance raw response: %s",
+                json.dumps(result, default=str)[:20000],
+            )
+        except Exception:
+            logger.info("RulHub compliance raw response (non-serializable): %r", result)
+        return flat
+
 
 # ---------------------------------------------------------------------------
 # Singleton
