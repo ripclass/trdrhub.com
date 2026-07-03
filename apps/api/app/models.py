@@ -299,6 +299,29 @@ class ValidationSession(Base):
         nullable=True,
     )
 
+    # Concierge review queue — Phase 1 launch (2026-07). NULL means a legacy
+    # self-serve validation (results visible as soon as the engine finishes);
+    # a non-null review_state means the session went through the human review
+    # queue and its results are withheld from the customer until 'delivered'.
+    # Managed only via app/services/report_review.py::transition().
+    review_state = Column(String(50), nullable=True, index=True)
+    review_state_changed_at = Column(DateTime(timezone=True), nullable=True)
+    # Operator's summary note attached at Approve & Deliver.
+    review_note = Column(Text, nullable=True)
+    reviewed_by = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    # The generated cited-discrepancy report PDF (reports.id) released on delivery.
+    review_report_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("reports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Bulk-validation back-references — Phase A1 part 2 (2026-04-26).
     # NULL for sessions created via the single-LC upload path. Populated
     # by BulkValidateProcessor right before it kicks the validation

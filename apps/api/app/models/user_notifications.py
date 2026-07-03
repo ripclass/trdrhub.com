@@ -36,6 +36,9 @@ class NotificationType(str, enum.Enum):
     VALIDATION_COMPLETE = "validation_complete"
     BULK_JOB_COMPLETE = "bulk_job_complete"
     LIFECYCLE_TRANSITION = "lifecycle_transition"
+    # Concierge review queue (Phase 1 launch)
+    REPORT_UNDER_REVIEW = "report_under_review"  # engine done, specialist reviewing
+    REPORT_DELIVERED = "report_delivered"        # operator approved, report released
     SYSTEM = "system"  # generic catch-all
 
 
@@ -54,6 +57,8 @@ DEFAULT_NOTIFICATION_PREFS: dict[str, dict[str, bool]] = {
     NotificationType.VALIDATION_COMPLETE.value: {"in_app": True, "email": False},
     NotificationType.BULK_JOB_COMPLETE.value: {"in_app": True, "email": True},
     NotificationType.LIFECYCLE_TRANSITION.value: {"in_app": False, "email": False},
+    NotificationType.REPORT_UNDER_REVIEW.value: {"in_app": True, "email": True},
+    NotificationType.REPORT_DELIVERED.value: {"in_app": True, "email": True},
     NotificationType.SYSTEM.value: {"in_app": True, "email": False},
 }
 

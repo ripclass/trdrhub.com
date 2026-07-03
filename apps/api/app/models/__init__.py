@@ -119,6 +119,13 @@ from .doc_generator_catalog import (
     StoredDocument,
 )
 
+# Concierge review-queue models — Phase 1 launch (2026-07)
+from .report_review import (
+    ReportReviewEvent,
+    ReportReviewState,
+    REPORT_REVIEW_STATE_VALUES,
+)
+
 __all__ = [
     "User",
     "UserRole",
@@ -191,4 +198,8 @@ __all__ = [
     "ProductCatalogItem",
     "BuyerProfile",
     "StoredDocument",
+    # Concierge review-queue models
+    "ReportReviewEvent",
+    "ReportReviewState",
+    "REPORT_REVIEW_STATE_VALUES",
 ]

@@ -157,6 +157,46 @@ def _make_json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _notify_report_under_review(db, validation_session) -> None:
+    """Tell the customer their submission was received and is being reviewed.
+
+    Sent for concierge jobs on engine completion (instead of the outcome
+    notification). Carries the 24h SLA promise. Best-effort — never raises.
+    """
+    try:
+        from app.services.user_notifications import dispatch as _dispatch
+        from app.models.user_notifications import NotificationType
+        from app.models import User
+
+        owner = (
+            db.query(User).filter(User.id == validation_session.user_id).first()
+            if validation_session.user_id
+            else None
+        )
+        if owner is None:
+            return
+        _dispatch(
+            db,
+            owner,
+            NotificationType.REPORT_UNDER_REVIEW,
+            title="We've received your documents",
+            body=(
+                "Your LC pack has been checked by our engine and is now with a "
+                "specialist for review. Your cited report will be delivered within "
+                "24 hours."
+            ),
+            link_url=f"/lcopilot/status/{validation_session.id}",
+            metadata={"validation_session_id": str(validation_session.id)},
+        )
+        db.commit()
+    except Exception:
+        import logging as _logging
+        _logging.getLogger(__name__).exception(
+            "report_under_review notification skipped for session %s",
+            getattr(validation_session, "id", None),
+        )
+
+
 def _suppress_advisory_findings_for_documentary_context(
     issues: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -1365,12 +1405,44 @@ async def finalize_validation_result(
     else:
         db.commit()
 
+    # Phase 1 concierge review queue. When enabled, every customer LCopilot
+    # validation is enrolled into the human review queue on engine completion.
+    # The session lands on UNDER_REVIEW and its results are withheld from the
+    # customer (see the gate in jobs_public.get_results) until an operator
+    # delivers it. Best-effort — a failure here must not fail the run.
+    _is_concierge = False
+    if validation_session and validation_session.user_id and validation_session.bulk_item_id is None:
+        try:
+            from app.config import settings as _rq_settings
+            if getattr(_rq_settings, "LCOPILOT_REVIEW_QUEUE_ENABLED", False):
+                from app.models import User as _User
+                _owner = (
+                    db.query(_User).filter(_User.id == validation_session.user_id).first()
+                )
+                # Exclude the anonymous public-check sentinel — the free lead
+                # magnet must stay an instant, ungated teaser.
+                _is_demo = bool(_owner and (_owner.email or "").lower() == "demo@trdrhub.com")
+                if _owner is not None and not _is_demo:
+                    from app.services import report_review as _review
+                    _review.begin_review(db, validation_session, reason="engine run submitted")
+                    _review.on_engine_complete(db, validation_session)
+                    db.commit()
+                    db.refresh(validation_session)
+                    _is_concierge = True
+                    _notify_report_under_review(db, validation_session)
+        except Exception:
+            logger.exception(
+                "concierge review enrollment skipped for session %s",
+                validation_session.id if validation_session else None,
+            )
+
     # A3 — notify the session owner that validation finished. Skipped
     # when discrepancies were raised (finding_persistence already
     # dispatched DISCREPANCY_RAISED, which is the more actionable
-    # signal). Best-effort: never block the response on a notification
-    # write or email send.
-    if validation_session and not (deduplicated_results and len(deduplicated_results) > 0):
+    # signal), and skipped for concierge jobs (the customer must not
+    # learn the outcome until an operator delivers the report — they
+    # got the "under review" notice above instead). Best-effort.
+    if validation_session and not _is_concierge and not (deduplicated_results and len(deduplicated_results) > 0):
         try:
             from app.services.user_notifications import dispatch as _dispatch
             from app.models.user_notifications import NotificationType

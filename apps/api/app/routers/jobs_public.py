@@ -946,6 +946,30 @@ def get_job_results(
 
     _ensure_access(session, current_user)
 
+    # Concierge review gate: if this session went through the human review queue,
+    # its results are withheld from the customer until an operator delivers it.
+    # System admins bypass (they review via the admin queue). The customer polls
+    # the dedicated status endpoint (GET /api/lcopilot/status/{job_id}) meanwhile.
+    review_state = getattr(session, "review_state", None)
+    if review_state and review_state != "delivered":
+        _is_admin = bool(
+            current_user
+            and hasattr(current_user, "is_system_admin")
+            and current_user.is_system_admin()
+        )
+        if not _is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error_code": "under_review",
+                    "review_state": review_state,
+                    "message": (
+                        "Your report is being reviewed by a specialist and will be "
+                        "available once delivered. You'll get an email when it's ready."
+                    ),
+                },
+            )
+
     # If the pipeline persisted results but left the status non-terminal, close it out here
     if (
         session.validation_results

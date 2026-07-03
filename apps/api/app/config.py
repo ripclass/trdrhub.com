@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     AUTH0_AUDIENCE: Optional[str] = None
     AUTH0_JWKS_URL: Optional[str] = None
     
+    # Concierge review queue (Phase 1 launch). When True, every customer LCopilot
+    # validation is enrolled into the human review queue on engine completion and
+    # its results are withheld from the customer until an operator delivers it.
+    # Default off so existing self-serve flows are unchanged until launch cutover.
+    LCOPILOT_REVIEW_QUEUE_ENABLED: bool = False
+
     # Stub Mode Configuration
     USE_STUBS: bool = False
     STUB_SCENARIO: str = "lc_happy.json"

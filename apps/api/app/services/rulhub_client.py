@@ -213,6 +213,41 @@ class RulHubClient:
         result = await self._request("POST", "/v1/validate/set", json=payload)
         return result.get("data", result)
 
+    async def check_compliance(
+        self,
+        envelope: Dict[str, Any],
+        jurisdiction: str = "global",
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        POST /v1/compliance/check — the full compliance bundle.
+
+        Runs validate + sanctions + export-controls + tbml + route screening in
+        parallel and returns a single ``decision`` (accept | review | block |
+        reject) alongside the component results. This is the preferred call for
+        LCopilot: one round-trip covers document examination AND screening.
+
+        ``envelope`` MUST be the canonical NESTED shape keyed by document role,
+        e.g. ``{"lc": {...}, "invoice": {...}, "bl": {...}, "insurance_doc": {...}}``.
+        Long-form aliases (letter_of_credit / commercial_invoice / bill_of_lading /
+        marine_bl …) are REJECTED by the server with 400 — pass short keys only.
+
+        Returns the server's ``data`` payload, typically:
+            {
+              "decision": "review",
+              "validation": {"discrepancies": [...], "cross_doc_issues": [...]},
+              "sanctions": {"hits": [...]},
+              "export_controls": {...},
+              "tbml": {...},
+              "route": {...},
+            }
+        """
+        payload: Dict[str, Any] = {**(envelope or {}), "jurisdiction": jurisdiction}
+        if options:
+            payload["options"] = options
+        result = await self._request("POST", "/v1/compliance/check", json=payload)
+        return result.get("data", result)
+
     # -------------------------------------------------------------------------
     # Screening endpoints (NEVER cache)
     # -------------------------------------------------------------------------

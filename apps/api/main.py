@@ -337,6 +337,11 @@ app.include_router(public_check.router)  # Public, no-auth LC checker (free lead
 app.include_router(rules_admin.router)
 app.include_router(rules_admin.rules_router)
 
+# Phase 1 concierge review queue — customer status + operator review/deliver
+from app.routers import lcopilot_review  # noqa: E402
+app.include_router(lcopilot_review.router)
+app.include_router(lcopilot_review.admin_router)
+
 # Note: Startup logging is now handled in the lifespan function
 
 # Add logging middleware (order matters - add first)
