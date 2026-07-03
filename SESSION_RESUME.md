@@ -1,4 +1,4 @@
-# SESSION_RESUME — TRDR Hub launch mission (2026-07-03, session 2: Phases 1+2 code complete)
+# SESSION_RESUME — TRDR Hub launch mission (2026-07-03, session 2: Phases 1+2+3 code complete)
 
 **Mission:** 6-phase launch (audit → LCopilot e2e → sanctions → CBAM/EUDR → park tools → Stripe).
 Service-as-software / concierge model. Full brief + constraints in
@@ -6,18 +6,22 @@ Service-as-software / concierge model. Full brief + constraints in
 
 ## Resume prompt
 ```
-Resume the TRDR Hub launch mission. Phase 0 DONE (f29555b5). Phase 1 CODE COMPLETE
-(98e85565 + c74931b8/2e940ce9/a2192a3b). Phase 2 CODE COMPLETE (1cf4ec4c). Read
-memory: project_launch_mission_2026_07 + reference_concierge_review_queue +
-reference_sanctions_rulhub_wire. If RulHub billing has resumed (~Jul 5):
-(a) integration-test /v1/compliance/check, (b) run Phase 1 acceptance (exporter +
+Resume the TRDR Hub launch mission. Phase 0 DONE (f29555b5). Phases 1-3 CODE
+COMPLETE (Phase 1: 98e85565 + c74931b8/2e940ce9/a2192a3b · Phase 2: 1cf4ec4c ·
+Phase 3: deea9b62). Read memory: project_launch_mission_2026_07 +
+reference_concierge_review_queue + reference_sanctions_rulhub_wire +
+reference_readiness_tools. If RulHub billing has resumed (~Jul 5), run the blocked
+acceptances: (a) /v1/compliance/check live test, (b) Phase 1 acceptance (exporter +
 importer upload→delivered PDF through the queue, flag ON in test env) + Render
-migration job for 20260703_add_report_review, (c) run
-scripts/sanctions_sentinel_e2e.py with an rh_test_* key + batch CSV of 10 names in
-the UI. Otherwise proceed to Phase 3: CBAM + EUDR questionnaire tools (net-new,
-$149/$149/$249, RulHub m13 rules via /v1/rules/lookup|search, same review queue,
-free 5-Q scope check, SEO landings /tools/cbam-readiness-check + eudr) per playbook
-§3.2. Then Phase 4 (park tools + homepage) and Phase 5 (Stripe).
+migration job for 20260703_add_report_review, (c) sanctions sentinel e2e
+(scripts/sanctions_sentinel_e2e.py, rh_test_* key) + batch CSV of 10 names,
+(d) readiness live m13 citation test (one paid intake → findings carry
+clause_cited). Otherwise proceed to Phase 4: park unfit tools (keep LCopilot,
+Sanctions, CBAM Check, EUDR Check; evaluate DocGenerator + LC Builder against the
+works-e2e/zero-maintenance/no-dilution bar; parked landings → polite page, no dead
+links) + homepage rebuild (hero = LCopilot service framing, then 4 live tools, then
+RulGPT cross-link). Then Phase 5 (Stripe: products/prices, Checkout at intake,
+webhook → submitted, LAUNCH-NOTES.md).
 ```
 
 ## Done this session (2026-07-03, session 2) — Phase 1 frontend + wire
@@ -54,6 +58,17 @@ free 5-Q scope check, SEO landings /tools/cbam-readiness-check + eudr) per playb
   real CSV → /screen/batch (was a client-side mock simulation).
 - `scripts/sanctions_sentinel_e2e.py` ready for the rh_test_* sentinel check.
 
+## Also done this session — Phase 3: CBAM/EUDR readiness tools (`deea9b62`)
+- Backend: `services/readiness.py` (question sets, annex-based scope verdicts, m13
+  engine w/ runtime source discovery + outage degradation) + `routers/readiness.py`
+  (questions / scope-check public / scope-summary email-gate / submit auth → SAME
+  review queue, workflow_type cbam/eudr/cbam_eudr_readiness, unconditional).
+  Admin `POST /{id}/rerun-engine` + ReviewQueue intake-answers panel + rerun button.
+  `lc_report` titles keyed by workflow_type. `RulHubClient.lookup_rules`. 12 pytest.
+- Frontend: `/tools/cbam-readiness-check` + `/tools/eudr-readiness-check` (SEO via
+  useSeoMeta, §3.2 anchors, scope widget + email gate), `/tools/readiness/apply`
+  intake (RequireAuth), `READINESS_REPORTS` pricing, status-page readiness copy.
+
 ## Blocked on RulHub billing resume (~2026-07-05)
 1. Phase 1: live test /v1/compliance/check (any 400/404 auto-falls-back — prod safe).
 2. Phase 1 acceptance: exporter + importer run, upload → status page → admin queue →
@@ -61,12 +76,17 @@ free 5-Q scope check, SEO landings /tools/cbam-readiness-check + eudr) per playb
 3. After deploy: `render jobs create srv-d41dio8dl3ps73db8gpg --start-command
    "alembic upgrade head"` (migration `20260703_add_report_review`).
 4. Phase 2 acceptance: sentinel e2e (3 PASS) + batch CSV of 10 names in the UI.
+5. Phase 3 acceptance: one paid readiness intake → findings cite the m13 corpus
+   (clause_cited populated); free scope check + landings already verified locally.
 
 ## Next phases
-- **Phase 3** — CBAM ($149) + EUDR ($149, both $249) questionnaire tools, net-new, RulHub
-  m13 rules, same review queue, SEO landings `/tools/cbam-readiness-check` + eudr.
-- **Phase 4** — Park all tools except LCopilot/Sanctions/CBAM/EUDR; homepage rebuild.
-- **Phase 5** — Stripe checkout at intake → webhook flips job to submitted; LAUNCH-NOTES.md.
+- **Phase 4** — Park all tools except LCopilot/Sanctions/CBAM Check/EUDR Check (evaluate
+  DocGenerator + LC Builder against the works-e2e/zero-maintenance/no-dilution bar);
+  parked landings → polite "not available" page, keep code, no dead links; homepage
+  rebuild (hero = LCopilot service framing → 4 live tools → RulGPT cross-link).
+- **Phase 5** — Stripe (acct Enso Intelligence Labs): products $29/$49/$79/$149/$149/$249
+  + hidden $299 retainer; Checkout at intake; checkout.session.completed → submitted +
+  confirmation email; refunds via dashboard reflected by webhook; LAUNCH-NOTES.md.
 
 ## Gotchas
 - Local full-app boot (`import main`) fails on PRE-EXISTING audit_events/organizations
