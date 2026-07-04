@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useRuleCount } from "@/lib/useRuleCount";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -182,13 +183,24 @@ const COUNTRIES: CountryOption[] = [
 // ─────────────────────────────────────────────────────────────
 
 export default function Register() {
+  const ruleCount = useRuleCount();
+
+  // Concierge fast path (?intent=review) — service-as-software intake. The
+  // visitor came to SEND DOCUMENTS, not to shop for a SaaS tier: pre-answer
+  // the wizard with sensible defaults (exporter, solo — both changeable) and
+  // land them on the upload page after signup instead of the dashboard.
+  const [searchParams] = useSearchParams();
+  const conciergeIntent = searchParams.get("intent") === "review";
+
   // Step state
   const [step, setStep] = useState(1);
 
   // Step 1 state — multi-select activities, single tier, single country.
   // Shape mirrors OnboardingCompletePayload (apps/api/app/schemas/onboarding.py).
-  const [activities, setActivities] = useState<BusinessActivity[]>([]);
-  const [tier, setTier] = useState<BusinessTier | "">("");
+  const [activities, setActivities] = useState<BusinessActivity[]>(
+    conciergeIntent ? ["exporter"] : [],
+  );
+  const [tier, setTier] = useState<BusinessTier | "">(conciergeIntent ? "solo" : "");
   const [country, setCountry] = useState<string>("");
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   
@@ -404,10 +416,14 @@ export default function Register() {
 
       toast({
         title: "Welcome to TRDR Hub! 🎉",
-        description: "Your account is ready. You have $100 in free credits!",
+        description: conciergeIntent
+          ? "Your account is ready — send us your documents and we'll take it from there."
+          : "Your account is ready.",
       });
 
-      navigate("/lcopilot/dashboard", { replace: true });
+      // Concierge intent: straight to the upload page — the whole point was
+      // to send documents, not to land on a dashboard.
+      navigate(conciergeIntent ? "/export-lc-upload" : "/lcopilot/dashboard", { replace: true });
 
     } catch (error: any) {
       const message =
@@ -812,14 +828,14 @@ export default function Register() {
                     </div>
                   </div>
 
-                  {/* Free Credits Banner */}
+                  {/* What you get — honest, no invented credits */}
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-[#B2F273]/10 border border-[#B2F273]/20">
                     <div className="w-9 h-9 rounded-lg bg-[#B2F273]/20 flex items-center justify-center flex-shrink-0">
                       <Gift className="w-4 h-4 text-[#B2F273]" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-white">$100 in free credits</p>
-                      <p className="text-xs text-[#B2F273]">No credit card • Use across all tools</p>
+                      <p className="text-sm font-medium text-white">Free to start</p>
+                      <p className="text-xs text-[#B2F273]">No card required • Free LC check &amp; scope checks • Pay per report</p>
                     </div>
                   </div>
 
@@ -931,7 +947,7 @@ export default function Register() {
           {/* Stats — honest, verifiable facts only */}
           <div className="flex items-center gap-8 border-t border-[#EDF5F2]/10 pt-8">
             <div>
-              <div className="text-3xl font-bold text-white font-display">4,000+</div>
+              <div className="text-3xl font-bold text-white font-display">{ruleCount}</div>
               <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Rules</div>
             </div>
             <div className="w-px h-12 bg-[#EDF5F2]/10" />

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { readPendingExporterReviewRoute, clearPendingExporterReviewRoute } from "@/lib/exporter/pendingReviewRoute";
+import { useRuleCount } from "@/lib/useRuleCount";
 
 // Live tools only (Phase 4 parked the rest) + honest service framing.
 const FEATURES = [
@@ -28,6 +29,7 @@ const FEATURES = [
 ];
 
 export default function Login() {
+  const ruleCount = useRuleCount();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -293,7 +295,7 @@ export default function Login() {
           {/* Stats — honest, verifiable facts only */}
           <div className="flex items-center gap-8 border-t border-[#EDF5F2]/10 pt-8">
             <div>
-              <div className="text-3xl font-bold text-white font-display">4,000+</div>
+              <div className="text-3xl font-bold text-white font-display">{ruleCount}</div>
               <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Rules</div>
             </div>
             <div className="w-px h-12 bg-[#EDF5F2]/10" />

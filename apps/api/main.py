@@ -350,6 +350,10 @@ app.include_router(readiness.router)
 from app.routers import checkout as checkout_router  # noqa: E402
 app.include_router(checkout_router.router)
 
+# Public marketing stats (live-fetched rule count — launch honesty checklist)
+from app.routers import public_stats  # noqa: E402
+app.include_router(public_stats.router)
+
 # Note: Startup logging is now handled in the lifespan function
 
 # Add logging middleware (order matters - add first)

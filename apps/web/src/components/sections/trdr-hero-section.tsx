@@ -6,8 +6,10 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Download, UserCheck } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useRuleCount } from "@/lib/useRuleCount";
 
 export function TRDRHeroSection() {
+  const ruleCount = useRuleCount();
   return (
     <section className="relative min-h-screen flex flex-col justify-start md:justify-center overflow-hidden bg-[#00261C]">
       {/* Background Image with Overlay */}
@@ -89,7 +91,7 @@ export function TRDRHeroSection() {
               <div className="text-xs sm:text-sm text-[#EDF5F2]/60 font-mono uppercase tracking-wider">Report turnaround</div>
             </div>
             <div className="text-center group hover:-translate-y-1 transition-transform duration-300">
-              <div className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-2 font-display group-hover:text-[#B2F273] transition-colors">4,000+</div>
+              <div className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-2 font-display group-hover:text-[#B2F273] transition-colors">{ruleCount}</div>
               <div className="text-xs sm:text-sm text-[#EDF5F2]/60 font-mono uppercase tracking-wider">Examination rules</div>
             </div>
             <div className="text-center group hover:-translate-y-1 transition-transform duration-300">

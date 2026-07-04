@@ -1,5 +1,6 @@
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
+import { useRuleCount } from "@/lib/useRuleCount";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { 
@@ -19,30 +20,32 @@ import {
   ArrowRight
 } from "lucide-react";
 
+// Honesty rubric applies here too: no invented training-set sizes, accuracy
+// percentages, certifications, or speed claims. Say what the system IS.
 const techStack = [
   {
     icon: Brain,
-    title: "Context-Aware AI",
-    description: "Our proprietary LLM models don't just read text; they understand trade context. Trained on 2M+ trade documents to distinguish between 'Port of Loading' and 'Place of Receipt' with 99.9% accuracy.",
-    tags: ["LLM", "NLP", "Computer Vision"]
+    title: "Vision + Language Extraction",
+    description: "Frontier vision and language models transcribe your documents field by field — MT700s, ISO 20022, scans, even phone photos. Extraction transcribes; it never judges.",
+    tags: ["Vision LLM", "OCR", "Blind transcription"]
   },
   {
     icon: Database,
-    title: "Universal Rule Engine",
-    description: "A deterministic validation layer encoding 4,000+ verified examination rules from UCP 600, ISBP 821, and 60+ country-specific regulations. It catches discrepancies that generic AI models miss.",
+    title: "Deterministic Rule Engine",
+    description: "A deterministic validation layer encoding {{RULES}} verified examination rules from UCP 600, ISBP 821, and country-specific regulations. Rule outcomes are never left to an AI's judgment.",
     tags: ["Rule Engine", "UCP 600", "ISBP 821"]
   },
   {
     icon: Shield,
-    title: "Bank-Grade Security",
-    description: "SOC 2 Type II compliant infrastructure with AES-256 encryption at rest and TLS 1.3 in transit. Your trade data is isolated in dedicated tenant enclaves.",
-    tags: ["SOC 2", "AES-256", "Zero Trust"]
+    title: "Security by Default",
+    description: "Encryption in transit and at rest, tenant-scoped data isolation, and audit logging on every sensitive action. Your documents are used only to produce your report.",
+    tags: ["Encryption", "Tenant isolation", "Audit trail"]
   },
   {
     icon: Zap,
-    title: "Real-Time Processing",
-    description: "Distributed edge computing architecture processes complex 100-page document sets in under 45 seconds. 10x faster than manual review.",
-    tags: ["Edge Computing", "Serverless", "Low Latency"]
+    title: "Engine + Specialist",
+    description: "The engine does the exhaustive checking; a trade documentation specialist reviews every report before it ships. You get machine coverage with human judgment.",
+    tags: ["Review queue", "Cited findings", "24h delivery"]
   },
   {
     icon: FileCode,
@@ -82,6 +85,7 @@ const architectureSteps = [
 ];
 
 const TechnologyPage = () => {
+  const ruleCount = useRuleCount();
   // Force rebuild
   return (
     <div className="min-h-screen bg-[#00261C]">
@@ -181,7 +185,7 @@ const TechnologyPage = () => {
                   
                   <h3 className="text-2xl font-bold text-white mb-4 font-display">{tech.title}</h3>
                   <p className="text-[#EDF5F2]/60 leading-relaxed mb-6 min-h-[80px]">
-                    {tech.description}
+                    {tech.description.replace("{{RULES}}", ruleCount)}
                   </p>
                   
                   <div className="flex flex-wrap gap-2">
@@ -219,11 +223,11 @@ const TechnologyPage = () => {
                 
                 <ul className="space-y-4">
                   {[
-                    "SOC 2 Type II Certified",
-                    "GDPR & CCPA Compliant",
+                    "Encryption in transit and at rest",
                     "Role-Based Access Control (RBAC)",
                     "Audit Logs for Every Action",
-                    "Data Residency Options"
+                    "Tenant-scoped data isolation",
+                    "NDA available on request"
                   ].map((item, i) => (
                     <li key={i} className="flex items-center gap-3 text-white">
                       <CheckCircle2 className="w-5 h-5 text-[#B2F273]" />

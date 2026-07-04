@@ -27,9 +27,11 @@ import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { CONCIERGE_REPORTS } from "@/lib/pricing";
+import { useRuleCount } from "@/lib/useRuleCount";
 
 const SAMPLE_REPORT_HREF = "/samples/lcopilot-sample-report.pdf";
-const START_HREF = "/register";
+// Stable concierge entry: authed → upload, anonymous → fast-path signup.
+const START_HREF = "/lcopilot/start-review";
 
 const steps = [
   {
@@ -44,7 +46,7 @@ const steps = [
     icon: FileSearch,
     title: "Engine check + specialist review",
     description:
-      "Our rules engine examines the set against 4,000+ verified examination rules. Then a trade documentation specialist reviews every report before it ships — nothing goes out unread.",
+      "Our rules engine examines the set against {{RULES}} verified examination rules. Then a trade documentation specialist reviews every report before it ships — nothing goes out unread.",
   },
   {
     step: "03",
@@ -120,6 +122,7 @@ const faqs = [
 
 const Index = () => {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const ruleCount = useRuleCount();
 
   return (
     <div className="min-h-screen bg-[#00261C]">
@@ -282,7 +285,7 @@ const Index = () => {
                         </div>
                       </div>
                       <h3 className="text-xl font-bold text-white mb-3 font-display group-hover:text-[#B2F273] transition-colors">{item.title}</h3>
-                      <p className="text-[#EDF5F2]/60 text-sm leading-relaxed">{item.description}</p>
+                      <p className="text-[#EDF5F2]/60 text-sm leading-relaxed">{item.description.replace("{{RULES}}", ruleCount)}</p>
                       <div className="absolute bottom-0 left-0 w-0 h-[3px] bg-[#B2F273] group-hover:w-full transition-all duration-500 ease-in-out" />
                     </div>
                   </div>
