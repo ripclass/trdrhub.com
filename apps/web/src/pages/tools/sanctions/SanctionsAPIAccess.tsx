@@ -37,56 +37,27 @@ interface APIKey {
   is_active: boolean;
 }
 
-const sampleKeys: APIKey[] = [
-  {
-    key_id: "sk_live_abc123...def456",
-    name: "Production ERP",
-    created_at: "2025-12-01T10:00:00Z",
-    last_used: "2025-12-06T18:30:00Z",
-    permissions: ["screen:party", "screen:vessel", "batch:upload"],
-    is_active: true,
-  },
-  {
-    key_id: "sk_test_xyz789...ghi012",
-    name: "Development",
-    created_at: "2025-11-15T09:00:00Z",
-    permissions: ["screen:party"],
-    is_active: true,
-  },
-];
-
+// Self-serve API keys are NOT available yet — the backend answers 501 and
+// no key would authorize anything. The previous version of this page showed
+// fake sample keys and "created" keys with Math.random(), which was a lie.
+// Programmatic screening runs through the RulHub API — contact support.
 export default function SanctionsAPIAccess() {
   const { toast } = useToast();
-  const [keys, setKeys] = useState<APIKey[]>(sampleKeys);
+  const [keys, setKeys] = useState<APIKey[]>([]);
   const [newKeyName, setNewKeyName] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(false);
 
   const handleCreateKey = () => {
-    if (!newKeyName.trim()) {
-      toast({
-        title: "Name required",
-        description: "Please enter a name for your API key",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const fullKey = `sk_live_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
-    
-    const newKey: APIKey = {
-      key_id: fullKey.substring(0, 15) + "..." + fullKey.substring(fullKey.length - 6),
-      name: newKeyName,
-      created_at: new Date().toISOString(),
-      permissions: ["screen:party", "screen:vessel", "screen:goods", "batch:upload"],
-      is_active: true,
-    };
-
-    setKeys([newKey, ...keys]);
-    setNewlyCreatedKey(fullKey);
-    setNewKeyName("");
     setIsCreateDialogOpen(false);
+    setNewKeyName("");
+    toast({
+      title: "Self-serve API keys aren't available yet",
+      description:
+        "For programmatic screening access, email support@trdrhub.com — we'll set you up on the API directly.",
+      variant: "destructive",
+    });
   };
 
   const handleCopyKey = (key: string) => {
@@ -215,8 +186,14 @@ export default function SanctionsAPIAccess() {
           {keys.length === 0 ? (
             <div className="text-center py-8">
               <Key className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-white mb-2">No API keys</h3>
-              <p className="text-slate-400">Create an API key to get started</p>
+              <h3 className="text-lg font-medium text-white mb-2">Self-serve API keys aren't available yet</h3>
+              <p className="text-slate-400">
+                For programmatic screening at volume, email{" "}
+                <a href="mailto:support@trdrhub.com" className="text-red-400 hover:underline">
+                  support@trdrhub.com
+                </a>{" "}
+                — we'll set you up on the API directly.
+              </p>
             </div>
           ) : (
             <div className="space-y-3">

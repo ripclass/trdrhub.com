@@ -16,11 +16,13 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+import { COVERED_LISTS } from "./screeningShared";
+
 const screeningTypes = [
   {
     id: "party",
     title: "Screen a Party",
-    description: "Check buyers, sellers, banks, and agents against sanctions lists",
+    description: "Check buyers, sellers, banks, and agents against the designated-party lists",
     icon: Users,
     href: "/sanctions/dashboard/screen/party",
     color: "red",
@@ -28,7 +30,7 @@ const screeningTypes = [
   {
     id: "vessel",
     title: "Screen a Vessel",
-    description: "Verify vessels against sanctioned flags, owners, and dark activity",
+    description: "Vessel names and IMO numbers — exact IMO matching plus tiered name matching",
     icon: Ship,
     href: "/sanctions/dashboard/screen/vessel",
     color: "orange",
@@ -36,26 +38,19 @@ const screeningTypes = [
   {
     id: "goods",
     title: "Screen Goods",
-    description: "Check goods against dual-use and export control lists",
+    description: "Goods and destination against sanctions-programme rules",
     icon: Package,
     href: "/sanctions/dashboard/screen/goods",
     color: "yellow",
   },
 ];
 
+// Screening results are not persisted yet — zeros are the honest values.
 const stats = [
-  { label: "Screenings Today", value: "0", icon: Clock },
-  { label: "Clear Results", value: "0", icon: CheckCircle, color: "text-emerald-400" },
-  { label: "Potential Matches", value: "0", icon: AlertTriangle, color: "text-amber-400" },
-  { label: "Watchlist Items", value: "0", icon: TrendingUp },
-];
-
-const lists = [
-  { name: "OFAC SDN", jurisdiction: "US", entries: "12,500+", updated: "Today" },
-  { name: "EU Consolidated", jurisdiction: "EU", entries: "8,200+", updated: "3 days ago" },
-  { name: "UN Security Council", jurisdiction: "UN", entries: "2,100+", updated: "Weekly" },
-  { name: "UK OFSI", jurisdiction: "UK", entries: "4,800+", updated: "2 days ago" },
-  { name: "BIS Entity List", jurisdiction: "US", entries: "600+", updated: "Monthly" },
+  { label: "Screenings Today", value: "—", icon: Clock },
+  { label: "Clear Results", value: "—", icon: CheckCircle, color: "text-emerald-400" },
+  { label: "Potential Matches", value: "—", icon: AlertTriangle, color: "text-amber-400" },
+  { label: "Watchlist Items", value: "—", icon: TrendingUp },
 ];
 
 export default function SanctionsOverview() {
@@ -66,12 +61,12 @@ export default function SanctionsOverview() {
         <div>
           <h1 className="text-2xl font-bold text-white">Sanctions Screener</h1>
           <p className="text-slate-400 mt-1">
-            Screen parties, vessels, and goods against 50+ global sanctions lists
+            Deterministic screening against OFAC SDN, OFAC Consolidated, UN and UK OFSI — fail-closed
           </p>
         </div>
-        <Badge variant="outline" className="border-emerald-500/50 text-emerald-400">
+        <Badge variant="outline" className="border-slate-600 text-slate-400">
           <RefreshCw className="w-3 h-3 mr-1" />
-          Lists Updated Today
+          List as-of dates shown on every result
         </Badge>
       </div>
 
@@ -132,12 +127,10 @@ export default function SanctionsOverview() {
                 Sanctions Lists Coverage
               </CardTitle>
               <CardDescription className="text-slate-400">
-                We screen against 50+ global sanctions lists
+                Designated-party lists screened on every check. Per-source as-of dates
+                arrive with each screening result.
               </CardDescription>
             </div>
-            <Button variant="outline" size="sm" className="border-slate-700 text-slate-400 hover:text-white">
-              View All Lists
-            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -147,13 +140,12 @@ export default function SanctionsOverview() {
                 <tr className="border-b border-slate-800">
                   <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 uppercase">List</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 uppercase">Jurisdiction</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 uppercase">Entries</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 uppercase">Last Updated</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 uppercase">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {lists.map((list) => (
-                  <tr key={list.name} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                {COVERED_LISTS.map((list) => (
+                  <tr key={list.code} className="border-b border-slate-800/50 hover:bg-slate-800/30">
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <Shield className="w-4 h-4 text-red-400" />
@@ -165,9 +157,10 @@ export default function SanctionsOverview() {
                         {list.jurisdiction}
                       </Badge>
                     </td>
-                    <td className="py-3 px-4 text-slate-400">{list.entries}</td>
                     <td className="py-3 px-4">
-                      <span className="text-emerald-400 text-sm">{list.updated}</span>
+                      <span className={list.status === "active" ? "text-emerald-400 text-sm" : "text-amber-400 text-sm"}>
+                        {list.status === "active" ? "Screened on every check" : "Pending — not yet screened"}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -188,10 +181,10 @@ export default function SanctionsOverview() {
               <h3 className="font-semibold text-white mb-2">Compliance Best Practices</h3>
               <ul className="text-sm text-slate-400 space-y-1">
                 <li>• Screen all parties before initiating any transaction</li>
-                <li>• Verify vessels against sanctioned flags and ownership chains</li>
-                <li>• Check goods for dual-use classification before export</li>
-                <li>• Keep screening certificates for compliance audit trail</li>
-                <li>• Set up watchlist monitoring for ongoing counterparties</li>
+                <li>• Screen vessels by IMO number when you have it — exact matches beat name matches</li>
+                <li>• Keep the screening reference id (scr_*) from each result for your records</li>
+                <li>• A clear name can still be majority-owned by a designated party (OFAC 50% rule is not resolved here) — know your counterparty's ownership</li>
+                <li>• Treat "not screened" as exactly that — never as clear</li>
               </ul>
             </div>
           </div>
