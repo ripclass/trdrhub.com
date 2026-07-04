@@ -41,7 +41,9 @@ export const RULEBOOK_OPTIONS_BY_DOMAIN: Record<string, RulebookOption[]> = {
   icc: [
     // Documentary Credits (LC)
     { value: "icc.ucp600", label: "UCP 600 (Commercial Documentary Credits)", type: "base", domain: "icc" },
-    { value: "icc.isbp745", label: "ISBP 745 (Standard Banking Practice)", type: "supplement", domain: "icc" },
+    // isbp745 kept as an upload target for the superseded publication; 821 is current.
+    { value: "icc.isbp821", label: "ISBP 821 (Standard Banking Practice, current)", type: "supplement", domain: "icc" },
+    { value: "icc.isbp745", label: "ISBP 745 (Standard Banking Practice, superseded)", type: "supplement", domain: "icc" },
     { value: "icc.eucp", label: "eUCP v2.1 (Electronic Supplement to UCP)", type: "supplement", domain: "icc" },
     
     // Standby & Guarantees

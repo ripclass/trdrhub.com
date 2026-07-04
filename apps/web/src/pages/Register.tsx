@@ -111,11 +111,12 @@ const COMPANY_SIZES: CompanySizeOption[] = [
   },
 ];
 
+// Live tools only (Phase 4 parked the rest) + honest service framing.
 const FEATURES = [
-  { icon: FileCheck, label: "LC Validation", desc: "UCP600 compliance" },
-  { icon: DollarSign, label: "Price Verify", desc: "Market benchmarks" },
-  { icon: Ship, label: "Track Shipments", desc: "Real-time updates" },
-  { icon: Shield, label: "Sanctions Check", desc: "OFAC, EU, UN" },
+  { icon: FileCheck, label: "LC Pack Review", desc: "UCP 600 / ISBP 821, cited" },
+  { icon: Shield, label: "Sanctions Check", desc: "OFAC, UN, UK OFSI" },
+  { icon: DollarSign, label: "CBAM Readiness", desc: "EU carbon border" },
+  { icon: Ship, label: "EUDR Readiness", desc: "EU deforestation rules" },
 ];
 
 // Country options with payment gateway mapping
@@ -894,15 +895,16 @@ export default function Register() {
         <div className="relative z-10 max-w-lg">
           {/* Headline */}
           <h2 className="text-4xl font-bold text-white mb-6 leading-tight font-display">
-            Everything Trade.
+            Your documents, checked
             <br />
             <span className="text-[#B2F273] text-glow-sm">
-              One Platform.
+              before it costs you.
             </span>
           </h2>
-          
+
           <p className="text-[#EDF5F2]/60 text-lg mb-12 font-light">
-            Join thousands of traders who validate documents, verify prices, and manage compliance in one place.
+            Send your LC pack — get back a cited discrepancy report within 24 hours,
+            reviewed by a specialist before it ships.
           </p>
 
           {/* Features list */}
@@ -926,21 +928,21 @@ export default function Register() {
             })}
           </div>
 
-          {/* Stats */}
+          {/* Stats — honest, verifiable facts only */}
           <div className="flex items-center gap-8 border-t border-[#EDF5F2]/10 pt-8">
             <div>
-              <div className="text-3xl font-bold text-white font-display">3.5k+</div>
+              <div className="text-3xl font-bold text-white font-display">4,000+</div>
               <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Rules</div>
             </div>
             <div className="w-px h-12 bg-[#EDF5F2]/10" />
             <div>
-              <div className="text-3xl font-bold text-white font-display">60+</div>
-              <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Countries</div>
+              <div className="text-3xl font-bold text-white font-display">24h</div>
+              <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Turnaround</div>
             </div>
             <div className="w-px h-12 bg-[#EDF5F2]/10" />
             <div>
-              <div className="text-3xl font-bold text-white font-display">99.9%</div>
-              <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Uptime</div>
+              <div className="text-3xl font-bold text-white font-display">100%</div>
+              <div className="text-sm text-[#EDF5F2]/40 font-mono uppercase tracking-wider mt-1">Refund if unhappy</div>
             </div>
           </div>
         </div>
@@ -949,15 +951,15 @@ export default function Register() {
         <div className="absolute bottom-8 left-12 right-12 flex items-center justify-between text-xs text-[#EDF5F2]/40 font-mono uppercase tracking-widest">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 bg-[#B2F273] rounded-full" />
-            SOC2 Aligned
+            Specialist Reviewed
           </div>
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 bg-[#B2F273] rounded-full" />
-            Bank Approved
+            UCP 600 · ISBP 821
           </div>
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 bg-[#B2F273] rounded-full" />
-            UCP600 Compliant
+            Confidential · NDA on request
           </div>
         </div>
       </div>

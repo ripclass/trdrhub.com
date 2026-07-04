@@ -72,7 +72,7 @@ const LONG_REQUEST_PATHS = [
   '/api/validate', 
   '/api/legacy_validate', 
   '/api/legacy-validate',
-  '/admin/rulesets/upload', // Large ruleset uploads (ISBP745 has 300+ rules)
+  '/admin/rulesets/upload', // Large ruleset uploads (ISBP 821 has 300+ rules)
   '/admin/rulesets',        // Ruleset operations
 ]
 
