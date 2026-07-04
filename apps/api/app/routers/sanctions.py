@@ -21,7 +21,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
@@ -153,6 +153,40 @@ def _unavailable_503(exc: Exception) -> HTTPException:
     )
 
 
+# Anonymous visitors get a small daily allowance (lead magnet); a free
+# account lifts it during launch. Signed-in users are bounded by the global
+# rate limiter only. Redis-unreachable fails OPEN here — the global limiter
+# still bounds abuse, and a cache hiccup must not take the tool down.
+ANON_DAILY_SCREENS = 5
+
+
+async def _enforce_anon_limit(request: Request, current_user: Optional[User]) -> None:
+    if current_user is not None:
+        return
+    from app.utils.anon_rate_limit import reserve_anon_run
+
+    try:
+        retry_in = await reserve_anon_run(
+            request=request, scope="sanctions_screen", limit=ANON_DAILY_SCREENS,
+        )
+    except Exception:
+        logger.warning("anon screening limiter unavailable — failing open", exc_info=True)
+        return
+    if retry_in is not None:
+        hours = max(1, round(retry_in / 3600))
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "free_limit_reached",
+                "message": (
+                    f"You've used today's {ANON_DAILY_SCREENS} free checks. "
+                    f"Create a free account for unlimited screening during launch, "
+                    f"or come back in about {hours}h."
+                ),
+            },
+        )
+
+
 # ============================================================================
 # Screening endpoints (all RulHub-backed, all fail-closed)
 # ============================================================================
@@ -170,6 +204,7 @@ async def get_available_lists():
 @router.post("/screen/party", response_model=ScreeningResponse)
 async def screen_party(
     request: PartyScreenRequest,
+    http_request: Request,
     current_user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
@@ -177,6 +212,7 @@ async def screen_party(
 
     Fail-closed: 503 screening_unavailable on any engine failure.
     """
+    await _enforce_anon_limit(http_request, current_user)
     try:
         mapped = await screen_via_rulhub(
             query=request.name,
@@ -192,10 +228,12 @@ async def screen_party(
 @router.post("/screen/vessel", response_model=ScreeningResponse)
 async def screen_vessel(
     request: VesselScreenRequest,
+    http_request: Request,
     current_user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """Screen a vessel (name or IMO) against designated-party lists + programme rules."""
+    await _enforce_anon_limit(http_request, current_user)
     # IMO gives the matcher an exact identifier tier; fall back to the name.
     vessel_key = (request.imo or "").strip() or request.name
     transaction: Dict[str, Any] = {}
@@ -221,6 +259,7 @@ async def screen_vessel(
 @router.post("/screen/goods", response_model=ScreeningResponse)
 async def screen_goods(
     request: GoodsScreenRequest,
+    http_request: Request,
     current_user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
@@ -229,6 +268,7 @@ async def screen_goods(
     Goods screening evaluates sectoral restrictions and destination-country
     programmes; it is not a designated-party name match.
     """
+    await _enforce_anon_limit(http_request, current_user)
     try:
         mapped = await screen_via_rulhub(
             query=request.description,
@@ -328,11 +368,14 @@ async def batch_screen(
 
 @router.post("/quick-screen")
 async def quick_screen(
+    http_request: Request,
     query: str = Query(..., min_length=2, description="Name to screen"),
     type: str = Query(default="party", regex="^(party|vessel|goods)$"),
     country: Optional[str] = Query(default=None, max_length=2),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """Quick screening endpoint for simple lookups. Fail-closed like the rest."""
+    await _enforce_anon_limit(http_request, current_user)
     try:
         if type == "vessel":
             mapped = await screen_via_rulhub(query=query, screening_type="vessel",

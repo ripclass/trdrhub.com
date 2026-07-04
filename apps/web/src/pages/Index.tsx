@@ -7,6 +7,7 @@
 // "trusted by banks", advisory-not-legal-advice footer.
 import { Link } from "react-router-dom";
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle,
   ChevronDown,
@@ -125,93 +126,133 @@ const Index = () => {
       <TRDRHeader />
 
       <main>
-        {/* Hero */}
-        <section className="relative pt-40 md:pt-48 pb-16 lg:pb-24 overflow-hidden bg-[#00261C]">
+        {/* Hero — split layout matching the CBAM/EUDR landings: pitch +
+            anchors left, interactive "try it free" card right. */}
+        <section className="relative pt-40 md:pt-44 pb-16 overflow-hidden bg-[#00261C]">
           <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-[#B2F273]/10 rounded-full blur-[120px]" />
-          <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-[#B2F273]/5 rounded-full blur-[100px]" />
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
-          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="max-w-4xl mx-auto text-center">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-8">
-                <UserCheck className="w-4 h-4 text-[#B2F273]" />
-                <span className="text-[#B2F273] text-sm font-medium">A specialist reviews every report before it ships</span>
+            <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-start max-w-6xl mx-auto">
+              <div className="pt-4">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-6">
+                  <UserCheck className="w-4 h-4 text-[#B2F273]" />
+                  <span className="text-[#B2F273] text-sm font-medium">
+                    A specialist reviews every report before it ships
+                  </span>
+                </div>
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-5 leading-[1.15] tracking-tight font-display">
+                  Your LC pack, checked
+                  <br />
+                  <span className="text-[#B2F273] text-glow-sm">before the bank sees it.</span>
+                </h1>
+                <p className="text-lg text-[#EDF5F2]/60 leading-relaxed mb-8">
+                  Send your LC, invoice, bill of lading and packing list. Get back a cited
+                  discrepancy report within 24 hours — every finding referenced to{" "}
+                  <span className="text-white font-medium">UCP 600 / ISBP 821</span>, with the
+                  fix — before you present.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-5 h-5 text-[#B2F273] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-white font-medium text-sm">A refused presentation costs fees, days, and leverage</p>
+                      <p className="text-[#EDF5F2]/50 text-sm">
+                        One inconsistent date, one missing notation, one unsigned invoice — and
+                        you're paying discrepancy fees and negotiating from the back foot.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-5 h-5 text-[#B2F273] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-white font-medium text-sm">Every finding cited, with the fix</p>
+                      <p className="text-[#EDF5F2]/50 text-sm">
+                        Rule reference, the LC clause, the evidence in your document, and exactly
+                        what to change — not a vague warning.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-5 h-5 text-[#B2F273] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-white font-medium text-sm">Export and import sides, same rigor</p>
+                      <p className="text-[#EDF5F2]/50 text-sm">
+                        "Will my presentation comply?" and "is this LC safe to accept?" — both
+                        covered, same price, same 24 hours.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-5 h-5 text-[#B2F273] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-white font-medium text-sm">Confidential, refundable</p>
+                      <p className="text-[#EDF5F2]/50 text-sm">
+                        NDA on request; full refund if the report doesn't help you.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-white mb-6 leading-[1.1] tracking-tight font-display">
-                Your LC pack, checked
-                <br />
-                <span className="text-[#B2F273] text-glow-sm">before the bank sees it.</span>
-              </h1>
+              {/* Try-it-free card — the hero's interactive panel */}
+              <div className="bg-[#00382E]/60 border border-[#B2F273]/20 rounded-2xl p-6 sm:p-8">
+                <div className="flex items-center gap-2 mb-1">
+                  <FileCheck className="w-5 h-5 text-[#B2F273]" />
+                  <h3 className="text-lg font-bold text-white font-display">Try it before you spend a dollar</h3>
+                </div>
+                <p className="text-[#EDF5F2]/50 text-sm mb-6">
+                  Two free ways to see exactly what you'd get.
+                </p>
 
-              <p className="text-xl lg:text-2xl text-[#EDF5F2]/60 mb-8 max-w-2xl mx-auto leading-relaxed">
-                Send your LC, invoice, bill of lading and packing list. Get back a cited
-                discrepancy report within 24 hours — every finding referenced to{" "}
-                <span className="text-white font-medium">UCP 600 / ISBP 821</span>, with the fix — before you present.
-              </p>
+                <div className="space-y-4">
+                  <div className="bg-[#00261C] border border-[#EDF5F2]/10 rounded-xl p-5">
+                    <p className="text-white font-medium text-sm mb-1">Run a free LC check</p>
+                    <p className="text-[#EDF5F2]/50 text-xs mb-4">
+                      Upload one LC, get an instant machine check — one run a day, no signup,
+                      no card.
+                    </p>
+                    <Button className="w-full h-10 bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold border-none" asChild>
+                      <Link to="/check">
+                        Check an LC free
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Link>
+                    </Button>
+                  </div>
 
-              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-                <Button
-                  size="lg"
-                  className="bg-[#B2F273] text-[#00261C] hover:bg-[#a3e662] text-lg px-8 h-14 font-bold shadow-[0_0_20px_rgba(178,242,115,0.3)] border-none"
-                  asChild
-                >
-                  <Link to={START_HREF}>
-                    Get your pack checked — $29
-                    <ArrowRight className="w-5 h-5 ml-2" />
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 text-lg px-8 h-14 bg-transparent"
-                  asChild
-                >
-                  <a href={SAMPLE_REPORT_HREF} download>
-                    <Download className="w-5 h-5 mr-2" />
-                    Download a sample report
-                  </a>
-                </Button>
+                  <div className="bg-[#00261C] border border-[#EDF5F2]/10 rounded-xl p-5">
+                    <p className="text-white font-medium text-sm mb-1">See a real delivered report</p>
+                    <p className="text-[#EDF5F2]/50 text-xs mb-4">
+                      A redacted report from an actual review — severity-grouped findings,
+                      citations, fixes.
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="w-full h-10 border-[#EDF5F2]/20 text-[#EDF5F2] hover:bg-[#EDF5F2]/5 bg-transparent"
+                      asChild
+                    >
+                      <a href={SAMPLE_REPORT_HREF} download>
+                        <Download className="w-4 h-4 mr-2" />
+                        Download the sample (PDF)
+                      </a>
+                    </Button>
+                  </div>
+
+                  <div className="pt-4 border-t border-[#EDF5F2]/10 text-center">
+                    <p className="text-[#EDF5F2]/50 text-xs mb-3">
+                      Ready for the real thing? Full pack review from{" "}
+                      <span className="text-white font-semibold">$29</span> · delivered within 24h.
+                    </p>
+                    <Button className="w-full h-11 bg-[#EDF5F2]/10 hover:bg-[#B2F273] text-white hover:text-[#00261C] font-bold border-none transition-colors" asChild>
+                      <Link to={START_HREF}>
+                        Get your pack checked — $29
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
               </div>
-
-              <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs sm:text-sm text-[#EDF5F2]/60">
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
-                  <span>Within 24 hours</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
-                  <span>Export &amp; import LCs</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
-                  <span>Confidential · NDA on request</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B2F273]" />
-                  <span>Refund if not satisfied</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Why it matters */}
-        <section className="relative py-20 bg-[#00261C] border-y border-[#EDF5F2]/10 overflow-hidden">
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="max-w-3xl mx-auto text-center">
-              <p className="text-[#B2F273] font-mono font-semibold mb-4 tracking-wide uppercase text-sm">Why pre-check</p>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-6 font-display">
-                A refused presentation costs you fees, days, and leverage.
-              </h2>
-              <p className="text-[#EDF5F2]/60 text-lg leading-relaxed">
-                Banks examine your documents against UCP 600 and ISBP 821 line by line. One
-                inconsistent date, one missing notation, one unsigned invoice — and you're paying
-                discrepancy fees, waiting on amendments, and negotiating from the back foot.
-                A pre-presentation check finds those issues while they're still yours to fix quietly.
-              </p>
             </div>
           </div>
         </section>

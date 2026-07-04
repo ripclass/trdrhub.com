@@ -9,11 +9,13 @@
 // against OFAC SDN / OFAC Consolidated / UN / UK OFSI, fail-closed.
 import { Link } from "react-router-dom";
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle,
   ChevronDown,
   Database,
   FileCheck,
+  Loader2,
   Search,
   Shield,
   ShieldAlert,
@@ -21,10 +23,137 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { TRDRHeader } from "@/components/layout/trdr-header";
 import { TRDRFooter } from "@/components/layout/trdr-footer";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// Live quick-screen widget — the hero's interactive card, mirroring the
+// CBAM/EUDR scope-check widget. Uses the public quick-screen endpoint
+// (5 free checks/day per visitor; free account lifts the cap).
+// ---------------------------------------------------------------------------
+
+interface QuickResult {
+  query: string;
+  status: "clear" | "potential_match" | "match" | "unavailable";
+  risk_level: string;
+  total_matches: number;
+  recommendation: string;
+  certificate_id: string;
+}
+
+const QUICK_VERDICTS: Record<string, { label: string; cls: string }> = {
+  clear: { label: "✅ No matches found", cls: "border-emerald-400/40 bg-emerald-500/10 text-emerald-300" },
+  potential_match: { label: "⚠️ Possible match — review required", cls: "border-amber-400/40 bg-amber-500/10 text-amber-300" },
+  match: { label: "❌ Match found — do not proceed", cls: "border-red-400/40 bg-red-500/10 text-red-300" },
+  unavailable: { label: "⛔ Not screened — do not treat as clear", cls: "border-orange-400/40 bg-orange-500/10 text-orange-300" },
+};
+
+function QuickScreenWidget() {
+  const [name, setName] = useState("");
+  const [type, setType] = useState("party");
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<QuickResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    if (name.trim().length < 2) return;
+    setChecking(true);
+    setResult(null);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ query: name.trim(), type });
+      const res = await fetch(`/api/sanctions/quick-screen?${params}`, { method: "POST" });
+      if (!res.ok) {
+        let message = "Screening is unavailable right now — do not treat this as a clear result.";
+        try {
+          const payload = await res.json();
+          message = payload?.detail?.message || message;
+        } catch { /* keep default */ }
+        setError(message);
+        return;
+      }
+      setResult(await res.json());
+    } catch {
+      setError("Screening is unavailable right now — do not treat this as a clear result.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const verdict = result ? QUICK_VERDICTS[result.status] ?? QUICK_VERDICTS.unavailable : null;
+
+  return (
+    <div className="bg-[#00382E]/60 border border-[#B2F273]/20 rounded-2xl p-6 sm:p-8">
+      <div className="flex items-center gap-2 mb-1">
+        <Search className="w-5 h-5 text-[#B2F273]" />
+        <h3 className="text-lg font-bold text-white font-display">Screen a name — free, right now</h3>
+      </div>
+      <p className="text-[#EDF5F2]/50 text-sm mb-6">
+        5 free checks a day, no signup. Free account for unlimited checks during launch.
+      </p>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm text-white font-medium mb-1.5">What are you screening?</label>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="w-full h-10 rounded-lg bg-[#00261C] border border-[#EDF5F2]/15 text-white text-sm px-3 focus:border-[#B2F273]/60 focus:outline-none"
+          >
+            <option value="party">Party / company / person</option>
+            <option value="vessel">Vessel (name or IMO)</option>
+            <option value="goods">Goods description</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm text-white font-medium mb-1.5">Name to screen</label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && run()}
+            placeholder="e.g. Acme Trading Company Ltd"
+            className="bg-[#00261C] border-[#EDF5F2]/15 text-white placeholder:text-[#EDF5F2]/30"
+          />
+        </div>
+      </div>
+
+      <Button
+        onClick={run}
+        disabled={checking || name.trim().length < 2}
+        className="w-full mt-6 h-11 bg-[#B2F273] hover:bg-[#a3e662] text-[#00261C] font-bold border-none"
+      >
+        {checking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+        Screen now
+      </Button>
+
+      {error && (
+        <div className="mt-5 rounded-xl border border-orange-400/40 bg-orange-500/10 p-4">
+          <p className="text-sm font-semibold text-orange-300 mb-1">Not screened — do not treat as clear</p>
+          <p className="text-sm text-[#EDF5F2]/70">{error}</p>
+        </div>
+      )}
+
+      {result && verdict && (
+        <div className={cn("mt-5 rounded-xl border p-4", verdict.cls)}>
+          <p className="font-bold mb-1">{verdict.label}</p>
+          <p className="text-sm text-[#EDF5F2]/70 mb-3">{result.recommendation}</p>
+          <div className="flex items-center justify-between text-xs text-[#EDF5F2]/40">
+            <span className="font-mono">Ref: {result.certificate_id}</span>
+            <Link
+              to={type === "vessel" ? "/sanctions/dashboard/screen/vessel" : type === "goods" ? "/sanctions/dashboard/screen/goods" : "/sanctions/dashboard/screen/party"}
+              className="text-[#B2F273] hover:underline inline-flex items-center gap-1"
+            >
+              Full details in the screener <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const screeningTypes = [
   {
@@ -114,7 +243,7 @@ const faqs = [
   },
   {
     q: "What does it cost?",
-    a: "Single checks are free during launch. Batch screening (CSV, up to 100 rows per run) needs a free account. Every paid LCopilot pack review includes sanctions screening as part of the compliance bundle. Need programmatic/API screening at volume? Email support@trdrhub.com.",
+    a: "Anonymous visitors get 5 free checks a day. A free account lifts that during launch, and batch screening (CSV, up to 100 rows per run) needs one. Every paid LCopilot pack review includes sanctions screening as part of the compliance bundle. Need programmatic/API screening at volume? Email support@trdrhub.com.",
   },
   {
     q: "Is this a replacement for legal advice or a compliance programme?",
@@ -130,51 +259,73 @@ const SanctionsScreenerLanding = () => {
       <TRDRHeader />
 
       <main>
-        {/* Hero Section */}
-        <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden bg-[#00261C]">
-          <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#B2F273]/10 rounded-full blur-[120px]" />
-          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#B2F273]/5 rounded-full blur-[100px]" />
+        {/* Hero — split layout matching the CBAM/EUDR landings: pitch +
+            anchors left, live widget right. */}
+        <section className="relative pt-40 md:pt-44 pb-16 overflow-hidden bg-[#00261C]">
+          <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-[#B2F273]/10 rounded-full blur-[120px]" />
           <div className="absolute inset-0 bg-[linear-gradient(rgba(178,242,115,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(178,242,115,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_70%)] pointer-events-none" />
-          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-[#B2F273]/30 to-transparent" />
 
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="max-w-3xl mx-auto text-center mb-16">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-6">
-                <Shield className="w-4 h-4 text-[#B2F273]" />
-                <span className="text-[#B2F273] text-sm font-medium">Deterministic · Fail-closed</span>
+            <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-start max-w-6xl mx-auto">
+              <div className="pt-4">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#B2F273]/10 border border-[#B2F273]/20 mb-6">
+                  <Shield className="w-4 h-4 text-[#B2F273]" />
+                  <span className="text-[#B2F273] text-sm font-medium">Deterministic · Fail-closed</span>
+                </div>
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-5 leading-[1.15] tracking-tight font-display">
+                  Sanctions screening you can
+                  <br />
+                  <span className="text-[#B2F273] text-glow-sm">defend in an audit.</span>
+                </h1>
+                <p className="text-lg text-[#EDF5F2]/60 leading-relaxed mb-8">
+                  Deterministic screening against OFAC SDN, OFAC Consolidated, UN and UK OFSI
+                  designated-party lists. Every hit carries its evidence; every failure says
+                  "not screened" instead of pretending you're clear.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-5 h-5 text-[#B2F273] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-white font-medium text-sm">One missed name can freeze a whole transaction</p>
+                      <p className="text-[#EDF5F2]/50 text-sm">Banks screen every party on your documents — screen them first, before the LC does it for you.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-5 h-5 text-[#B2F273] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-white font-medium text-sm">Deterministic matching, evidence on every hit</p>
+                      <p className="text-[#EDF5F2]/50 text-sm">Exact → key → fuzzy tiers with score, method and the exact list entry. No AI deciding what's a hit.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-5 h-5 text-[#B2F273] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-white font-medium text-sm">Fail-closed, always</p>
+                      <p className="text-[#EDF5F2]/50 text-sm">If the screen can't run you see "not screened — do not treat as clear". Never a silent empty result.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-5 h-5 text-[#B2F273] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-white font-medium text-sm">Built into every LCopilot review</p>
+                      <p className="text-[#EDF5F2]/50 text-sm">Your $29 pack review screens all parties as part of the compliance bundle.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight font-display">
-                Sanctions screening you can{" "}
-                <span className="text-[#B2F273] text-glow-sm">defend in an audit</span>
-              </h1>
-
-              <p className="text-lg text-[#EDF5F2]/60 mb-8 leading-relaxed max-w-2xl mx-auto">
-                Deterministic screening against OFAC SDN, OFAC Consolidated, UN and UK OFSI
-                designated-party lists. Every hit carries its evidence; every failure says
-                "not screened" instead of pretending you're clear.
-              </p>
-
-              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-[#EDF5F2]/60 mb-12">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
-                  OFAC SDN + Consolidated
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
-                  UN + UK OFSI
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-[#B2F273]" />
-                  Free single checks
-                </div>
-              </div>
+              <QuickScreenWidget />
             </div>
+          </div>
+        </section>
 
-            {/* Screening Type Cards */}
+        {/* Screening types */}
+        <section className="relative py-16 bg-[#00261C] border-t border-[#EDF5F2]/10">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
               {screeningTypes.map((type) => (
-                <div key={type.id} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-xl p-6 hover:border-[#B2F273]/30 transition-all group backdrop-blur-sm">
+                <div key={type.id} className="bg-[#00382E]/50 border border-[#EDF5F2]/10 rounded-2xl p-6 hover:border-[#B2F273]/30 transition-all group backdrop-blur-sm">
                   <div className="w-12 h-12 bg-[#B2F273]/10 rounded-lg flex items-center justify-center mb-4 border border-[#B2F273]/20 group-hover:bg-[#B2F273] transition-colors">
                     <type.icon className="w-6 h-6 text-[#B2F273] group-hover:text-[#00261C] transition-colors" />
                   </div>
@@ -261,7 +412,7 @@ const SanctionsScreenerLanding = () => {
                 <h3 className="text-lg font-bold text-white font-display mb-1">Single checks</h3>
                 <div className="text-4xl font-bold text-white font-display my-3">Free</div>
                 <p className="text-[#EDF5F2]/50 text-sm mb-5 flex-1">
-                  Party, vessel and goods checks — free during launch, rate-limited.
+                  5 checks a day without an account — unlimited with a free account during launch.
                 </p>
                 <Button className="bg-[#EDF5F2]/10 hover:bg-[#EDF5F2]/20 text-white border-none" asChild>
                   <Link to="/sanctions/dashboard/screen/party">Screen a name</Link>
