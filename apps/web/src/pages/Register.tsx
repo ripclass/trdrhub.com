@@ -192,8 +192,10 @@ export default function Register() {
   const [searchParams] = useSearchParams();
   const conciergeIntent = searchParams.get("intent") === "review";
 
-  // Step state
-  const [step, setStep] = useState(1);
+  // Step state — concierge signups skip the wizard entirely (defaults are
+  // pre-answered; country comes from geo-detect) and start at the account
+  // step. handleRegister bounces back to step 1 in the rare case geo failed.
+  const [step, setStep] = useState(searchParams.get("intent") === "review" ? 2 : 1);
 
   // Step 1 state — multi-select activities, single tier, single country.
   // Shape mirrors OnboardingCompletePayload (apps/api/app/schemas/onboarding.py).
@@ -337,6 +339,19 @@ export default function Register() {
         description: "Please agree to the terms before creating an account.",
         variant: "destructive",
       });
+      setIsLoading(false);
+      return;
+    }
+
+    if (!country && conciergeIntent) {
+      // Concierge fast-path skipped step 1 but geo-detect couldn't fill the
+      // country (the onboarding payload requires ISO alpha-2). One question,
+      // then back to the account step.
+      toast({
+        title: "One quick question",
+        description: "Where is your company based? Then hit continue.",
+      });
+      setStep(1);
       setIsLoading(false);
       return;
     }
@@ -713,6 +728,15 @@ export default function Register() {
                     {" • "}
                     {COMPANY_SIZES.find((s) => s.value === tier)?.label} Team
                   </p>
+                  {conciergeIntent && (
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="mt-2 text-xs text-[#B2F273]/80 hover:text-[#B2F273] underline underline-offset-2"
+                    >
+                      We set you up as an exporter — importing instead? Adjust here
+                    </button>
+                  )}
                 </div>
 
                 <form onSubmit={handleRegister} className="space-y-4">
