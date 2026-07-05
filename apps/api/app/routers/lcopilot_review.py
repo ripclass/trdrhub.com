@@ -222,6 +222,7 @@ def list_review_queue(
             "user_id": str(s.user_id) if s.user_id else None,
             "company_id": str(s.company_id) if s.company_id else None,
             "finding_count": len(issues),
+            "payment_status": getattr(s, "payment_status", None),
             "submitted_at": s.created_at.isoformat() if s.created_at else None,
             "state_changed_at": s.review_state_changed_at.isoformat() if s.review_state_changed_at else None,
         })
@@ -241,6 +242,8 @@ def get_review_detail(
         "review_state": session.review_state,
         "review_note": session.review_note,
         "workflow_type": session.workflow_type,
+        "payment_status": getattr(session, "payment_status", None),
+        "payment_product_id": getattr(session, "payment_product_id", None),
         "structured_result": _structured(session),
         "findings": _issues(session),
         "timeline": _status_payload(db, session)["timeline"],
@@ -346,6 +349,43 @@ def mark_needs_info(
     except review.InvalidReviewTransition as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     db.commit()
+    return {"ok": True, "review_state": session.review_state}
+
+
+@admin_router.post("/{job_id}/mark-paid")
+def mark_paid_offline(
+    job_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_sysadmin),
+):
+    """Record an offline payment (bank transfer, bKash, invoice) and advance
+    the job into the review queue.
+
+    Exists because pay-first checkout only knows about Stripe: a customer who
+    paid outside the app would otherwise sit invisible at
+    review_state=submitted forever. Idempotent on already-paid jobs.
+    """
+    session = _get_session_or_404(db, job_id)
+    if session.payment_status == "paid":
+        return {"ok": True, "review_state": session.review_state, "already_paid": True}
+
+    session.payment_status = "paid"
+    session.payment_product_id = session.payment_product_id or "offline"
+    session.paid_at = datetime.now(timezone.utc)
+
+    if getattr(session, "review_state", None) is None:
+        review.begin_review(db, session, actor_user_id=admin.id,
+                            reason="offline payment recorded — enrolling")
+    review.on_engine_complete(db, session, actor_user_id=admin.id,
+                              reason=f"offline payment recorded by {admin.email}")
+    db.commit()
+
+    try:
+        from app.services.checkout import _notify_payment_confirmed
+        _notify_payment_confirmed(db, session)
+    except Exception:
+        logger.exception("offline-payment notification skipped for %s", job_id)
+
     return {"ok": True, "review_state": session.review_state}
 
 

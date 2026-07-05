@@ -59,6 +59,7 @@ interface QueueItem {
   user_id: string | null;
   company_id: string | null;
   finding_count: number;
+  payment_status?: string | null;
   submitted_at: string | null;
   state_changed_at: string | null;
 }
@@ -99,6 +100,8 @@ interface ReviewDetail {
   review_state: string;
   review_note: string | null;
   workflow_type: string | null;
+  payment_status?: string | null;
+  payment_product_id?: string | null;
   findings: Finding[];
   timeline: TimelineEvent[];
   structured_result?: {
@@ -302,6 +305,9 @@ export function ReviewQueue() {
   const [items, setItems] = React.useState<QueueItem[]>([]);
   const [loadingList, setLoadingList] = React.useState(true);
   const [listError, setListError] = React.useState<string | null>(null);
+  // "queue" = jobs to review; "awaiting_payment" = submitted jobs whose
+  // customer hasn't paid yet (offline payers get marked paid here).
+  const [view, setView] = React.useState<"queue" | "awaiting_payment">("queue");
 
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<ReviewDetail | null>(null);
@@ -318,14 +324,18 @@ export function ReviewQueue() {
     setLoadingList(true);
     setListError(null);
     try {
-      const { data } = await api.get<{ count: number; items: QueueItem[] }>("/api/admin/review-queue");
+      const url =
+        view === "awaiting_payment"
+          ? "/api/admin/review-queue?state=submitted"
+          : "/api/admin/review-queue";
+      const { data } = await api.get<{ count: number; items: QueueItem[] }>(url);
       setItems(data.items ?? []);
     } catch (err) {
       setListError(errMessage(err));
     } finally {
       setLoadingList(false);
     }
-  }, []);
+  }, [view]);
 
   const loadDetail = React.useCallback(async (jobId: string) => {
     setLoadingDetail(true);
@@ -427,6 +437,17 @@ export function ReviewQueue() {
     }, "Engine re-run complete");
   };
 
+  // Offline payment (bank transfer / bKash / invoice) — records it and
+  // advances the job into the review queue.
+  const markPaid = () => {
+    if (!selectedId) return;
+    void runAction(async () => {
+      await api.post(`/api/admin/review-queue/${selectedId}/mark-paid`);
+      await loadDetail(selectedId);
+      await loadList();
+    }, "Offline payment recorded — job is now in the review queue");
+  };
+
   // ------------------------------------------------------------------ list
 
   if (!selectedId) {
@@ -436,12 +457,31 @@ export function ReviewQueue() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Review Queue</h1>
             <p className="text-muted-foreground text-sm">
-              Customer LC reports awaiting specialist review before delivery.
+              {view === "queue"
+                ? "Customer reports awaiting specialist review before delivery."
+                : "Submitted jobs whose payment hasn't cleared — record offline payments here."}
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => void loadList()} disabled={loadingList}>
             <RefreshCw className={cn("h-4 w-4 mr-2", loadingList && "animate-spin")} />
             Refresh
+          </Button>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant={view === "queue" ? "default" : "outline"}
+            onClick={() => setView("queue")}
+          >
+            To review
+          </Button>
+          <Button
+            size="sm"
+            variant={view === "awaiting_payment" ? "default" : "outline"}
+            onClick={() => setView("awaiting_payment")}
+          >
+            Awaiting payment
           </Button>
         </div>
 
@@ -481,6 +521,16 @@ export function ReviewQueue() {
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs text-muted-foreground truncate">{item.job_id}</span>
                       <StateBadge state={item.review_state} />
+                      {item.payment_status === "pending" && (
+                        <Badge variant="outline" className="text-xs bg-orange-100 text-orange-800 border-orange-200">
+                          awaiting payment
+                        </Badge>
+                      )}
+                      {item.payment_status === "refunded" && (
+                        <Badge variant="outline" className="text-xs bg-slate-100 text-slate-600 border-slate-200">
+                          refunded
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-sm mt-1">
                       {(item.workflow_type || "validation").replace(/_/g, " ")} ·{" "}
@@ -659,6 +709,26 @@ export function ReviewQueue() {
 
           {/* Side panel: note + timeline */}
           <div className="space-y-6">
+            {/* Awaiting payment: record offline settlements (bank transfer /
+                bKash / invoice) to move the job into the review flow. */}
+            {detail.payment_status === "pending" && (
+              <Card className="border-orange-300 bg-orange-50">
+                <CardContent className="py-4 space-y-3">
+                  <p className="text-sm font-medium text-orange-900 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" /> Awaiting payment
+                  </p>
+                  <p className="text-xs text-orange-800">
+                    The customer hasn't paid through the app. If they paid offline
+                    (bank transfer, bKash, invoice), record it — the job then enters
+                    your review flow and the customer is notified.
+                  </p>
+                  <Button size="sm" variant="outline" onClick={markPaid} disabled={busy}>
+                    Mark paid (offline)
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Readiness jobs: engine health + intake answers for the operator */}
             {(detail.workflow_type || "").includes("readiness") && (
               <>

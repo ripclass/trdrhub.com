@@ -1473,7 +1473,15 @@ async def finalize_validation_result(
                     # page. Checkout off = straight to the queue (operator
                     # invoices manually).
                     _unpaid = getattr(validation_session, "payment_status", None) != "paid"
-                    if _pay_on() and _unpaid:
+                    # Operator-run jobs (email intake: the admin uploads the
+                    # customer's docs under their own account) must not hold
+                    # for a Stripe payment that will never come through the
+                    # app — they go straight to the queue and are settled
+                    # offline (see the mark-paid admin endpoint).
+                    _owner_is_operator = bool(
+                        hasattr(_owner, "is_system_admin") and _owner.is_system_admin()
+                    )
+                    if _pay_on() and _unpaid and not _owner_is_operator:
                         validation_session.payment_status = (
                             validation_session.payment_status or "pending"
                         )
