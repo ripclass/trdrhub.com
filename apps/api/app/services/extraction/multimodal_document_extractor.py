@@ -371,7 +371,7 @@ def _resolve_multimodal_config() -> Tuple[str, str, int]:
         or os.getenv("OPENROUTER_MODEL_VERSION")
         or os.getenv("LLM_PRIMARY_MODEL")
         or os.getenv("LLM_MODEL_VERSION")
-        or "anthropic/claude-sonnet-4-6"
+        or "z-ai/glm-5v-turbo"
     )
     max_pages = int(os.getenv("EXTRACTION_MULTIMODAL_MAX_PAGES") or "4")
     return provider, model, max(1, max_pages)
@@ -383,9 +383,9 @@ def _resolve_multimodal_config() -> Tuple[str, str, int]:
 # and model env vars; if a tier-specific env var is unset it falls back to the
 # legacy EXTRACTION_MULTIMODAL_* vars (L1) or to a sensible default.
 _VISION_TIER_DEFAULTS: Dict[str, Tuple[str, str]] = {
-    "L1": (LLMProvider.OPENROUTER.value, "anthropic/claude-sonnet-4-6"),
-    "L2": (LLMProvider.OPENROUTER.value, "anthropic/claude-opus-4-6"),
-    "L3": (LLMProvider.OPENROUTER.value, "anthropic/claude-opus-4-6"),
+    "L1": (LLMProvider.OPENROUTER.value, "z-ai/glm-5v-turbo"),
+    "L2": (LLMProvider.OPENROUTER.value, "z-ai/glm-5v-turbo"),
+    "L3": (LLMProvider.OPENROUTER.value, "z-ai/glm-5v-turbo"),
 }
 
 

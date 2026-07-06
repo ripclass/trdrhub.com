@@ -116,7 +116,7 @@ async def extract_lc_with_ai(
         _os.getenv("EXTRACTION_LC_MODEL")
         or _os.getenv("EXTRACTION_VISION_L2_MODEL")
         or _os.getenv("EXTRACTION_PRIMARY_MODEL")
-        or "anthropic/claude-opus-4-6"
+        or "z-ai/glm-5.2"
     )
     lc_provider = (
         _os.getenv("EXTRACTION_LC_PROVIDER")

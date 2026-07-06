@@ -110,7 +110,10 @@ class Settings(BaseSettings):
     # validation is enrolled into the human review queue on engine completion and
     # its results are withheld from the customer until an operator delivers it.
     # Default off so existing self-serve flows are unchanged until launch cutover.
-    LCOPILOT_REVIEW_QUEUE_ENABLED: bool = False
+    # Concierge cutover — flipped to True 2026-07-06 (launch): every real
+    # customer validation is withheld behind the specialist review queue
+    # until an operator delivers it. Env var still overrides for rollback.
+    LCOPILOT_REVIEW_QUEUE_ENABLED: bool = True
 
     # Stub Mode Configuration
     USE_STUBS: bool = False

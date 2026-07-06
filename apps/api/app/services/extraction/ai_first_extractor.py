@@ -69,7 +69,7 @@ def _resolve_extraction_config() -> Dict[str, Any]:
         or os.getenv("OPENROUTER_MODEL_VERSION")
         or os.getenv("LLM_PRIMARY_MODEL")
         or os.getenv("LLM_MODEL_VERSION")
-        or "anthropic/claude-sonnet-4-6"
+        or "z-ai/glm-5.2"
     )
     fallback_provider = os.getenv("EXTRACTION_FALLBACK_PROVIDER") or primary_provider
     fallback_model = (
