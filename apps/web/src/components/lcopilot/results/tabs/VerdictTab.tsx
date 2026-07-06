@@ -94,7 +94,7 @@ function deriveVerdict(
       label: 'REJECT',
       headline: `${critical} blocking discrepanc${critical === 1 ? 'y' : 'ies'} found`,
       sublabel: 'Do not submit until blocking discrepancies are resolved.',
-      color: 'bg-red-500/10 border-red-500/40 text-red-400',
+      color: 'bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400',
       iconColor: 'text-red-500',
       Icon: XCircle,
     };
@@ -104,7 +104,7 @@ function deriveVerdict(
       label: 'REVIEW',
       headline: `${major} discrepanc${major === 1 ? 'y' : 'ies'} need attention`,
       sublabel: 'These may cause rejection. Review and decide before submitting.',
-      color: 'bg-amber-500/10 border-amber-500/40 text-amber-400',
+      color: 'bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400',
       iconColor: 'text-amber-500',
       Icon: AlertTriangle,
     };
@@ -119,7 +119,7 @@ function deriveVerdict(
       sublabel:
         readinessSummary ??
         'Required documents or blocked checklist items remain unresolved.',
-      color: 'bg-red-500/10 border-red-500/40 text-red-400',
+      color: 'bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400',
       iconColor: 'text-red-500',
       Icon: XCircle,
     };
@@ -136,7 +136,7 @@ function deriveVerdict(
       sublabel:
         readinessSummary ??
         'No rule-cited discrepancies, but open checklist items still need human review before presentation.',
-      color: 'bg-amber-500/10 border-amber-500/40 text-amber-400',
+      color: 'bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400',
       iconColor: 'text-amber-500',
       Icon: AlertTriangle,
     };
@@ -147,7 +147,7 @@ function deriveVerdict(
       label: 'PASS',
       headline: 'Presentation is compliant with minor notes',
       sublabel: 'Minor advisory findings only. Safe to submit.',
-      color: 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400',
+      color: 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400',
       iconColor: 'text-emerald-500',
       Icon: CheckCircle,
     };
@@ -156,7 +156,7 @@ function deriveVerdict(
     label: 'CLEAN',
     headline: 'No discrepancies found',
     sublabel: 'All documents checked. Presentation appears compliant.',
-    color: 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400',
+    color: 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400',
     iconColor: 'text-emerald-500',
     Icon: CheckCircle,
   };
@@ -274,9 +274,9 @@ export function VerdictTab({
                 </span>
                 {counts.total > 0 && (
                   <span className="text-sm text-muted-foreground">
-                    {counts.critical > 0 && <span className="text-red-400 font-semibold">{counts.critical} critical</span>}
+                    {counts.critical > 0 && <span className="text-red-600 dark:text-red-400 font-semibold">{counts.critical} critical</span>}
                     {counts.critical > 0 && counts.major > 0 && ' · '}
-                    {counts.major > 0 && <span className="text-amber-400 font-semibold">{counts.major} major</span>}
+                    {counts.major > 0 && <span className="text-amber-600 dark:text-amber-400 font-semibold">{counts.major} major</span>}
                     {(counts.critical > 0 || counts.major > 0) && counts.minor > 0 && ' · '}
                     {counts.minor > 0 && <span className="text-muted-foreground">{counts.minor} minor</span>}
                   </span>
@@ -297,7 +297,7 @@ export function VerdictTab({
           <p className="text-xs text-muted-foreground">
             {cleanDocs > 0 && `${cleanDocs} clean`}
             {cleanDocs > 0 && docsWithIssues > 0 && ' · '}
-            {docsWithIssues > 0 && <span className="text-red-400">{docsWithIssues} with issues</span>}
+            {docsWithIssues > 0 && <span className="text-red-600 dark:text-red-400">{docsWithIssues} with issues</span>}
             {cleanDocs === 0 && docsWithIssues === 0 && 'processed'}
           </p>
         </div>
@@ -345,8 +345,8 @@ export function VerdictTab({
                 <span className={cn(
                   'flex-shrink-0 mt-0.5 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold',
                   item.severity === 'critical'
-                    ? 'bg-red-500/20 text-red-400'
-                    : 'bg-amber-500/20 text-amber-400',
+                    ? 'bg-red-500/20 text-red-600 dark:text-red-400'
+                    : 'bg-amber-500/20 text-amber-600 dark:text-amber-400',
                 )}>
                   {i + 1}
                 </span>
@@ -370,8 +370,8 @@ export function VerdictTab({
                   className={cn(
                     'text-[10px] flex-shrink-0',
                     item.severity === 'critical'
-                      ? 'bg-red-500/10 text-red-400 border-red-500/30'
-                      : 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                      ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30'
+                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
                   )}
                 >
                   {item.severity}

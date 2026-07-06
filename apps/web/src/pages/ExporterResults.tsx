@@ -3474,7 +3474,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
     <div className={embedded ? "bg-transparent" : "bg-background min-h-screen"}>
       {/* Header */}
       {!embedded && (
-        <header className="bg-card border-b border-gray-200">
+        <header className="bg-card border-b border-border">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -3906,7 +3906,7 @@ const renderGenericExtractedSection = (key: string, data: Record<string, any>) =
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold">Manifest</p>
                       {manifestData && (
-                        <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                        <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
                           <CheckCircle className="w-3 h-3 mr-1" />
                           Generated
                         </Badge>

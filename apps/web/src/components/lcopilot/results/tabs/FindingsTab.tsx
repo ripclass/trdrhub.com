@@ -103,7 +103,7 @@ const SEVERITY_CONFIG = {
     border: 'border-l-blue-400',
     headerBg: 'bg-blue-500/5',
     badgeBg: 'bg-blue-500 text-white',
-    iconColor: 'text-blue-400',
+    iconColor: 'text-blue-600 dark:text-blue-400',
   },
 } as const;
 
@@ -290,9 +290,9 @@ export function FindingsTab({ issueCards, amendments, totalAmendmentFee, onDownl
         {(
           [
             { value: 'all', label: `All (${counts.total})` },
-            { value: 'critical', label: `Critical (${counts.critical})`, color: 'text-red-400' },
-            { value: 'major', label: `Major (${counts.major})`, color: 'text-amber-400' },
-            { value: 'minor', label: `Advisory (${counts.minor})`, color: 'text-blue-400' },
+            { value: 'critical', label: `Critical (${counts.critical})`, color: 'text-red-600 dark:text-red-400' },
+            { value: 'major', label: `Major (${counts.major})`, color: 'text-amber-600 dark:text-amber-400' },
+            { value: 'minor', label: `Advisory (${counts.minor})`, color: 'text-blue-600 dark:text-blue-400' },
           ] as const
         ).map((opt) => (
           <Button
@@ -319,10 +319,10 @@ export function FindingsTab({ issueCards, amendments, totalAmendmentFee, onDownl
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-blue-500/20">
-                  <Lightbulb className="w-5 h-5 text-blue-400" />
+                  <Lightbulb className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-blue-400">
+                  <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
                     {amendments.length} Amendment{amendments.length > 1 ? 's' : ''} Available
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -336,7 +336,7 @@ export function FindingsTab({ issueCards, amendments, totalAmendmentFee, onDownl
               <Button
                 size="sm"
                 variant="outline"
-                className="text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+                className="text-blue-600 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
                 onClick={() => setAmendmentsExpanded(!amendmentsExpanded)}
               >
                 {amendmentsExpanded ? 'Hide' : 'View'} Amendments
@@ -360,9 +360,9 @@ export function FindingsTab({ issueCards, amendments, totalAmendmentFee, onDownl
                           </p>
                           {(current || proposed) && (
                             <p className="text-xs mt-0.5">
-                              <span className="text-red-400 line-through">{current}</span>
+                              <span className="text-red-600 dark:text-red-400 line-through">{current}</span>
                               {current && proposed && ' → '}
-                              <span className="text-emerald-400">{proposed}</span>
+                              <span className="text-emerald-600 dark:text-emerald-400">{proposed}</span>
                             </p>
                           )}
                           <p className="text-xs text-muted-foreground mt-0.5">
@@ -390,7 +390,7 @@ export function FindingsTab({ issueCards, amendments, totalAmendmentFee, onDownl
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="text-xs h-7 text-blue-400 hover:text-blue-300"
+                                  className="text-xs h-7 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:text-blue-300"
                                   title="Download SWIFT MT707"
                                   onClick={() => onDownloadMT707(a)}
                                 >
@@ -404,7 +404,7 @@ export function FindingsTab({ issueCards, amendments, totalAmendmentFee, onDownl
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="text-xs h-7 text-emerald-400 hover:text-emerald-300"
+                              className="text-xs h-7 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:text-emerald-300"
                               title="Download ISO20022 XML (trad.002)"
                               onClick={() => onDownloadISO20022(a)}
                             >

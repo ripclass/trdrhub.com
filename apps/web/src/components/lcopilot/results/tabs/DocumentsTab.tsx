@@ -112,7 +112,7 @@ function worstSeverity(issues: IssueCard[]): 'clean' | 'critical' | 'major' | 'm
 function StatusIcon({ status }: { status: 'clean' | 'critical' | 'major' | 'minor' }) {
   if (status === 'critical') return <XCircle className="w-5 h-5 text-red-500" />;
   if (status === 'major') return <AlertTriangle className="w-5 h-5 text-amber-500" />;
-  if (status === 'minor') return <AlertTriangle className="w-5 h-5 text-blue-400" />;
+  if (status === 'minor') return <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400" />;
   return <CheckCircle className="w-5 h-5 text-emerald-500" />;
 }
 
@@ -125,7 +125,7 @@ function FieldRow({ name, value, isDiscrepant }: { name: string; value: string; 
       <span className="text-muted-foreground min-w-[40%]">{humanizeFieldName(name)}</span>
       <span className={cn(
         'font-mono text-right max-w-[58%] truncate',
-        isDiscrepant ? 'text-red-400 font-semibold' : 'text-foreground',
+        isDiscrepant ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-foreground',
       )}>
         {value}
       </span>
@@ -154,9 +154,9 @@ function IssueInline({ issue }: { issue: IssueCard }) {
       </div>
       <Badge variant="outline" className={cn(
         'text-[10px] flex-shrink-0',
-        severity === 'critical' ? 'text-red-400 border-red-500/30' :
-        severity === 'major' ? 'text-amber-400 border-amber-500/30' :
-        'text-blue-400 border-blue-500/30',
+        severity === 'critical' ? 'text-red-600 dark:text-red-400 border-red-500/30' :
+        severity === 'major' ? 'text-amber-600 dark:text-amber-400 border-amber-500/30' :
+        'text-blue-600 dark:text-blue-400 border-blue-500/30',
       )}>
         {severity}
       </Badge>
@@ -274,8 +274,8 @@ export function DocumentsTab({ documents, issueCards, onViewDocument, onPreviewD
                         className={cn(
                           'text-[10px]',
                           status === 'critical'
-                            ? 'bg-red-500/10 text-red-400 border-red-500/30'
-                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                            ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30'
+                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
                         )}
                       >
                         {issues.length} issue{issues.length !== 1 ? 's' : ''}
