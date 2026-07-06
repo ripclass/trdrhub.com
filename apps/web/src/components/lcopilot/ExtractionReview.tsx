@@ -716,8 +716,8 @@ export function ExtractionReview({
     try {
       const fieldOverrides = buildFieldOverrides();
       toast({
-        title: 'Starting validation',
-        description: 'Applying your confirmed fields and running the validation pipeline…',
+        title: 'Submitting your documents',
+        description: 'Your confirmed fields are being applied. A specialist will review the results before your report is delivered.',
       });
       const result = await resumeValidate({ jobId, fieldOverrides });
 
@@ -1035,12 +1035,12 @@ export function ExtractionReview({
               {isStartingValidation ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Starting…
+                  Submitting…
                 </>
               ) : (
                 <>
                   <ShieldCheck className="w-4 h-4 mr-2" />
-                  {hasMissingDocs ? 'Start Validation Anyway' : 'Start Validation'}
+                  {hasMissingDocs ? 'Submit Anyway' : 'Submit for Review'}
                 </>
               )}
             </Button>
