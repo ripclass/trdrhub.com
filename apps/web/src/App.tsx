@@ -85,7 +85,6 @@ import AuthCallback from './pages/auth/Callback'
 import { BankAuthProvider } from './lib/bank/auth'
 import { LcopilotBetaRoute } from './components/lcopilot/LcopilotBetaRoute'
 import AgencyDashboard from './pages/lcopilot/AgencyDashboard'
-import ReviewStatusPage from './pages/lcopilot/ReviewStatusPage'
 import StartReview from './pages/lcopilot/StartReview'
 import CbamReadinessLanding from './pages/tools/readiness/CbamReadinessLanding'
 import EudrReadinessLanding from './pages/tools/readiness/EudrReadinessLanding'
@@ -110,6 +109,23 @@ function LegacyExporterResultsRedirect() {
   if (!params.has('section')) {
     params.set('section', 'reviews')
   }
+
+  return <Navigate to={`/lcopilot/exporter-dashboard?${params.toString()}`} replace />
+}
+
+// Concierge status tracker lives inside the dashboard shell (section=status).
+// This keeps every /lcopilot/status/{jobId} link — backend responses,
+// notifications, delivery emails — working while landing users in the app
+// chrome instead of a bare standalone page.
+function StatusToDashboardRedirect() {
+  const location = useLocation()
+  const { jobId } = useParams()
+  const params = new URLSearchParams(location.search)
+
+  if (jobId && !params.has('jobId')) {
+    params.set('jobId', jobId)
+  }
+  params.set('section', 'status')
 
   return <Navigate to={`/lcopilot/exporter-dashboard?${params.toString()}`} replace />
 }
@@ -195,7 +211,7 @@ function App() {
         <Route path="/dashboard" element={<Navigate to="/lcopilot/dashboard" replace />} />
         <Route path="/settings/notifications" element={<RequireAuth><NotificationSettings /></RequireAuth>} />
         {/* Phase 1 concierge — customer-facing review status tracker. */}
-        <Route path="/lcopilot/status/:jobId" element={<RequireAuth><ReviewStatusPage /></RequireAuth>} />
+        <Route path="/lcopilot/status/:jobId" element={<RequireAuth><StatusToDashboardRedirect /></RequireAuth>} />
         {/* Concierge entry point — authed → upload; anonymous → fast-path signup. */}
         <Route path="/lcopilot/start-review" element={<StartReview />} />
         <Route path="/lcopilot/services-dashboard" element={<RequireAuth><ServicesDashboard /></RequireAuth>} />

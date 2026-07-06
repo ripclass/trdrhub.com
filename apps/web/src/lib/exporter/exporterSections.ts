@@ -105,12 +105,16 @@ export type SidebarSection =
   | 'dashboard'
   | 'upload'
   | 'billing'
-  | 'settings';
+  | 'settings'
+  // Content-only section: the concierge review status tracker renders inside
+  // the dashboard shell (no sidebar menu item of its own; Dashboard stays
+  // highlighted). Reached via the /lcopilot/status/:jobId redirect or links.
+  | 'status';
 
 /**
  * Map ExporterSection to the sidebar's section identifier.
  */
-export function sectionToSidebar(section: ExporterSection): SidebarSection {
+export function sectionToSidebar(section: ExporterSection): Exclude<SidebarSection, 'status'> {
   switch (section) {
     case 'overview':
       return 'dashboard';

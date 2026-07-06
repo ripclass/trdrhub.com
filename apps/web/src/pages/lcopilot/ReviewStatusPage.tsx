@@ -92,7 +92,7 @@ function resultsHref(status: ReviewStatus): string {
   if ((status.workflow_type || "").startsWith("importer")) {
     return `/lcopilot/import-results/${status.job_id}`;
   }
-  return `/lcopilot/results/${status.job_id}`;
+  return `/lcopilot/exporter-dashboard?section=reviews&jobId=${status.job_id}`;
 }
 
 function formatWhen(iso: string | null | undefined): string {
@@ -108,8 +108,15 @@ function formatWhen(iso: string | null | undefined): string {
   });
 }
 
-export default function ReviewStatusPage() {
-  const { jobId } = useParams<{ jobId: string }>();
+export default function ReviewStatusPage({
+  jobId: jobIdProp,
+  embedded = false,
+}: {
+  jobId?: string;
+  embedded?: boolean;
+} = {}) {
+  const params = useParams<{ jobId: string }>();
+  const jobId = jobIdProp ?? params.jobId;
   const [status, setStatus] = useState<ReviewStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -201,14 +208,16 @@ export default function ReviewStatusPage() {
       : null;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-2xl px-4 py-10">
-        <Link
-          to="/lcopilot/dashboard"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-6"
-        >
-          <ChevronLeft className="h-4 w-4" /> Dashboard
-        </Link>
+    <div className={embedded ? "" : "min-h-screen bg-background"}>
+      <div className={embedded ? "max-w-2xl" : "mx-auto max-w-2xl px-4 py-10"}>
+        {!embedded && (
+          <Link
+            to="/lcopilot/dashboard"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-6"
+          >
+            <ChevronLeft className="h-4 w-4" /> Dashboard
+          </Link>
+        )}
 
         <h1 className="text-2xl font-bold tracking-tight mb-1">
           {(status?.workflow_type || "").includes("readiness")
@@ -298,7 +307,7 @@ export default function ReviewStatusPage() {
 
             {/* Phase 5 — payment */}
             {checkoutCancelled && status.payment_status === "pending" && (
-              <Card className="border-amber-300 bg-amber-50">
+              <Card className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40">
                 <CardContent className="py-4 text-sm text-amber-900">
                   Checkout was cancelled — your documents are safe, and nothing starts until
                   you pay. Pick an option below whenever you're ready.
@@ -362,16 +371,16 @@ export default function ReviewStatusPage() {
 
             {/* Needs-info callout */}
             {needsInfo && (
-              <Card className="border-amber-300 bg-amber-50">
+              <Card className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40">
                 <CardContent className="py-5 flex gap-3">
                   <MailQuestion className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-medium text-amber-900">We need a little more from you</p>
-                    <p className="text-sm text-amber-800 mt-1">
+                    <p className="text-sm text-amber-800 dark:text-amber-300 mt-1">
                       {needsInfoReason ||
                         "Our specialist needs more information to finish your review — please check your email."}
                     </p>
-                    <p className="text-xs text-amber-700 mt-2">
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
                       Reply to the email we sent you and your review resumes where it left off.
                     </p>
                   </div>
@@ -381,11 +390,11 @@ export default function ReviewStatusPage() {
 
             {/* Delivered */}
             {status.delivered && (
-              <Card className="border-green-300 bg-green-50">
+              <Card className="border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950/40">
                 <CardContent className="py-6">
-                  <p className="font-medium text-green-900 mb-1">Your cited report is ready</p>
+                  <p className="font-medium text-green-900 dark:text-green-200 mb-1">Your cited report is ready</p>
                   {status.reviewer_note && (
-                    <p className="text-sm text-green-800 mb-4 whitespace-pre-wrap">
+                    <p className="text-sm text-green-800 dark:text-green-300 mb-4 whitespace-pre-wrap">
                       <span className="font-medium">From your reviewer:</span> {status.reviewer_note}
                     </p>
                   )}

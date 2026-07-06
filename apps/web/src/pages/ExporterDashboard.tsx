@@ -24,6 +24,7 @@ import {
 } from "@/api/sessions";
 import ExportLCUpload from "./ExportLCUpload";
 import ExporterResults from "./ExporterResults";
+import ReviewStatusPage from "./lcopilot/ReviewStatusPage";
 import { DataRetentionView } from "./settings/DataRetention";
 import { CompanyProfileView } from "./settings/CompanyProfile";
 import { BillingOverviewPage } from "./BillingOverviewPage";
@@ -121,7 +122,7 @@ function DashboardContent() {
     const parsed = parseExporterSection(sectionParam);
     if (parsed !== "overview" || sectionParam === "overview") return parsed;
     const sidebarSections: SidebarSection[] = [
-      "dashboard", "upload", "reviews", "billing", "settings"
+      "dashboard", "upload", "reviews", "billing", "settings", "status"
     ];
     if (sidebarSections.includes(sectionParam as SidebarSection)) {
       return sectionParam as SidebarSection;
@@ -141,9 +142,11 @@ function DashboardContent() {
   );
 
   // Derive sidebar section from activeSection
-  const sidebarSection: SidebarSection = EXPORTER_SECTION_OPTIONS.includes(activeSection as ExporterSection)
+  const sidebarSection: Exclude<SidebarSection, "status"> = EXPORTER_SECTION_OPTIONS.includes(activeSection as ExporterSection)
     ? sectionToSidebar(activeSection as ExporterSection)
-    : (activeSection as SidebarSection);
+    : activeSection === "status"
+      ? "dashboard"
+      : (activeSection as Exclude<SidebarSection, "status">);
 
   // Sync jobId from URL to context
   useEffect(() => {
@@ -164,7 +167,7 @@ function DashboardContent() {
       return;
     }
     const sidebarSections: SidebarSection[] = [
-      "dashboard", "upload", "reviews", "billing", "settings"
+      "dashboard", "upload", "reviews", "billing", "settings", "status"
     ];
     if (sidebarSections.includes(sectionParam as SidebarSection)) {
       setActiveSection(sectionParam as SidebarSection);
@@ -217,6 +220,7 @@ function DashboardContent() {
         "history",
         "analytics",
         "customs",
+        "status",
       ].includes(section);
 
       if (isResultsSection) {
@@ -404,6 +408,12 @@ function DashboardContent() {
 
         {/* Settings Section */}
         {activeSection === "settings" && <SettingsPanel toast={toast} />}
+
+        {/* Concierge review status tracker — rendered inside the dashboard
+            shell so the customer never leaves the app chrome. */}
+        {activeSection === "status" && (
+          <ReviewStatusPage embedded jobId={effectiveJobId ?? undefined} />
+        )}
       </div>
     </DashboardLayout>
   );

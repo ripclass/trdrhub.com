@@ -1530,7 +1530,7 @@ async def finalize_validation_result(
                         "Your validation run finished cleanly. The full "
                         "presentation set passed every check."
                     ),
-                    link_url=f"/exporter/results/{validation_session.id}",
+                    link_url=f"/lcopilot/exporter-dashboard?section=reviews&jobId={validation_session.id}",
                     metadata={
                         "validation_session_id": str(validation_session.id),
                         "finding_count": 0,
