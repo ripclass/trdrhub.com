@@ -1546,6 +1546,26 @@ async def finalize_validation_result(
     # Add DB rules debug info to response
     structured_result["_db_rules_debug"] = db_rules_debug
 
+    # Concierge gate — the run response itself must not leak findings.
+    # The GET /api/results gate is pointless if this synchronous response
+    # hands the customer the full unreviewed structured_result (bug found
+    # 2026-07-06 during Ripon's first live run). Enrolled jobs get a slim
+    # acknowledgment; the customer tracks progress on the status page and
+    # receives findings only via Approve & Deliver.
+    if _is_concierge:
+        return _make_json_safe({
+            "job_id": str(job_id),
+            "jobId": str(job_id),
+            "review_state": getattr(validation_session, "review_state", None),
+            "under_review": True,
+            "status_url": f"/lcopilot/status/{job_id}",
+            "message": (
+                "Your documents have been checked by our engine and are now with "
+                "a specialist for review. Your cited report will be delivered "
+                "within 24 hours."
+            ),
+        })
+
     return _make_json_safe(
         _response_shaping.build_public_validation_envelope(
             job_id=str(job_id),

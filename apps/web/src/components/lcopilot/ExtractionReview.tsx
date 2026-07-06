@@ -719,7 +719,15 @@ export function ExtractionReview({
         title: 'Starting validation',
         description: 'Applying your confirmed fields and running the validation pipeline…',
       });
-      await resumeValidate({ jobId, fieldOverrides });
+      const result = await resumeValidate({ jobId, fieldOverrides });
+
+      // Concierge flow: the run response is a slim acknowledgment (no
+      // findings — a specialist reviews first). Route straight to the
+      // status tracker instead of the results dashboard.
+      if (result?.under_review && result?.status_url) {
+        navigate(result.status_url);
+        return;
+      }
 
       if (onStartValidation) {
         onStartValidation({ jobId, lcNumber });

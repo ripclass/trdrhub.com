@@ -123,23 +123,40 @@ def build_router(shared: Any) -> APIRouter:
             parsed_request = await parse_validate_request(request)
             payload = parsed_request.payload
             checkpoint("form_parsed")
-            result = await run_validate_pipeline(
-                request=request,
-                current_user=current_user,
-                db=db,
-                payload=payload,
-                files_list=parsed_request.files_list,
-                doc_type=parsed_request.doc_type,
-                intake_only=parsed_request.intake_only,
-                extract_only=parsed_request.extract_only,
-                workflow_type=parsed_request.workflow_type,
-                start_time=start_time,
-                timings=timings,
-                checkpoint=checkpoint,
-                audit_service=audit_service,
-                audit_context=audit_context,
-                runtime_context=runtime_context,
-            )
+
+            # Shielded run with its OWN db session — a client disconnect or
+            # browser timeout cancels this request task, and without the
+            # shield the pipeline died mid-run leaving the session as a
+            # 'processing' zombie (found 2026-07-06, Ripon's first live run).
+            # The dedicated session means request-scope teardown can't close
+            # the connection out from under the still-running pipeline.
+            async def _shielded_one_shot():
+                from app.database import SessionLocal
+                from app.services.audit_service import AuditService as _AuditService
+
+                own_db = SessionLocal()
+                try:
+                    return await run_validate_pipeline(
+                        request=request,
+                        current_user=current_user,
+                        db=own_db,
+                        payload=payload,
+                        files_list=parsed_request.files_list,
+                        doc_type=parsed_request.doc_type,
+                        intake_only=parsed_request.intake_only,
+                        extract_only=parsed_request.extract_only,
+                        workflow_type=parsed_request.workflow_type,
+                        start_time=start_time,
+                        timings=timings,
+                        checkpoint=checkpoint,
+                        audit_service=_AuditService(own_db),
+                        audit_context=audit_context,
+                        runtime_context=runtime_context,
+                    )
+                finally:
+                    own_db.close()
+
+            result = await asyncio.shield(_shielded_one_shot())
             # Publish terminal completion event for SSE consumers
             try:
                 final_job_id = runtime_context.get("job_id")
@@ -378,20 +395,40 @@ def build_router(shared: Any) -> APIRouter:
         audit_context = create_audit_context(request)
 
         try:
-            result = await run_resume_pipeline(
-                request=request,
-                current_user=current_user,
-                db=db,
-                validation_session=validation_session,
-                payload=payload,
-                field_overrides=field_overrides,
-                start_time=start_time,
-                timings=timings,
-                checkpoint=checkpoint,
-                audit_service=audit_service,
-                audit_context=audit_context,
-                runtime_context=runtime_context,
-            )
+            # Shielded like the one-shot path (see _shielded_one_shot): the
+            # pipeline must survive a client disconnect, so it runs with its
+            # OWN db session — and the ValidationSession is re-fetched inside
+            # that session so no ORM instance crosses session boundaries.
+            async def _shielded_resume():
+                from app.database import SessionLocal
+                from app.services.audit_service import AuditService as _AuditService
+
+                own_db = SessionLocal()
+                try:
+                    own_session = (
+                        own_db.query(_ValidationSession)
+                        .filter(_ValidationSession.id == job_uuid)
+                        .first()
+                    )
+                    runtime_context["validation_session"] = own_session
+                    return await run_resume_pipeline(
+                        request=request,
+                        current_user=current_user,
+                        db=own_db,
+                        validation_session=own_session,
+                        payload=payload,
+                        field_overrides=field_overrides,
+                        start_time=start_time,
+                        timings=timings,
+                        checkpoint=checkpoint,
+                        audit_service=_AuditService(own_db),
+                        audit_context=audit_context,
+                        runtime_context=runtime_context,
+                    )
+                finally:
+                    own_db.close()
+
+            result = await asyncio.shield(_shielded_resume())
             return result
         except HTTPException:
             raise

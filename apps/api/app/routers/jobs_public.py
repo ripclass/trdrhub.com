@@ -902,6 +902,26 @@ def get_job_status(
         db.commit()
         db.refresh(session)
 
+    # Zombie janitor (2026-07-06): a session stuck in a non-terminal state
+    # with NO results for >30 minutes is dead — the pipeline was killed
+    # mid-run (client disconnect pre-shield, deploy restart, crash). Mark it
+    # failed so the UI can show a clean retry instead of an infinite spinner.
+    _ZOMBIE_AFTER_MINUTES = 30
+    if (
+        not session.validation_results
+        and session.status not in [SessionStatus.COMPLETED.value, SessionStatus.FAILED.value,
+                                   SessionStatus.EXTRACTION_READY.value]
+        and session.updated_at is not None
+        and (datetime.now(timezone.utc) - session.updated_at).total_seconds() > _ZOMBIE_AFTER_MINUTES * 60
+    ):
+        logging.getLogger(__name__).warning(
+            "Marking zombie session %s failed (stuck in %s since %s)",
+            session.id, session.status, session.updated_at,
+        )
+        session.status = SessionStatus.FAILED.value
+        db.commit()
+        db.refresh(session)
+
     response_payload = {
         "jobId": str(session.id),
         "status": session.status,
