@@ -309,7 +309,11 @@ app.include_router(doc_generator_catalog.router)  # Doc generator templates, pro
 app.include_router(doc_generator_advanced.router)  # Doc generator signatures, translations, certificates (Phase 3)
 app.include_router(lc_builder.router)  # LC Application Builder (wizard, clauses, MT700 export)
 app.include_router(hs_code.router)  # HS Code Finder (AI classification, duty calculator, FTA checker)
-app.include_router(sanctions.router)  # Sanctions Screener (party, vessel, goods screening)
+# Sanctions Screener — mounted under /api because the Vercel proxy forwards
+# browser calls as /api/sanctions/* WITH the prefix intact (vercel.json:
+# "/api/(.*)" → ".../api/$1"). The old bare mount meant every screening call
+# from the deployed frontend 404'd; found in the 2026-07-06 resume smoke.
+app.include_router(sanctions.router, prefix="/api")
 # V2 router removed - V1 enhanced with bank-grade features
 app.include_router(exporter.router)  # Exporter-specific endpoints (customs pack, bank submissions)
 app.include_router(bulk_validate.router)  # Customer-facing bulk LC validation (Phase A1 part 2)
@@ -446,6 +450,15 @@ if not settings.USE_STUBS:
             "/auth/fix-password",  # TEMPORARY - Remove after fixing passwords
             "/price-verify",  # Price verification API (public tool)
             "/api/check",  # Public, no-auth LC checker (free lead magnet) — POST /api/check + GET /api/check/availability
+            # Public screening + scope-check POSTs are called with plain fetch
+            # (no axios CSRF interceptor) from landing pages. They're
+            # stateless queries — auth is bearer-token when present, never
+            # cookie-based — and abuse is bounded by the anon daily limiter +
+            # global rate limiter, so CSRF adds nothing here.
+            "/api/sanctions/screen",       # party / vessel / goods / batch
+            "/api/sanctions/quick-screen", # landing-page widget
+            "/api/readiness/scope-check",  # free CBAM/EUDR scope check
+            "/api/readiness/scope-summary",# email-gated one-pager
             "/members/admin/seed-existing-users",  # One-time setup endpoint
         },
         exempt_methods={"GET", "HEAD", "OPTIONS"},
