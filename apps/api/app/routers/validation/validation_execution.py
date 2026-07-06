@@ -825,6 +825,173 @@ def _parse_icc_rule_identity(issue: Any) -> Optional[tuple[str, str, bool]]:
     )
 
 
+# ---------------------------------------------------------------------------
+# Semantic topic dedup + severity calibration (2026-07-06 launch quality pass)
+# ---------------------------------------------------------------------------
+
+# Doc-type tokens for missing-document and requirement topics.
+_TOPIC_DOC_TOKENS = (
+    ("certificate_of_origin", ("certificate of origin", "certificate_of_origin", " coo", "(coo)")),
+    ("insurance", ("insurance",)),
+    ("packing_list", ("packing list", "packing_list")),
+    ("bill_of_lading", ("bill of lading", "bill_of_lading", " bl ", "bl.", "b/l")),
+    ("invoice", ("commercial invoice", "invoice")),
+    ("inspection", ("inspection",)),
+)
+
+
+def _topic_doc(text: str) -> str:
+    for token, needles in _TOPIC_DOC_TOKENS:
+        if any(n in text for n in needles):
+            return token
+    return "any"
+
+
+def _semantic_topic_key(issue: dict[str, Any]) -> Optional[str]:
+    """Classify a finding into a cross-layer semantic topic, or None.
+
+    Different engine layers describe the same defect with different rule ids,
+    field paths ('bl.' vs 'bill_of_lading.' vs prose) and wording. This maps
+    a finding to a stable topic key so one defect = one delivered finding.
+    Returns None when no known topic matches (finding kept as-is).
+    """
+    text = " ".join(
+        str(issue.get(k) or "")
+        for k in ("title", "message", "description", "field", "field_name", "rule", "rule_id")
+    ).lower()
+    text = text.replace("bill_of_lading.", "bl.").replace("credit.", "lc.")
+
+    is_missing = any(w in text for w in ("missing", "absent", "not provided", "not presented"))
+
+    # Cross-document mismatches (the classic duplicate factories).
+    if "port_of_discharge" in text or "port of discharge" in text:
+        return "xdoc:port_of_discharge"
+    if "port_of_loading" in text or "port of loading" in text:
+        return "xdoc:port_of_loading"
+    if ("latest_shipment" in text or "latest shipment" in text or "late shipment" in text) or (
+        ("on_board_date" in text or "shipment_date" in text or "on board date" in text)
+        and any(w in text for w in ("late", "exceed", "after", "<=", "failed"))
+    ):
+        return "xdoc:late_shipment"
+    if ("lc number" in text or "lc_number" in text) and any(
+        w in text for w in ("mismatch", "incorrect", "does not match", "suffix", "differs", "wrong")
+    ):
+        return "xdoc:lc_number_mismatch"
+    if ("amount" in text or "drawing" in text) and any(
+        w in text for w in ("exceed", "overdraw", "greater than", "above the lc", "over the lc")
+    ):
+        return "xdoc:amount_exceeds_lc"
+    if "goods description" in text and any(w in text for w in ("differ", "not match", "conflict", "absent")):
+        return f"doc:{_topic_doc(text)}:goods_description"
+
+    # Missing required documents.
+    if is_missing and ("certificate of origin" in text or "(coo)" in text or "coo " in text):
+        return "missing_doc:certificate_of_origin"
+    if is_missing and "insurance" in text and "clause" not in text:
+        return "missing_doc:insurance"
+    if is_missing and "packing list" in text:
+        return "missing_doc:packing_list"
+
+    # Per-document requirement absences (LC 47A-style "docs must show X").
+    if "hs code" in text or "hs_code" in text:
+        return f"req:hs_code:{_topic_doc(text)}"
+    if "iec" in text:
+        return f"req:iec:{_topic_doc(text)}"
+
+    # Recurring single-fact findings.
+    if "carrier_identified" in text or "carrier not identified" in text or (
+        "carrier" in text and "identif" in text
+    ):
+        return "doc:bill_of_lading:carrier_identified"
+    if "expiry_date" in text and is_missing:
+        return "lc:expiry_date_missing"
+    if "presentation period" in text:
+        return "lc:presentation_period"
+    if "arithmetic" in text or ("sum" in text and "line item" in text) or "line_items_sum" in text:
+        return "doc:invoice:arithmetic"
+
+    return None
+
+
+_SEVERITY_RANK = {"critical": 4, "major": 3, "warning": 2, "minor": 2, "advisory": 1, "info": 1}
+
+# Topics whose real-world weight caps below "critical": requirement-absence
+# on a doc (fixable re-issue) and informational classes. Money, identity,
+# routing and deadline defects keep their assessed severity.
+_SEVERITY_CAPS = {
+    "req:": "major",
+    "lc:presentation_period": "info",
+    "lc:expiry_date_missing": "major",
+    "doc:bill_of_lading:carrier_identified": "major",
+}
+
+
+def _severity_of_issue(issue: dict[str, Any]) -> str:
+    return str(issue.get("severity") or "minor").strip().lower()
+
+
+def _apply_severity_cap(issue: dict[str, Any], topic: Optional[str]) -> None:
+    if not topic:
+        return
+    cap = None
+    for prefix, capped in _SEVERITY_CAPS.items():
+        if topic == prefix or (prefix.endswith(":") and topic.startswith(prefix)):
+            cap = capped
+            break
+    if cap is None:
+        return
+    if _SEVERITY_RANK.get(_severity_of_issue(issue), 2) > _SEVERITY_RANK.get(cap, 2):
+        issue["severity"] = cap
+
+
+def _representative_score(issue: dict[str, Any]) -> tuple:
+    """Prefer the best-worded finding as the survivor of a topic group:
+    verbatim evidence first, human prose over field-path dumps, then richness."""
+    title = str(issue.get("title") or "")
+    has_evidence = bool(issue.get("clause_cited") or issue.get("found_evidence"))
+    prose_title = not title.startswith(("'", '"')) and "=" not in title[:40]
+    has_fix = bool(issue.get("suggested_fix") or issue.get("suggestion"))
+    return (int(has_evidence), int(prose_title), int(has_fix), len(title))
+
+
+def _semantic_topic_dedup(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One defect = one finding. Collapse same-topic findings across layers,
+    keep the best-worded representative at the group's max severity, and
+    apply severity calibration caps. Order of first appearance is preserved."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    order: list[tuple[str, Optional[dict[str, Any]]]] = []
+
+    for issue in issues:
+        topic = _semantic_topic_key(issue)
+        if topic is None:
+            order.append(("__keep__", issue))
+            continue
+        if topic not in groups:
+            groups[topic] = []
+            order.append((topic, None))
+        groups[topic].append(issue)
+
+    out: list[dict[str, Any]] = []
+    merged = 0
+    for topic, kept in order:
+        if kept is not None:
+            out.append(kept)
+            continue
+        group = groups[topic]
+        rep = max(group, key=_representative_score)
+        max_sev = max(group, key=lambda i: _SEVERITY_RANK.get(_severity_of_issue(i), 2))
+        rep["severity"] = _severity_of_issue(max_sev)
+        _apply_severity_cap(rep, topic)
+        if len(group) > 1:
+            merged += len(group) - 1
+            rep["_merged_duplicates"] = len(group) - 1
+        out.append(rep)
+
+    if merged:
+        logger.info("Semantic topic dedup merged %d duplicate findings across layers", merged)
+    return out
+
+
 def _suppress_broad_icc_umbrella_rules(
     issues: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -2404,16 +2571,32 @@ async def execute_validation_pipeline(
                             )
                         else:
                             title = finding or str(rule_id)
+                        # Orient the evidence semantically: the LC side is
+                        # what the credit EXPECTS; the document side is what
+                        # was FOUND. RulHub's field_a/field_b order is
+                        # arbitrary, and blindly mapping a→expected produced
+                        # inverted cards ("Expected: bl.port = ALEXANDRIA /
+                        # Found: lc.port = JEBEL ALI") in the graded run.
+                        def _is_lc_side(f: Any) -> bool:
+                            s = str(f or "").lower()
+                            return s.startswith("lc.") or s.startswith("credit.")
+
+                        exp_field, exp_val = field_a, value_a
+                        fnd_field, fnd_val = field_b, value_b
+                        if _is_lc_side(field_b) and not _is_lc_side(field_a):
+                            exp_field, exp_val = field_b, value_b
+                            fnd_field, fnd_val = field_a, value_a
+
                         if not expected:
-                            if field_a and value_a is not None:
-                                expected = f"{field_a} = {value_a}"
-                            elif field_a:
-                                expected = str(field_a)
+                            if exp_field and exp_val is not None:
+                                expected = f"{exp_field} = {exp_val}"
+                            elif exp_field:
+                                expected = str(exp_field)
                         if not found:
-                            if field_b and value_b is not None:
-                                found = f"{field_b} = {value_b}"
-                            elif field_b:
-                                found = str(field_b)
+                            if fnd_field and fnd_val is not None:
+                                found = f"{fnd_field} = {fnd_val}"
+                            elif fnd_field:
+                                found = str(fnd_field)
                         return {
                             "rule": rule_id,
                             "rule_id": rule_id,
@@ -3363,6 +3546,17 @@ async def execute_validation_pipeline(
         cross_deduped.append(issue)
 
     deduplicated_results = cross_deduped
+
+    # Pass 3: SEMANTIC topic dedup + severity calibration (2026-07-06).
+    # Passes 1-2 miss cross-layer duplicates because each layer words the
+    # same defect differently (examiner prose vs 'bl.port_of_discharge' vs
+    # 'bill_of_lading.port_of_discharge' rule text) and carries different
+    # rule ids / field tokens. Graded run evidence: 17 findings for 7 real
+    # defects (port mismatch x4, late shipment x2, each missing doc x2,
+    # carrier x2). This pass classifies findings into semantic topics,
+    # keeps the best-worded representative per topic at the group's max
+    # severity, and clamps miscalibrated severities.
+    deduplicated_results = _semantic_topic_dedup(deduplicated_results)
 
     total_removed = len(failed_results) - len(deduplicated_results)
     if total_removed:

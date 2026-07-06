@@ -851,29 +851,43 @@ def validate_invoice_arithmetic(
         if any_counted:
             summed = running
 
-    # Fallback: parse "N pcs × USD P" / "N × P" lines from raw text.
+    # Fallback: parse "N pcs × USD P" lines from raw text — but ONLY when a
+    # line genuinely looks like a line item. The old permissive pattern
+    # (unit marker and separator both optional) paired arbitrary adjacent
+    # numbers — weights, dates, tax ids — and FABRICATED a sum on lump-sum
+    # invoices with no line items at all (graded run 2026-07-06:
+    # "line_items_sum = 103,506" hallucinated on a no-line-items invoice).
+    # Now: quantity-unit word AND an explicit multiplication/price
+    # separator are mandatory, and weight/date/id lines are skipped.
     if summed is None:
         raw = str(invoice_data.get("raw_text") or "")
         if raw:
             running = 0.0
             any_counted = False
-            # Pattern: qty (optional "pcs" or "units") then a price
-            # ``30,000 pcs - USD 7.20`` or ``30000 x 7.20``.
-            for m in re.finditer(
-                r"(\d[\d,]*)\s*(?:pcs|units?|x|×)?\s*[-–—]?\s*(?:USD|EUR|GBP|USD\s)?\s*([\d,]+\.\d{1,2})",
-                raw,
-                flags=re.IGNORECASE,
-            ):
-                qty = _coerce_number(m.group(1))
-                unit = _coerce_number(m.group(2))
-                if qty is None or unit is None:
+            noise_line = re.compile(
+                r"\b(kg|kgs|gross|net|weight|date|tel|fax|iec|tin|bin|gst|"
+                r"invoice\s*no|lc\s*number|hs\s*code|tax\s*id)\b",
+                re.IGNORECASE,
+            )
+            item_pattern = re.compile(
+                r"(\d[\d,]*)\s*(?:pcs|pieces?|units?|sets?|ctns?|cartons?|dozens?|prs?|pairs?)\b"
+                r"\s*(?:[x×@*]|[-–—])\s*(?:USD|EUR|GBP)?\s*([\d,]+\.\d{1,2})",
+                re.IGNORECASE,
+            )
+            for line in raw.splitlines():
+                if noise_line.search(line):
                     continue
-                # Skip matches where "qty" is actually a year or an LC
-                # reference that isn't a real line-item quantity.
-                if qty < 10:
-                    continue
-                running += qty * unit
-                any_counted = True
+                for m in item_pattern.finditer(line):
+                    qty = _coerce_number(m.group(1))
+                    unit = _coerce_number(m.group(2))
+                    if qty is None or unit is None:
+                        continue
+                    # Skip matches where "qty" is actually a year or an LC
+                    # reference that isn't a real line-item quantity.
+                    if qty < 10:
+                        continue
+                    running += qty * unit
+                    any_counted = True
             if any_counted:
                 summed = running
 
