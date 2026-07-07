@@ -8,10 +8,11 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from app.models import User, ValidationSession, SessionStatus
+from app.models import Discrepancy, Document, User, ValidationSession, SessionStatus
 from ..schemas import (
     ValidationSessionCreate, ValidationSessionResponse,
     ValidationSessionDetail, ValidationSessionSummary,
@@ -71,36 +72,53 @@ async def get_user_sessions(
             detail="Insufficient permissions to view sessions"
         )
 
-    session_service = ValidationSessionService(db)
+    # Summary list needs three scalar columns + two counts. The old
+    # implementation hydrated FULL ORM rows — including each session's
+    # multi-megabyte validation_results/extracted_data JSON — plus N+1
+    # lazy loads of documents/discrepancies. With a realistic session
+    # history the endpoint took >60s and the dashboard looked dead
+    # (found 2026-07-07). Three slim queries instead.
+    base = db.query(
+        ValidationSession.id,
+        ValidationSession.status,
+        ValidationSession.created_at,
+    ).filter(ValidationSession.deleted_at.is_(None))
+    if current_user.role not in ["bank", "admin"]:
+        base = base.filter(ValidationSession.user_id == current_user.id)
+    rows = base.order_by(ValidationSession.created_at.desc()).all()
 
-    # Get sessions based on role
-    if current_user.role in ["bank", "admin"]:
-        # Privileged roles can see all sessions
-        sessions = session_service.get_all_sessions()
-    else:
-        # Regular users see only their own sessions
-        sessions = session_service.get_user_sessions(current_user)
-    
-    # Convert to summary format
-    session_summaries = []
-    for session in sessions:
-        total_documents = len(session.documents)
-        total_discrepancies = len(session.discrepancies)
-        critical_discrepancies = len([
-            d for d in session.discrepancies 
-            if d.severity == "critical"
-        ])
-        
-        session_summaries.append(ValidationSessionSummary(
-            id=session.id,
-            status=session.status,
-            created_at=session.created_at,
-            total_documents=total_documents,
-            total_discrepancies=total_discrepancies,
-            critical_discrepancies=critical_discrepancies
-        ))
-    
-    return session_summaries
+    ids = [r.id for r in rows]
+    doc_counts: dict = {}
+    disc_counts: dict = {}
+    crit_counts: dict = {}
+    if ids:
+        doc_counts = dict(
+            db.query(Document.validation_session_id, func.count(Document.id))
+            .filter(Document.validation_session_id.in_(ids))
+            .group_by(Document.validation_session_id)
+            .all()
+        )
+        for sid, severity, cnt in (
+            db.query(Discrepancy.validation_session_id, Discrepancy.severity, func.count(Discrepancy.id))
+            .filter(Discrepancy.validation_session_id.in_(ids))
+            .group_by(Discrepancy.validation_session_id, Discrepancy.severity)
+            .all()
+        ):
+            disc_counts[sid] = disc_counts.get(sid, 0) + cnt
+            if str(severity) == "critical":
+                crit_counts[sid] = crit_counts.get(sid, 0) + cnt
+
+    return [
+        ValidationSessionSummary(
+            id=r.id,
+            status=r.status,
+            created_at=r.created_at,
+            total_documents=doc_counts.get(r.id, 0),
+            total_discrepancies=disc_counts.get(r.id, 0),
+            critical_discrepancies=crit_counts.get(r.id, 0),
+        )
+        for r in rows
+    ]
 
 
 @router.get("/{session_id}", response_model=ValidationSessionDetail)
