@@ -372,7 +372,11 @@ def build_lc_intake_summary(lc_payload: Dict[str, Any]) -> Dict[str, Any]:
         "applicant": applicant.get("name") or (applicant_raw if isinstance(applicant_raw, str) else None) or lc_payload.get("applicant_name"),
         "beneficiary": beneficiary.get("name") or (beneficiary_raw if isinstance(beneficiary_raw, str) else None) or lc_payload.get("beneficiary_name"),
         "currency": amount.get("currency") or lc_payload.get("currency"),
-        "amount": amount.get("amount") or (amount_raw if not isinstance(amount_raw, dict) else None) or lc_payload.get("lc_amount") or lc_payload.get("amount_value"),
+        # The ISO 20022 extractor emits {"value": 132750.0, "currency": "USD"}
+        # (see _extract_amount) — reading only "amount" dropped the value while
+        # the matching "currency" key survived, so ISO intake cards showed a
+        # currency with no amount (found live 2026-07-06, Turkey tsmt.001).
+        "amount": amount.get("amount") or amount.get("value") or (amount_raw if not isinstance(amount_raw, dict) else None) or lc_payload.get("lc_amount") or lc_payload.get("amount_value"),
         "issue_date": dates.get("issue_date") or dates.get("issue") or lc_payload.get("issue_date"),
         "expiry_date": dates.get("expiry_date") or dates.get("expiry") or lc_payload.get("expiry_date"),
         "latest_shipment_date": dates.get("latest_shipment_date") or dates.get("latest_shipment") or lc_payload.get("latest_shipment_date") or lc_payload.get("latest_shipment"),
