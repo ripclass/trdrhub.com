@@ -572,6 +572,23 @@ async def prepare_validation_session(
             if isinstance(item, dict) and str(item.get("raw_text") or item.get("display_name") or item.get("code")).strip()
         ]
         intake_status = "resolved" if has_lc_document else "invalid"
+
+        # Intake completes synchronously — finalize the session row so it
+        # doesn't rot in status='processing' forever. The zombie janitor in
+        # jobs_public only runs when a job's RESULTS are polled, and intake
+        # jobs never are (4 stuck rows found 2026-07-07).
+        if validation_session is not None:
+            try:
+                from datetime import datetime as _dt, timezone as _tz
+
+                validation_session.status = (
+                    SessionStatus.COMPLETED.value if has_lc_document else SessionStatus.FAILED.value
+                )
+                validation_session.processing_completed_at = _dt.now(_tz.utc)
+                db.commit()
+            except Exception as intake_finalize_exc:
+                logger.warning("Failed to finalize intake session status: %s", intake_finalize_exc)
+
         return {
             "status": intake_status,
             "intake_mode": True,
