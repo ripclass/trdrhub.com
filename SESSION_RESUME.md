@@ -1,128 +1,140 @@
-# SESSION_RESUME — TRDR Hub launch mission (2026-07-03, session 2: ALL PHASES 0–5 CODE COMPLETE)
+# SESSION_RESUME — 2026-07-07 (power-cut handoff: admin trust fixes)
 
-**Mission:** 6-phase launch (audit → LCopilot e2e → sanctions → CBAM/EUDR → park tools → Stripe).
-Service-as-software / concierge model. Full brief + constraints in
-`memory/project_launch_mission_2026_07.md`. Playbook: `J:\Enso Intelligence\_shipwt66\docs\gtm\GTM-PLAYBOOK-2026-07.md` (§1-4, §11).
+You are resuming a session that was cut mid-verification by power instability.
+Everything is committed and pushed; nothing is half-written. What's left is
+**verification of deployed fixes**, then the backlog. This file tells you what
+happened, what to do first, and — most importantly — *how to work* so the
+session continues seamlessly.
 
 ## Resume prompt
-```
-Resume the TRDR Hub launch mission. ALL BUILD PHASES 0-5 ARE CODE COMPLETE
-(P0: f29555b5 · P1: 98e85565 + c74931b8/2e940ce9/a2192a3b · P2: 1cf4ec4c ·
-P3: deea9b62 · P4: 16daaccd · P5: df0198b3 + e1658829). Read memory:
-project_launch_mission_2026_07 + reference_stripe_checkout +
-reference_concierge_review_queue + reference_sanctions_rulhub_wire +
-reference_readiness_tools + reference_phase4_parked_tools. What remains is
-ACCEPTANCE + CUTOVER, driven by LAUNCH-NOTES.md (repo root):
 
-0. Render service api.trdrhub.com is SUSPENDED (billing) — Ripon must resume it,
-   then run the migration job (`alembic upgrade head` — TWO pending migrations:
-   20260703_add_report_review, 20260703_add_payment_fields).
-1. Stripe test-mode e2e (needs sk_test key + webhook secret on Render, runbook
-   §1a): 4242-card purchase → paid job in review queue → deliver, for LCopilot
-   AND one readiness report; refund reflects.
-2. RulHub acceptances (billing resumes ~Jul 5): /v1/compliance/check live test ·
-   Phase 1 upload→delivered-PDF run (LCOPILOT_REVIEW_QUEUE_ENABLED=true) ·
-   sanctions sentinels (scripts/sanctions_sentinel_e2e.py, rh_test_* key) + batch
-   CSV of 10 · readiness m13 citation test.
-3. Deployed-site crawl (no 404s/dead links; parked tools show the parked page).
-4. Live cutover per LAUNCH-NOTES §1b/§2 (live keys, receipt emails, Adaptive
-   Pricing, flags ON).
+```
+Resume from SESSION_RESUME.md (2026-07-07 power-cut handoff). Four fixes are
+pushed (037c0744 restyle · 31a975fc ISO amount · c160c702 docs-never-stored ·
+32834b3f intake zombies). Do the verification checklist in order: (1) confirm
+Render deployed 32834b3f, (2) e2e the document-storage fix via admin Email
+intake with the Turkey-ISO-01-perfect set and prove the View/Source buttons
+serve real PDFs, (3) fresh-eyes check of the ISO LC card (amount + chips) —
+read the misdiagnosis note before touching any code. Then the backlog section.
+Follow the "How to work" rules exactly.
 ```
 
-## Done this session (2026-07-03, session 2) — Phase 1 frontend + wire
-- **Admin review screen** — `apps/web/src/pages/admin/sections/review/ReviewQueue.tsx`,
-  AdminShell section `review-queue`, "Concierge" sidebar group. Queue list → detail →
-  edit/suppress/annotate findings, reviewer note, needs-info, Approve & Deliver.
-- **Customer status page** — `/lcopilot/status/:jobId` (`pages/lcopilot/ReviewStatusPage.tsx`),
-  4-step tracker, 30s poll, needs-info callout, report download + results link.
-  New backend endpoint `GET /api/lcopilot/status/{id}/report` (presigned cited report);
-  status payload now carries `workflow_type`.
-- **Results-gate redirect** — 403 `{error_code: under_review}` from /api/results now
-  routes to the status page (both fetch paths in `use-lcopilot.ts`).
-- **/lcopilot landing rewritten** per playbook §3.1 — concierge copy, 3 steps,
-  $29/$49/$79 (`CONCIERGE_REPORTS` in `lib/pricing.ts`), export+import sides, trust
-  anchors, sample redacted report at `/samples/lcopilot-sample-report.pdf`
-  (generated from the real template by `scripts/gen_sample_report.py`; .gitignore
-  exception added), ISBP 821 only, fabricated metrics/testimonials removed,
-  advisory footer.
-- **check_compliance wired** — pipeline prefers `POST /v1/compliance/check` (nested
-  envelope; adapter `check_compliance_set` flattens response to validate/set shape;
-  ESCALATION log on block/reject/sanctions hits), falls back to `/v1/validate/set`
-  in-request. Kill switch `RULHUB_USE_COMPLIANCE_CHECK=false`. Stub-tested.
-- Verified: tsc clean on touched files (pre-existing errors unchanged),
-  useCanonicalJobResult 7/7, Vite build green, backend per-module imports OK.
+## How to work (this is the part that matters)
 
-## Also done this session — Phase 2: sanctions → RulHub, fail-closed (`1cf4ec4c`)
-- `RulHubClient.screen_sanctions` fixed to the real schema ({entity,country,vessel,
-  transaction}); new `services/sanctions_rulhub.py` fail-closed mapping (unavailable ≠
-  clear; 9 pytest cases); `routers/sanctions.py` rewired — party/vessel/goods/quick/
-  batch through RulHub, 503 screening_unavailable on failure, all fake surfaces
-  (sync stats, notifications, API keys, webhooks, CSV jobs, certificates) now honest.
-- Frontend: `screeningShared.tsx` (fail-closed banner, disclaimer w/ OFAC-50%, real
-  list registry), party/vessel/goods pages fail-closed UX + action badges, batch page
-  real CSV → /screen/batch (was a client-side mock simulation).
-- `scripts/sanctions_sentinel_e2e.py` ready for the rh_test_* sentinel check.
+1. **Trace before fixing, reproduce before believing.** Today's biggest win came
+   from refusing to patch on symptom. The report said "required_documents [] on
+   ISO LCs — fix the extractor". The extractor was innocent: we proved it by
+   running the REAL file through the REAL layers offline (pdfminer → extractor →
+   intake helpers), then reading the ACTUAL live session's stored `lc_context`
+   from the prod DB, then reading prod logs for the extraction confidence line.
+   Three independent evidence sources, all agreeing, before touching anything.
+   Do that. Never "most likely" without file:line or live-data proof.
+2. **When the UI lies, interrogate the network.** "Can't see the document" became
+   a one-line root cause (`# Placeholder` s3_key, bytes never uploaded) because
+   we fetched the presigned URL and read the 404 body, then counted objects in
+   `storage.objects` via Supabase MCP (3 objects in the whole prod bucket).
+3. **Fix the class, not the instance.** The 404 fix wasn't just "upload the
+   bytes" — it was also "head-check before presigning so legacy jobs degrade
+   honestly", plus the UX cause (a suppress icon that reads as *view*), plus the
+   adjacent rot found on the way (intake sessions stuck in `processing` — swept
+   ~350 zombie rows back to Nov 2025 via SQL).
+4. **Ship in small pushed commits** (`git push origin master` after EVERY
+   commit — standing rule). Render + Vercel auto-deploy from master.
+5. **Verify live, both themes, with screenshots.** Playwright against
+   trdrhub.com works (see recipes below). Ripon judges visually — capture
+   jpeg screenshots and show him.
+6. **Tone with Ripon**: direct, tables/short bullets, no hedging, never "beta".
+   Present findings → get direction on scope changes; execute without asking
+   on anything reversible. He is a trade-finance domain expert with strong UX
+   opinions — when he says a surface is "ugly", treat it as a P1.
 
-## Also done this session — Phase 3: CBAM/EUDR readiness tools (`deea9b62`)
-- Backend: `services/readiness.py` (question sets, annex-based scope verdicts, m13
-  engine w/ runtime source discovery + outage degradation) + `routers/readiness.py`
-  (questions / scope-check public / scope-summary email-gate / submit auth → SAME
-  review queue, workflow_type cbam/eudr/cbam_eudr_readiness, unconditional).
-  Admin `POST /{id}/rerun-engine` + ReviewQueue intake-answers panel + rerun button.
-  `lc_report` titles keyed by workflow_type. `RulHubClient.lookup_rules`. 12 pytest.
-- Frontend: `/tools/cbam-readiness-check` + `/tools/eudr-readiness-check` (SEO via
-  useSeoMeta, §3.2 anchors, scope widget + email gate), `/tools/readiness/apply`
-  intake (RequireAuth), `READINESS_REPORTS` pricing, status-page readiness copy.
+## What shipped today (all pushed, master)
 
-## Blocked on RulHub billing resume (~2026-07-05)
-1. Phase 1: live test /v1/compliance/check (any 400/404 auto-falls-back — prod safe).
-2. Phase 1 acceptance: exporter + importer run, upload → status page → admin queue →
-   Approve & Deliver → PDF. Needs `LCOPILOT_REVIEW_QUEUE_ENABLED=true` in a test env.
-3. After deploy: `render jobs create srv-d41dio8dl3ps73db8gpg --start-command
-   "alembic upgrade head"` (migration `20260703_add_report_review`).
-4. Phase 2 acceptance: sentinel e2e (3 PASS) + batch CSV of 10 names in the UI.
-5. Phase 3 acceptance: one paid readiness intake → findings cite the m13 corpus
-   (clause_cited populated); free scope check + landings already verified locally.
+| Commit | What | State |
+|---|---|---|
+| `037c0744` | Review-queue restyle to product design language (stat strip, mono wait clocks amber>12h/red>24h, customer-mirror finding cards, theme-safe severity colors) | **LIVE + verified both themes** (screenshots `queue-restyled.jpeg`, `detail-restyled.jpeg`, `detail-light.jpeg` in repo root) |
+| `31a975fc` | ISO LC amount missing from intake card — `build_lc_intake_summary` now reads the ISO `{"value":...}` amount shape; tests in `apps/api/tests/lc_intake_summary_test.py` | Deployed state unverified |
+| `c160c702` | **Documents were never stored in S3** (`session_setup.py` placeholder s3_key, bytes never uploaded — every trust-kit View 404'd) → uploads bytes + head-checks before presigning; finding cards get a "Source" button; icon-only suppress → labeled Edit/Note/Suppress | Deployed state unverified — **verify first** |
+| `32834b3f` | Intake-only sessions finalize (completed/failed) instead of rotting in `processing`; ~350 historical zombie rows swept to `failed` via one-time SQL | Deployed state unverified |
 
-## Also done this session — Phase 4: tools parked + homepage rebuilt (`16daaccd`)
-- 14 tools → `ParkedToolPage` via route wildcards (code in-tree). DocGenerator +
-  LC Builder evaluated (real backends, but no e2e pass + type rot + dilution) → parked.
-- Homepage: hero = LCopilot service framing + sample-PDF download; ToolsSection = 4
-  live tools + RulGPT (tfrules.com) cross-link; PartnersSection (fabricated bank
-  logos/certifications) removed; FAQ rewritten honest; fake newsletter form removed.
-- /tools index + footer rebuilt; ISBP745→821 sweep across 12 files (0 remaining).
-- Verified: build green, tsc error count identical to baseline (845), no live surface
-  links to parked routes.
+## DO FIRST — verification checklist
 
-## Also done this session — Phase 5: Stripe checkout + latent bug fixes (`df0198b3` + `e1658829`)
-- **Pay-first checkout**: job holds at review_state=submitted + payment_status=pending
-  (invisible to the operator queue) until checkout.session.completed advances it.
-  `services/checkout.py` + `routers/checkout.py` + billing webhook wire-in + readiness
-  submit returns checkout_url + LC enrollment holds unpaid jobs + status-page tier
-  picker + refund reflection. Master switch STRIPE_CHECKOUT_ENABLED (off = old
-  behavior). Migration `20260703_add_payment_fields`. 10 pytest.
-- **`scripts/stripe_setup_products.py`** (7 products incl. hidden $299/mo retainer) +
-  **`LAUNCH-NOTES.md`** — Ripon's full manual cutover runbook.
-- **★ Latent prod-killers fixed** (`df0198b3`): Phase 1's reviewed_by/review_report_id
-  FKs made User↔ValidationSession and Session↔Report relationships ambiguous
-  (AmbiguousForeignKeysError at configure_mappers); models/admin.py had 10 dangling
-  ForeignKey("organizations.id") to a table that never existed. Both fixed — **full
-  `import main` boot + global configure_mappers now works locally (668 routes)**; the
-  old "verify via per-module import" gotcha is obsolete.
-- **Discovered: api.trdrhub.com is "Service Suspended"** (Render billing) — resume is
-  cutover step zero; the mapper bugs would have detonated on resume without df0198b3.
-- Test suite: our suites green (checkout 10, readiness 12, sanctions 9); 46 failures
-  in tests/ are pre-existing/environmental (stale entitlements tiers, ISO contract
-  drift, Postgres-requiring integration tests, Phase-0 auth 401s) — verified identical
-  at HEAD baseline via worktree.
+1. **Confirm Render deployed `32834b3f`** (or later):
+   `& "$HOME\scoop\shims\render.exe" deploys list srv-d41dio8dl3ps73db8gpg -o text`
+   (CLI is pre-authenticated; a `--limit` flag does NOT exist — just read the
+   top rows. Do NOT put the Render API key or any password in a command line —
+   the permission classifier blocks it. The CLI, Supabase MCP, and Playwright
+   UI login are the sanctioned paths.)
+2. **E2E the document-storage fix through the UI** (Playwright):
+   - Login at `trdrhub.com/admin` (admin creds: memory file
+     `project_launch_bugs_2026_07_06.md`). NOTE: a hard `page.goto` after login
+     drops the in-memory admin session — always CLICK through the SPA.
+   - Review Queue → "Email intake" → attach the 6 PDFs from
+     `F:\New Download\LC Copies\Exporter-Generated\TRDR-Country-Style-Discrepancy-Sets\Turkey-ISO-01-perfect\`
+     (LC, Invoice, BL, PL, COO, Insurance) + any test email → Run engine
+     (takes minutes; run is detached, surviving dialog close).
+   - Open the new job: **View buttons must serve PDFs** (in-page
+     `fetch(href)` → expect 200/application-pdf; today it was 404 NoSuchKey),
+     finding cards must show **Source** buttons, actions must read
+     Edit / Note / Suppress. Old jobs correctly show "unavailable" — their
+     bytes are gone forever; do not chase a backfill.
+   - Cross-check the bucket via Supabase MCP `execute_sql` on project
+     `nnmmhgnriisfsncphipd`:
+     `SELECT name FROM storage.objects WHERE bucket_id='lcopilot-docs-prod' ORDER BY created_at DESC LIMIT 10;`
+     — expect `validation/{new-job-id}/...` rows.
+3. **ISO intake fresh look** (needs Ripon or an exporter login): upload the
+   Turkey LC alone on the exporter upload page → the LC card must now show
+   **USD 132,750.00** (the `31a975fc` fix) — and check whether "Documents the
+   LC asks for" chips render. **Read this before touching anything**: the
+   chips gap is probably a MISDIAGNOSIS. Evidence gathered today: live session
+   `c5670aab`'s stored `lc_context` HAS `documents_required` +
+   `required_document_types` (5 types); prod logs show
+   `iso20022_structured confidence=0.92` (no AI fallback); every intake helper
+   returns the right values on the exact live input; and the intake response
+   never had a `required_documents` key at all (the old observation was likely
+   read off a nonexistent key). If chips are still missing live, capture the
+   intake response JSON from the network tab — THAT is the missing evidence.
+   Frontend reads `response.required_document_types` (ExportLCUpload.tsx:1121).
 
-## Mission status
-All six build phases (0-5) are code complete. Remaining work is acceptance + cutover —
-see the resume prompt and LAUNCH-NOTES.md.
+## Known-benign (don't chase)
 
-## Gotchas
-- Local full-app boot (`import main`) fails on PRE-EXISTING audit_events/organizations
-  mapper error — verify via per-module import.
-- `/deliver` endpoint body is Optional — send NO body when there's no note ({} 422s).
-- Global `*.pdf` gitignore: public sample PDFs need the scoped exception (already added).
-- Standing rules: push every commit; Sonnet 4.6/Opus only; never edit the rulhub repo.
+- `POST /suggest` first call 403 → axios refreshes CSRF → retry 200. Normal.
+- Playwright long-POSTs sometimes die `net::ERR_ABORTED` (Cloudflare quirk);
+  the server side completes. Verify via the auto-retry's response or the DB.
+- Vercel plugin hook suggestions ("use client", workflow sandbox) are false
+  positives — apps/web is a Vite SPA; CLAUDE.md has the rule.
+- Local `npm run build` may OOM — `$env:NODE_OPTIONS="--max-old-space-size=4096"`.
+- Raw `npx tsc --noEmit` in apps/web spews pre-existing errors in parked admin
+  sections + tests; only errors in files you touched matter.
+- No accidental suppressions happened from Ripon's eye-icon click
+  (report_review_events verified clean).
+
+## Backlog after verification (priority order)
+
+1. **Concierge copy on delivered results page** — still shows the self-serve
+   billing banner ("8 of 25 LCs… $7 each") + "review and decide before
+   submitting" verdict copy on concierge reports. Draft concierge wording,
+   get Ripon's yes, ship.
+2. **GLM cutover verify** — the e2e run from checklist step 2 doubles as this:
+   stored model refs in its structured_result/telemetry should read `z-ai/*`.
+3. **#16 instant-ack UX + text-layer fast path** (`project_launch_bugs_2026_07_06.md`).
+4. Light-mode nit: AdminShell sidebar footer user-chip name is low-contrast in
+   light theme (cosmetic).
+5. Ripon-only keys: Stripe `sk_test_*` into Render; RulHub `rh_test_*`
+   sentinel key (rulhub side — surface, don't edit that repo).
+
+## Tooling map (what worked today)
+
+- **Playwright MCP** — full admin UI automation incl. screenshots
+  (`browser_take_screenshot` saves to repo root) and in-page
+  `browser_evaluate` for network probes (that's how the 404 was caught).
+- **Supabase MCP** — prod DB forensics incl. `storage.objects`. `extracted_data`
+  is json (not jsonb): use `(x)::text` casts and `json_object_keys`.
+- **render CLI** (`$HOME\scoop\shims\render.exe`) — logs with
+  `--start/--end/--text -o text`, `deploys list`. Pre-authed.
+- **Offline repro harness** — python scripts in the scratchpad importing
+  `apps/api/app/...` directly (pdfminer → extractor → intake helpers); the
+  fastest truth-machine for extraction questions. Pattern in today's memory
+  file `project_session_2026_07_07_admin_trust_fixes.md`.
+- Commit messages: write to a temp file, `git commit -F <file>` — PowerShell
+  here-strings mangle embedded quotes.
