@@ -651,18 +651,61 @@ async def prepare_validation_session(
         db.commit()
 
         # =====================================================================
-        # PERSIST DOCUMENTS TO DATABASE
-        # This enables customs pack generation and document retrieval
+        # PERSIST DOCUMENTS TO DATABASE + OBJECT STORAGE
+        # This enables customs pack generation, document retrieval, and the
+        # review-queue trust kit (operator cross-checks findings against the
+        # customer's actual files).
         # =====================================================================
         try:
             document_list = payload.get("documents") or []
+
+            # Re-read the raw upload bytes so they can be stored. The s3_key
+            # stamped below used to be a placeholder that nothing ever wrote —
+            # every review-queue "View" link presigned a nonexistent object
+            # (404 NoSuchKey, found live 2026-07-07).
+            upload_bytes: Dict[str, bytes] = {}
+            for upload in files_list or []:
+                upload_name = getattr(upload, "filename", None)
+                if not upload_name:
+                    continue
+                try:
+                    await upload.seek(0)
+                    upload_bytes[upload_name] = await upload.read()
+                except Exception as read_exc:
+                    logger.warning("Could not re-read upload %s for storage: %s", upload_name, read_exc)
+
+            s3_client = None
+            import os as _os
+
+            bucket = _os.getenv("S3_BUCKET_NAME", "lcopilot-documents")
+            if upload_bytes:
+                try:
+                    from app.utils.s3_client import get_s3_client
+
+                    s3_client = get_s3_client()
+                except Exception as s3_exc:
+                    logger.warning("S3 client unavailable; document rows persist without objects: %s", s3_exc)
+
             for idx, doc_info in enumerate(document_list):
+                doc_filename = doc_info.get("filename") or doc_info.get("name") or f"document_{idx + 1}.pdf"
+                doc_s3_key = f"validation/{validation_session.id}/{doc_filename}"
+                doc_bytes = upload_bytes.get(doc_filename)
+                if doc_bytes and s3_client is not None:
+                    try:
+                        s3_client.put_object(
+                            Bucket=bucket,
+                            Key=doc_s3_key,
+                            Body=doc_bytes,
+                            ContentType=doc_info.get("content_type") or "application/pdf",
+                        )
+                    except Exception as put_exc:
+                        logger.warning("Failed to store %s in object storage: %s", doc_s3_key, put_exc)
                 doc_record = Document(
                     validation_session_id=validation_session.id,
                     document_type=doc_info.get("document_type") or doc_info.get("type") or "unknown",
-                    original_filename=doc_info.get("filename") or doc_info.get("name") or f"document_{idx + 1}.pdf",
-                    s3_key=f"validation/{validation_session.id}/{doc_info.get('filename', f'doc_{idx}')}",  # Placeholder
-                    file_size=doc_info.get("file_size") or doc_info.get("size") or 0,
+                    original_filename=doc_filename,
+                    s3_key=doc_s3_key,
+                    file_size=doc_info.get("file_size") or doc_info.get("size") or (len(doc_bytes) if doc_bytes else 0),
                     content_type=doc_info.get("content_type") or "application/pdf",
                     ocr_text=doc_info.get("raw_text_preview") or doc_info.get("raw_text") or "",
                     ocr_confidence=doc_info.get("ocr_confidence"),

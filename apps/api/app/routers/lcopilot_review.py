@@ -368,6 +368,7 @@ def _session_documents(session: ValidationSession) -> list:
 
     bucket = os.getenv("S3_BUCKET_NAME", "lcopilot-documents")
     out = []
+    client = None
     for d in (session.documents or []):
         if getattr(d, "deleted_at", None) is not None:
             continue
@@ -381,13 +382,20 @@ def _session_documents(session: ValidationSession) -> list:
         }
         if d.s3_key:
             try:
-                entry["download_url"] = get_s3_client().generate_presigned_url(
+                if client is None:
+                    client = get_s3_client()
+                # Sessions created before 2026-07-07 stamped placeholder keys
+                # with no object behind them — a presigned URL to a missing
+                # key 404s in the reviewer's face. Only sign what exists; the
+                # UI renders a truthful "unavailable" for the rest.
+                client.head_object(Bucket=bucket, Key=d.s3_key)
+                entry["download_url"] = client.generate_presigned_url(
                     "get_object",
                     Params={"Bucket": bucket, "Key": d.s3_key},
                     ExpiresIn=3600,
                 )
             except Exception:
-                logger.exception("presign failed for document %s", d.id)
+                logger.info("document object missing or presign failed: %s (%s)", d.id, d.s3_key)
         out.append(entry)
     return out
 

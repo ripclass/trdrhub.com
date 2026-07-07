@@ -43,6 +43,7 @@ import {
   CheckCircle2,
   ChevronRight,
   EyeOff,
+  FileText,
   MessageSquarePlus,
   Pencil,
   RefreshCw,
@@ -812,6 +813,22 @@ export function ReviewQueue() {
   for (const f of detail?.findings ?? []) severityCounts[severityBucket(f.severity)] += 1;
   const lastEventAt = detail?.timeline?.length ? detail.timeline[detail.timeline.length - 1]?.at : null;
 
+  // Match a finding to the customer's uploaded file so the reviewer can open
+  // the source document from the finding card itself (Ripon 2026-07-07:
+  // "can't see the actual uploaded document").
+  const normalizeDocKey = (v: string) =>
+    v.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const findSourceDoc = (f: Finding) => {
+    const docs = detail?.documents || [];
+    const wanted = normalizeDocKey(String(f.documentName || f.document_type || ""));
+    if (!wanted) return null;
+    return (
+      docs.find((d) => normalizeDocKey(d.document_type || "") === wanted) ||
+      docs.find((d) => normalizeDocKey(d.filename || "").includes(wanted)) ||
+      null
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -926,6 +943,7 @@ export function ReviewQueue() {
                 const cfg = SEVERITY_CONFIG[severityBucket(f.severity)];
                 const expected = typeof f.expected === "string" ? f.expected : "";
                 const evidence = findingEvidence(f);
+                const sourceDoc = findSourceDoc(f);
                 return (
                   <Card key={fid || idx} className={cn("overflow-hidden border-l-4 shadow-sm", cfg.border)}>
                     {/* Header strip — same grammar as the customer's FindingsTab card */}
@@ -944,32 +962,37 @@ export function ReviewQueue() {
                             </Badge>
                           )}
                         </div>
-                        <div className="flex shrink-0 gap-1">
+                        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                          {sourceDoc?.download_url && (
+                            <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                              <a href={sourceDoc.download_url} target="_blank" rel="noreferrer" title={`Open ${sourceDoc.filename}`}>
+                                <FileText className="mr-1 h-3.5 w-3.5" /> Source
+                              </a>
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            title="Edit"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
                             disabled={busy || !fid || !deliverable}
                             onClick={() => setEdit({ finding: f, mode: "edit" })}
                           >
-                            <Pencil className="h-3.5 w-3.5" />
+                            <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
                           </Button>
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            title="Annotate"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
                             disabled={busy || !fid || !deliverable}
                             onClick={() => setEdit({ finding: f, mode: "annotate" })}
                           >
-                            <StickyNote className="h-3.5 w-3.5" />
+                            <StickyNote className="mr-1 h-3.5 w-3.5" /> Note
                           </Button>
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            title="Suppress (remove from delivered report)"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                            title="Remove from the delivered report"
                             disabled={busy || !fid || !deliverable}
                             onClick={() => {
                               if (window.confirm("Suppress this finding? It will not appear in the delivered report.")) {
@@ -977,7 +1000,7 @@ export function ReviewQueue() {
                               }
                             }}
                           >
-                            <EyeOff className="h-3.5 w-3.5 text-destructive" />
+                            <EyeOff className="mr-1 h-3.5 w-3.5" /> Suppress
                           </Button>
                         </div>
                       </div>
