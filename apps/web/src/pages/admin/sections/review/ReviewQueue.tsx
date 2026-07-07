@@ -103,6 +103,14 @@ interface ReviewDetail {
   payment_status?: string | null;
   payment_product_id?: string | null;
   findings: Finding[];
+  documents?: Array<{
+    id: string;
+    document_type: string;
+    filename: string;
+    content_type: string;
+    file_size: number;
+    download_url: string | null;
+  }>;
   timeline: TimelineEvent[];
   structured_result?: {
     intake_answers?: Record<string, unknown>;
@@ -202,16 +210,19 @@ function EditFindingDialog({
   onClose,
   onSave,
   busy,
+  onSuggest,
 }: {
   edit: EditState | null;
   onClose: () => void;
   onSave: (payload: Record<string, string>) => void;
   busy: boolean;
+  onSuggest?: (finding: Finding) => Promise<string | null>;
 }) {
   const [severity, setSeverity] = React.useState("");
   const [message, setMessage] = React.useState("");
   const [fix, setFix] = React.useState("");
   const [note, setNote] = React.useState("");
+  const [suggesting, setSuggesting] = React.useState(false);
 
   React.useEffect(() => {
     if (edit) {
@@ -273,11 +284,30 @@ function EditFindingDialog({
             </>
           )}
           <div className="space-y-1.5">
-            <Label>Reviewer note {isAnnotate ? "" : "(optional)"}</Label>
+            <div className="flex items-center justify-between">
+              <Label>Reviewer note {isAnnotate ? "" : "(optional)"}</Label>
+              {onSuggest && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  disabled={suggesting || busy}
+                  onClick={async () => {
+                    setSuggesting(true);
+                    const text = await onSuggest(edit.finding);
+                    if (text) setNote(text);
+                    setSuggesting(false);
+                  }}
+                >
+                  {suggesting ? "Drafting..." : "AI draft"}
+                </Button>
+              )}
+            </div>
             <Textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              rows={2}
+              rows={4}
               placeholder="Visible on the finding in the delivered report"
             />
           </div>
@@ -399,6 +429,31 @@ export function ReviewQueue() {
     void runAction(async () => {
       await api.post(`/api/admin/review-queue/${selectedId}/note`, { note });
     }, "Note saved");
+  };
+
+  const [suggestBusy, setSuggestBusy] = React.useState(false);
+  const suggestText = React.useCallback(
+    async (kind: "annotation" | "summary", findingIdArg?: string): Promise<string | null> => {
+      if (!selectedId) return null;
+      try {
+        const res = await api.post(`/api/admin/review-queue/${selectedId}/suggest`, {
+          kind,
+          finding_id: findingIdArg,
+        });
+        return (res.data && res.data.suggestion) || null;
+      } catch (err) {
+        toast({ title: "AI draft failed", description: errMessage(err), variant: "destructive" });
+        return null;
+      }
+    },
+    [selectedId, toast],
+  );
+
+  const draftSummary = async () => {
+    setSuggestBusy(true);
+    const text = await suggestText("summary");
+    if (text) setNote(text);
+    setSuggestBusy(false);
   };
 
   const sendNeedsInfo = () => {
@@ -771,6 +826,41 @@ export function ReviewQueue() {
               </>
             )}
 
+            {detail?.documents && detail.documents.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Uploaded documents</CardTitle>
+                  <CardDescription className="text-xs">
+                    The customer's actual files — cross-check every finding against the source.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {detail.documents.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{doc.filename}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {doc.document_type} - {Math.max(1, Math.round(doc.file_size / 1024))} KB
+                        </p>
+                      </div>
+                      {doc.download_url ? (
+                        <Button asChild size="sm" variant="outline">
+                          <a href={doc.download_url} target="_blank" rel="noreferrer">
+                            View
+                          </a>
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">unavailable</span>
+                      )}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Reviewer summary note</CardTitle>
@@ -786,9 +876,14 @@ export function ReviewQueue() {
                   placeholder="e.g. Two critical discrepancies need fixing before presentation — see findings 1 and 3."
                   disabled={!deliverable}
                 />
-                <Button size="sm" variant="outline" onClick={saveNote} disabled={busy || !deliverable}>
-                  Save note
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={saveNote} disabled={busy || !deliverable}>
+                    Save note
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={draftSummary} disabled={suggestBusy || busy || !deliverable}>
+                    {suggestBusy ? "Drafting..." : "AI draft"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
@@ -816,7 +911,7 @@ export function ReviewQueue() {
         </div>
       )}
 
-      <EditFindingDialog edit={edit} onClose={() => setEdit(null)} onSave={saveEdit} busy={busy} />
+      <EditFindingDialog edit={edit} onClose={() => setEdit(null)} onSave={saveEdit} busy={busy} onSuggest={(f) => suggestText("annotation", findingId(f) ?? undefined)} />
 
       {/* Needs info dialog */}
       <Dialog open={needsInfoOpen} onOpenChange={setNeedsInfoOpen}>

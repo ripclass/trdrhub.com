@@ -246,8 +246,43 @@ def get_review_detail(
         "payment_product_id": getattr(session, "payment_product_id", None),
         "structured_result": _structured(session),
         "findings": _issues(session),
+        "documents": _session_documents(session),
         "timeline": _status_payload(db, session)["timeline"],
     }
+
+
+def _session_documents(session: ValidationSession) -> list:
+    """Presigned links to the customer's actual uploaded files so the
+    reviewer can cross-check every finding against the source document
+    instead of trusting the engine blind."""
+    import os
+
+    from app.utils.s3_client import get_s3_client
+
+    bucket = os.getenv("S3_BUCKET_NAME", "lcopilot-documents")
+    out = []
+    for d in (session.documents or []):
+        if getattr(d, "deleted_at", None) is not None:
+            continue
+        entry = {
+            "id": str(d.id),
+            "document_type": d.document_type,
+            "filename": d.original_filename,
+            "content_type": d.content_type,
+            "file_size": d.file_size,
+            "download_url": None,
+        }
+        if d.s3_key:
+            try:
+                entry["download_url"] = get_s3_client().generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": bucket, "Key": d.s3_key},
+                    ExpiresIn=3600,
+                )
+            except Exception:
+                logger.exception("presign failed for document %s", d.id)
+        out.append(entry)
+    return out
 
 
 class FindingEdit(BaseModel):
@@ -314,6 +349,94 @@ def edit_finding(
 
 class ReviewNote(BaseModel):
     note: str
+
+
+class SuggestRequest(BaseModel):
+    kind: str  # "annotation" | "summary"
+    finding_id: Optional[str] = None
+
+
+@admin_router.post("/{job_id}/suggest")
+def suggest_review_text(
+    job_id: str,
+    body: SuggestRequest,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_sysadmin),
+):
+    """Draft reviewer text with the LLM — the reviewer edits, never auto-sends.
+
+    kind=annotation: a per-finding reviewer note (needs finding_id).
+    kind=summary: the delivery summary note over the whole finding set.
+    """
+    import os
+
+    import httpx
+
+    session = _get_session_or_404(db, job_id)
+    findings = [i for i in _issues(session) if isinstance(i, dict)]
+    NL = chr(10)
+
+    def _fmt(i: Dict[str, Any]) -> str:
+        return (
+            f"- [{i.get('severity','?')}] {i.get('title') or i.get('message','')} "
+            f"(expected: {str(i.get('expected',''))[:120]} | found: {str(i.get('found',''))[:120]})"
+        )
+
+    lc = (_structured(session).get("lc_structured") or {}) if isinstance(_structured(session), dict) else {}
+    if body.kind == "annotation":
+        if not body.finding_id:
+            raise HTTPException(status_code=422, detail="finding_id required for kind=annotation")
+        finding = next((i for i in findings if _issue_matches(i, body.finding_id)), None)
+        if finding is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
+        prompt = (
+            "You are a senior trade-finance documentary-credit specialist writing a reviewer "
+            "annotation on ONE finding of an LC document check, addressed to the exporter customer. "
+            "In 2-4 plain sentences: state whether the finding matters, its practical banking "
+            "consequence (UCP600 practice), and the concrete fix before presentation. No greetings, "
+            "no hedging, no markdown." + NL + NL + "FINDING:" + NL + _fmt(finding)
+            + NL + "DETAIL: " + str(finding.get("message") or "")[:600]
+            + NL + "SUGGESTED FIX ON FILE: " + str(finding.get("suggested_fix") or "")[:300]
+        )
+    elif body.kind == "summary":
+        listing = NL.join(_fmt(i) for i in findings[:25]) or "(no findings - clean pass)"
+        prompt = (
+            "You are a senior trade-finance documentary-credit specialist writing the reviewer "
+            "summary note that accompanies a delivered LC review report, addressed to the exporter "
+            "customer. 4-8 plain sentences: overall assessment, which findings genuinely threaten "
+            "payment and why, what to fix first before presentation, and one closing practical "
+            "recommendation. Direct and professional, no greetings, no markdown, no bullet lists."
+            + NL + NL + f"FINDINGS ({len(findings)}):" + NL + listing
+        )
+    else:
+        raise HTTPException(status_code=422, detail="kind must be 'annotation' or 'summary'")
+
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="LLM unavailable: OPENROUTER_API_KEY not configured")
+    model = os.getenv("REVIEW_SUGGEST_MODEL") or os.getenv("AI_EXAMINER_MODEL") or "z-ai/glm-5.2"
+    try:
+        resp = httpx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 500,
+                "temperature": 0.3,
+            },
+            timeout=45.0,
+        )
+        resp.raise_for_status()
+        text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("review suggest LLM call failed for %s", session.id)
+        raise HTTPException(status_code=502, detail=f"Suggestion failed: {type(exc).__name__}")
+    if not text:
+        raise HTTPException(status_code=502, detail="Suggestion came back empty")
+    return {"suggestion": text, "model": model, "kind": body.kind}
 
 
 @admin_router.post("/{job_id}/note")
