@@ -456,6 +456,39 @@ export function ReviewQueue() {
     setSuggestBusy(false);
   };
 
+  const [intakeOpen, setIntakeOpen] = React.useState(false);
+  const [intakeEmail, setIntakeEmail] = React.useState("");
+  const [intakeName, setIntakeName] = React.useState("");
+  const [intakeFiles, setIntakeFiles] = React.useState<FileList | null>(null);
+  const [intakeBusy, setIntakeBusy] = React.useState(false);
+
+  const submitIntake = async () => {
+    if (!intakeEmail.trim() || !intakeFiles || intakeFiles.length === 0) return;
+    setIntakeBusy(true);
+    try {
+      const form = new FormData();
+      Array.from(intakeFiles).forEach((f) => form.append("files", f));
+      form.append("customer_email", intakeEmail.trim());
+      if (intakeName.trim()) form.append("customer_name", intakeName.trim());
+      const res = await api.post("/api/admin/review-queue/intake", form, {
+        timeout: 20 * 60 * 1000,
+      });
+      toast({
+        title: "Engine run complete",
+        description: `Job ${String(res.data?.job_id || "").slice(0, 8)} is in the queue for ${intakeEmail.trim()}.`,
+      });
+      setIntakeOpen(false);
+      setIntakeEmail("");
+      setIntakeName("");
+      setIntakeFiles(null);
+      await loadList();
+    } catch (err) {
+      toast({ title: "Intake failed", description: errMessage(err), variant: "destructive" });
+    } finally {
+      setIntakeBusy(false);
+    }
+  };
+
   const sendNeedsInfo = () => {
     if (!selectedId || !needsInfoReason.trim()) return;
     void runAction(async () => {
@@ -517,10 +550,15 @@ export function ReviewQueue() {
                 : "Submitted jobs whose payment hasn't cleared — record offline payments here."}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => void loadList()} disabled={loadingList}>
-            <RefreshCw className={cn("h-4 w-4 mr-2", loadingList && "animate-spin")} />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => setIntakeOpen(true)}>
+              Email intake
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void loadList()} disabled={loadingList}>
+              <RefreshCw className={cn("h-4 w-4 mr-2", loadingList && "animate-spin")} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         <div className="flex gap-2">
@@ -912,6 +950,67 @@ export function ReviewQueue() {
       )}
 
       <EditFindingDialog edit={edit} onClose={() => setEdit(null)} onSave={saveEdit} busy={busy} onSuggest={(f) => suggestText("annotation", findingId(f) ?? undefined)} />
+
+      {/* Email intake dialog — run the engine on documents a customer emailed in */}
+      <Dialog open={intakeOpen} onOpenChange={(open) => !intakeBusy && setIntakeOpen(open)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Email intake</DialogTitle>
+            <DialogDescription>
+              Upload the documents a customer emailed you. The engine runs and the job
+              joins this queue; the customer email is stamped on it for delivery.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Customer email</Label>
+              <Input
+                type="email"
+                value={intakeEmail}
+                onChange={(e) => setIntakeEmail(e.target.value)}
+                placeholder="customer@company.com"
+                disabled={intakeBusy}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Customer name (optional)</Label>
+              <Input
+                value={intakeName}
+                onChange={(e) => setIntakeName(e.target.value)}
+                placeholder="Company or contact name"
+                disabled={intakeBusy}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Documents (LC + supporting)</Label>
+              <Input
+                type="file"
+                multiple
+                accept=".pdf"
+                onChange={(e) => setIntakeFiles(e.target.files)}
+                disabled={intakeBusy}
+              />
+              {intakeFiles && intakeFiles.length > 0 && (
+                <p className="text-xs text-muted-foreground">{intakeFiles.length} file(s) selected</p>
+              )}
+            </div>
+            {intakeBusy && (
+              <p className="text-xs text-muted-foreground">
+                Engine running — this takes a few minutes. You can close this dialog;
+                the job will appear in the queue when done.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIntakeOpen(false)} disabled={intakeBusy}>
+              Cancel
+            </Button>
+            <Button onClick={submitIntake} disabled={intakeBusy || !intakeEmail.trim() || !intakeFiles || intakeFiles.length === 0}>
+              {intakeBusy ? "Running engine..." : "Run engine"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Needs info dialog */}
       <Dialog open={needsInfoOpen} onOpenChange={setNeedsInfoOpen}>

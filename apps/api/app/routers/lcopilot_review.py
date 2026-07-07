@@ -21,7 +21,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -197,6 +197,89 @@ _QUEUE_STATES = (
 )
 
 
+@admin_router.post("/intake")
+async def email_intake(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_sysadmin),
+):
+    """Operator intake for email-channel customers.
+
+    The operator uploads the PDFs a customer emailed in (multipart 'files'
+    plus 'customer_email' / 'customer_name' form fields). The REAL one-shot
+    pipeline runs — detached, so it survives the operator navigating away —
+    and the job lands in this queue like any portal submission. The
+    customer's email is stamped on the session for delivery.
+    """
+    import time as _time
+
+    from app.middleware.audit_middleware import create_audit_context
+    from app.routers.validate_run import _run_pipeline_detached
+    from app.routers.validation.pipeline_runner import run_validate_pipeline
+    from app.routers.validation.request_parsing import parse_validate_request
+    from app.services.audit_service import AuditService
+
+    parsed = await parse_validate_request(request)
+    if not parsed.files_list:
+        raise HTTPException(status_code=422, detail="No files uploaded")
+    customer_email = str((parsed.payload or {}).get("customer_email") or "").strip()
+    customer_name = str((parsed.payload or {}).get("customer_name") or "").strip()
+    if not customer_email:
+        raise HTTPException(status_code=422, detail="customer_email is required")
+
+    start_time = _time.time()
+    timings: Dict[str, Any] = {}
+    runtime_context: Dict[str, Any] = {}
+    audit_context = create_audit_context(request)
+
+    def _checkpoint(name: str) -> None:
+        timings[name] = round(_time.time() - start_time, 3)
+
+    async def _pipeline():
+        from app.database import SessionLocal
+
+        own_db = SessionLocal()
+        try:
+            return await run_validate_pipeline(
+                request=request,
+                current_user=admin,
+                db=own_db,
+                payload=parsed.payload,
+                files_list=parsed.files_list,
+                doc_type=parsed.doc_type,
+                intake_only=False,
+                extract_only=False,
+                workflow_type=parsed.workflow_type,
+                start_time=start_time,
+                timings=timings,
+                checkpoint=_checkpoint,
+                audit_service=AuditService(own_db),
+                audit_context=audit_context,
+                runtime_context=runtime_context,
+            )
+        finally:
+            own_db.close()
+
+    ack = await _run_pipeline_detached(_pipeline)
+
+    job_id = (ack or {}).get("job_id") if isinstance(ack, dict) else None
+    if job_id:
+        session = _get_session_or_404(db, str(job_id))
+        sr = _structured(session)
+        if isinstance(sr, dict):
+            sr["_email_intake"] = {
+                "customer_email": customer_email,
+                "customer_name": customer_name or None,
+                "operator_id": str(admin.id),
+                "received_at": datetime.now(timezone.utc).isoformat(),
+            }
+            _persist_structured(db, session, sr)
+            db.commit()
+    result = dict(ack or {})
+    result["customer_email"] = customer_email
+    return result
+
+
 @admin_router.get("")
 def list_review_queue(
     state: Optional[str] = None,
@@ -223,6 +306,8 @@ def list_review_queue(
             "company_id": str(s.company_id) if s.company_id else None,
             "finding_count": len(issues),
             "payment_status": getattr(s, "payment_status", None),
+            "customer_email": ((_structured(s).get("_email_intake") or {}).get("customer_email")
+                               if isinstance(_structured(s), dict) else None),
             "submitted_at": s.created_at.isoformat() if s.created_at else None,
             "state_changed_at": s.review_state_changed_at.isoformat() if s.review_state_changed_at else None,
         })
