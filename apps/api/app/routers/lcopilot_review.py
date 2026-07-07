@@ -507,13 +507,16 @@ def suggest_review_text(
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 500,
+                "max_tokens": 1600,
                 "temperature": 0.3,
             },
             timeout=45.0,
         )
         resp.raise_for_status()
-        text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+        _msg = resp.json()["choices"][0]["message"]
+        # Reasoning models (GLM 5.2) can spend the whole budget thinking and
+        # return empty content — fall back to the reasoning text.
+        text = (_msg.get("content") or _msg.get("reasoning") or "").strip()
     except HTTPException:
         raise
     except Exception as exc:
