@@ -14,6 +14,23 @@ from app.routers.validation.request_parsing import parse_validate_request
 from app.utils.validation_progress import publish_completion, publish_progress
 
 
+async def _run_pipeline_detached(coro_factory):
+    """Run an async pipeline in a dedicated thread with its own event loop.
+
+    Two production bugs drove this design (2026-07-06/07):
+    - A running pipeline's blocking segments (sync SQLAlchemy, PDF work)
+      froze the ONE shared event loop, so every other request — LC intake,
+      status polls, even CSRF — queued for minutes ("LC takes forever").
+    - The obvious fix, uvicorn --workers 2, OOM-killed the 2GB instance
+      (two copies of this app don't fit).
+    A dedicated thread keeps the web loop free on a single worker, and a
+    client disconnect cannot kill the run: cancelling the outer await
+    abandons the thread, which still completes, persists and enrolls.
+    """
+    return await asyncio.to_thread(lambda: asyncio.run(coro_factory()))
+
+
+
 _SHARED_NAMES = [
     'Any', 'AuditAction', 'AuditResult', 'AuditService', 'Depends', 'Dict', 'HTTPException', 'List',
     'Request', 'Session', 'SessionStatus', 'User', 'adapt_from_structured_result', 'create_audit_context',
@@ -156,7 +173,7 @@ def build_router(shared: Any) -> APIRouter:
                 finally:
                     own_db.close()
 
-            result = await asyncio.shield(_shielded_one_shot())
+            result = await _run_pipeline_detached(_shielded_one_shot)
             # Publish terminal completion event for SSE consumers
             try:
                 final_job_id = runtime_context.get("job_id")
@@ -428,7 +445,7 @@ def build_router(shared: Any) -> APIRouter:
                 finally:
                     own_db.close()
 
-            result = await asyncio.shield(_shielded_resume())
+            result = await _run_pipeline_detached(_shielded_resume)
             return result
         except HTTPException:
             raise
