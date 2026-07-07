@@ -39,7 +39,9 @@ import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
+  ChevronRight,
   EyeOff,
   MessageSquarePlus,
   Pencil,
@@ -148,22 +150,41 @@ function findingFix(f: Finding): string {
   return f.suggested_fix || f.suggestion || "";
 }
 
-const SEVERITY_STYLES: Record<string, string> = {
-  critical: "bg-red-100 text-red-800 border-red-200",
-  major: "bg-orange-100 text-orange-800 border-orange-200",
-  warning: "bg-amber-100 text-amber-800 border-amber-200",
-  minor: "bg-yellow-50 text-yellow-800 border-yellow-200",
-  info: "bg-blue-50 text-blue-800 border-blue-200",
-};
+// Severity buckets mirror the customer's FindingsTab exactly — the operator
+// proofs the same visual artifact the customer receives. Theme-safe in both
+// light and dark (solid badge + /5 tinted header + colored left border).
+type SeverityBucket = "critical" | "major" | "minor";
 
-function SeverityBadge({ severity }: { severity?: string }) {
-  const s = (severity || "minor").toLowerCase();
-  return (
-    <Badge variant="outline" className={cn("uppercase text-[10px] tracking-wide", SEVERITY_STYLES[s] || SEVERITY_STYLES.minor)}>
-      {s}
-    </Badge>
-  );
+function severityBucket(s?: string): SeverityBucket {
+  const low = (s || "").toLowerCase();
+  if (["critical", "high", "error", "fail"].includes(low)) return "critical";
+  if (["major", "warning", "warn", "medium"].includes(low)) return "major";
+  return "minor";
 }
+
+const SEVERITY_CONFIG: Record<
+  SeverityBucket,
+  { border: string; headerBg: string; badge: string; text: string }
+> = {
+  critical: {
+    border: "border-l-red-500",
+    headerBg: "bg-red-500/5",
+    badge: "bg-red-500 text-white",
+    text: "text-red-600 dark:text-red-400",
+  },
+  major: {
+    border: "border-l-amber-500",
+    headerBg: "bg-amber-500/5",
+    badge: "bg-amber-500 text-black",
+    text: "text-amber-600 dark:text-amber-400",
+  },
+  minor: {
+    border: "border-l-blue-400",
+    headerBg: "bg-blue-500/5",
+    badge: "bg-blue-500 text-white",
+    text: "text-blue-600 dark:text-blue-400",
+  },
+};
 
 // Theme-safe, on-palette state colors (opacity shades render correctly in
 // both light and dark; purple was off-brand — audit 2026-07-07).
@@ -198,6 +219,52 @@ function formatWhen(iso: string | null | undefined): string {
 function errMessage(err: unknown): string {
   const anyErr = err as { response?: { data?: { detail?: string } }; message?: string };
   return anyErr?.response?.data?.detail || anyErr?.message || "Request failed";
+}
+
+// The wait clock — how long a job has sat in its current state. The concierge
+// promise is turnaround time, so this is the loudest number on every row.
+function formatDuration(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
+
+function waitToneClass(iso: string | null | undefined): string {
+  if (!iso) return "text-foreground";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "text-foreground";
+  const hours = (Date.now() - t) / 3_600_000;
+  if (hours >= 24) return "text-red-600 dark:text-red-400";
+  if (hours >= 12) return "text-amber-600 dark:text-amber-400";
+  return "text-foreground";
+}
+
+// Same stat-tile grammar as the customer results page (VerdictTab summary
+// strip): eyebrow label, big number, quiet caption.
+function StatTile({
+  label,
+  value,
+  caption,
+  valueClass,
+}: {
+  label: string;
+  value: React.ReactNode;
+  caption?: React.ReactNode;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <p className="mb-1 text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className={cn("text-2xl font-bold", valueClass)}>{value}</p>
+      {caption ? <p className="text-xs text-muted-foreground truncate">{caption}</p> : null}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -540,6 +607,22 @@ export function ReviewQueue() {
     }, "Offline payment recorded — job is now in the review queue");
   };
 
+  // Queue-level operational numbers for the stat strip.
+  const queueStats = React.useMemo(() => {
+    const findings = items.reduce((sum, it) => sum + (it.finding_count || 0), 0);
+    let oldest: QueueItem | null = null;
+    let oldestT = Infinity;
+    for (const it of items) {
+      const t = new Date(it.state_changed_at || it.submitted_at || "").getTime();
+      if (!Number.isNaN(t) && t < oldestT) {
+        oldestT = t;
+        oldest = it;
+      }
+    }
+    const needsInfo = items.filter((it) => it.review_state === "needs_info").length;
+    return { total: items.length, findings, oldest, needsInfo };
+  }, [items]);
+
   // ------------------------------------------------------------------ list
 
   if (!selectedId) {
@@ -582,10 +665,54 @@ export function ReviewQueue() {
           </Button>
         </div>
 
+        {!loadingList && !listError && (
+          <div className="grid gap-3 sm:grid-cols-4">
+            <StatTile
+              label={view === "queue" ? "In queue" : "Awaiting payment"}
+              value={queueStats.total}
+              caption={view === "queue" ? "awaiting specialist review" : "submitted, not yet paid"}
+            />
+            <StatTile
+              label="Findings to proof"
+              value={queueStats.findings}
+              caption="across all jobs"
+            />
+            <StatTile
+              label="Oldest wait"
+              value={
+                queueStats.oldest
+                  ? formatDuration(queueStats.oldest.state_changed_at || queueStats.oldest.submitted_at) || "—"
+                  : "—"
+              }
+              valueClass={cn(
+                "font-mono",
+                queueStats.oldest
+                  ? waitToneClass(queueStats.oldest.state_changed_at || queueStats.oldest.submitted_at)
+                  : undefined,
+              )}
+              caption={
+                queueStats.oldest
+                  ? queueStats.oldest.customer_name || queueStats.oldest.customer_email || "—"
+                  : "queue is clear"
+              }
+            />
+            <StatTile
+              label="Needs info"
+              value={queueStats.needsInfo}
+              caption="waiting on the customer"
+            />
+          </div>
+        )}
+
         {loadingList ? (
           <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-4">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-24 w-full" />
+              ))}
+            </div>
             {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-16 w-full" />
+              <Skeleton key={`row-${i}`} className="h-16 w-full" />
             ))}
           </div>
         ) : listError ? (
@@ -606,49 +733,68 @@ export function ReviewQueue() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-3">
-            {items.map((item) => (
-              <Card
-                key={item.job_id}
-                className="cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => setSelectedId(item.job_id)}
-              >
-                <CardContent className="py-4 flex flex-wrap items-center gap-x-6 gap-y-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">
-                        {item.customer_name || item.customer_email || "Unknown customer"}
-                      </span>
-                      <StateBadge state={item.review_state} />
-                      {item.payment_status === "pending" && (
-                        <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30">
-                          awaiting payment
-                        </Badge>
-                      )}
-                      {item.payment_status === "refunded" && (
-                        <Badge variant="outline" className="text-xs bg-muted text-muted-foreground border-border">
-                          refunded
-                        </Badge>
-                      )}
+          <div className="space-y-2">
+            {items.map((item) => {
+              const waitBasis = item.state_changed_at || item.submitted_at;
+              return (
+                <Card
+                  key={item.job_id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer transition-colors hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setSelectedId(item.job_id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedId(item.job_id);
+                    }
+                  }}
+                >
+                  <CardContent className="flex items-center gap-4 py-3.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium truncate">
+                          {item.customer_name || item.customer_email || "Unknown customer"}
+                        </span>
+                        <StateBadge state={item.review_state} />
+                        {item.payment_status === "pending" && (
+                          <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30">
+                            awaiting payment
+                          </Badge>
+                        )}
+                        {item.payment_status === "refunded" && (
+                          <Badge variant="outline" className="text-xs bg-muted text-muted-foreground border-border">
+                            refunded
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                        {item.customer_name && item.customer_email ? <span>{item.customer_email}</span> : null}
+                        {item.customer_name && item.customer_email ? <span>·</span> : null}
+                        <span>{(item.workflow_type || "validation").replace(/_/g, " ")}</span>
+                        <span>·</span>
+                        <span className="font-mono">{item.job_id.slice(0, 8)}</span>
+                        <span>·</span>
+                        <span>submitted {formatWhen(item.submitted_at)}</span>
+                      </div>
                     </div>
-                    <div className="text-sm mt-1 text-muted-foreground">
-                      {item.customer_name && item.customer_email ? <>{item.customer_email} · </> : null}
-                      {(item.workflow_type || "validation").replace(/_/g, " ")} ·{" "}
-                      <span className="font-medium text-foreground">{item.finding_count}</span> finding{item.finding_count === 1 ? "" : "s"}
-                      {" · "}
-                      <span className="font-mono text-xs">{item.job_id.slice(0, 8)}</span>
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-bold leading-tight">{item.finding_count}</p>
+                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                        finding{item.finding_count === 1 ? "" : "s"}
+                      </p>
                     </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground text-right">
-                    <div>Submitted {formatWhen(item.submitted_at)}</div>
-                    <div>In state since {formatWhen(item.state_changed_at)}</div>
-                  </div>
-                  <Button size="sm" variant="secondary" onClick={() => setSelectedId(item.job_id)}>
-                    Review
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                    <div className="w-24 shrink-0 text-right">
+                      <p className={cn("font-mono text-sm font-semibold leading-tight", waitToneClass(waitBasis))}>
+                        {formatDuration(waitBasis) || "—"}
+                      </p>
+                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">waiting</p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
@@ -660,6 +806,11 @@ export function ReviewQueue() {
   const deliverable =
     detail && ["under_review", "engine_complete"].includes(detail.review_state);
   const detailCustomer = (detail as (ReviewDetail & { customer_email?: string | null }) | null)?.customer_email;
+
+  // Plain computations (no hooks — we're past the list early-return).
+  const severityCounts = { critical: 0, major: 0, minor: 0 };
+  for (const f of detail?.findings ?? []) severityCounts[severityBucket(f.severity)] += 1;
+  const lastEventAt = detail?.timeline?.length ? detail.timeline[detail.timeline.length - 1]?.at : null;
 
   return (
     <div className="space-y-6">
@@ -700,6 +851,62 @@ export function ReviewQueue() {
           ))}
         </div>
       ) : (
+        <>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <StatTile
+            label="Findings"
+            value={detail.findings.length}
+            caption={
+              detail.findings.length === 0 ? (
+                "none — deliver when ready"
+              ) : (
+                <>
+                  {severityCounts.critical > 0 && (
+                    <span className={SEVERITY_CONFIG.critical.text}>{severityCounts.critical} critical</span>
+                  )}
+                  {severityCounts.critical > 0 && (severityCounts.major > 0 || severityCounts.minor > 0) && " · "}
+                  {severityCounts.major > 0 && (
+                    <span className={SEVERITY_CONFIG.major.text}>{severityCounts.major} major</span>
+                  )}
+                  {severityCounts.major > 0 && severityCounts.minor > 0 && " · "}
+                  {severityCounts.minor > 0 && <span>{severityCounts.minor} minor</span>}
+                </>
+              )
+            }
+          />
+          <StatTile
+            label="Documents"
+            value={detail.documents?.length ?? 0}
+            caption={detail.documents?.length ? "source files in the side panel" : "none attached"}
+          />
+          <StatTile
+            label="Waiting"
+            value={formatDuration(lastEventAt) || "—"}
+            valueClass={cn("font-mono", waitToneClass(lastEventAt))}
+            caption={`in ${(detail.review_state || "").replace(/_/g, " ")} since ${formatWhen(lastEventAt)}`}
+          />
+          <StatTile
+            label="Payment"
+            value={
+              <span className="capitalize">
+                {detail.payment_status === "pending"
+                  ? "Pending"
+                  : detail.payment_status === "refunded"
+                    ? "Refunded"
+                    : detail.payment_product_id === "offline"
+                      ? "Offline"
+                      : detail.payment_status
+                        ? "Paid"
+                        : "—"}
+              </span>
+            }
+            valueClass={cn(
+              "text-lg",
+              detail.payment_status === "pending" && "text-amber-600 dark:text-amber-400",
+            )}
+            caption={detailCustomer || undefined}
+          />
+        </div>
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           {/* Findings */}
           <div className="space-y-3">
@@ -716,46 +923,52 @@ export function ReviewQueue() {
             ) : (
               detail.findings.map((f, idx) => {
                 const fid = findingId(f);
+                const cfg = SEVERITY_CONFIG[severityBucket(f.severity)];
+                const expected = typeof f.expected === "string" ? f.expected : "";
+                const evidence = findingEvidence(f);
                 return (
-                  <Card key={fid || idx}>
-                    <CardHeader className="pb-2">
+                  <Card key={fid || idx} className={cn("overflow-hidden border-l-4 shadow-sm", cfg.border)}>
+                    {/* Header strip — same grammar as the customer's FindingsTab card */}
+                    <div className={cn("px-4 py-3", cfg.headerBg)}>
                       <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <SeverityBadge severity={f.severity} />
-                            {(f.rule || f.rule_id) && (
-                              <span className="font-mono text-[11px] text-muted-foreground">{f.rule || f.rule_id}</span>
-                            )}
-                            {(f.documentName || f.document_type) && (
-                              <Badge variant="secondary" className="text-[10px]">
-                                {String(f.documentName || f.document_type).replace(/_/g, " ")}
-                              </Badge>
-                            )}
-                          </div>
-                          <CardTitle className="text-sm leading-snug">{findingTitle(f)}</CardTitle>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className={cn("rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest", cfg.badge)}>
+                            {(f.severity || "minor").toLowerCase()}
+                          </span>
+                          {(f.rule || f.rule_id) && (
+                            <span className="font-mono text-[11px] text-muted-foreground">{f.rule || f.rule_id}</span>
+                          )}
+                          {(f.documentName || f.document_type) && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              {String(f.documentName || f.document_type).replace(/_/g, " ")}
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex shrink-0 gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-7 w-7"
                             title="Edit"
                             disabled={busy || !fid || !deliverable}
                             onClick={() => setEdit({ finding: f, mode: "edit" })}
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-7 w-7"
                             title="Annotate"
                             disabled={busy || !fid || !deliverable}
                             onClick={() => setEdit({ finding: f, mode: "annotate" })}
                           >
-                            <StickyNote className="h-4 w-4" />
+                            <StickyNote className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-7 w-7"
                             title="Suppress (remove from delivered report)"
                             disabled={busy || !fid || !deliverable}
                             onClick={() => {
@@ -764,46 +977,62 @@ export function ReviewQueue() {
                               }
                             }}
                           >
-                            <EyeOff className="h-4 w-4 text-destructive" />
+                            <EyeOff className="h-3.5 w-3.5 text-destructive" />
                           </Button>
                         </div>
                       </div>
-                    </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      {findingBody(f) && <p className="text-muted-foreground">{findingBody(f)}</p>}
+                      <p className="mt-2 text-sm font-medium leading-snug">{findingTitle(f)}</p>
+                    </div>
+                    <CardContent className="space-y-3 pt-3 text-sm">
+                      {findingBody(f) && (
+                        <p className="text-sm leading-relaxed text-muted-foreground">{findingBody(f)}</p>
+                      )}
                       {f.clause_cited && (
-                        <p>
-                          <span className="font-medium">LC clause:</span>{" "}
-                          <span className="text-muted-foreground">{f.clause_cited}</span>
-                        </p>
+                        <div className="border-l-2 border-border pl-3">
+                          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                            LC clause
+                          </p>
+                          <p className="font-mono text-xs leading-relaxed text-muted-foreground">{f.clause_cited}</p>
+                        </div>
                       )}
-                      {f.expected && (
-                        <p>
-                          <span className="font-medium">Expected:</span>{" "}
-                          <span className="text-muted-foreground">{f.expected}</span>
-                        </p>
-                      )}
-                      {findingEvidence(f) && (
-                        <p>
-                          <span className="font-medium">Found:</span>{" "}
-                          <span className="text-muted-foreground">{findingEvidence(f)}</span>
-                        </p>
+                      {(expected || evidence) && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {expected && (
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-950/30">
+                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+                                Expected
+                              </p>
+                              <p className="font-mono text-sm text-emerald-900 dark:text-emerald-100">{expected}</p>
+                            </div>
+                          )}
+                          {evidence && (
+                            <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/30">
+                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-red-600 dark:text-red-400">
+                                Found
+                              </p>
+                              <p className="font-mono text-sm text-red-900 dark:text-red-100">{evidence}</p>
+                            </div>
+                          )}
+                        </div>
                       )}
                       {findingFix(f) && (
-                        <p>
-                          <span className="font-medium">Suggested fix:</span>{" "}
+                        <p className="flex items-start gap-1.5">
+                          <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           <span className="text-muted-foreground">{findingFix(f)}</span>
                         </p>
                       )}
                       {(f.ucp_reference || f.isbp_reference) && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="font-mono text-[11px] text-muted-foreground">
                           {[f.ucp_reference, f.isbp_reference].filter(Boolean).join(" · ")}
                         </p>
                       )}
                       {f.reviewer_note && (
-                        <p className="rounded-md bg-muted px-3 py-2 text-xs">
-                          <span className="font-medium">Reviewer note:</span> {f.reviewer_note}
-                        </p>
+                        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                            Reviewer note
+                          </p>
+                          <p className="text-xs leading-relaxed">{f.reviewer_note}</p>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
@@ -817,12 +1046,12 @@ export function ReviewQueue() {
             {/* Awaiting payment: record offline settlements (bank transfer /
                 bKash / invoice) to move the job into the review flow. */}
             {detail.payment_status === "pending" && (
-              <Card className="border-orange-300 bg-orange-50">
+              <Card className="border-amber-500/40 bg-amber-500/10">
                 <CardContent className="py-4 space-y-3">
-                  <p className="text-sm font-medium text-orange-900 flex items-center gap-2">
+                  <p className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-400">
                     <AlertTriangle className="h-4 w-4" /> Awaiting payment
                   </p>
-                  <p className="text-xs text-orange-800">
+                  <p className="text-xs text-muted-foreground">
                     The customer hasn't paid through the app. If they paid offline
                     (bank transfer, bKash, invoice), record it — the job then enters
                     your review flow and the customer is notified.
@@ -838,12 +1067,12 @@ export function ReviewQueue() {
             {(detail.workflow_type || "").includes("readiness") && (
               <>
                 {detail.structured_result?._engine_error && (
-                  <Card className="border-orange-300 bg-orange-50">
+                  <Card className="border-amber-500/40 bg-amber-500/10">
                     <CardContent className="py-4 space-y-3">
-                      <p className="text-sm font-medium text-orange-900 flex items-center gap-2">
+                      <p className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-400">
                         <AlertTriangle className="h-4 w-4" /> Rules engine was unreachable at intake
                       </p>
-                      <p className="text-xs text-orange-800">
+                      <p className="text-xs text-muted-foreground">
                         Findings below lack citations. Re-run before delivering.
                       </p>
                       <Button size="sm" variant="outline" onClick={rerunEngine} disabled={busy}>
@@ -856,7 +1085,7 @@ export function ReviewQueue() {
                 {detail.structured_result?.intake_answers && (
                   <Card>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">Intake answers</CardTitle>
+                      <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Intake answers</CardTitle>
                       <CardDescription className="text-xs">
                         What the customer told us — the basis of every finding.
                       </CardDescription>
@@ -879,7 +1108,7 @@ export function ReviewQueue() {
             {detail?.documents && detail.documents.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Uploaded documents</CardTitle>
+                  <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Uploaded documents</CardTitle>
                   <CardDescription className="text-xs">
                     The customer's actual files — cross-check every finding against the source.
                   </CardDescription>
@@ -913,7 +1142,7 @@ export function ReviewQueue() {
 
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Reviewer summary note</CardTitle>
+                <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Reviewer summary note</CardTitle>
                 <CardDescription className="text-xs">
                   Shown to the customer on the delivered report.
                 </CardDescription>
@@ -939,7 +1168,7 @@ export function ReviewQueue() {
 
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Timeline</CardTitle>
+                <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Timeline</CardTitle>
               </CardHeader>
               <CardContent>
                 <ol className="space-y-2 text-xs">
@@ -959,6 +1188,7 @@ export function ReviewQueue() {
             </Card>
           </div>
         </div>
+        </>
       )}
 
       <EditFindingDialog edit={edit} onClose={() => setEdit(null)} onSave={saveEdit} busy={busy} onSuggest={(f) => suggestText("annotation", findingId(f) ?? undefined)} />
