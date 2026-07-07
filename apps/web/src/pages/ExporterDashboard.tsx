@@ -566,9 +566,10 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
     : "N/A";
 
   // Get recent validations (last 5 completed)
-  const recentValidations = [...completedSessionTruths]
-    .sort((a, b) => new Date(b.session.created_at).getTime() - new Date(a.session.created_at).getTime())
-    .slice(0, 5);
+  const [showAllValidations, setShowAllValidations] = useState(false);
+  const sortedValidations = [...completedSessionTruths]
+    .sort((a, b) => new Date(b.session.created_at).getTime() - new Date(a.session.created_at).getTime());
+  const recentValidations = showAllValidations ? sortedValidations : sortedValidations.slice(0, 5);
 
   return (
     <>
@@ -804,12 +805,15 @@ function OverviewPanel({ onNavigate, user }: OverviewPanelProps) {
                   Your latest document validation results
                 </CardDescription>
               </div>
-              <Link
-                to="/reviews"
-                className="text-sm text-primary hover:underline flex-shrink-0"
-              >
-                View all →
-              </Link>
+              {sortedValidations.length > 5 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllValidations((v) => !v)}
+                  className="text-sm text-primary hover:underline flex-shrink-0"
+                >
+                  {showAllValidations ? "Show recent" : `View all (${sortedValidations.length}) →`}
+                </button>
+              )}
             </CardHeader>
             <CardContent>
               {isLoadingSessions ? (
