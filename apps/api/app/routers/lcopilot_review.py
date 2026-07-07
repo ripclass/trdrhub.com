@@ -295,6 +295,15 @@ def list_review_queue(
         q = q.filter(ValidationSession.review_state.in_(_QUEUE_STATES))
     q = q.order_by(ValidationSession.review_state_changed_at.desc().nullslast()).limit(min(limit, 500))
     rows = q.all()
+
+    # Owner identity — the operator must see WHOSE job each card is,
+    # not a raw UUID (2026-07-07 audit). One query, no N+1.
+    owner_ids = {s.user_id for s in rows if s.user_id}
+    owners: Dict[Any, Any] = {}
+    if owner_ids:
+        for u in db.query(User).filter(User.id.in_(owner_ids)).all():
+            owners[u.id] = u
+
     items = []
     for s in rows:
         issues = _issues(s)
@@ -306,8 +315,16 @@ def list_review_queue(
             "company_id": str(s.company_id) if s.company_id else None,
             "finding_count": len(issues),
             "payment_status": getattr(s, "payment_status", None),
-            "customer_email": ((_structured(s).get("_email_intake") or {}).get("customer_email")
-                               if isinstance(_structured(s), dict) else None),
+            "customer_email": (
+                ((_structured(s).get("_email_intake") or {}).get("customer_email")
+                 if isinstance(_structured(s), dict) else None)
+                or getattr(owners.get(s.user_id), "email", None)
+            ),
+            "customer_name": (
+                ((_structured(s).get("_email_intake") or {}).get("customer_name")
+                 if isinstance(_structured(s), dict) else None)
+                or getattr(owners.get(s.user_id), "full_name", None)
+            ),
             "submitted_at": s.created_at.isoformat() if s.created_at else None,
             "state_changed_at": s.review_state_changed_at.isoformat() if s.review_state_changed_at else None,
         })
@@ -329,6 +346,11 @@ def get_review_detail(
         "workflow_type": session.workflow_type,
         "payment_status": getattr(session, "payment_status", None),
         "payment_product_id": getattr(session, "payment_product_id", None),
+        "customer_email": (
+            ((_structured(session).get("_email_intake") or {}).get("customer_email")
+             if isinstance(_structured(session), dict) else None)
+            or (db.query(User.email).filter(User.id == session.user_id).scalar() if session.user_id else None)
+        ),
         "structured_result": _structured(session),
         "findings": _issues(session),
         "documents": _session_documents(session),

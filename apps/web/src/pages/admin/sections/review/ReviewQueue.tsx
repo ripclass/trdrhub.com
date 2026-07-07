@@ -53,6 +53,8 @@ import {
 // ---------------------------------------------------------------------------
 
 interface QueueItem {
+  customer_email?: string | null;
+  customer_name?: string | null;
   job_id: string;
   review_state: string;
   workflow_type: string | null;
@@ -163,11 +165,13 @@ function SeverityBadge({ severity }: { severity?: string }) {
   );
 }
 
+// Theme-safe, on-palette state colors (opacity shades render correctly in
+// both light and dark; purple was off-brand — audit 2026-07-07).
 const STATE_STYLES: Record<string, string> = {
-  engine_complete: "bg-blue-100 text-blue-800 border-blue-200",
-  under_review: "bg-purple-100 text-purple-800 border-purple-200",
-  needs_info: "bg-amber-100 text-amber-800 border-amber-200",
-  delivered: "bg-green-100 text-green-800 border-green-200",
+  engine_complete: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30",
+  under_review: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+  needs_info: "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30",
+  delivered: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
 };
 
 function StateBadge({ state }: { state?: string | null }) {
@@ -612,29 +616,34 @@ export function ReviewQueue() {
                 <CardContent className="py-4 flex flex-wrap items-center gap-x-6 gap-y-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-muted-foreground truncate">{item.job_id}</span>
+                      <span className="font-medium truncate">
+                        {item.customer_name || item.customer_email || "Unknown customer"}
+                      </span>
                       <StateBadge state={item.review_state} />
                       {item.payment_status === "pending" && (
-                        <Badge variant="outline" className="text-xs bg-orange-100 text-orange-800 border-orange-200">
+                        <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30">
                           awaiting payment
                         </Badge>
                       )}
                       {item.payment_status === "refunded" && (
-                        <Badge variant="outline" className="text-xs bg-slate-100 text-slate-600 border-slate-200">
+                        <Badge variant="outline" className="text-xs bg-muted text-muted-foreground border-border">
                           refunded
                         </Badge>
                       )}
                     </div>
-                    <div className="text-sm mt-1">
+                    <div className="text-sm mt-1 text-muted-foreground">
+                      {item.customer_name && item.customer_email ? <>{item.customer_email} · </> : null}
                       {(item.workflow_type || "validation").replace(/_/g, " ")} ·{" "}
-                      <span className="font-medium">{item.finding_count}</span> finding{item.finding_count === 1 ? "" : "s"}
+                      <span className="font-medium text-foreground">{item.finding_count}</span> finding{item.finding_count === 1 ? "" : "s"}
+                      {" · "}
+                      <span className="font-mono text-xs">{item.job_id.slice(0, 8)}</span>
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground text-right">
                     <div>Submitted {formatWhen(item.submitted_at)}</div>
                     <div>In state since {formatWhen(item.state_changed_at)}</div>
                   </div>
-                  <Button size="sm" variant="secondary">
+                  <Button size="sm" variant="secondary" onClick={() => setSelectedId(item.job_id)}>
                     Review
                   </Button>
                 </CardContent>
@@ -650,6 +659,7 @@ export function ReviewQueue() {
 
   const deliverable =
     detail && ["under_review", "engine_complete"].includes(detail.review_state);
+  const detailCustomer = (detail as (ReviewDetail & { customer_email?: string | null }) | null)?.customer_email;
 
   return (
     <div className="space-y-6">
@@ -660,13 +670,15 @@ export function ReviewQueue() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight font-mono">{selectedId.slice(0, 8)}…</h1>
+              <h1 className="text-xl font-bold tracking-tight">
+                {detailCustomer || `Job ${selectedId.slice(0, 8)}`}
+              </h1>
               {detail && <StateBadge state={detail.review_state} />}
             </div>
             {detail && (
               <p className="text-muted-foreground text-xs">
                 {(detail.workflow_type || "validation").replace(/_/g, " ")} · {detail.findings.length} finding
-                {detail.findings.length === 1 ? "" : "s"}
+                {detail.findings.length === 1 ? "" : "s"} · <span className="font-mono">{selectedId.slice(0, 8)}</span>
               </p>
             )}
           </div>

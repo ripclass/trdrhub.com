@@ -91,8 +91,11 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
   
   const displayName = useMemo(() => {
     if (!user) return "Guest";
-    if ('full_name' in user) return user.full_name || user.username || user.email?.split("@")[0] || "Guest";
-    if ('name' in user) return user.name || user.email?.split("@")[0] || "Guest";
+    // Guard: some accounts have full_name set to the email itself — showing
+    // the email twice (name line + email line) reads as a rendering bug.
+    const clean = (n?: string | null) => (n && n !== user.email ? n : undefined);
+    if ('full_name' in user) return clean(user.full_name) || clean(user.username) || user.email?.split("@")[0] || "Guest";
+    if ('name' in user) return clean(user.name) || user.email?.split("@")[0] || "Guest";
     return user.email?.split("@")[0] || "Guest";
   }, [user]);
   

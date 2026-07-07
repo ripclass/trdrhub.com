@@ -102,6 +102,12 @@ interface SidebarItem {
   badge?: string;
 }
 
+// Launch sidebar (2026-07-07 audit): only sections with WORKING backends.
+// The parked groups below queried tables that were never migrated to prod
+// (job_queue, audit_events, admin_alerts, ...) or threw client-side
+// "Not implemented" — they 500'd or rendered empty scaffolding. Restore a
+// group only after its backend is real and live-verified. Full list of
+// parked sections preserved in git history (this file, pre-2026-07-07).
 const navigation: SidebarSection[] = [
   {
     title: 'Overview',
@@ -114,83 +120,6 @@ const navigation: SidebarSection[] = [
     items: [
       // Backend enforces require_sysadmin; sysadmins carry the '*' permission.
       { name: 'Review Queue', section: 'review-queue', icon: CheckSquare, permissions: ['review:read'] },
-    ],
-  },
-  {
-    title: 'Operations',
-    items: [
-      { name: 'Monitoring', section: 'ops-monitoring', icon: Activity, permissions: ['ops:read'] },
-      { name: 'Jobs & Queue', section: 'ops-jobs', icon: Zap, permissions: ['jobs:read'] },
-      { name: 'Alerts', section: 'ops-alerts', icon: AlertTriangle, permissions: ['ops:read'], badge: '2' },
-    ],
-  },
-  {
-    title: 'Audit & Governance',
-    items: [
-      { name: 'Audit Logs', section: 'audit-logs', icon: Search, permissions: ['audit:read'] },
-      { name: 'Approvals', section: 'audit-approvals', icon: CheckSquare, permissions: ['approvals:read'], badge: '3' },
-      { name: 'Compliance', section: 'audit-compliance', icon: Shield, permissions: ['compliance:read'] },
-    ],
-  },
-  {
-    title: 'Security & Access',
-    items: [
-      { name: 'Users & Tenants', section: 'security-users', icon: Users, permissions: ['users:read'] },
-      { name: 'API Keys', section: 'security-access', icon: Lock, permissions: ['api_keys:read'] },
-      { name: 'Sessions', section: 'security-sessions', icon: Clock, permissions: ['sessions:read'] },
-    ],
-  },
-  {
-    title: 'Bank Management',
-    items: [
-      { name: 'Banks', section: 'banks-management', icon: Landmark, permissions: ['banks:read'] },
-    ],
-  },
-  {
-    title: 'Billing & Finance',
-    items: [
-      { name: 'Overview', section: 'billing-overview', icon: BarChart3, permissions: ['billing:read'] },
-      { name: 'Invoices & Payments', section: 'billing-invoices-payments', icon: Receipt, permissions: ['billing:read'] },
-      { name: 'Revenue Recognition', section: 'billing-recognition', icon: TrendingUp, permissions: ['billing:read'] },
-      { name: 'Taxes', section: 'billing-taxes', icon: Calculator, permissions: ['billing:read'] },
-      { name: 'Plans & Pricing', section: 'billing-plans', icon: CreditCard, permissions: ['billing:read'] },
-      { name: 'Adjustments', section: 'billing-adjustments', icon: DollarSign, permissions: ['billing:read'] },
-      { name: 'Disputes', section: 'billing-disputes', icon: AlertTriangle, permissions: ['disputes:read'] },
-    ],
-  },
-  {
-    title: 'Partners & Integration',
-    items: [
-      { name: 'Partner Registry', section: 'partners-registry', icon: Building, permissions: ['partners:read'] },
-      { name: 'Connectors', section: 'partners-connectors', icon: Webhook, permissions: ['partners:read'] },
-      { name: 'Webhooks', section: 'partners-webhooks', icon: Globe, permissions: ['webhooks:read'] },
-    ],
-  },
-  {
-    title: 'LLM Operations',
-    items: [
-      { name: 'Prompts', section: 'llm-prompts', icon: Brain, permissions: ['llm:read'] },
-      { name: 'Budgets', section: 'llm-budgets', icon: BarChart3, permissions: ['llm:read'] },
-      { name: 'Evaluations', section: 'llm-evaluations', icon: TestTube, permissions: ['llm:read'] },
-    ],
-  },
-  {
-    title: 'Compliance & Data',
-    items: [
-      { name: 'Data Residency', section: 'compliance-residency', icon: Globe, permissions: ['compliance:read'] },
-      { name: 'Retention', section: 'compliance-retention', icon: Database, permissions: ['compliance:read'] },
-      { name: 'Legal Holds', section: 'compliance-legal-holds', icon: Folder, permissions: ['legal_holds:read'] },
-    ],
-  },
-  {
-    title: 'System',
-    items: [
-      { name: 'Feature Flags', section: 'system-feature-flags', icon: Flag, permissions: ['feature_flags:read'] },
-      { name: 'Releases', section: 'system-releases', icon: FileText, permissions: ['releases:read'] },
-      { name: 'Settings', section: 'system-settings', icon: Settings, permissions: ['settings:read'] },
-      { name: 'Rulesets', section: 'rules-list', icon: BookOpen, permissions: ['rule:read'] },
-      { name: 'Rules Governance', section: 'rules-governance', icon: Settings2, permissions: ['rule:read'] },
-      { name: 'Active Rulesets', section: 'rules-active', icon: FileText, permissions: ['rule:read'] },
     ],
   },
 ];
