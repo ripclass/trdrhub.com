@@ -21,7 +21,16 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.database import get_db
-from app.models import CompanyMember, Document, MemberRole, MemberStatus, TradeCaseStatus, User
+from app.models import (
+    CompanyMember,
+    Document,
+    MemberRole,
+    MemberStatus,
+    RemediationAction,
+    TradeCaseDocument,
+    TradeCaseStatus,
+    User,
+)
 from app.repositories.proofline import ProoflineRepository
 from app.schemas.proofline import (
     TradeCaseCreate,
@@ -33,6 +42,7 @@ from app.schemas.proofline import (
     TradeCasePartyResponse,
     TradeCaseSummaryResponse,
     TradeCaseUpdate,
+    RemediationResponseRequest,
 )
 from app.services.audit_service import AuditService
 from app.services.proofline.documents import (
@@ -49,6 +59,11 @@ from app.services.proofline.processing import (
     validate_submission_context,
 )
 from app.services.proofline.state import InvalidTradeCaseTransition, transition_case
+from app.services.proofline.remediation import (
+    RemediationWorkflowError,
+    respond_to_action,
+    submit_corrections,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -220,6 +235,7 @@ def _case_response(
                 "requested_document_type": action.requested_document_type,
                 "due_at": action.due_at,
                 "customer_response": action.customer_response,
+                "correction_document_id": action.correction_document_id,
                 "status": action.status,
                 "correction_round": action.correction_round,
             }
@@ -427,6 +443,118 @@ async def submit_trade_case(
         action="proofline_case_submitted",
         trade_case_id=trade_case.id,
         values={"payment_arrangement": trade_case.payment_arrangement},
+    )
+    return _case_response(repository, trade_case, detail=True)
+
+
+@router.post("/{case_id}/actions/{action_id}/respond", response_model=TradeCaseDetailResponse)
+async def respond_to_remediation_action(
+    case_id: UUID,
+    action_id: UUID,
+    payload: RemediationResponseRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TradeCaseDetailResponse:
+    ensure_case_write_access(db, current_user)
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=company_id, case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    action = (
+        db.query(RemediationAction)
+        .filter(
+            RemediationAction.id == action_id,
+            RemediationAction.company_id == company_id,
+            RemediationAction.trade_case_id == case_id,
+        )
+        .first()
+    )
+    if action is None:
+        raise HTTPException(status_code=404, detail="Correction request not found")
+    correction_document = None
+    if payload.correction_document_id:
+        correction_document = (
+            db.query(TradeCaseDocument)
+            .filter(
+                TradeCaseDocument.id == payload.correction_document_id,
+                TradeCaseDocument.company_id == company_id,
+                TradeCaseDocument.trade_case_id == case_id,
+                TradeCaseDocument.is_current.is_(True),
+            )
+            .first()
+        )
+        if correction_document is None:
+            raise HTTPException(status_code=404, detail="Corrected document not found")
+    try:
+        respond_to_action(
+            db,
+            trade_case,
+            action,
+            customer_user_id=current_user.id,
+            response=payload.response,
+            correction_document=correction_document,
+        )
+        db.commit()
+        db.refresh(trade_case)
+    except RemediationWorkflowError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_correction_response",
+        trade_case_id=case_id,
+        values={"action_id": str(action_id), "has_corrected_document": correction_document is not None},
+    )
+    return _case_response(repository, trade_case, detail=True)
+
+
+@router.post("/{case_id}/resubmit", response_model=TradeCaseDetailResponse)
+async def resubmit_trade_case(
+    case_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TradeCaseDetailResponse:
+    ensure_case_write_access(db, current_user)
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=company_id, case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    actions = (
+        db.query(RemediationAction)
+        .filter(
+            RemediationAction.company_id == company_id,
+            RemediationAction.trade_case_id == case_id,
+            RemediationAction.status.in_(("requested", "customer_responded", "resolved")),
+        )
+        .all()
+    )
+    try:
+        submit_corrections(
+            db,
+            trade_case,
+            customer_user_id=current_user.id,
+            actions=actions,
+        )
+        db.commit()
+        db.refresh(trade_case)
+    except RemediationWorkflowError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    background_tasks.add_task(
+        process_trade_case_by_id,
+        case_id=trade_case.id,
+        company_id=company_id,
+    )
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_customer_resubmitted",
+        trade_case_id=case_id,
+        values={"correction_round": trade_case.correction_rounds_used},
     )
     return _case_response(repository, trade_case, detail=True)
 

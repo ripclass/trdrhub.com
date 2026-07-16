@@ -169,6 +169,7 @@ export const ProoflineRemediationActionSchema = z.object({
   requested_document_type: z.string().nullable().optional(),
   due_at: z.string().datetime().nullable().optional(),
   customer_response: z.string().nullable().optional(),
+  correction_document_id: z.string().uuid().nullable().optional(),
   status: z.string(),
   correction_round: z.number().int().positive(),
 });

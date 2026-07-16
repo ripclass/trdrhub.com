@@ -51,6 +51,23 @@ export async function submitTradeCase(caseId: string): Promise<TradeCaseDetail> 
   return response.data
 }
 
+export async function respondToRemediation(
+  caseId: string,
+  actionId: string,
+  input: { response?: string; correction_document_id?: string },
+): Promise<TradeCaseDetail> {
+  const response = await api.post<TradeCaseDetail>(
+    `/api/proofline/cases/${caseId}/actions/${actionId}/respond`,
+    input,
+  )
+  return response.data
+}
+
+export async function resubmitTradeCase(caseId: string): Promise<TradeCaseDetail> {
+  const response = await api.post<TradeCaseDetail>(`/api/proofline/cases/${caseId}/resubmit`)
+  return response.data
+}
+
 export async function updateTradeCase(
   caseId: string,
   input: Partial<TradeCaseCreateInput>,

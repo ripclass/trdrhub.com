@@ -10,7 +10,9 @@ vi.mock('@/lib/proofline/api', () => ({
   deleteTradeCaseParty: vi.fn(),
   getTradeCase: vi.fn(),
   listTradeCases: vi.fn(),
+  resubmitTradeCase: vi.fn(),
   submitTradeCase: vi.fn(),
+  respondToRemediation: vi.fn(),
 }))
 
 const now = '2026-07-16T10:00:00Z'

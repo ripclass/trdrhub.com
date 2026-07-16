@@ -142,6 +142,7 @@ class ProoflineRemediationResponse(BaseModel):
     requested_document_type: Optional[str] = None
     due_at: Optional[datetime] = None
     customer_response: Optional[str] = None
+    correction_document_id: Optional[UUID] = None
     status: str
     correction_round: int = Field(gt=0)
 
@@ -207,6 +208,13 @@ class TradeCaseDocumentResponse(BaseModel):
     created_at: datetime
 
 
+class RemediationResponseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    response: Optional[str] = Field(default=None, max_length=10000)
+    correction_document_id: Optional[UUID] = None
+
+
 __all__ = [
     "TradeCaseCreate",
     "TradeCaseDetailResponse",
@@ -215,6 +223,7 @@ __all__ = [
     "TradeCaseListResponse",
     "TradeCasePartyCreate",
     "TradeCasePartyResponse",
+    "RemediationResponseRequest",
     "TradeCaseSummaryResponse",
     "TradeCaseUpdate",
 ]

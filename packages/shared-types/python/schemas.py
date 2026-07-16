@@ -3,7 +3,7 @@ Shared Pydantic schemas for API contracts.
 This file should be kept in sync with the TypeScript definitions.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, Dict, Any, List
@@ -180,6 +180,7 @@ class ProoflineRemediationAction(BaseModel):
     requested_document_type: Optional[str] = None
     due_at: Optional[datetime] = None
     customer_response: Optional[str] = None
+    correction_document_id: Optional[UUID] = None
     status: str
     correction_round: int = Field(gt=0)
 

@@ -21,7 +21,8 @@ import type { ProoflineFinding, TradeCaseDetail } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { ProoflineDocumentUpload } from '@/components/proofline/ProoflineDocumentUpload'
 import { ProoflinePartyForm } from '@/components/proofline/ProoflinePartyForm'
-import { deleteTradeCaseParty, getTradeCase, submitTradeCase } from '@/lib/proofline/api'
+import { ProoflineRemediationResponse } from '@/components/proofline/ProoflineRemediationResponse'
+import { deleteTradeCaseParty, getTradeCase, resubmitTradeCase, submitTradeCase } from '@/lib/proofline/api'
 import {
   checkStateLabels,
   checkTone,
@@ -76,6 +77,7 @@ export default function ProoflineCaseDetail() {
   const [showDocumentUpload, setShowDocumentUpload] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [resubmitting, setResubmitting] = useState(false)
 
   async function load() {
     if (!caseId) return
@@ -126,6 +128,20 @@ export default function ProoflineCaseDetail() {
       setActionError(detail || 'The case could not be submitted. Confirm the parties and documents, then try again.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function requestFinalReview() {
+    if (!caseId) return
+    setResubmitting(true)
+    setActionError(null)
+    try {
+      setTradeCase(await resubmitTradeCase(caseId))
+    } catch (caught) {
+      const detail = (caught as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setActionError(detail || 'The corrections could not be submitted for final review.')
+    } finally {
+      setResubmitting(false)
     }
   }
 
@@ -227,7 +243,8 @@ export default function ProoflineCaseDetail() {
 
               <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-5">
                 <div className="mb-4 flex items-center gap-2"><Clock3 className="h-5 w-5 text-[#B2F273]" /><h2 className="font-display font-bold">Required actions</h2></div>
-                {openActions.length ? <ul className="space-y-3">{openActions.map((action) => <li key={action.id} className="rounded-lg border border-amber-400/20 bg-amber-500/5 p-3 text-sm text-[#EDF5F2]/65">{action.requested_action}</li>)}</ul> : <p className="text-sm text-[#EDF5F2]/40">No open remediation actions.</p>}
+                {openActions.length ? <ul className="space-y-3">{openActions.map((action) => <li key={action.id} className="rounded-lg border border-amber-400/20 bg-amber-500/5 p-3 text-sm text-[#EDF5F2]/65"><div className="flex items-start justify-between gap-2"><span>{action.requested_action}</span><span className="shrink-0 rounded-full border border-[#EDF5F2]/10 px-2 py-0.5 text-[10px] capitalize text-[#EDF5F2]/40">{action.status.replace(/_/g, ' ')}</span></div>{tradeCase.status === 'action_required' && caseId && !['resolved', 'submitted_for_review'].includes(action.status) ? <ProoflineRemediationResponse caseId={caseId} action={action} documents={tradeCase.documents} onSaved={() => void load()} /> : null}{action.customer_response ? <p className="mt-2 rounded bg-[#00261C]/35 p-2 text-xs text-[#EDF5F2]/45">Response: {action.customer_response}</p> : null}</li>)}</ul> : <p className="text-sm text-[#EDF5F2]/40">No open remediation actions.</p>}
+                {tradeCase.status === 'action_required' && openActions.length > 0 && openActions.every((action) => ['customer_responded', 'resolved'].includes(action.status)) ? <Button onClick={() => void requestFinalReview()} disabled={resubmitting} className="mt-4 w-full border-none bg-[#B2F273] font-bold text-[#00261C] hover:bg-[#a3e662]">{resubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BadgeCheck className="mr-2 h-4 w-4" />}Request final review</Button> : null}
               </section>
 
               <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-5">

@@ -282,24 +282,44 @@ async def process_trade_case(
     validate_submission_context(context)
     registry = dict(adapters or build_adapter_registry())
     snapshot_hash = canonical_input_hash(context)
+    current_checks: list[TradeCaseCheckRun] = []
     for applicability in applicability_for(trade_case.payment_arrangement, context=context):
-        await run_check(
+        check_key = f"{trade_case.correction_rounds_used}:{snapshot_hash[:24]}:{applicability.module}"
+        existing_check = (
+            db.query(TradeCaseCheckRun)
+            .filter(
+                TradeCaseCheckRun.trade_case_id == trade_case.id,
+                TradeCaseCheckRun.module == applicability.module,
+                TradeCaseCheckRun.idempotency_key == check_key,
+            )
+            .first()
+        )
+        if existing_check is None:
+            prior_findings = (
+                db.query(ProoflineFinding)
+                .filter(
+                    ProoflineFinding.trade_case_id == trade_case.id,
+                    ProoflineFinding.source_module == applicability.module,
+                    ProoflineFinding.is_automated.is_(True),
+                    ProoflineFinding.status.in_(("open", "acknowledged", "customer_action_required", "unable_to_resolve")),
+                )
+                .all()
+            )
+            for finding in prior_findings:
+                finding.status = "resolved"
+                finding.reviewer_decision = "superseded_by_correction_round"
+        check_run = await run_check(
             db,
             trade_case=trade_case,
             applicability=applicability,
             context=context,
             adapter=registry.get(applicability.module),
-            idempotency_key=(
-                f"{trade_case.correction_rounds_used}:{snapshot_hash[:24]}:{applicability.module}"
-            ),
+            idempotency_key=check_key,
         )
+        current_checks.append(check_run)
         db.flush()
 
-    checks = (
-        db.query(TradeCaseCheckRun)
-        .filter(TradeCaseCheckRun.trade_case_id == trade_case.id)
-        .all()
-    )
+    checks = current_checks
     findings = (
         db.query(ProoflineFinding)
         .filter(ProoflineFinding.trade_case_id == trade_case.id)
