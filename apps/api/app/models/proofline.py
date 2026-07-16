@@ -270,6 +270,7 @@ class TradeCaseCheckRun(Base):
     module_version = Column(String(64), nullable=True)
     state = Column(String(32), nullable=False, default=ProoflineCheckState.PENDING.value)
     applicable = Column(Boolean, nullable=False, default=True)
+    required = Column(Boolean, nullable=False, default=True)
     applicability_reason = Column(Text, nullable=False)
     idempotency_key = Column(String(128), nullable=False)
     input_hash = Column(String(64), nullable=False)
@@ -558,4 +559,3 @@ TRADE_CASE_STATUS_VALUES = tuple(item.value for item in TradeCaseStatus)
 PROOFLINE_DECISION_VALUES = tuple(item.value for item in ProoflineDecisionValue)
 PROOFLINE_CHECK_STATE_VALUES = tuple(item.value for item in ProoflineCheckState)
 PROOFLINE_FINDING_STATUS_VALUES = tuple(item.value for item in ProoflineFindingStatus)
-

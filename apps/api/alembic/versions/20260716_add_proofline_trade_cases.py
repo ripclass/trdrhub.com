@@ -179,6 +179,7 @@ def upgrade() -> None:
         sa.Column("module_version", sa.String(64), nullable=True),
         sa.Column("state", sa.String(32), nullable=False, server_default="pending"),
         sa.Column("applicable", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("required", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("applicability_reason", sa.Text(), nullable=False),
         sa.Column("idempotency_key", sa.String(128), nullable=False),
         sa.Column("input_hash", sa.String(64), nullable=False),
