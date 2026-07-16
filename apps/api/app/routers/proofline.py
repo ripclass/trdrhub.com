@@ -11,16 +11,24 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.database import get_db
-from app.models import CompanyMember, MemberRole, MemberStatus, TradeCaseStatus, User
+from app.models import CompanyMember, Document, MemberRole, MemberStatus, TradeCaseStatus, User
 from app.repositories.proofline import ProoflineRepository
 from app.schemas.proofline import (
     TradeCaseCreate,
     TradeCaseDetailResponse,
+    TradeCaseDocumentAssociate,
+    TradeCaseDocumentResponse,
     TradeCaseListResponse,
     TradeCaseSummaryResponse,
     TradeCaseUpdate,
 )
 from app.services.audit_service import AuditService
+from app.services.proofline.documents import (
+    DuplicateCaseDocument,
+    ProoflineDocumentAccessError,
+    associate_document,
+    list_case_documents,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -235,5 +243,107 @@ async def update_trade_case(
     return _case_response(repository, trade_case, detail=True)
 
 
-__all__ = ["router"]
+def _document_response(db: Session, association) -> TradeCaseDocumentResponse:
+    document = db.query(Document).filter(Document.id == association.document_id).first()
+    if document is None:
+        raise HTTPException(status_code=409, detail="Source document record is unavailable")
+    extracted = getattr(document, "extracted_fields", None) or {}
+    extraction_status = extracted.get("extraction_status") if isinstance(extracted, dict) else None
+    return TradeCaseDocumentResponse(
+        id=association.id,
+        document_id=association.document_id,
+        logical_key=association.logical_key,
+        document_type=association.document_type,
+        filename=document.original_filename,
+        version=association.version_number,
+        supersedes_id=association.supersedes_id,
+        correction_round=association.correction_round,
+        is_current=association.is_current,
+        extraction_status=extraction_status,
+        created_at=association.created_at,
+    )
 
+
+@router.get("/{case_id}/documents", response_model=list[TradeCaseDocumentResponse])
+async def get_trade_case_documents(
+    case_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[TradeCaseDocumentResponse]:
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    if repository.get_case(company_id=company_id, case_id=case_id) is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    return [
+        _document_response(db, association)
+        for association in list_case_documents(
+            db, company_id=company_id, trade_case_id=case_id
+        )
+    ]
+
+
+@router.post(
+    "/{case_id}/documents",
+    response_model=TradeCaseDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def attach_trade_case_document(
+    case_id: UUID,
+    payload: TradeCaseDocumentAssociate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TradeCaseDocumentResponse:
+    ensure_case_write_access(db, current_user)
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=company_id, case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    if trade_case.status not in {
+        TradeCaseStatus.DRAFT.value,
+        TradeCaseStatus.ACTION_REQUIRED.value,
+        TradeCaseStatus.CUSTOMER_RESUBMITTED.value,
+    }:
+        raise HTTPException(status_code=409, detail="Documents cannot be changed in this case state")
+
+    try:
+        association = associate_document(
+            db,
+            trade_case=trade_case,
+            company_id=company_id,
+            actor_user_id=current_user.id,
+            document_id=payload.document_id,
+            logical_key=payload.logical_key,
+            document_type=payload.document_type,
+            content_hash=payload.content_hash,
+            supersedes_id=payload.supersedes_id,
+            correction_round=payload.correction_round,
+        )
+        db.commit()
+        db.refresh(association)
+    except ProoflineDocumentAccessError:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Document is not available")
+    except DuplicateCaseDocument as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_document_attached",
+        trade_case_id=trade_case.id,
+        values={
+            "document_id": str(association.document_id),
+            "logical_key": association.logical_key,
+            "version": association.version_number,
+            "correction_round": association.correction_round,
+        },
+    )
+    return _document_response(db, association)
+
+
+__all__ = ["router"]

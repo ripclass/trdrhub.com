@@ -94,11 +94,37 @@ class TradeCaseListResponse(BaseModel):
     limit: int = Field(gt=0, le=100)
 
 
+class TradeCaseDocumentAssociate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: UUID
+    logical_key: str = Field(min_length=1, max_length=128)
+    document_type: str = Field(min_length=1, max_length=64)
+    content_hash: Optional[str] = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+    supersedes_id: Optional[UUID] = None
+    correction_round: int = Field(default=0, ge=0)
+
+
+class TradeCaseDocumentResponse(BaseModel):
+    id: UUID
+    document_id: UUID
+    logical_key: str
+    document_type: str
+    filename: str
+    version: int = Field(gt=0)
+    supersedes_id: Optional[UUID] = None
+    correction_round: int = Field(ge=0)
+    is_current: bool
+    extraction_status: Optional[str] = None
+    created_at: datetime
+
+
 __all__ = [
     "TradeCaseCreate",
     "TradeCaseDetailResponse",
+    "TradeCaseDocumentAssociate",
+    "TradeCaseDocumentResponse",
     "TradeCaseListResponse",
     "TradeCaseSummaryResponse",
     "TradeCaseUpdate",
 ]
-
