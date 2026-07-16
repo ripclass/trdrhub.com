@@ -69,6 +69,7 @@ support = _load_router_module("support")
 importer = _load_router_module("importer")
 exporter = _load_router_module("exporter")
 jobs_public = _load_router_module("jobs_public")
+proofline = _load_router_module("proofline")
 
 __all__ = [
     "auth",
@@ -107,4 +108,5 @@ __all__ = [
     "importer",
     "exporter",
     "jobs_public",
+    "proofline",
 ]
