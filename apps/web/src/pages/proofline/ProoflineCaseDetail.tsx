@@ -10,6 +10,7 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
+  Send,
   Users,
   Plus,
   Trash2,
@@ -20,7 +21,7 @@ import type { ProoflineFinding, TradeCaseDetail } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { ProoflineDocumentUpload } from '@/components/proofline/ProoflineDocumentUpload'
 import { ProoflinePartyForm } from '@/components/proofline/ProoflinePartyForm'
-import { deleteTradeCaseParty, getTradeCase } from '@/lib/proofline/api'
+import { deleteTradeCaseParty, getTradeCase, submitTradeCase } from '@/lib/proofline/api'
 import {
   checkStateLabels,
   checkTone,
@@ -73,6 +74,8 @@ export default function ProoflineCaseDetail() {
   const [error, setError] = useState<string | null>(null)
   const [showPartyForm, setShowPartyForm] = useState(false)
   const [showDocumentUpload, setShowDocumentUpload] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   async function load() {
     if (!caseId) return
@@ -112,6 +115,20 @@ export default function ProoflineCaseDetail() {
     await load()
   }
 
+  async function submitForReview() {
+    if (!caseId) return
+    setSubmitting(true)
+    setActionError(null)
+    try {
+      setTradeCase(await submitTradeCase(caseId))
+    } catch (caught) {
+      const detail = (caught as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setActionError(detail || 'The case could not be submitted. Confirm the parties and documents, then try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#00261C] text-white">
       <header className="sticky top-0 z-30 border-b border-[#EDF5F2]/10 bg-[#00261C]/95 backdrop-blur">
@@ -136,12 +153,25 @@ export default function ProoflineCaseDetail() {
                 <h1 className="font-display text-3xl font-bold">{tradeCase.title}</h1>
                 <p className="mt-3 text-sm text-[#EDF5F2]/45">{tradeCase.origin_country || 'Origin pending'} → {tradeCase.destination_country || 'Destination pending'}{tradeCase.amount && tradeCase.currency ? ` · ${tradeCase.currency} ${Number(tradeCase.amount).toLocaleString()}` : ''}</p>
               </div>
-              <div className="min-w-[260px] rounded-xl border border-[#EDF5F2]/10 bg-[#00261C]/35 p-5">
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#EDF5F2]/35">{tradeCase.final_decision ? 'Final decision' : 'Recommended decision'}</p>
-                <p className="mt-2 font-display text-xl font-bold text-[#B2F273]">{decisionLabel(finalOrRecommended)}</p>
-                <p className="mt-2 text-xs leading-relaxed text-[#EDF5F2]/40">A final paid-case decision is released only after internal reviewer approval.</p>
+              <div className="min-w-[260px] space-y-3">
+                {tradeCase.status === 'draft' ? (
+                  <div className="rounded-xl border border-[#B2F273]/25 bg-[#B2F273]/5 p-5">
+                    <p className="text-sm font-semibold">Ready for verified review?</p>
+                    <p className="mt-2 text-xs leading-relaxed text-[#EDF5F2]/45">Add at least two parties and one current document. Proofline will route the applicable checks automatically.</p>
+                    <Button onClick={() => void submitForReview()} disabled={submitting} className="mt-4 w-full border-none bg-[#B2F273] font-bold text-[#00261C] hover:bg-[#a3e662]">
+                      {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                      Submit for review
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="rounded-xl border border-[#EDF5F2]/10 bg-[#00261C]/35 p-5">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#EDF5F2]/35">{tradeCase.final_decision ? 'Final decision' : 'Recommended decision'}</p>
+                  <p className="mt-2 font-display text-xl font-bold text-[#B2F273]">{decisionLabel(finalOrRecommended)}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-[#EDF5F2]/40">A final paid-case decision is released only after internal reviewer approval.</p>
+                </div>
               </div>
             </div>
+            {actionError ? <div role="alert" className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{actionError}</div> : null}
           </section>
 
           <div className="grid gap-6 xl:grid-cols-[1fr_320px]">

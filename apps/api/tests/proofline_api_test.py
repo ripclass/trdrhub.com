@@ -9,7 +9,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from app.routers import proofline as router_module
 from app.schemas.proofline import TradeCaseCreate, TradeCaseUpdate
@@ -285,3 +285,71 @@ def test_parties_are_created_and_deleted_inside_authenticated_company(monkeypatc
         for call in repository.calls
         if call[0] in {"get", "create_party", "delete_party"}
     )
+
+
+def test_submit_validates_snapshot_transitions_and_enqueues_processing(monkeypatch):
+    company_id = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
+    db = _Db(_case(company_id))
+    background = BackgroundTasks()
+    monkeypatch.setattr(router_module, "ProoflineRepository", _Repo)
+    monkeypatch.setattr(router_module, "ensure_case_write_access", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(router_module, "_audit_action", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        router_module,
+        "load_case_context",
+        lambda *_args, **_kwargs: {
+            "parties": [{"name": "Buyer"}, {"name": "Seller"}],
+            "documents": {"commercial_invoice": {"document_id": "doc-1"}},
+            "payment_arrangement": "open_account",
+        },
+    )
+
+    def transition(_db, trade_case, target, **_kwargs):
+        trade_case.status = target.value
+
+    monkeypatch.setattr(router_module, "transition_case", transition)
+
+    response = asyncio.run(
+        router_module.submit_trade_case(
+            db.case.id,
+            background_tasks=background,
+            current_user=user,
+            db=db,
+        )
+    )
+
+    assert response.status.value == "submitted"
+    assert db.commits == 1
+    assert len(background.tasks) == 1
+
+
+def test_submit_rejects_incomplete_case_without_enqueuing(monkeypatch):
+    company_id = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
+    db = _Db(_case(company_id))
+    background = BackgroundTasks()
+    monkeypatch.setattr(router_module, "ProoflineRepository", _Repo)
+    monkeypatch.setattr(router_module, "ensure_case_write_access", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        router_module,
+        "load_case_context",
+        lambda *_args, **_kwargs: {
+            "parties": [{"name": "Buyer"}],
+            "documents": {},
+            "payment_arrangement": "open_account",
+        },
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            router_module.submit_trade_case(
+                db.case.id,
+                background_tasks=background,
+                current_user=user,
+                db=db,
+            )
+        )
+
+    assert error.value.status_code == 422
+    assert not background.tasks

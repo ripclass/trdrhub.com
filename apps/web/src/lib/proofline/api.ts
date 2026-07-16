@@ -46,6 +46,11 @@ export async function getTradeCase(caseId: string): Promise<TradeCaseDetail> {
   return response.data
 }
 
+export async function submitTradeCase(caseId: string): Promise<TradeCaseDetail> {
+  const response = await api.post<TradeCaseDetail>(`/api/proofline/cases/${caseId}/submit`)
+  return response.data
+}
+
 export async function updateTradeCase(
   caseId: string,
   input: Partial<TradeCaseCreateInput>,

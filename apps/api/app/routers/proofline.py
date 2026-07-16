@@ -6,7 +6,17 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
@@ -32,6 +42,13 @@ from app.services.proofline.documents import (
     list_case_documents,
 )
 from app.services.proofline.uploads import ProoflineUploadError, ingest_case_document
+from app.services.proofline.processing import (
+    SubmissionValidationError,
+    load_case_context,
+    process_trade_case_by_id,
+    validate_submission_context,
+)
+from app.services.proofline.state import InvalidTradeCaseTransition, transition_case
 
 
 logger = logging.getLogger(__name__)
@@ -353,6 +370,63 @@ async def update_trade_case(
         action="proofline_case_updated",
         trade_case_id=trade_case.id,
         values={"updated_fields": sorted(values)},
+    )
+    return _case_response(repository, trade_case, detail=True)
+
+
+@router.post("/{case_id}/submit", response_model=TradeCaseDetailResponse)
+async def submit_trade_case(
+    case_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TradeCaseDetailResponse:
+    """Validate and submit a draft, then process it outside the request session."""
+    ensure_case_write_access(db, current_user)
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=company_id, case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    if trade_case.status != TradeCaseStatus.DRAFT.value:
+        raise HTTPException(status_code=409, detail="Only a draft trade case can be submitted")
+    try:
+        validate_submission_context(load_case_context(db, trade_case))
+        transition_case(
+            db,
+            trade_case,
+            TradeCaseStatus.SUBMITTED,
+            actor_type="customer",
+            actor_user_id=current_user.id,
+            reason="Customer submitted the trade case for verified review",
+            idempotency_key=f"customer-submit:{trade_case.id}:0",
+        )
+        db.commit()
+        db.refresh(trade_case)
+    except SubmissionValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+    except InvalidTradeCaseTransition as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to submit Proofline case", extra={"trade_case_id": str(case_id)}
+        )
+        raise HTTPException(status_code=500, detail="Failed to submit trade case")
+
+    background_tasks.add_task(
+        process_trade_case_by_id,
+        case_id=trade_case.id,
+        company_id=company_id,
+    )
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_case_submitted",
+        trade_case_id=trade_case.id,
+        values={"payment_arrangement": trade_case.payment_arrangement},
     )
     return _case_response(repository, trade_case, detail=True)
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/api/client'
-import { createTradeCase, getTradeCase, listTradeCases } from '../api'
+import { createTradeCase, getTradeCase, listTradeCases, submitTradeCase } from '../api'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
@@ -19,6 +19,7 @@ describe('Proofline API client', () => {
     await createTradeCase({ title: 'Case one', payment_arrangement: 'open_account' })
     await listTradeCases()
     await getTradeCase('case-1')
+    await submitTradeCase('case-1')
 
     expect(api.post).toHaveBeenCalledWith('/api/proofline/cases', {
       title: 'Case one', payment_arrangement: 'open_account',
@@ -27,5 +28,6 @@ describe('Proofline API client', () => {
       params: { limit: 50, offset: 0 },
     })
     expect(api.get).toHaveBeenNthCalledWith(2, '/api/proofline/cases/case-1')
+    expect(api.post).toHaveBeenLastCalledWith('/api/proofline/cases/case-1/submit')
   })
 })
