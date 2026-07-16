@@ -4,11 +4,226 @@ This file should be kept in sync with the TypeScript definitions.
 """
 
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 
 from pydantic import BaseModel, Field, EmailStr, HttpUrl
+
+
+# ============================================================================
+# Proofline — Verified Trade Clearance
+# ============================================================================
+
+class PaymentArrangement(str, Enum):
+    LETTER_OF_CREDIT = "letter_of_credit"
+    OPEN_ACCOUNT = "open_account"
+    ADVANCE_TT = "advance_tt"
+    PARTIAL_ADVANCE_BALANCE = "partial_advance_balance"
+    DOCUMENTS_AGAINST_PAYMENT = "documents_against_payment"
+    DOCUMENTS_AGAINST_ACCEPTANCE = "documents_against_acceptance"
+    BUYER_LED_SUPPLY_CHAIN_FINANCE = "buyer_led_supply_chain_finance"
+    FACTORING_RECEIVABLES_FINANCE = "factoring_receivables_finance"
+    CONSIGNMENT = "consignment"
+    OTHER = "other"
+
+
+class TradeCaseStatus(str, Enum):
+    DRAFT = "draft"
+    AWAITING_PAYMENT = "awaiting_payment"
+    SUBMITTED = "submitted"
+    PROCESSING = "processing"
+    AUTOMATED_REVIEW_COMPLETE = "automated_review_complete"
+    AWAITING_ANALYST_REVIEW = "awaiting_analyst_review"
+    ACTION_REQUIRED = "action_required"
+    CUSTOMER_RESUBMITTED = "customer_resubmitted"
+    FINAL_REVIEW = "final_review"
+    CLEARED = "cleared"
+    CONDITIONALLY_CLEARED = "conditionally_cleared"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
+    CLOSED = "closed"
+
+
+class ProoflineDecision(str, Enum):
+    CLEAR = "CLEAR"
+    CONDITIONAL_CLEARANCE = "CONDITIONAL_CLEARANCE"
+    ACTION_REQUIRED = "ACTION_REQUIRED"
+    MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
+    BLOCKED = "BLOCKED"
+    UNABLE_TO_ASSESS = "UNABLE_TO_ASSESS"
+
+
+class ProoflineCheckState(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    CLEAR = "clear"
+    ISSUE_FOUND = "issue_found"
+    EVIDENCE_INCOMPLETE = "evidence_incomplete"
+    NOT_APPLICABLE = "not_applicable"
+    UNABLE_TO_ASSESS = "unable_to_assess"
+    PENDING_REVIEW = "pending_review"
+
+
+class ProoflineFindingStatus(str, Enum):
+    OPEN = "open"
+    ACKNOWLEDGED = "acknowledged"
+    CUSTOMER_ACTION_REQUIRED = "customer_action_required"
+    CORRECTED = "corrected"
+    ACCEPTED_EXCEPTION = "accepted_exception"
+    FALSE_POSITIVE = "false_positive"
+    RESOLVED = "resolved"
+    UNABLE_TO_RESOLVE = "unable_to_resolve"
+
+
+class ProoflineActorType(str, Enum):
+    SYSTEM = "system"
+    CUSTOMER = "customer"
+    REVIEWER = "reviewer"
+
+
+class ProoflineVisibility(str, Enum):
+    CUSTOMER = "customer"
+    INTERNAL = "internal"
+
+
+class ProoflineSeverity(str, Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
+
+
+class ProoflineRuleReference(BaseModel):
+    id: str
+    version: Optional[str] = None
+    source: str
+    article: Optional[str] = None
+    url: Optional[HttpUrl] = None
+
+
+class ProoflineEvidenceReference(BaseModel):
+    document_id: Optional[UUID] = None
+    document_version: Optional[int] = Field(default=None, gt=0)
+    credential_reference: Optional[str] = None
+    field: Optional[str] = None
+    page: Optional[int] = Field(default=None, gt=0)
+    location: Optional[str] = None
+    hash: Optional[str] = None
+
+
+class ProoflineFinding(BaseModel):
+    id: UUID
+    source_module: str
+    source_finding_id: Optional[str] = None
+    category: str
+    severity: ProoflineSeverity
+    title: str
+    explanation: str
+    affected_entity: Optional[str] = None
+    affected_document_id: Optional[UUID] = None
+    affected_field: Optional[str] = None
+    expected: str
+    observed: str
+    suggested_correction: str
+    automated: bool
+    visibility: ProoflineVisibility
+    status: ProoflineFindingStatus
+    reviewer_decision: Optional[str] = None
+    rule_reference: Optional[ProoflineRuleReference] = None
+    evidence_references: List[ProoflineEvidenceReference] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class TradeCaseParty(BaseModel):
+    id: UUID
+    role: str
+    name: str
+    country_code: Optional[str] = Field(default=None, min_length=2, max_length=2)
+    identifiers: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TradeCaseDocument(BaseModel):
+    id: UUID
+    document_id: UUID
+    logical_key: str
+    document_type: str
+    filename: str
+    version: int = Field(gt=0)
+    supersedes_id: Optional[UUID] = None
+    correction_round: int = Field(ge=0)
+    is_current: bool
+    extraction_status: Optional[str] = None
+    created_at: datetime
+
+
+class ProoflineCheck(BaseModel):
+    id: UUID
+    module: str
+    state: ProoflineCheckState
+    applicable: bool
+    applicability_reason: str
+    source_record_type: Optional[str] = None
+    source_record_id: Optional[str] = None
+    summary: Optional[str] = None
+    completed_at: Optional[datetime] = None
+
+
+class ProoflineRemediationAction(BaseModel):
+    id: UUID
+    finding_id: UUID
+    requested_action: str
+    responsible_party: Optional[str] = None
+    requested_document_type: Optional[str] = None
+    due_at: Optional[datetime] = None
+    customer_response: Optional[str] = None
+    status: str
+    correction_round: int = Field(gt=0)
+
+
+class TradeCaseDecisionRecord(BaseModel):
+    id: UUID
+    version: int = Field(gt=0)
+    decision: ProoflineDecision
+    decision_type: str
+    summary: str
+    reason: str
+    reviewer_id: Optional[UUID] = None
+    decided_at: datetime
+    report_version: Optional[int] = Field(default=None, gt=0)
+
+
+class TradeCaseSummary(BaseModel):
+    id: UUID
+    case_reference: str
+    company_id: UUID
+    title: str
+    status: TradeCaseStatus
+    payment_arrangement: PaymentArrangement
+    service_package_id: Optional[str] = None
+    recommended_decision: Optional[ProoflineDecision] = None
+    final_decision: Optional[ProoflineDecision] = None
+    currency: Optional[str] = None
+    amount: Optional[Decimal] = None
+    origin_country: Optional[str] = Field(default=None, min_length=2, max_length=2)
+    destination_country: Optional[str] = Field(default=None, min_length=2, max_length=2)
+    document_count: int = Field(ge=0)
+    finding_counts: Dict[str, int] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class TradeCaseDetail(TradeCaseSummary):
+    transaction_details: Dict[str, Any] = Field(default_factory=dict)
+    parties: List[TradeCaseParty] = Field(default_factory=list)
+    documents: List[TradeCaseDocument] = Field(default_factory=list)
+    checks: List[ProoflineCheck] = Field(default_factory=list)
+    findings: List[ProoflineFinding] = Field(default_factory=list)
+    actions: List[ProoflineRemediationAction] = Field(default_factory=list)
+    decision_history: List[TradeCaseDecisionRecord] = Field(default_factory=list)
 
 
 # ============================================================================

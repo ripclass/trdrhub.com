@@ -1,6 +1,225 @@
 import { z } from 'zod';
 
 // ============================================================================
+// Proofline — Verified Trade Clearance
+// ============================================================================
+
+export const PaymentArrangementSchema = z.enum([
+  'letter_of_credit',
+  'open_account',
+  'advance_tt',
+  'partial_advance_balance',
+  'documents_against_payment',
+  'documents_against_acceptance',
+  'buyer_led_supply_chain_finance',
+  'factoring_receivables_finance',
+  'consignment',
+  'other',
+]);
+export type PaymentArrangement = z.infer<typeof PaymentArrangementSchema>;
+
+export const TradeCaseStatusSchema = z.enum([
+  'draft',
+  'awaiting_payment',
+  'submitted',
+  'processing',
+  'automated_review_complete',
+  'awaiting_analyst_review',
+  'action_required',
+  'customer_resubmitted',
+  'final_review',
+  'cleared',
+  'conditionally_cleared',
+  'blocked',
+  'cancelled',
+  'closed',
+]);
+export type TradeCaseStatus = z.infer<typeof TradeCaseStatusSchema>;
+
+export const ProoflineDecisionSchema = z.enum([
+  'CLEAR',
+  'CONDITIONAL_CLEARANCE',
+  'ACTION_REQUIRED',
+  'MANUAL_REVIEW_REQUIRED',
+  'BLOCKED',
+  'UNABLE_TO_ASSESS',
+]);
+export type ProoflineDecision = z.infer<typeof ProoflineDecisionSchema>;
+
+export const ProoflineCheckStateSchema = z.enum([
+  'pending',
+  'running',
+  'clear',
+  'issue_found',
+  'evidence_incomplete',
+  'not_applicable',
+  'unable_to_assess',
+  'pending_review',
+]);
+export type ProoflineCheckState = z.infer<typeof ProoflineCheckStateSchema>;
+
+export const ProoflineFindingStatusSchema = z.enum([
+  'open',
+  'acknowledged',
+  'customer_action_required',
+  'corrected',
+  'accepted_exception',
+  'false_positive',
+  'resolved',
+  'unable_to_resolve',
+]);
+export type ProoflineFindingStatus = z.infer<typeof ProoflineFindingStatusSchema>;
+
+export const ProoflineActorTypeSchema = z.enum(['system', 'customer', 'reviewer']);
+export type ProoflineActorType = z.infer<typeof ProoflineActorTypeSchema>;
+
+export const ProoflineVisibilitySchema = z.enum(['customer', 'internal']);
+export type ProoflineVisibility = z.infer<typeof ProoflineVisibilitySchema>;
+
+export const ProoflineSeveritySchema = z.enum(['critical', 'high', 'medium', 'low', 'info']);
+export type ProoflineSeverity = z.infer<typeof ProoflineSeveritySchema>;
+
+export const ProoflineRuleReferenceSchema = z.object({
+  id: z.string(),
+  version: z.string().nullable().optional(),
+  source: z.string(),
+  article: z.string().nullable().optional(),
+  url: z.string().url().nullable().optional(),
+});
+export type ProoflineRuleReference = z.infer<typeof ProoflineRuleReferenceSchema>;
+
+export const ProoflineEvidenceReferenceSchema = z.object({
+  document_id: z.string().uuid().nullable().optional(),
+  document_version: z.number().int().positive().nullable().optional(),
+  credential_reference: z.string().nullable().optional(),
+  field: z.string().nullable().optional(),
+  page: z.number().int().positive().nullable().optional(),
+  location: z.string().nullable().optional(),
+  hash: z.string().nullable().optional(),
+});
+export type ProoflineEvidenceReference = z.infer<typeof ProoflineEvidenceReferenceSchema>;
+
+export const ProoflineFindingSchema = z.object({
+  id: z.string().uuid(),
+  source_module: z.string(),
+  source_finding_id: z.string().nullable().optional(),
+  category: z.string(),
+  severity: ProoflineSeveritySchema,
+  title: z.string(),
+  explanation: z.string(),
+  affected_entity: z.string().nullable().optional(),
+  affected_document_id: z.string().uuid().nullable().optional(),
+  affected_field: z.string().nullable().optional(),
+  expected: z.string(),
+  observed: z.string(),
+  suggested_correction: z.string(),
+  automated: z.boolean(),
+  visibility: ProoflineVisibilitySchema,
+  status: ProoflineFindingStatusSchema,
+  reviewer_decision: z.string().nullable().optional(),
+  rule_reference: ProoflineRuleReferenceSchema.nullable().optional(),
+  evidence_references: z.array(ProoflineEvidenceReferenceSchema),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+export type ProoflineFinding = z.infer<typeof ProoflineFindingSchema>;
+
+export const TradeCasePartySchema = z.object({
+  id: z.string().uuid(),
+  role: z.string(),
+  name: z.string(),
+  country_code: z.string().length(2).nullable().optional(),
+  identifiers: z.record(z.unknown()).default({}),
+});
+export type TradeCaseParty = z.infer<typeof TradeCasePartySchema>;
+
+export const TradeCaseDocumentSchema = z.object({
+  id: z.string().uuid(),
+  document_id: z.string().uuid(),
+  logical_key: z.string(),
+  document_type: z.string(),
+  filename: z.string(),
+  version: z.number().int().positive(),
+  supersedes_id: z.string().uuid().nullable().optional(),
+  correction_round: z.number().int().nonnegative(),
+  is_current: z.boolean(),
+  extraction_status: z.string().nullable().optional(),
+  created_at: z.string().datetime(),
+});
+export type TradeCaseDocument = z.infer<typeof TradeCaseDocumentSchema>;
+
+export const ProoflineCheckSchema = z.object({
+  id: z.string().uuid(),
+  module: z.string(),
+  state: ProoflineCheckStateSchema,
+  applicable: z.boolean(),
+  applicability_reason: z.string(),
+  source_record_type: z.string().nullable().optional(),
+  source_record_id: z.string().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  completed_at: z.string().datetime().nullable().optional(),
+});
+export type ProoflineCheck = z.infer<typeof ProoflineCheckSchema>;
+
+export const ProoflineRemediationActionSchema = z.object({
+  id: z.string().uuid(),
+  finding_id: z.string().uuid(),
+  requested_action: z.string(),
+  responsible_party: z.string().nullable().optional(),
+  requested_document_type: z.string().nullable().optional(),
+  due_at: z.string().datetime().nullable().optional(),
+  customer_response: z.string().nullable().optional(),
+  status: z.string(),
+  correction_round: z.number().int().positive(),
+});
+export type ProoflineRemediationAction = z.infer<typeof ProoflineRemediationActionSchema>;
+
+export const TradeCaseDecisionRecordSchema = z.object({
+  id: z.string().uuid(),
+  version: z.number().int().positive(),
+  decision: ProoflineDecisionSchema,
+  decision_type: z.enum(['recommendation', 'final']),
+  summary: z.string(),
+  reason: z.string(),
+  reviewer_id: z.string().uuid().nullable().optional(),
+  decided_at: z.string().datetime(),
+  report_version: z.number().int().positive().nullable().optional(),
+});
+export type TradeCaseDecisionRecord = z.infer<typeof TradeCaseDecisionRecordSchema>;
+
+export const TradeCaseSummarySchema = z.object({
+  id: z.string().uuid(),
+  case_reference: z.string(),
+  company_id: z.string().uuid(),
+  title: z.string(),
+  status: TradeCaseStatusSchema,
+  payment_arrangement: PaymentArrangementSchema,
+  service_package_id: z.string().nullable().optional(),
+  recommended_decision: ProoflineDecisionSchema.nullable(),
+  final_decision: ProoflineDecisionSchema.nullable(),
+  currency: z.string().nullable().optional(),
+  amount: z.string().nullable().optional(),
+  origin_country: z.string().length(2).nullable().optional(),
+  destination_country: z.string().length(2).nullable().optional(),
+  document_count: z.number().int().nonnegative(),
+  finding_counts: z.record(z.number().int().nonnegative()),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+export type TradeCaseSummary = z.infer<typeof TradeCaseSummarySchema>;
+
+export const TradeCaseDetailSchema = TradeCaseSummarySchema.extend({
+  transaction_details: z.record(z.unknown()).default({}),
+  parties: z.array(TradeCasePartySchema),
+  documents: z.array(TradeCaseDocumentSchema),
+  checks: z.array(ProoflineCheckSchema),
+  findings: z.array(ProoflineFindingSchema),
+  actions: z.array(ProoflineRemediationActionSchema),
+  decision_history: z.array(TradeCaseDecisionRecordSchema),
+});
+export type TradeCaseDetail = z.infer<typeof TradeCaseDetailSchema>;
+
+// ============================================================================
 // Health Check Types
 // ============================================================================
 
