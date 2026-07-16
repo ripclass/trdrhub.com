@@ -17,6 +17,7 @@ from app.models import (
     TradeCaseDecision,
     TradeCaseDocument,
     TradeCaseEvent,
+    TradeCaseOutcome,
     TradeCaseParty,
 )
 
@@ -44,6 +45,7 @@ def test_all_proofline_tables_are_registered_with_existing_metadata():
         "trade_case_decisions",
         "trade_case_events",
         "buyer_requirements",
+        "trade_case_outcomes",
     }
     assert expected <= set(Base.metadata.tables)
 
@@ -132,6 +134,7 @@ def test_case_children_are_tenant_scoped_and_remediation_keeps_correction_links(
         TradeCaseDecision,
         TradeCaseEvent,
         BuyerRequirement,
+        TradeCaseOutcome,
     ):
         assert model.__table__.c.company_id.nullable is False, model.__name__
 
@@ -140,6 +143,9 @@ def test_case_children_are_tenant_scoped_and_remediation_keeps_correction_links(
     }
     assert "proofline_findings.id" in remediation_fks
     assert "trade_case_documents.id" in remediation_fks
+    assert _unique_columns(TradeCaseOutcome.__table__)["uq_trade_case_outcome_case"] == (
+        "trade_case_id",
+    )
 
 
 def test_proofline_migration_is_chained_and_reversible():
@@ -180,3 +186,16 @@ def test_proofline_document_session_migration_is_chained_and_reversible():
     assert '"trade_cases"' in source
     assert '"document_session_id"' in source
     assert 'op.drop_column("trade_cases", "document_session_id")' in source
+
+
+def test_proofline_outcome_migration_is_chained_and_reversible():
+    path = Path("apps/api/alembic/versions/20260716_add_proofline_outcomes.py")
+    spec = importlib.util.spec_from_file_location("proofline_outcome_migration", path)
+    assert spec and spec.loader
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    assert migration.down_revision == "20260716_add_proofline_pricing"
+    source = path.read_text(encoding="utf-8")
+    assert '"trade_case_outcomes"' in source
+    assert 'op.drop_table("trade_case_outcomes")' in source

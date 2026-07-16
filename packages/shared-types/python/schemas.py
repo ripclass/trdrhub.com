@@ -233,6 +233,18 @@ class ProoflineReportAccess(BaseModel):
     expires_in_seconds: int = Field(gt=0)
 
 
+class TradeCaseOutcome(BaseModel):
+    id: UUID
+    trade_case_id: UUID
+    documents_accepted: Optional[bool] = None
+    payment_delayed: Optional[bool] = None
+    bank_additional_discrepancies: Optional[bool] = None
+    shipment_held: Optional[bool] = None
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class TradeCaseSummary(BaseModel):
     id: UUID
     case_reference: str

@@ -30,6 +30,7 @@ from app.models import (
     Report,
     RemediationAction,
     TradeCaseDocument,
+    TradeCaseOutcome,
     TradeCaseStatus,
     User,
 )
@@ -45,6 +46,8 @@ from app.schemas.proofline import (
     TradeCasePartyResponse,
     TradeCaseSummaryResponse,
     TradeCaseUpdate,
+    TradeCaseOutcomeRequest,
+    TradeCaseOutcomeResponse,
     RemediationResponseRequest,
 )
 from app.services.audit_service import AuditService
@@ -73,6 +76,7 @@ from app.services.proofline.billing import (
     quote_for_case,
 )
 from app.services.proofline.feature_flags import require_proofline_enabled
+from app.services.proofline.notifications import notify_customer
 from app.utils.s3_client import get_s3_client
 
 
@@ -425,6 +429,88 @@ async def get_trade_case_report(
     )
 
 
+@router.get("/{case_id}/outcome", response_model=TradeCaseOutcomeResponse)
+async def get_trade_case_outcome(
+    case_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TradeCaseOutcomeResponse:
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    if repository.get_case(company_id=company_id, case_id=case_id) is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    outcome = (
+        db.query(TradeCaseOutcome)
+        .filter(
+            TradeCaseOutcome.company_id == company_id,
+            TradeCaseOutcome.trade_case_id == case_id,
+        )
+        .first()
+    )
+    if outcome is None:
+        raise HTTPException(status_code=404, detail="No outcome feedback has been reported")
+    return TradeCaseOutcomeResponse.model_validate(outcome)
+
+
+@router.put("/{case_id}/outcome", response_model=TradeCaseOutcomeResponse)
+async def report_trade_case_outcome(
+    case_id: UUID,
+    payload: TradeCaseOutcomeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TradeCaseOutcomeResponse:
+    ensure_case_write_access(db, current_user)
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=company_id, case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    if trade_case.final_report_id is None or trade_case.status not in {
+        TradeCaseStatus.CLEARED.value,
+        TradeCaseStatus.CONDITIONALLY_CLEARED.value,
+        TradeCaseStatus.BLOCKED.value,
+        TradeCaseStatus.CLOSED.value,
+    }:
+        raise HTTPException(status_code=409, detail="Outcome feedback is available after final report delivery")
+    outcome = (
+        db.query(TradeCaseOutcome)
+        .filter(
+            TradeCaseOutcome.company_id == company_id,
+            TradeCaseOutcome.trade_case_id == case_id,
+        )
+        .first()
+    )
+    values = payload.model_dump()
+    values["notes"] = str(values.get("notes") or "").strip() or None
+    if outcome is None:
+        outcome = TradeCaseOutcome(
+            company_id=company_id,
+            trade_case_id=case_id,
+            reported_by_user_id=current_user.id,
+            **values,
+        )
+        db.add(outcome)
+    else:
+        for field, value in values.items():
+            setattr(outcome, field, value)
+        outcome.reported_by_user_id = current_user.id
+    db.commit()
+    db.refresh(outcome)
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_outcome_reported",
+        trade_case_id=case_id,
+        values={
+            "answered_fields": sorted(
+                key for key, value in values.items() if value is not None
+            ),
+            "customer_reported": True,
+        },
+    )
+    return TradeCaseOutcomeResponse.model_validate(outcome)
+
+
 @router.patch("/{case_id}", response_model=TradeCaseDetailResponse)
 async def update_trade_case(
     case_id: UUID,
@@ -532,6 +618,15 @@ async def submit_trade_case(
         action="proofline_case_submitted",
         trade_case_id=trade_case.id,
         values={"payment_arrangement": trade_case.payment_arrangement},
+    )
+    notify_customer(
+        db,
+        trade_case,
+        event=(
+            "payment_required"
+            if trade_case.status == TradeCaseStatus.AWAITING_PAYMENT.value
+            else "submitted"
+        ),
     )
     return _case_response(repository, trade_case, detail=True)
 
@@ -645,6 +740,7 @@ async def resubmit_trade_case(
         trade_case_id=case_id,
         values={"correction_round": trade_case.correction_rounds_used},
     )
+    notify_customer(db, trade_case, event="correction_received")
     return _case_response(repository, trade_case, detail=True)
 
 

@@ -603,6 +603,37 @@ class BuyerRequirement(Base):
     )
 
 
+class TradeCaseOutcome(Base):
+    """Voluntary customer-reported post-clearance outcomes, not formal truth."""
+
+    __tablename__ = "trade_case_outcomes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    trade_case_id = Column(
+        UUID(as_uuid=True), ForeignKey("trade_cases.id", ondelete="CASCADE"), nullable=False
+    )
+    reported_by_user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    documents_accepted = Column(Boolean, nullable=True)
+    payment_delayed = Column(Boolean, nullable=True)
+    bank_additional_discrepancies = Column(Boolean, nullable=True)
+    shipment_held = Column(Boolean, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("trade_case_id", name="uq_trade_case_outcome_case"),
+        Index("ix_trade_case_outcomes_company_created", "company_id", "created_at"),
+    )
+
+
 PAYMENT_ARRANGEMENT_VALUES = tuple(item.value for item in PaymentArrangement)
 TRADE_CASE_STATUS_VALUES = tuple(item.value for item in TradeCaseStatus)
 PROOFLINE_DECISION_VALUES = tuple(item.value for item in ProoflineDecisionValue)

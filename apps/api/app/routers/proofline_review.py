@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -26,6 +26,7 @@ from app.models import (
     TradeCaseDecision,
     TradeCaseDocument,
     TradeCaseEvent,
+    TradeCaseOutcome,
     TradeCaseParty,
     TradeCaseStatus,
     User,
@@ -52,6 +53,8 @@ from app.services.proofline.review import (
 )
 from app.services.proofline.reports import ProoflineReportError, generate_proofline_report
 from app.services.proofline.feature_flags import require_proofline_enabled
+from app.services.proofline.analytics import build_operational_metrics
+from app.services.proofline.notifications import notify_customer
 
 
 logger = logging.getLogger(__name__)
@@ -189,6 +192,44 @@ def list_proofline_queue(
             "updated_at": trade_case.updated_at.isoformat() if trade_case.updated_at else None,
         })
     return {"count": len(items), "items": items}
+
+
+@router.get("/metrics")
+def get_proofline_operational_metrics(
+    days: int = Query(default=30, ge=1, le=365),
+    company_id: Optional[UUID] = None,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_sysadmin),
+):
+    """Return case-level operational metrics without document contents."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    case_query = db.query(TradeCase).filter(
+        TradeCase.deleted_at.is_(None),
+        TradeCase.created_at >= since,
+    )
+    if company_id is not None:
+        case_query = case_query.filter(TradeCase.company_id == company_id)
+    cases = case_query.all()
+    case_ids = [item.id for item in cases]
+    findings = []
+    outcomes = []
+    if case_ids:
+        findings = (
+            db.query(ProoflineFinding)
+            .filter(ProoflineFinding.trade_case_id.in_(case_ids))
+            .all()
+        )
+        outcomes = (
+            db.query(TradeCaseOutcome)
+            .filter(TradeCaseOutcome.trade_case_id.in_(case_ids))
+            .all()
+        )
+    return build_operational_metrics(
+        cases=cases,
+        findings=findings,
+        outcomes=outcomes,
+        period_days=days,
+    )
 
 
 @router.get("/buyer-requirements", response_model=list[BuyerRequirementResponse])
@@ -504,6 +545,7 @@ def request_proofline_correction(
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc))
     _audit(db, admin, "proofline_correction_requested", case_id, {"action_id": str(action.id), "finding_id": payload.finding_id})
+    notify_customer(db, trade_case, event="action_required")
     return {"id": str(action.id), "status": action.status, "correction_round": action.correction_round}
 
 
@@ -550,6 +592,8 @@ def decide_proofline_case(
         "report_id": str(report.id) if report else None,
         "report_version": report.report_version if report else None,
     })
+    if report is not None:
+        notify_customer(db, trade_case, event="final_report_ready")
     return {
         "id": str(decision.id),
         "decision": decision.decision,

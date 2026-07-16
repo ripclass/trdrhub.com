@@ -8,6 +8,13 @@
 
 **Tech Stack:** FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, PostgreSQL/Supabase, React 18, Vite, TypeScript, React Query, Tailwind/shadcn, Stripe Checkout, S3, pytest, Vitest/RTL.
 
+**Execution status (2026-07-16):** The planned Proofline vertical slice and pilot
+capabilities were implemented incrementally. Exact commits, verification results,
+known repository baselines, and staged operational follow-ups are recorded in
+`docs/audits/2026-07-16-proofline-repository-audit.md`. The checklist below is
+retained as the original pre-implementation plan rather than rewritten after the
+fact.
+
 ## Global Constraints
 
 - Follow Audit → Plan → Patch → Test → Summarize and update the Dev Agent Record.

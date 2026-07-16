@@ -12,7 +12,11 @@ import pytest
 from fastapi import BackgroundTasks, HTTPException
 
 from app.routers import proofline as router_module
-from app.schemas.proofline import TradeCaseCreate, TradeCaseUpdate
+from app.schemas.proofline import (
+    TradeCaseCreate,
+    TradeCaseOutcomeRequest,
+    TradeCaseUpdate,
+)
 
 
 def _case(company_id, **overrides):
@@ -144,6 +148,18 @@ class _ReportDb(_Db):
 
     def query(self, _model):
         return _ReportQuery(self.report)
+
+
+class _OutcomeDb(_Db):
+    def __init__(self, case, outcome):
+        super().__init__(case)
+        self.outcome = outcome
+
+    def query(self, _model):
+        return _ReportQuery(self.outcome)
+
+    def add(self, value):
+        self.outcome = value
 
 
 def test_create_list_get_and_update_use_authenticated_company(monkeypatch):
@@ -302,6 +318,98 @@ def test_report_download_is_scoped_through_tenant_owned_case(monkeypatch):
     with pytest.raises(HTTPException) as error:
         asyncio.run(router_module.get_trade_case_report(db.case.id, current_user=user, db=db))
     assert error.value.status_code == 404
+
+
+def test_voluntary_outcome_update_is_terminal_tenant_scoped_and_audited(monkeypatch):
+    company_id = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
+    case_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    outcome = SimpleNamespace(
+        id=uuid.uuid4(),
+        trade_case_id=case_id,
+        company_id=company_id,
+        reported_by_user_id=user.id,
+        documents_accepted=None,
+        payment_delayed=None,
+        bank_additional_discrepancies=None,
+        shipment_held=None,
+        notes=None,
+        created_at=now,
+        updated_at=now,
+    )
+    db = _OutcomeDb(
+        _case(
+            company_id,
+            id=case_id,
+            status="cleared",
+            final_report_id=uuid.uuid4(),
+            final_decision="CLEAR",
+        ),
+        outcome,
+    )
+    audits = []
+    monkeypatch.setattr(router_module, "ProoflineRepository", _Repo)
+    monkeypatch.setattr(router_module, "ensure_case_write_access", lambda *_args: None)
+    monkeypatch.setattr(
+        router_module,
+        "_audit_action",
+        lambda **kwargs: audits.append(kwargs),
+    )
+
+    response = asyncio.run(
+        router_module.report_trade_case_outcome(
+            case_id,
+            payload=TradeCaseOutcomeRequest(
+                documents_accepted=True,
+                payment_delayed=False,
+                notes="Paid on the revised due date.",
+            ),
+            current_user=user,
+            db=db,
+        )
+    )
+
+    assert response.documents_accepted is True
+    assert response.payment_delayed is False
+    assert outcome.reported_by_user_id == user.id
+    assert audits[0]["values"] == {
+        "answered_fields": ["documents_accepted", "notes", "payment_delayed"],
+        "customer_reported": True,
+    }
+    assert db.commits == 1
+
+    user.company_id = uuid.uuid4()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            router_module.report_trade_case_outcome(
+                case_id,
+                payload=TradeCaseOutcomeRequest(documents_accepted=True),
+                current_user=user,
+                db=db,
+            )
+        )
+    assert error.value.status_code == 404
+
+
+def test_voluntary_outcome_is_rejected_before_final_report(monkeypatch):
+    company_id = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
+    db = _OutcomeDb(_case(company_id), None)
+    monkeypatch.setattr(router_module, "ProoflineRepository", _Repo)
+    monkeypatch.setattr(router_module, "ensure_case_write_access", lambda *_args: None)
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            router_module.report_trade_case_outcome(
+                db.case.id,
+                payload=TradeCaseOutcomeRequest(documents_accepted=True),
+                current_user=user,
+                db=db,
+            )
+        )
+
+    assert error.value.status_code == 409
 
 
 def test_parties_are_created_and_deleted_inside_authenticated_company(monkeypatch):

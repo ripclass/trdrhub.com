@@ -28,6 +28,7 @@ from app.services.proofline.applicability import applicability_for
 from app.services.proofline.decisions import record_decision
 from app.services.proofline.orchestrator import canonical_input_hash, run_check
 from app.services.proofline.state import transition_case
+from app.services.proofline.notifications import notify_customer
 
 
 logger = logging.getLogger(__name__)
@@ -443,6 +444,7 @@ async def process_trade_case_by_id(*, case_id: UUID, company_id: UUID) -> None:
             return
         await process_trade_case(db, trade_case)
         db.commit()
+        notify_customer(db, trade_case, event="automated_review_complete")
     except Exception:
         db.rollback()
         logger.exception(

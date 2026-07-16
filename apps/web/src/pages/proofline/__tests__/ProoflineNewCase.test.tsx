@@ -3,9 +3,12 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ProoflineNewCase from '../ProoflineNewCase'
-import { createTradeCase } from '@/lib/proofline/api'
+import { createTradeCase, listProoflinePackages } from '@/lib/proofline/api'
 
-vi.mock('@/lib/proofline/api', () => ({ createTradeCase: vi.fn() }))
+vi.mock('@/lib/proofline/api', () => ({
+  createTradeCase: vi.fn(),
+  listProoflinePackages: vi.fn(),
+}))
 
 const navigate = vi.fn()
 vi.mock('react-router-dom', async () => {
@@ -17,6 +20,8 @@ describe('Proofline new case', () => {
   beforeEach(() => {
     navigate.mockReset()
     vi.mocked(createTradeCase).mockReset()
+    vi.mocked(listProoflinePackages).mockReset()
+    vi.mocked(listProoflinePackages).mockResolvedValue([])
   })
 
   it('starts with payment arrangement and offers every supported route', () => {

@@ -141,6 +141,7 @@ from .proofline import (
     TradeCaseDecision,
     TradeCaseDocument,
     TradeCaseEvent,
+    TradeCaseOutcome,
     TradeCaseParty,
     TradeCaseStatus,
 )
@@ -235,6 +236,7 @@ __all__ = [
     "TradeCaseDecision",
     "TradeCaseDocument",
     "TradeCaseEvent",
+    "TradeCaseOutcome",
     "TradeCaseParty",
     "TradeCaseStatus",
 ]

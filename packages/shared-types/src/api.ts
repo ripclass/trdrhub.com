@@ -227,6 +227,19 @@ export const ProoflineReportAccessSchema = z.object({
 });
 export type ProoflineReportAccess = z.infer<typeof ProoflineReportAccessSchema>;
 
+export const TradeCaseOutcomeSchema = z.object({
+  id: z.string().uuid(),
+  trade_case_id: z.string().uuid(),
+  documents_accepted: z.boolean().nullable().optional(),
+  payment_delayed: z.boolean().nullable().optional(),
+  bank_additional_discrepancies: z.boolean().nullable().optional(),
+  shipment_held: z.boolean().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+export type TradeCaseOutcome = z.infer<typeof TradeCaseOutcomeSchema>;
+
 export const TradeCaseSummarySchema = z.object({
   id: z.string().uuid(),
   case_reference: z.string(),

@@ -13,10 +13,11 @@ import {
   submitTradeCase,
   startProoflineCheckout,
   upgradeLcopilotToProofline,
+  reportTradeCaseOutcome,
 } from '../api'
 
 vi.mock('@/api/client', () => ({
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn() },
 }))
 
 describe('Proofline API client', () => {
@@ -24,6 +25,9 @@ describe('Proofline API client', () => {
 
   it('uses the tenant-safe backend collection routes', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: { id: 'case-1' } })
+    vi.mocked(api.put).mockResolvedValue({
+      data: { id: 'outcome-1', trade_case_id: 'case-1', documents_accepted: true },
+    })
     vi.mocked(api.get)
       .mockResolvedValueOnce({ data: { items: [], total: 0, offset: 0, limit: 50 } })
       .mockResolvedValueOnce({ data: { id: 'case-1' } })
@@ -42,6 +46,7 @@ describe('Proofline API client', () => {
     await respondToRemediation('case-1', 'action-1', { response: 'Corrected' })
     await upgradeLcopilotToProofline('lc-session-1')
     await resubmitTradeCase('case-1')
+    await reportTradeCaseOutcome('case-1', { documents_accepted: true })
 
     expect(api.post).toHaveBeenCalledWith('/api/proofline/cases', {
       title: 'Case one', payment_arrangement: 'open_account',
@@ -60,5 +65,8 @@ describe('Proofline API client', () => {
     })
     expect(api.post).toHaveBeenCalledWith('/api/proofline/upgrades/lcopilot/lc-session-1')
     expect(api.post).toHaveBeenLastCalledWith('/api/proofline/cases/case-1/resubmit')
+    expect(api.put).toHaveBeenCalledWith('/api/proofline/cases/case-1/outcome', {
+      documents_accepted: true,
+    })
   })
 })

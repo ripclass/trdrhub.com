@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input'
 import { ProoflineDocumentUpload } from '@/components/proofline/ProoflineDocumentUpload'
 import { ProoflinePartyForm } from '@/components/proofline/ProoflinePartyForm'
 import { ProoflineRemediationResponse } from '@/components/proofline/ProoflineRemediationResponse'
+import { ProoflineOutcomeFeedback } from '@/components/proofline/ProoflineOutcomeFeedback'
 import { deleteTradeCaseParty, getProoflineQuote, getProoflineReport, getTradeCase, resubmitTradeCase, startProoflineCheckout, submitTradeCase, updateTradeCase } from '@/lib/proofline/api'
 import {
   checkStateLabels,
@@ -362,7 +363,7 @@ export default function ProoflineCaseDetail() {
 
               <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-5">
                 <div className="mb-4 flex items-center gap-2"><BadgeCheck className="h-5 w-5 text-[#B2F273]" /><h2 className="font-display font-bold">Clearance report</h2></div>
-                {tradeCase.final_report_id ? <Button onClick={() => void downloadReport()} disabled={downloadingReport} className="w-full border-none bg-[#B2F273] font-bold text-[#00261C] hover:bg-[#a3e662]">{downloadingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} Download report</Button> : <p className="text-sm leading-relaxed text-[#EDF5F2]/40">The report becomes available after final analyst approval.</p>}
+                {tradeCase.final_report_id ? <><Button onClick={() => void downloadReport()} disabled={downloadingReport} className="w-full border-none bg-[#B2F273] font-bold text-[#00261C] hover:bg-[#a3e662]">{downloadingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} Download report</Button>{caseId ? <ProoflineOutcomeFeedback caseId={caseId} /> : null}</> : <p className="text-sm leading-relaxed text-[#EDF5F2]/40">The report becomes available after final analyst approval.</p>}
               </section>
             </aside>
           </div>

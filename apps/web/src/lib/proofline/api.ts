@@ -7,6 +7,7 @@ import type {
   TradeCaseDocument,
   TradeCaseParty,
   TradeCaseSummary,
+  TradeCaseOutcome,
 } from '@shared/types'
 
 import { api } from '@/api/client'
@@ -61,6 +62,20 @@ export async function getProoflineQuote(caseId: string): Promise<ProoflineQuote>
 
 export async function getProoflineReport(caseId: string): Promise<ProoflineReportAccess> {
   const response = await api.get<ProoflineReportAccess>(`/api/proofline/cases/${caseId}/report`)
+  return response.data
+}
+
+export async function reportTradeCaseOutcome(
+  caseId: string,
+  input: {
+    documents_accepted?: boolean
+    payment_delayed?: boolean
+    bank_additional_discrepancies?: boolean
+    shipment_held?: boolean
+    notes?: string
+  },
+): Promise<TradeCaseOutcome> {
+  const response = await api.put<TradeCaseOutcome>(`/api/proofline/cases/${caseId}/outcome`, input)
   return response.data
 }
 

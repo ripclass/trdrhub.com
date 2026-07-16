@@ -39,6 +39,9 @@ class NotificationType(str, enum.Enum):
     # Concierge review queue (Phase 1 launch)
     REPORT_UNDER_REVIEW = "report_under_review"  # engine done, specialist reviewing
     REPORT_DELIVERED = "report_delivered"        # operator approved, report released
+    PROOFLINE_CASE_UPDATE = "proofline_case_update"
+    PROOFLINE_ACTION_REQUIRED = "proofline_action_required"
+    PROOFLINE_REPORT_READY = "proofline_report_ready"
     SYSTEM = "system"  # generic catch-all
 
 
@@ -59,6 +62,9 @@ DEFAULT_NOTIFICATION_PREFS: dict[str, dict[str, bool]] = {
     NotificationType.LIFECYCLE_TRANSITION.value: {"in_app": False, "email": False},
     NotificationType.REPORT_UNDER_REVIEW.value: {"in_app": True, "email": True},
     NotificationType.REPORT_DELIVERED.value: {"in_app": True, "email": True},
+    NotificationType.PROOFLINE_CASE_UPDATE.value: {"in_app": True, "email": False},
+    NotificationType.PROOFLINE_ACTION_REQUIRED.value: {"in_app": True, "email": True},
+    NotificationType.PROOFLINE_REPORT_READY.value: {"in_app": True, "email": True},
     NotificationType.SYSTEM.value: {"in_app": True, "email": False},
 }
 

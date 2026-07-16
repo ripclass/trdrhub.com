@@ -215,16 +215,59 @@ Each increment must leave standalone LCopilot behavior unchanged and must be gat
 
 ### Plan
 
-- Pending user confirmation of the first implementation increment and approval of the written design specification.
+- Wrote the implementation design and incremental internal-alpha plan before architectural changes.
+- Chose a new `TradeCase` aggregate that references existing tenant, user, document,
+  validation-session, report, billing, screening, notification, and audit records.
+- Kept standalone LCopilot routes and deterministic UCP600/cross-document contracts
+  unchanged; Proofline consumes the existing structured result through an adapter.
 
 ### Patch
 
-- No production code, schema, migration, or configuration changes made during the audit.
+- Added synchronized TypeScript/Pydantic trade-case contracts, SQLAlchemy models,
+  reversible Alembic migrations, tenant-safe repositories/APIs, validated state and
+  decision services, immutable evidence lineage, normalized finding provenance,
+  remediation rounds, analyst review, versioned reports, and audit events.
+- Added payment-method-first customer intake and the existing-shell Proofline
+  landing, case list/detail/tabs, Tools placement, reviewer queue/detail, LCopilot
+  upgrade action, and report/outcome views without a new design system.
+- Added configurable database-backed packages, hosted Stripe checkout reuse,
+  configurable LCopilot credit, external RulHub/EIN adapters, buyer requirements,
+  applicable sanctions/CBAM/EUDR orchestration, selective notifications, and
+  privacy-bounded operational metrics.
+- Added deployment/environment documentation in `docs/PROOFLINE_SETUP.md`.
 
 ### Test
 
-- Read-only inspection only. No implementation claim or test-pass claim is made.
+- Focused model, contract, tenant, workflow, decision, document, orchestration,
+  adapter, billing, upgrade, report, reviewer, feature-flag, outcome, analytics,
+  notification, and frontend component/API tests were added alongside each slice.
+- Consolidated backend Proofline suite: **108 passed** across 25 files.
+- Existing LCopilot validation/crossdoc, Stripe webhook, sanctions, and readiness
+  regressions: **58 passed**. Existing results mapper: **24 passed**.
+- Consolidated Proofline frontend suite: **18 passed** across 11 files.
+- Production Vite build: **passed**, 3,260 modules transformed.
+- Python compile/import check: **passed**. Alembic reports one head,
+  `20260716_add_proofline_outcomes`; the new pricing-to-outcome range renders
+  offline SQL successfully.
+- Full web type-check still returns the repository's existing baseline (954
+  diagnostic lines), with **zero Proofline diagnostics**. The package's declared
+  lint command cannot start because no ESLint configuration exists in the web
+  package or repository root.
+- The legacy `ExporterResults.test.tsx` baseline remains stale against the current
+  unchanged results UI (47 of 49 assertions fail); neither that test nor
+  `ExporterResults.tsx` is modified by Proofline. Its canonical mapper and backend
+  payload compatibility gates pass.
+- Full offline migration rendering remains blocked by historical migration
+  `20250916_170100_seed_default_companies.py`, which executes `fetchall()` in
+  offline mode. The new Proofline outcome revision was rendered independently.
+- Local in-app browser verification was attempted, but the installed browser
+  runtime could not create its kernel assets. The temporary local Vite process was
+  stopped and no alternate browser mechanism was used.
+- `git diff --check` passed; unrelated root JPEG screenshots remained untouched.
 
 ### Summarize
 
-- Proofline should be a new case-orchestration aggregate inside TRDR Hub, referencing existing module runs and records. The recommended first increment is the internal-alpha vertical slice above.
+- Proofline is implemented as case orchestration inside TRDR Hub. LCopilot checks
+  the instrument; Proofline combines applicable transaction, document, party,
+  regulatory, credential, buyer-policy, analyst, correction, and reporting work to
+  assess readiness without claiming guaranteed clearance, acceptance, or payment.

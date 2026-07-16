@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.proofline import PaymentArrangement, ProoflineDecisionValue, TradeCaseStatus
 
@@ -261,6 +261,37 @@ class ProoflineReportAccessResponse(BaseModel):
     expires_in_seconds: int = Field(gt=0)
 
 
+class TradeCaseOutcomeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    documents_accepted: Optional[bool] = None
+    payment_delayed: Optional[bool] = None
+    bank_additional_discrepancies: Optional[bool] = None
+    shipment_held: Optional[bool] = None
+    notes: Optional[str] = Field(default=None, max_length=5000)
+
+    @model_validator(mode="after")
+    def require_one_answer(self):
+        if all(
+            value is None
+            for value in (
+                self.documents_accepted,
+                self.payment_delayed,
+                self.bank_additional_discrepancies,
+                self.shipment_held,
+            )
+        ) and not str(self.notes or "").strip():
+            raise ValueError("At least one voluntary outcome answer is required")
+        return self
+
+
+class TradeCaseOutcomeResponse(TradeCaseOutcomeRequest):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    trade_case_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+
 class ProoflineUpgradeResponse(BaseModel):
     case_id: UUID
     case_reference: str
@@ -282,6 +313,8 @@ __all__ = [
     "ProoflineServicePackageResponse",
     "ProoflineUpgradeResponse",
     "RemediationResponseRequest",
+    "TradeCaseOutcomeRequest",
+    "TradeCaseOutcomeResponse",
     "TradeCaseSummaryResponse",
     "TradeCaseUpdate",
 ]
