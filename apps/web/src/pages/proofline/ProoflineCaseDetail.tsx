@@ -6,17 +6,21 @@ import {
   CheckCircle2,
   Clock3,
   Download,
-  FileText,
+  FileUp,
   Loader2,
   RefreshCw,
   ShieldCheck,
   Users,
+  Plus,
+  Trash2,
 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import type { ProoflineFinding, TradeCaseDetail } from '@shared/types'
 
 import { Button } from '@/components/ui/button'
-import { getTradeCase } from '@/lib/proofline/api'
+import { ProoflineDocumentUpload } from '@/components/proofline/ProoflineDocumentUpload'
+import { ProoflinePartyForm } from '@/components/proofline/ProoflinePartyForm'
+import { deleteTradeCaseParty, getTradeCase } from '@/lib/proofline/api'
 import {
   checkStateLabels,
   checkTone,
@@ -67,6 +71,8 @@ export default function ProoflineCaseDetail() {
   const [tradeCase, setTradeCase] = useState<TradeCaseDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showPartyForm, setShowPartyForm] = useState(false)
+  const [showDocumentUpload, setShowDocumentUpload] = useState(false)
 
   async function load() {
     if (!caseId) return
@@ -99,6 +105,12 @@ export default function ProoflineCaseDetail() {
 
   const finalOrRecommended = tradeCase.final_decision || tradeCase.recommended_decision
   const openActions = tradeCase.actions.filter((action) => !['resolved', 'closed'].includes(action.status))
+
+  async function removeParty(partyId: string) {
+    if (!caseId) return
+    await deleteTradeCaseParty(caseId, partyId)
+    await load()
+  }
 
   return (
     <div className="min-h-screen bg-[#00261C] text-white">
@@ -165,7 +177,8 @@ export default function ProoflineCaseDetail() {
               </section>
 
               <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-6">
-                <div className="mb-5 flex items-center justify-between"><h2 className="font-display text-xl font-bold">Documents and versions</h2><FileText className="h-6 w-6 text-[#B2F273]" /></div>
+                <div className="mb-5 flex items-center justify-between gap-3"><h2 className="font-display text-xl font-bold">Documents and versions</h2><Button onClick={() => setShowDocumentUpload((value) => !value)} className="border border-[#EDF5F2]/15 bg-[#EDF5F2]/5 text-white hover:bg-[#EDF5F2]/10"><FileUp className="mr-2 h-4 w-4" /> Upload document</Button></div>
+                {showDocumentUpload && caseId ? <div className="mb-5"><ProoflineDocumentUpload caseId={caseId} documents={tradeCase.documents} onCancel={() => setShowDocumentUpload(false)} onSaved={() => { setShowDocumentUpload(false); void load() }} /></div> : null}
                 {tradeCase.documents.length ? <div className="space-y-3">{tradeCase.documents.map((document) => (
                   <div key={document.id} className="flex flex-col justify-between gap-3 rounded-xl border border-[#EDF5F2]/10 bg-[#00261C]/30 p-4 sm:flex-row sm:items-center">
                     <div><p className="text-sm font-semibold">{document.filename}</p><p className="mt-1 text-xs text-[#EDF5F2]/40">{document.document_type.replace(/_/g, ' ')} · Version {document.version}{document.correction_round ? ` · Correction round ${document.correction_round}` : ''}</p></div>
@@ -177,8 +190,9 @@ export default function ProoflineCaseDetail() {
 
             <aside className="space-y-5">
               <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-5">
-                <div className="mb-4 flex items-center gap-2"><Users className="h-5 w-5 text-[#B2F273]" /><h2 className="font-display font-bold">Parties</h2></div>
-                {tradeCase.parties.length ? <ul className="space-y-3">{tradeCase.parties.map((party) => <li key={party.id} className="border-b border-[#EDF5F2]/10 pb-3 last:border-0 last:pb-0"><p className="text-sm font-medium">{party.name}</p><p className="mt-1 text-xs capitalize text-[#EDF5F2]/40">{party.role.replace(/_/g, ' ')}{party.country_code ? ` · ${party.country_code}` : ''}</p></li>)}</ul> : <p className="text-sm text-[#EDF5F2]/40">Add the buyer, seller and other parties.</p>}
+                <div className="mb-4 flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Users className="h-5 w-5 text-[#B2F273]" /><h2 className="font-display font-bold">Parties</h2></div><button onClick={() => setShowPartyForm((value) => !value)} className="rounded-md p-1.5 text-[#EDF5F2]/45 hover:bg-[#EDF5F2]/5 hover:text-[#B2F273]" aria-label="Add party"><Plus className="h-4 w-4" /></button></div>
+                {showPartyForm && caseId ? <div className="mb-4"><ProoflinePartyForm caseId={caseId} onCancel={() => setShowPartyForm(false)} onSaved={() => { setShowPartyForm(false); void load() }} /></div> : null}
+                {tradeCase.parties.length ? <ul className="space-y-3">{tradeCase.parties.map((party) => <li key={party.id} className="flex items-start justify-between gap-2 border-b border-[#EDF5F2]/10 pb-3 last:border-0 last:pb-0"><div><p className="text-sm font-medium">{party.name}</p><p className="mt-1 text-xs capitalize text-[#EDF5F2]/40">{party.role.replace(/_/g, ' ')}{party.country_code ? ` · ${party.country_code}` : ''}</p></div>{tradeCase.status === 'draft' || tradeCase.status === 'action_required' ? <button onClick={() => void removeParty(party.id)} aria-label={`Remove ${party.name}`} className="p-1 text-[#EDF5F2]/25 hover:text-red-300"><Trash2 className="h-3.5 w-3.5" /></button> : null}</li>)}</ul> : <p className="text-sm text-[#EDF5F2]/40">Add the buyer, seller and other parties.</p>}
               </section>
 
               <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-5">

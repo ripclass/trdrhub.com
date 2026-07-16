@@ -101,6 +101,14 @@ class _Repo:
             "decisions": [],
         }
 
+    def create_party(self, *, company_id, case_id, values):
+        self.calls.append(("create_party", company_id, case_id, values.copy()))
+        return SimpleNamespace(id=uuid.uuid4(), company_id=company_id, trade_case_id=case_id, **values)
+
+    def delete_party(self, *, company_id, case_id, party_id):
+        self.calls.append(("delete_party", company_id, case_id, party_id))
+        return True
+
 
 class _Db:
     def __init__(self, case):
@@ -240,3 +248,40 @@ def test_case_detail_contains_tenant_scoped_customer_snapshot(monkeypatch):
     assert response.actions == []
     assert response.decision_history == []
     assert response.documents == []
+
+
+def test_parties_are_created_and_deleted_inside_authenticated_company(monkeypatch):
+    company_id = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
+    db = _Db(_case(company_id))
+    repositories = []
+
+    def repo_factory(bound_db):
+        repo = _Repo(bound_db)
+        repositories.append(repo)
+        return repo
+
+    monkeypatch.setattr(router_module, "ProoflineRepository", repo_factory)
+    monkeypatch.setattr(router_module, "_audit_action", lambda **_kwargs: None)
+    monkeypatch.setattr(router_module, "ensure_case_write_access", lambda *_args, **_kwargs: None)
+
+    created = asyncio.run(router_module.create_trade_case_party(
+        db.case.id,
+        payload=router_module.TradeCasePartyCreate(
+            role="buyer", name="US Buyer Inc", country_code="us",
+            identifiers={"buyer_code": "B-1"},
+        ),
+        current_user=user,
+        db=db,
+    ))
+    asyncio.run(router_module.delete_trade_case_party(
+        db.case.id, created.id, current_user=user, db=db,
+    ))
+
+    assert created.country_code == "US"
+    assert all(
+        call[1] == company_id
+        for repository in repositories
+        for call in repository.calls
+        if call[0] in {"get", "create_party", "delete_party"}
+    )

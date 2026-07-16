@@ -1,4 +1,10 @@
-import type { PaymentArrangement, TradeCaseDetail, TradeCaseSummary } from '@shared/types'
+import type {
+  PaymentArrangement,
+  TradeCaseDetail,
+  TradeCaseDocument,
+  TradeCaseParty,
+  TradeCaseSummary,
+} from '@shared/types'
 
 import { api } from '@/api/client'
 
@@ -45,5 +51,40 @@ export async function updateTradeCase(
   input: Partial<TradeCaseCreateInput>,
 ): Promise<TradeCaseDetail> {
   const response = await api.patch<TradeCaseDetail>(`/api/proofline/cases/${caseId}`, input)
+  return response.data
+}
+
+export async function createTradeCaseParty(
+  caseId: string,
+  input: { role: string; name: string; country_code?: string; identifiers?: Record<string, unknown> },
+): Promise<TradeCaseParty> {
+  const response = await api.post<TradeCaseParty>(`/api/proofline/cases/${caseId}/parties`, input)
+  return response.data
+}
+
+export async function deleteTradeCaseParty(caseId: string, partyId: string): Promise<void> {
+  await api.delete(`/api/proofline/cases/${caseId}/parties/${partyId}`)
+}
+
+export async function uploadTradeCaseDocument(
+  caseId: string,
+  input: {
+    file: File
+    logicalKey: string
+    documentType?: string
+    supersedesId?: string
+    correctionRound?: number
+  },
+): Promise<TradeCaseDocument> {
+  const body = new FormData()
+  body.append('file', input.file)
+  body.append('logical_key', input.logicalKey)
+  if (input.documentType) body.append('document_type', input.documentType)
+  if (input.supersedesId) body.append('supersedes_id', input.supersedesId)
+  body.append('correction_round', String(input.correctionRound || 0))
+  const response = await api.post<TradeCaseDocument>(
+    `/api/proofline/cases/${caseId}/documents/upload`,
+    body,
+  )
   return response.data
 }

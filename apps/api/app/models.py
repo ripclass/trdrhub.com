@@ -116,6 +116,7 @@ class WorkflowType(str, Enum):
     CBAM_READINESS = "cbam_readiness"
     EUDR_READINESS = "eudr_readiness"
     CBAM_EUDR_READINESS = "cbam_eudr_readiness"
+    PROOFLINE = "proofline"
 
 
 class DocumentType(str, Enum):

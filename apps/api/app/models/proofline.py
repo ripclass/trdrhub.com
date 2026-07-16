@@ -137,6 +137,11 @@ class TradeCase(Base):
         ForeignKey("validation_sessions.id", ondelete="SET NULL"),
         nullable=True,
     )
+    document_session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("validation_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     final_report_id = Column(
         UUID(as_uuid=True), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True
     )
@@ -175,6 +180,7 @@ class TradeCase(Base):
             "status",
         ),
         Index("ix_trade_cases_lcopilot_source", "source_lcopilot_session_id"),
+        Index("ix_trade_cases_document_session", "document_session_id"),
         CheckConstraint("correction_rounds_used >= 0", name="ck_trade_cases_rounds_nonnegative"),
     )
 

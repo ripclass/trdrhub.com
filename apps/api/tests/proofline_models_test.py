@@ -68,6 +68,7 @@ def test_trade_case_reuses_existing_tenant_user_session_and_report_models():
         "status",
         "updated_at",
     )
+    assert table.c.document_session_id.nullable is True
 
 
 def test_case_documents_reference_existing_documents_and_preserve_lineage():
@@ -164,3 +165,18 @@ def test_proofline_migration_is_chained_and_reversible():
     ):
         assert f'op.create_table(\n        "{table}"' in source
         assert f'op.drop_table("{table}")' in source
+
+
+def test_proofline_document_session_migration_is_chained_and_reversible():
+    path = Path("apps/api/alembic/versions/20260716_add_proofline_document_session.py")
+    spec = importlib.util.spec_from_file_location("proofline_document_session_migration", path)
+    assert spec and spec.loader
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    assert migration.down_revision == "20260716_add_proofline_trade_cases"
+    source = path.read_text(encoding="utf-8")
+    assert "op.add_column(" in source
+    assert '"trade_cases"' in source
+    assert '"document_session_id"' in source
+    assert 'op.drop_column("trade_cases", "document_session_id")' in source

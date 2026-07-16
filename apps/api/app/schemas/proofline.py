@@ -84,6 +84,20 @@ class TradeCasePartyResponse(BaseModel):
     identifiers: dict[str, Any] = Field(default_factory=dict)
 
 
+class TradeCasePartyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: str = Field(min_length=2, max_length=64)
+    name: str = Field(min_length=2, max_length=255)
+    country_code: Optional[str] = Field(default=None, min_length=2, max_length=2)
+    identifiers: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("country_code")
+    @classmethod
+    def uppercase_country(cls, value: Optional[str]) -> Optional[str]:
+        return value.upper() if value else value
+
+
 class ProoflineCheckResponse(BaseModel):
     id: UUID
     module: str
@@ -199,6 +213,8 @@ __all__ = [
     "TradeCaseDocumentAssociate",
     "TradeCaseDocumentResponse",
     "TradeCaseListResponse",
+    "TradeCasePartyCreate",
+    "TradeCasePartyResponse",
     "TradeCaseSummaryResponse",
     "TradeCaseUpdate",
 ]

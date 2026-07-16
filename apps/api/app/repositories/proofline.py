@@ -180,5 +180,38 @@ class ProoflineRepository:
             "decisions": decisions,
         }
 
+    def create_party(
+        self,
+        *,
+        company_id: uuid.UUID,
+        case_id: uuid.UUID,
+        values: dict[str, Any],
+    ) -> TradeCaseParty:
+        party = TradeCaseParty(
+            id=uuid.uuid4(),
+            company_id=company_id,
+            trade_case_id=case_id,
+            **values,
+        )
+        self.db.add(party)
+        return party
+
+    def delete_party(
+        self, *, company_id: uuid.UUID, case_id: uuid.UUID, party_id: uuid.UUID
+    ) -> bool:
+        party = (
+            self.db.query(TradeCaseParty)
+            .filter(
+                TradeCaseParty.id == party_id,
+                TradeCaseParty.company_id == company_id,
+                TradeCaseParty.trade_case_id == case_id,
+            )
+            .first()
+        )
+        if party is None:
+            return False
+        self.db.delete(party)
+        return True
+
 
 __all__ = ["ProoflineRepository", "new_case_reference"]

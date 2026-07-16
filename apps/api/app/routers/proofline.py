@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
@@ -19,6 +19,8 @@ from app.schemas.proofline import (
     TradeCaseDocumentAssociate,
     TradeCaseDocumentResponse,
     TradeCaseListResponse,
+    TradeCasePartyCreate,
+    TradeCasePartyResponse,
     TradeCaseSummaryResponse,
     TradeCaseUpdate,
 )
@@ -29,6 +31,7 @@ from app.services.proofline.documents import (
     associate_document,
     list_case_documents,
 )
+from app.services.proofline.uploads import ProoflineUploadError, ingest_case_document
 
 
 logger = logging.getLogger(__name__)
@@ -354,6 +357,87 @@ async def update_trade_case(
     return _case_response(repository, trade_case, detail=True)
 
 
+def _ensure_case_intake_mutable(trade_case) -> None:
+    if trade_case.status not in {
+        TradeCaseStatus.DRAFT.value,
+        TradeCaseStatus.ACTION_REQUIRED.value,
+    }:
+        raise HTTPException(status_code=409, detail="Case intake cannot be changed in this state")
+
+
+def _party_response(party) -> TradeCasePartyResponse:
+    return TradeCasePartyResponse(
+        id=party.id,
+        role=party.role,
+        name=party.name,
+        country_code=party.country_code,
+        identifiers=party.identifiers or {},
+    )
+
+
+@router.post(
+    "/{case_id}/parties",
+    response_model=TradeCasePartyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_trade_case_party(
+    case_id: UUID,
+    payload: TradeCasePartyCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TradeCasePartyResponse:
+    ensure_case_write_access(db, current_user)
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=company_id, case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    _ensure_case_intake_mutable(trade_case)
+    party = repository.create_party(
+        company_id=company_id,
+        case_id=case_id,
+        values=payload.model_dump(exclude_none=True),
+    )
+    db.commit()
+    db.refresh(party)
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_party_created",
+        trade_case_id=case_id,
+        values={"party_id": str(party.id), "role": party.role},
+    )
+    return _party_response(party)
+
+
+@router.delete("/{case_id}/parties/{party_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_trade_case_party(
+    case_id: UUID,
+    party_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    ensure_case_write_access(db, current_user)
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=company_id, case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    _ensure_case_intake_mutable(trade_case)
+    if not repository.delete_party(
+        company_id=company_id, case_id=case_id, party_id=party_id
+    ):
+        raise HTTPException(status_code=404, detail="Trade-case party not found")
+    db.commit()
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_party_deleted",
+        trade_case_id=case_id,
+        values={"party_id": str(party_id)},
+    )
+
+
 def _document_response(db: Session, association) -> TradeCaseDocumentResponse:
     document = db.query(Document).filter(Document.id == association.document_id).first()
     if document is None:
@@ -450,6 +534,75 @@ async def attach_trade_case_document(
         values={
             "document_id": str(association.document_id),
             "logical_key": association.logical_key,
+            "version": association.version_number,
+            "correction_round": association.correction_round,
+        },
+    )
+    return _document_response(db, association)
+
+
+@router.post(
+    "/{case_id}/documents/upload",
+    response_model=TradeCaseDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_trade_case_document(
+    case_id: UUID,
+    file: UploadFile = File(...),
+    logical_key: str = Form(..., min_length=1, max_length=128),
+    document_type: Optional[str] = Form(default=None, max_length=64),
+    supersedes_id: Optional[UUID] = Form(default=None),
+    correction_round: int = Form(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TradeCaseDocumentResponse:
+    ensure_case_write_access(db, current_user)
+    company_id = _company_id(current_user)
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=company_id, case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    if trade_case.status not in {
+        TradeCaseStatus.DRAFT.value,
+        TradeCaseStatus.ACTION_REQUIRED.value,
+        TradeCaseStatus.CUSTOMER_RESUBMITTED.value,
+    }:
+        raise HTTPException(status_code=409, detail="Documents cannot be changed in this case state")
+    try:
+        association = await ingest_case_document(
+            db,
+            trade_case=trade_case,
+            user=current_user,
+            file=file,
+            logical_key=logical_key,
+            declared_document_type=document_type,
+            supersedes_id=supersedes_id,
+            correction_round=correction_round,
+        )
+        db.commit()
+        db.refresh(association)
+    except (ProoflineUploadError, DuplicateCaseDocument, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ProoflineDocumentAccessError:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Document version is not available")
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Proofline document upload failed", extra={"trade_case_id": str(case_id)}
+        )
+        raise HTTPException(status_code=502, detail="Document processing is temporarily unavailable")
+
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_document_uploaded",
+        trade_case_id=case_id,
+        values={
+            "document_id": str(association.document_id),
+            "logical_key": association.logical_key,
+            "document_type": association.document_type,
             "version": association.version_number,
             "correction_round": association.correction_round,
         },

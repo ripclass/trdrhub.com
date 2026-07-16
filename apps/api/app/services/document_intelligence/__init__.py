@@ -12,7 +12,11 @@ These components run BEFORE validation to ensure documents are correctly
 identified and of sufficient quality for downstream processing.
 """
 
-from .doc_type_classifier import DocumentTypeClassifier, ClassificationResult
+from .doc_type_classifier import (
+    ClassificationResult,
+    DocumentTypeClassifier,
+    get_doc_type_classifier,
+)
 from .ocr_quality_gate import OCRQualityGate, QualityAssessment
 from .language_detector import LanguageDetector, LanguageResult
 from .ai_classifier import (
@@ -29,6 +33,7 @@ __all__ = [
     # Pattern-based classifier
     "DocumentTypeClassifier",
     "ClassificationResult",
+    "get_doc_type_classifier",
     # AI-enhanced classifier
     "AIDocumentClassifier",
     "AIClassificationResult",
