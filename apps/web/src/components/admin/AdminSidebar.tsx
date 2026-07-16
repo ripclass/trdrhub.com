@@ -50,6 +50,7 @@ import { UserMenu } from '@/components/layout/UserMenu';
 type AdminSection =
   | "overview"
   | "review-queue"
+  | "proofline-review"
   | "ops-monitoring"
   | "ops-jobs"
   | "ops-alerts"
@@ -120,6 +121,7 @@ const navigation: SidebarSection[] = [
     items: [
       // Backend enforces require_sysadmin; sysadmins carry the '*' permission.
       { name: 'Review Queue', section: 'review-queue', icon: CheckSquare, permissions: ['review:read'] },
+      { name: 'Proofline Queue', section: 'proofline-review', icon: Shield, permissions: ['review:read'] },
     ],
   },
 ];

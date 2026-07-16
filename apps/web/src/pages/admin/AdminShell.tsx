@@ -39,6 +39,7 @@ import { SystemFeatureFlags } from "./sections/system/FeatureFlags";
 import { SystemReleases } from "./sections/system/Releases";
 import { SystemSettings } from "./sections/system/Settings";
 import { ReviewQueue } from "./sections/review/ReviewQueue";
+import { ProoflineReviewQueue } from "./sections/review/ProoflineReviewQueue";
 import { RulesList } from "./sections/rules/List";
 import { RulesGovernance } from "./sections/rules/Governance";
 import { RulesUpload } from "./sections/rules/Upload";
@@ -49,6 +50,7 @@ import { BankManagement } from "./sections/banks/BankManagement";
 const SECTION_OPTIONS = [
   "overview",
   "review-queue",
+  "proofline-review",
   "ops-monitoring",
   "ops-jobs",
   "ops-alerts",
@@ -152,6 +154,7 @@ export default function AdminShell() {
         <div className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
           {activeSection === "overview" && <AdminOverview />}
           {activeSection === "review-queue" && <ReviewQueue />}
+          {activeSection === "proofline-review" && <ProoflineReviewQueue />}
           {activeSection === "ops-monitoring" && <OpsMonitoring />}
           {activeSection === "ops-jobs" && <OpsJobs />}
           {activeSection === "ops-alerts" && <OpsAlerts />}
