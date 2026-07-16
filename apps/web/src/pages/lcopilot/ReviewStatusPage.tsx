@@ -11,12 +11,13 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { upgradeLcopilotToProofline } from "@/lib/proofline/api";
 import {
   AlertTriangle,
   ArrowRight,
@@ -116,6 +117,7 @@ export default function ReviewStatusPage({
   embedded?: boolean;
 } = {}) {
   const params = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const jobId = jobIdProp ?? params.jobId;
   const [status, setStatus] = useState<ReviewStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +125,7 @@ export default function ReviewStatusPage({
   const [downloading, setDownloading] = useState(false);
   const [products, setProducts] = useState<PurchasableProduct[]>([]);
   const [payingProduct, setPayingProduct] = useState<string | null>(null);
+  const [upgradingToProofline, setUpgradingToProofline] = useState(false);
   // Just back from Stripe? Webhook may lag a few seconds behind the redirect.
   const justPaid = typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("checkout") === "success";
@@ -196,6 +199,18 @@ export default function ReviewStatusPage({
       window.alert("The report file isn't available right now — your full results page has every finding.");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const upgradeToProofline = async () => {
+    if (!jobId) return;
+    setUpgradingToProofline(true);
+    try {
+      const upgraded = await upgradeLcopilotToProofline(jobId);
+      navigate(`/proofline/cases/${upgraded.case_id}`);
+    } catch {
+      setUpgradingToProofline(false);
+      window.alert("This LC review could not be upgraded right now. Please try again.");
     }
   };
 
@@ -418,7 +433,27 @@ export default function ReviewStatusPage({
                         </Link>
                       </Button>
                     )}
+                    {!(status.workflow_type || "").includes("readiness") && (
+                      <Button
+                        variant="outline"
+                        disabled={upgradingToProofline}
+                        onClick={upgradeToProofline}
+                      >
+                        {upgradingToProofline ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="h-4 w-4 mr-2" />
+                        )}
+                        Upgrade to Proofline
+                      </Button>
+                    )}
                   </div>
+                  {!(status.workflow_type || "").includes("readiness") && (
+                    <p className="mt-4 text-xs text-green-800 dark:text-green-300">
+                      LCopilot checks the instrument. Proofline clears the trade. Your LC,
+                      extracted fields, findings, report reference, and eligible payment credit carry over.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}

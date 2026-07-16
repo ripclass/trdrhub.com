@@ -11,6 +11,7 @@ import {
   resubmitTradeCase,
   submitTradeCase,
   startProoflineCheckout,
+  upgradeLcopilotToProofline,
 } from '../api'
 
 vi.mock('@/api/client', () => ({
@@ -36,6 +37,7 @@ describe('Proofline API client', () => {
     await submitTradeCase('case-1')
     await startProoflineCheckout('case-1')
     await respondToRemediation('case-1', 'action-1', { response: 'Corrected' })
+    await upgradeLcopilotToProofline('lc-session-1')
     await resubmitTradeCase('case-1')
 
     expect(api.post).toHaveBeenCalledWith('/api/proofline/cases', {
@@ -52,6 +54,7 @@ describe('Proofline API client', () => {
     expect(api.post).toHaveBeenCalledWith('/api/proofline/cases/case-1/actions/action-1/respond', {
       response: 'Corrected',
     })
+    expect(api.post).toHaveBeenCalledWith('/api/proofline/upgrades/lcopilot/lc-session-1')
     expect(api.post).toHaveBeenLastCalledWith('/api/proofline/cases/case-1/resubmit')
   })
 })

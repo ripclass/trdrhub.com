@@ -65,6 +65,21 @@ export async function startProoflineCheckout(caseId: string): Promise<string> {
   return response.data.checkout_url
 }
 
+export async function upgradeLcopilotToProofline(sessionId: string): Promise<{
+  case_id: string
+  case_reference: string
+  source_lcopilot_session_id: string
+  created: boolean
+}> {
+  const response = await api.post<{
+    case_id: string
+    case_reference: string
+    source_lcopilot_session_id: string
+    created: boolean
+  }>(`/api/proofline/upgrades/lcopilot/${sessionId}`)
+  return response.data
+}
+
 export async function submitTradeCase(caseId: string): Promise<TradeCaseDetail> {
   const response = await api.post<TradeCaseDetail>(`/api/proofline/cases/${caseId}/submit`)
   return response.data

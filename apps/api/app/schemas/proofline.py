@@ -251,6 +251,13 @@ class ProoflineCheckoutResponse(BaseModel):
     checkout_url: str
 
 
+class ProoflineUpgradeResponse(BaseModel):
+    case_id: UUID
+    case_reference: str
+    source_lcopilot_session_id: UUID
+    created: bool
+
+
 __all__ = [
     "TradeCaseCreate",
     "TradeCaseDetailResponse",
@@ -262,6 +269,7 @@ __all__ = [
     "ProoflineCheckoutResponse",
     "ProoflineQuoteResponse",
     "ProoflineServicePackageResponse",
+    "ProoflineUpgradeResponse",
     "RemediationResponseRequest",
     "TradeCaseSummaryResponse",
     "TradeCaseUpdate",
