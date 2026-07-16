@@ -126,6 +126,24 @@ from .report_review import (
     REPORT_REVIEW_STATE_VALUES,
 )
 
+# Proofline — Verified Trade Clearance
+from .proofline import (
+    BuyerRequirement,
+    PaymentArrangement,
+    ProoflineCheckState,
+    ProoflineDecisionValue,
+    ProoflineFinding,
+    ProoflineFindingStatus,
+    RemediationAction,
+    TradeCase,
+    TradeCaseCheckRun,
+    TradeCaseDecision,
+    TradeCaseDocument,
+    TradeCaseEvent,
+    TradeCaseParty,
+    TradeCaseStatus,
+)
+
 __all__ = [
     "User",
     "UserRole",
@@ -202,4 +220,19 @@ __all__ = [
     "ReportReviewEvent",
     "ReportReviewState",
     "REPORT_REVIEW_STATE_VALUES",
+    # Proofline models
+    "BuyerRequirement",
+    "PaymentArrangement",
+    "ProoflineCheckState",
+    "ProoflineDecisionValue",
+    "ProoflineFinding",
+    "ProoflineFindingStatus",
+    "RemediationAction",
+    "TradeCase",
+    "TradeCaseCheckRun",
+    "TradeCaseDecision",
+    "TradeCaseDocument",
+    "TradeCaseEvent",
+    "TradeCaseParty",
+    "TradeCaseStatus",
 ]
