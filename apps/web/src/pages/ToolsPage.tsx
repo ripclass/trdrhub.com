@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   TreeDeciduous,
 } from "lucide-react";
+import { isProoflineEnabled } from "@/lib/proofline/featureFlags";
 
 const liveTools = [
   {
@@ -69,7 +70,7 @@ const liveTools = [
     price: "free check · report $149",
     cta: "Check my scope",
   },
-];
+].filter((tool) => tool.name !== "Proofline" || isProoflineEnabled());
 
 const ToolsPage = () => {
   return (

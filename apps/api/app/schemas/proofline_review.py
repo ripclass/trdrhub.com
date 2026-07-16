@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
+from datetime import date, datetime
+from typing import Any, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,6 +61,39 @@ class AnalystDecisionRequest(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=128)
 
 
+class BuyerRequirementCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    company_id: UUID
+    buyer_reference: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=2, max_length=255)
+    description: str = Field(min_length=2, max_length=10000)
+    applicable_party_type: Optional[str] = Field(default=None, max_length=64)
+    product_scope: dict[str, Any] = Field(default_factory=dict)
+    jurisdiction: Optional[str] = Field(default=None, max_length=64)
+    required_document_type: Optional[str] = Field(default=None, max_length=64)
+    required_credential_type: Optional[str] = Field(default=None, max_length=128)
+    approved_issuer_type: Optional[str] = Field(default=None, max_length=128)
+    validity_period_days: Optional[int] = Field(default=None, gt=0)
+    severity: str = Field(default="medium", pattern="^(critical|high|medium|low|info)$")
+    effective_date: date
+    version: int = Field(default=1, gt=0)
+    is_active: bool = True
+    rulhub_mapping: Optional[dict[str, Any]] = None
+
+
+class BuyerRequirementActivationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_active: bool
+
+
+class BuyerRequirementResponse(BuyerRequirementCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    created_by_user_id: Optional[UUID] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 __all__ = [
     "AnalystClaimRequest",
     "AnalystCorrectionRequest",
@@ -67,4 +101,7 @@ __all__ = [
     "AnalystFindingCreate",
     "AnalystFindingUpdate",
     "AnalystNoteRequest",
+    "BuyerRequirementActivationRequest",
+    "BuyerRequirementCreate",
+    "BuyerRequirementResponse",
 ]

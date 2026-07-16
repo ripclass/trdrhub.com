@@ -16,6 +16,7 @@ import ProoflineLanding from './pages/proofline/ProoflineLanding'
 import ProoflineNewCase from './pages/proofline/ProoflineNewCase'
 import ProoflineCases from './pages/proofline/ProoflineCases'
 import ProoflineCaseDetail from './pages/proofline/ProoflineCaseDetail'
+import { isProoflineEnabled } from './lib/proofline/featureFlags'
 import DocsPage from './pages/resources/DocsPage'
 import APIPage from './pages/resources/APIPage'
 import UCP600Page from './pages/resources/UCP600Page'
@@ -145,10 +146,12 @@ function App() {
         <Route path="/lc-demo" element={<Index />} />
         <Route path="/trdr" element={<TRDRHub />} />
         <Route path="/tools" element={<ToolsPage />} />
-        <Route path="/proofline" element={<ProoflineLanding />} />
-        <Route path="/proofline/new" element={<RequireAuth><ProoflineNewCase /></RequireAuth>} />
-        <Route path="/proofline/cases" element={<RequireAuth><ProoflineCases /></RequireAuth>} />
-        <Route path="/proofline/cases/:caseId" element={<RequireAuth><ProoflineCaseDetail /></RequireAuth>} />
+        {isProoflineEnabled() ? <>
+          <Route path="/proofline" element={<ProoflineLanding />} />
+          <Route path="/proofline/new" element={<RequireAuth><ProoflineNewCase /></RequireAuth>} />
+          <Route path="/proofline/cases" element={<RequireAuth><ProoflineCases /></RequireAuth>} />
+          <Route path="/proofline/cases/:caseId" element={<RequireAuth><ProoflineCaseDetail /></RequireAuth>} />
+        </> : null}
         <Route path="/technology" element={<TechnologyPage />} />
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/api" element={<APIPage />} />

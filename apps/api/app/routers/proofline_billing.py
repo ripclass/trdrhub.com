@@ -25,9 +25,14 @@ from app.services.proofline.billing import (
     quote_for_case,
 )
 from app.services.proofline.upgrade import LCopilotUpgradeError, upgrade_lcopilot_session
+from app.services.proofline.feature_flags import require_proofline_enabled
 
 
-router = APIRouter(prefix="/api/proofline", tags=["proofline-billing"])
+router = APIRouter(
+    prefix="/api/proofline",
+    tags=["proofline-billing"],
+    dependencies=[Depends(require_proofline_enabled)],
+)
 
 
 def _owned_case(db: Session, current_user: User, case_id: UUID) -> TradeCase:

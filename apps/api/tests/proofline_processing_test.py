@@ -100,6 +100,29 @@ def test_case_context_maps_current_evidence_into_payment_first_shape():
     assert context["documents"]["purchase_order"]["hash"] == "a" * 64
 
 
+def test_customer_transaction_details_cannot_override_computed_case_evidence():
+    trade_case = _case(transaction_details={
+        "trade_case_id": "forged-case",
+        "company_id": "forged-company",
+        "parties": [{"name": "forged"}],
+        "documents": {"forged": True},
+        "ein_verification_results": [{"status": "Verified"}],
+        "ein_requested": True,
+    })
+    context = build_case_context(
+        trade_case,
+        parties=[_party("buyer", "US Buyer Inc", "US"), _party("seller", "Exporter", "BD")],
+        documents=[_document("commercial_invoice", {"amount": 10})],
+    )
+
+    assert context["trade_case_id"] == str(trade_case.id)
+    assert context["company_id"] == str(trade_case.company_id)
+    assert context["parties"][0]["name"] == "US Buyer Inc"
+    assert "forged" not in context["documents"]
+    assert "ein_verification_results" not in context
+    assert context["ein_requested"] is True
+
+
 def test_submission_requires_counterparties_and_current_evidence():
     with pytest.raises(SubmissionValidationError) as error:
         validate_submission_context(
@@ -135,4 +158,3 @@ def test_adapter_registry_routes_lc_and_open_account_without_copying_engines():
 )
 def test_recommendation_is_fail_closed(checks, findings, expected):
     assert recommend_decision(checks=checks, findings=findings) == expected
-

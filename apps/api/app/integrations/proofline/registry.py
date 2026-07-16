@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from app.services.ein_client import is_ein_configured
+
+from .buyer_requirements import BuyerRequirementsAdapter
 from .document_review import DocumentReviewAdapter
+from .ein import EINVerificationAdapter
 from .lcopilot import LCopilotAdapter
 from .open_account import OpenAccountAdapter
 from .regulatory import CBAMAdapter, EUDRAdapter
@@ -19,10 +23,10 @@ def build_adapter_registry() -> dict[str, object | None]:
         "rulhub": RulHubRequirementsAdapter(),
         "cbam": CBAMAdapter(),
         "eudr": EUDRAdapter(),
-        # EIN remains API-only. Until production credentials are configured,
-        # run_check persists a visible pending-review state rather than a mock.
-        "ein": None,
-        "buyer_requirements": None,
+        # EIN remains API-only. Without live server credentials, run_check
+        # persists pending-review rather than presenting mock verification.
+        "ein": EINVerificationAdapter() if is_ein_configured() else None,
+        "buyer_requirements": BuyerRequirementsAdapter(),
     }
 
 

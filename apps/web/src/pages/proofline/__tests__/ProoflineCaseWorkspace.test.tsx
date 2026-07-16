@@ -10,10 +10,12 @@ vi.mock('@/lib/proofline/api', () => ({
   deleteTradeCaseParty: vi.fn(),
   getTradeCase: vi.fn(),
   getProoflineQuote: vi.fn(),
+  getProoflineReport: vi.fn(),
   listTradeCases: vi.fn(),
   resubmitTradeCase: vi.fn(),
   submitTradeCase: vi.fn(),
   startProoflineCheckout: vi.fn(),
+  updateTradeCase: vi.fn(),
   respondToRemediation: vi.fn(),
 }))
 

@@ -16,6 +16,7 @@ export function ProoflinePartyForm({ caseId, onSaved, onCancel }: { caseId: stri
   const [role, setRole] = useState('buyer')
   const [name, setName] = useState('')
   const [countryCode, setCountryCode] = useState('')
+  const [buyerReference, setBuyerReference] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -28,6 +29,9 @@ export function ProoflinePartyForm({ caseId, onSaved, onCancel }: { caseId: stri
         role,
         name: name.trim(),
         country_code: countryCode.trim().toUpperCase() || undefined,
+        identifiers: role === 'buyer' && buyerReference.trim()
+          ? { buyer_reference: buyerReference.trim() }
+          : undefined,
       })
       onSaved()
     } catch (caught) {
@@ -53,6 +57,11 @@ export function ProoflinePartyForm({ caseId, onSaved, onCancel }: { caseId: stri
         <label htmlFor="party-country" className="mb-1.5 block text-xs font-medium text-[#EDF5F2]/65">Country code</label>
         <Input id="party-country" value={countryCode} onChange={(event) => setCountryCode(event.target.value)} maxLength={2} placeholder="US" className="border-[#EDF5F2]/15 bg-[#00261C] text-white placeholder:text-[#EDF5F2]/25" />
       </div>
+      {role === 'buyer' ? <div>
+        <label htmlFor="buyer-reference" className="mb-1.5 block text-xs font-medium text-[#EDF5F2]/65">Buyer policy reference <span className="text-[#EDF5F2]/30">(optional)</span></label>
+        <Input id="buyer-reference" value={buyerReference} onChange={(event) => setBuyerReference(event.target.value)} maxLength={255} placeholder="Vendor or buyer account reference" className="border-[#EDF5F2]/15 bg-[#00261C] text-white placeholder:text-[#EDF5F2]/25" />
+        <p className="mt-1 text-[11px] leading-relaxed text-[#EDF5F2]/35">Used to attach buyer-specific evidence policies configured by your review team.</p>
+      </div> : null}
       {error ? <p role="alert" className="text-xs text-red-200">{error}</p> : null}
       <div className="flex gap-2">
         <Button type="button" onClick={onCancel} className="flex-1 border border-[#EDF5F2]/15 bg-transparent text-white hover:bg-[#EDF5F2]/5">Cancel</Button>

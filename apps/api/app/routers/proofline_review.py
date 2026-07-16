@@ -11,11 +11,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.core.security import require_sysadmin
 from app.database import get_db
 from app.models import (
     Company,
+    BuyerRequirement,
     Document,
     ProoflineFinding,
     RemediationAction,
@@ -35,6 +37,9 @@ from app.schemas.proofline_review import (
     AnalystFindingCreate,
     AnalystFindingUpdate,
     AnalystNoteRequest,
+    BuyerRequirementActivationRequest,
+    BuyerRequirementCreate,
+    BuyerRequirementResponse,
 )
 from app.services.audit_service import AuditService
 from app.services.proofline.review import (
@@ -46,13 +51,14 @@ from app.services.proofline.review import (
     request_correction,
 )
 from app.services.proofline.reports import ProoflineReportError, generate_proofline_report
+from app.services.proofline.feature_flags import require_proofline_enabled
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/admin/proofline",
     tags=["Proofline Analyst Queue"],
-    dependencies=[Depends(require_sysadmin)],
+    dependencies=[Depends(require_proofline_enabled), Depends(require_sysadmin)],
 )
 
 
@@ -92,6 +98,24 @@ def _audit(db: Session, admin: User, action: str, case_id: UUID, values: dict) -
         )
     except Exception:
         logger.exception("Proofline analyst audit hook failed", extra={"trade_case_id": str(case_id)})
+
+
+def _audit_requirement(
+    db: Session, admin: User, action: str, requirement_id: UUID, values: dict
+) -> None:
+    try:
+        AuditService(db).log_action(
+            action=action,
+            user=admin,
+            resource_type="proofline_buyer_requirement",
+            resource_id=str(requirement_id),
+            request_data=values,
+        )
+    except Exception:
+        logger.exception(
+            "Proofline buyer requirement audit hook failed",
+            extra={"buyer_requirement_id": str(requirement_id)},
+        )
 
 
 def _download_url(document: Document) -> Optional[str]:
@@ -165,6 +189,101 @@ def list_proofline_queue(
             "updated_at": trade_case.updated_at.isoformat() if trade_case.updated_at else None,
         })
     return {"count": len(items), "items": items}
+
+
+@router.get("/buyer-requirements", response_model=list[BuyerRequirementResponse])
+def list_buyer_requirements(
+    company_id: UUID,
+    buyer_reference: Optional[str] = None,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_sysadmin),
+) -> list[BuyerRequirementResponse]:
+    query = db.query(BuyerRequirement).filter(BuyerRequirement.company_id == company_id)
+    if buyer_reference:
+        query = query.filter(BuyerRequirement.buyer_reference == buyer_reference.strip())
+    if not include_inactive:
+        query = query.filter(BuyerRequirement.is_active.is_(True))
+    rows = query.order_by(
+        BuyerRequirement.buyer_reference.asc(),
+        BuyerRequirement.title.asc(),
+        BuyerRequirement.version.desc(),
+    ).all()
+    return [BuyerRequirementResponse.model_validate(item) for item in rows]
+
+
+@router.post(
+    "/buyer-requirements",
+    response_model=BuyerRequirementResponse,
+    status_code=201,
+)
+def create_buyer_requirement(
+    payload: BuyerRequirementCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_sysadmin),
+) -> BuyerRequirementResponse:
+    if db.query(Company.id).filter(Company.id == payload.company_id).first() is None:
+        raise HTTPException(status_code=404, detail="Company workspace not found")
+    values = payload.model_dump()
+    values["buyer_reference"] = values["buyer_reference"].strip()
+    requirement = BuyerRequirement(
+        id=uuid.uuid4(),
+        created_by_user_id=admin.id,
+        **values,
+    )
+    db.add(requirement)
+    try:
+        db.commit()
+        db.refresh(requirement)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This buyer requirement version already exists",
+        )
+    _audit_requirement(
+        db,
+        admin,
+        "proofline_buyer_requirement_created",
+        requirement.id,
+        {
+            "company_id": str(requirement.company_id),
+            "buyer_reference": requirement.buyer_reference,
+            "version": requirement.version,
+        },
+    )
+    return BuyerRequirementResponse.model_validate(requirement)
+
+
+@router.patch(
+    "/buyer-requirements/{requirement_id}/activation",
+    response_model=BuyerRequirementResponse,
+)
+def set_buyer_requirement_activation(
+    requirement_id: UUID,
+    payload: BuyerRequirementActivationRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_sysadmin),
+) -> BuyerRequirementResponse:
+    requirement = (
+        db.query(BuyerRequirement)
+        .filter(BuyerRequirement.id == requirement_id)
+        .first()
+    )
+    if requirement is None:
+        raise HTTPException(status_code=404, detail="Buyer requirement not found")
+    requirement.is_active = payload.is_active
+    requirement.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(requirement)
+    _audit_requirement(
+        db,
+        admin,
+        "proofline_buyer_requirement_activation_changed",
+        requirement.id,
+        {"is_active": requirement.is_active, "version": requirement.version},
+    )
+    return BuyerRequirementResponse.model_validate(requirement)
 
 
 @router.get("/{case_id}")

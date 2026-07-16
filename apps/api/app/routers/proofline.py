@@ -72,11 +72,16 @@ from app.services.proofline.billing import (
     is_checkout_enabled as is_proofline_checkout_enabled,
     quote_for_case,
 )
+from app.services.proofline.feature_flags import require_proofline_enabled
 from app.utils.s3_client import get_s3_client
 
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/proofline/cases", tags=["proofline"])
+router = APIRouter(
+    prefix="/api/proofline/cases",
+    tags=["proofline"],
+    dependencies=[Depends(require_proofline_enabled)],
+)
 
 
 def _company_id(current_user: User) -> UUID:

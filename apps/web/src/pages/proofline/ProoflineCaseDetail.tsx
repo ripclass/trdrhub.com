@@ -19,10 +19,11 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import type { ProoflineFinding, ProoflineQuote, TradeCaseDetail } from '@shared/types'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { ProoflineDocumentUpload } from '@/components/proofline/ProoflineDocumentUpload'
 import { ProoflinePartyForm } from '@/components/proofline/ProoflinePartyForm'
 import { ProoflineRemediationResponse } from '@/components/proofline/ProoflineRemediationResponse'
-import { deleteTradeCaseParty, getProoflineQuote, getProoflineReport, getTradeCase, resubmitTradeCase, startProoflineCheckout, submitTradeCase } from '@/lib/proofline/api'
+import { deleteTradeCaseParty, getProoflineQuote, getProoflineReport, getTradeCase, resubmitTradeCase, startProoflineCheckout, submitTradeCase, updateTradeCase } from '@/lib/proofline/api'
 import {
   checkStateLabels,
   checkTone,
@@ -82,6 +83,11 @@ export default function ProoflineCaseDetail() {
   const [quote, setQuote] = useState<ProoflineQuote | null>(null)
   const [paying, setPaying] = useState(false)
   const [downloadingReport, setDownloadingReport] = useState(false)
+  const [presentationReference, setPresentationReference] = useState('')
+  const [consentReference, setConsentReference] = useState('')
+  const [credentialType, setCredentialType] = useState('')
+  const [subjectReference, setSubjectReference] = useState('')
+  const [savingEin, setSavingEin] = useState(false)
 
   async function load() {
     if (!caseId) return
@@ -179,6 +185,40 @@ export default function ProoflineCaseDetail() {
       const detail = (caught as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setActionError(detail || 'The clearance report could not be downloaded. Please try again.')
       setDownloadingReport(false)
+    }
+  }
+
+  async function shareEinPresentation() {
+    if (!caseId || !presentationReference.trim() || !consentReference.trim() || !credentialType.trim()) return
+    setSavingEin(true)
+    setActionError(null)
+    const existing = Array.isArray(tradeCase.transaction_details.ein_presentations)
+      ? tradeCase.transaction_details.ein_presentations
+      : []
+    try {
+      const updated = await updateTradeCase(caseId, {
+        transaction_details: {
+          ...tradeCase.transaction_details,
+          ein_requested: true,
+          ein_presentations: [...existing, {
+            presentation_reference: presentationReference.trim(),
+            consent_reference: consentReference.trim(),
+            credential_type: credentialType.trim(),
+            subject_reference: subjectReference.trim() || undefined,
+            requested_claims: ['credentialStatus', 'issuer', 'issuanceDate', 'expirationDate'],
+          }],
+        },
+      })
+      setTradeCase(updated)
+      setPresentationReference('')
+      setConsentReference('')
+      setCredentialType('')
+      setSubjectReference('')
+    } catch (caught) {
+      const detail = (caught as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setActionError(detail || 'The EIN presentation reference could not be saved.')
+    } finally {
+      setSavingEin(false)
     }
   }
 
@@ -305,6 +345,19 @@ export default function ProoflineCaseDetail() {
                 <div className="mb-4 flex items-center gap-2"><Clock3 className="h-5 w-5 text-[#B2F273]" /><h2 className="font-display font-bold">Required actions</h2></div>
                 {openActions.length ? <ul className="space-y-3">{openActions.map((action) => <li key={action.id} className="rounded-lg border border-amber-400/20 bg-amber-500/5 p-3 text-sm text-[#EDF5F2]/65"><div className="flex items-start justify-between gap-2"><span>{action.requested_action}</span><span className="shrink-0 rounded-full border border-[#EDF5F2]/10 px-2 py-0.5 text-[10px] capitalize text-[#EDF5F2]/40">{action.status.replace(/_/g, ' ')}</span></div>{tradeCase.status === 'action_required' && caseId && !['resolved', 'submitted_for_review'].includes(action.status) ? <ProoflineRemediationResponse caseId={caseId} action={action} documents={tradeCase.documents} onSaved={() => void load()} /> : null}{action.customer_response ? <p className="mt-2 rounded bg-[#00261C]/35 p-2 text-xs text-[#EDF5F2]/45">Response: {action.customer_response}</p> : null}</li>)}</ul> : <p className="text-sm text-[#EDF5F2]/40">No open remediation actions.</p>}
                 {tradeCase.status === 'action_required' && openActions.length > 0 && openActions.every((action) => ['customer_responded', 'resolved'].includes(action.status)) ? <Button onClick={() => void requestFinalReview()} disabled={resubmitting} className="mt-4 w-full border-none bg-[#B2F273] font-bold text-[#00261C] hover:bg-[#a3e662]">{resubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BadgeCheck className="mr-2 h-4 w-4" />}Request final review</Button> : null}
+              </section>
+
+              <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-5">
+                <div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-[#B2F273]" /><h2 className="font-display font-bold">Identity & credentials</h2></div>
+                <p className="text-xs leading-relaxed text-[#EDF5F2]/40">Share consented EIN presentation references. Proofline stores verification results and disclosed claims, not wallet contents.</p>
+                {Array.isArray(tradeCase.transaction_details.ein_presentations) && tradeCase.transaction_details.ein_presentations.length ? <p className="mt-3 rounded-lg border border-[#B2F273]/20 bg-[#B2F273]/5 p-2 text-xs text-[#B2F273]">{tradeCase.transaction_details.ein_presentations.length} presentation reference(s) ready for verification.</p> : null}
+                {tradeCase.status === 'draft' ? <div className="mt-4 space-y-3">
+                  <Input aria-label="EIN presentation reference" value={presentationReference} onChange={(event) => setPresentationReference(event.target.value)} placeholder="Presentation reference" className="border-[#EDF5F2]/15 bg-[#00261C] text-white placeholder:text-[#EDF5F2]/25" />
+                  <Input aria-label="EIN consent reference" value={consentReference} onChange={(event) => setConsentReference(event.target.value)} placeholder="Consent reference" className="border-[#EDF5F2]/15 bg-[#00261C] text-white placeholder:text-[#EDF5F2]/25" />
+                  <Input aria-label="EIN credential type" value={credentialType} onChange={(event) => setCredentialType(event.target.value)} placeholder="Credential type" className="border-[#EDF5F2]/15 bg-[#00261C] text-white placeholder:text-[#EDF5F2]/25" />
+                  <Input aria-label="EIN subject reference" value={subjectReference} onChange={(event) => setSubjectReference(event.target.value)} placeholder="Organization or facility reference (optional)" className="border-[#EDF5F2]/15 bg-[#00261C] text-white placeholder:text-[#EDF5F2]/25" />
+                  <Button onClick={() => void shareEinPresentation()} disabled={savingEin || !presentationReference.trim() || !consentReference.trim() || !credentialType.trim()} className="w-full border border-[#EDF5F2]/15 bg-[#EDF5F2]/5 text-white hover:bg-[#EDF5F2]/10">{savingEin ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Share presentation reference</Button>
+                </div> : null}
               </section>
 
               <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-5">

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import (
+    BuyerRequirement,
     Document,
     ProoflineDecisionValue,
     ProoflineFinding,
@@ -50,6 +51,12 @@ DOCUMENT_ALIASES = {
     "credit_insurance": "payment_risk_coverage",
 }
 
+RESERVED_TRANSACTION_DETAIL_KEYS = {
+    "trade_case_id", "company_id", "parties", "documents", "document_records",
+    "documents_presence", "source_lcopilot_result", "ein_verification_results",
+    "buyer_requirements", "buyer_requirements_present",
+}
+
 
 def _serializable(value: Any) -> Any:
     if isinstance(value, (date, Decimal)):
@@ -81,9 +88,14 @@ def build_case_context(
     parties: Iterable[TradeCaseParty | Any],
     documents: Iterable[tuple[TradeCaseDocument | Any, Document | Any]],
     source_lcopilot_result: Optional[dict[str, Any]] = None,
+    buyer_requirements: Iterable[BuyerRequirement | Any] = (),
 ) -> dict[str, Any]:
     """Create one bounded, deterministic snapshot for all source adapters."""
-    details = dict(getattr(trade_case, "transaction_details", None) or {})
+    raw_details = dict(getattr(trade_case, "transaction_details", None) or {})
+    details = {
+        key: value for key, value in raw_details.items()
+        if key not in RESERVED_TRANSACTION_DETAIL_KEYS
+    }
     party_rows = [
         {
             "id": str(party.id),
@@ -131,7 +143,25 @@ def build_case_context(
     if not isinstance(payment_terms, dict):
         payment_terms = {"description": getattr(trade_case, "payment_terms", None)}
 
+    policy_rows = [{
+        "id": str(item.id),
+        "buyer_reference": item.buyer_reference,
+        "title": item.title,
+        "description": item.description,
+        "applicable_party_type": item.applicable_party_type,
+        "product_scope": dict(item.product_scope or {}),
+        "jurisdiction": item.jurisdiction,
+        "required_document_type": item.required_document_type,
+        "required_credential_type": item.required_credential_type,
+        "approved_issuer_type": item.approved_issuer_type,
+        "validity_period_days": item.validity_period_days,
+        "severity": item.severity,
+        "effective_date": item.effective_date,
+        "version": item.version,
+        "rulhub_mapping": dict(item.rulhub_mapping or {}) if item.rulhub_mapping else None,
+    } for item in buyer_requirements]
     context: dict[str, Any] = {
+        **details,
         "trade_case_id": str(trade_case.id),
         "company_id": str(trade_case.company_id),
         "payment_arrangement": trade_case.payment_arrangement,
@@ -151,8 +181,10 @@ def build_case_context(
             else None
         ),
         "source_lcopilot_result": source_lcopilot_result,
-        **details,
+        "buyer_requirements": policy_rows,
+        "buyer_requirements_present": bool(policy_rows),
     }
+    context["ein_requested"] = bool(context.get("ein_requested") or context.get("ein_presentations"))
     context["purchase_order"] = role_fields.get("purchase_order", {})
     context["invoice"] = role_fields.get("commercial_invoice", {})
     context["lc"] = role_fields.get("letter_of_credit", {})
@@ -239,11 +271,36 @@ def load_case_context(db: Session, trade_case: TradeCase) -> dict[str, Any]:
         )
         if source_session and isinstance(source_session.validation_results, dict):
             source_result = source_session.validation_results.get("structured_result")
+    details = dict(trade_case.transaction_details or {})
+    buyer_reference = details.get("buyer_reference")
+    if not buyer_reference:
+        for party in parties:
+            if party.role != "buyer":
+                continue
+            identifiers = dict(party.identifiers or {})
+            buyer_reference = identifiers.get("buyer_reference") or (
+                str(party.linked_company_id) if party.linked_company_id else party.name
+            )
+            break
+    requirements = []
+    if buyer_reference:
+        requirements = (
+            db.query(BuyerRequirement)
+            .filter(
+                BuyerRequirement.company_id == trade_case.company_id,
+                BuyerRequirement.buyer_reference == str(buyer_reference),
+                BuyerRequirement.is_active.is_(True),
+                BuyerRequirement.effective_date <= date.today(),
+            )
+            .order_by(BuyerRequirement.title.asc(), BuyerRequirement.version.desc())
+            .all()
+        )
     return build_case_context(
         trade_case,
         parties=parties,
         documents=documents,
         source_lcopilot_result=source_result,
+        buyer_requirements=requirements,
     )
 
 
@@ -284,7 +341,8 @@ async def process_trade_case(
     snapshot_hash = canonical_input_hash(context)
     current_checks: list[TradeCaseCheckRun] = []
     for applicability in applicability_for(trade_case.payment_arrangement, context=context):
-        check_key = f"{trade_case.correction_rounds_used}:{snapshot_hash[:24]}:{applicability.module}"
+        module_input_hash = canonical_input_hash(context)
+        check_key = f"{trade_case.correction_rounds_used}:{module_input_hash[:24]}:{applicability.module}"
         existing_check = (
             db.query(TradeCaseCheckRun)
             .filter(
@@ -318,6 +376,13 @@ async def process_trade_case(
         )
         current_checks.append(check_run)
         db.flush()
+        if applicability.module == "ein":
+            summary = check_run.result_summary or {}
+            metadata = summary.get("metadata") if isinstance(summary, dict) else None
+            if isinstance(metadata, dict):
+                verified = metadata.get("verification_results")
+                if isinstance(verified, list):
+                    context = {**context, "ein_verification_results": verified}
 
     checks = current_checks
     findings = (

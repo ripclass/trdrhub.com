@@ -164,6 +164,14 @@ class Settings(BaseSettings):
     PROOFLINE_CHECKOUT_ENABLED: bool = False
     PROOFLINE_LCOPILOT_CREDIT_DAYS: int = 30
     PROOFLINE_LCOPILOT_CREDIT_PERCENT: int = 100
+    # Proofline can be disabled independently without changing established
+    # LCopilot routes. EIN is opt-in and never falls back to mocked verification.
+    PROOFLINE_ENABLED: bool = True
+    PROOFLINE_EIN_ENABLED: bool = False
+    EIN_API_URL: str = ""
+    EIN_API_KEY: str = ""
+    EIN_VERIFY_PATH: str = "/v1/presentations/verify"
+    EIN_API_TIMEOUT_SECONDS: float = 15.0
 
     # Stub tooling guard
     STUB_STATUS_TOKEN: Optional[str] = None
