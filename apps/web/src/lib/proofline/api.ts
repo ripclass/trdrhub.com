@@ -1,5 +1,7 @@
 import type {
   PaymentArrangement,
+  ProoflineQuote,
+  ProoflineServicePackage,
   TradeCaseDetail,
   TradeCaseDocument,
   TradeCaseParty,
@@ -44,6 +46,23 @@ export async function listTradeCases(offset = 0, limit = 50): Promise<TradeCaseL
 export async function getTradeCase(caseId: string): Promise<TradeCaseDetail> {
   const response = await api.get<TradeCaseDetail>(`/api/proofline/cases/${caseId}`)
   return response.data
+}
+
+export async function listProoflinePackages(): Promise<ProoflineServicePackage[]> {
+  const response = await api.get<ProoflineServicePackage[]>('/api/proofline/packages')
+  return response.data
+}
+
+export async function getProoflineQuote(caseId: string): Promise<ProoflineQuote> {
+  const response = await api.get<ProoflineQuote>(`/api/proofline/cases/${caseId}/quote`)
+  return response.data
+}
+
+export async function startProoflineCheckout(caseId: string): Promise<string> {
+  const response = await api.post<{ checkout_url: string }>(
+    `/api/proofline/cases/${caseId}/checkout`,
+  )
+  return response.data.checkout_url
 }
 
 export async function submitTradeCase(caseId: string): Promise<TradeCaseDetail> {

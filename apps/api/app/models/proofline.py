@@ -95,6 +95,43 @@ class ProoflineFindingStatus(str, enum.Enum):
     UNABLE_TO_RESOLVE = "unable_to_resolve"
 
 
+class ProoflineServicePackage(Base):
+    """Configurable commercial package; prices never live in customer UI code."""
+
+    __tablename__ = "proofline_service_packages"
+
+    id = Column(String(64), primary_key=True)
+    name = Column(String(128), nullable=False)
+    description = Column(Text, nullable=False)
+    package_type = Column(String(24), nullable=False, default="case")
+    billing_mode = Column(String(24), nullable=False, default="payment")
+    currency = Column(String(3), nullable=False, default="USD")
+    amount_cents = Column(Integer, nullable=True)
+    price_label = Column(String(64), nullable=False)
+    stripe_price_id = Column(String(255), nullable=True)
+    included_documents = Column(Integer, nullable=True)
+    included_parties = Column(Integer, nullable=True)
+    included_correction_rounds = Column(Integer, nullable=False, default=1)
+    turnaround_class = Column(String(64), nullable=True)
+    features = Column(JSON_VALUE, nullable=False, default=list)
+    is_public = Column(Boolean, nullable=False, default=True)
+    self_service_enabled = Column(Boolean, nullable=False, default=True)
+    active = Column(Boolean, nullable=False, default=True)
+    display_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount_cents IS NULL OR amount_cents >= 0", name="ck_proofline_package_amount"),
+        CheckConstraint(
+            "included_correction_rounds >= 0", name="ck_proofline_package_correction_rounds"
+        ),
+        Index("ix_proofline_packages_active_public_order", "active", "is_public", "display_order"),
+    )
+
+
 class TradeCase(Base):
     __tablename__ = "trade_cases"
 
@@ -150,6 +187,11 @@ class TradeCase(Base):
     stripe_checkout_session_id = Column(String(255), nullable=True)
     stripe_payment_intent_id = Column(String(255), nullable=True)
     amount_paid_cents = Column(Integer, nullable=True)
+    credit_amount_cents = Column(Integer, nullable=False, default=0)
+    payment_currency = Column(String(3), nullable=True)
+    pricing_snapshot = Column(JSON_VALUE, nullable=False, default=dict)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+    refunded_at = Column(DateTime(timezone=True), nullable=True)
     correction_rounds_used = Column(Integer, nullable=False, default=0)
 
     submitted_at = Column(DateTime(timezone=True), nullable=True)
@@ -182,6 +224,7 @@ class TradeCase(Base):
         Index("ix_trade_cases_lcopilot_source", "source_lcopilot_session_id"),
         Index("ix_trade_cases_document_session", "document_session_id"),
         CheckConstraint("correction_rounds_used >= 0", name="ck_trade_cases_rounds_nonnegative"),
+        CheckConstraint("credit_amount_cents >= 0", name="ck_trade_cases_credit_nonnegative"),
     )
 
 

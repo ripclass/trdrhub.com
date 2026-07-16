@@ -159,6 +159,11 @@ class Settings(BaseSettings):
     # behavior. Flip to True at launch cutover once live keys + the webhook
     # endpoint are configured (see LAUNCH-NOTES.md).
     STRIPE_CHECKOUT_ENABLED: bool = False
+    # Proofline shares the hosted Stripe/webhook rails but has an independent
+    # rollout switch so established LCopilot checkout behavior is unchanged.
+    PROOFLINE_CHECKOUT_ENABLED: bool = False
+    PROOFLINE_LCOPILOT_CREDIT_DAYS: int = 30
+    PROOFLINE_LCOPILOT_CREDIT_PERCENT: int = 100
 
     # Stub tooling guard
     STUB_STATUS_TOKEN: Optional[str] = None

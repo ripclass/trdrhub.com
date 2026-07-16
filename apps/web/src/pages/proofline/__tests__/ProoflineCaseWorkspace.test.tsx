@@ -9,9 +9,11 @@ import { getTradeCase, listTradeCases } from '@/lib/proofline/api'
 vi.mock('@/lib/proofline/api', () => ({
   deleteTradeCaseParty: vi.fn(),
   getTradeCase: vi.fn(),
+  getProoflineQuote: vi.fn(),
   listTradeCases: vi.fn(),
   resubmitTradeCase: vi.fn(),
   submitTradeCase: vi.fn(),
+  startProoflineCheckout: vi.fn(),
   respondToRemediation: vi.fn(),
 }))
 
@@ -26,6 +28,7 @@ describe('Proofline customer workspace', () => {
         id: 'd88aa468-078c-4cd4-b1f1-ecb6dbbb61f7', company_id: '662de77b-077a-44fe-80d0-2ac79a463539',
         case_reference: 'PL-2026-0001', title: 'US buyer July shipment', status: 'action_required',
         payment_arrangement: 'open_account', service_package_id: 'proofline_standard',
+        payment_status: null, credit_amount_cents: 0,
         recommended_decision: 'ACTION_REQUIRED', final_decision: null, currency: 'USD', amount: '125000.00',
         origin_country: 'BD', destination_country: 'US', document_count: 5,
         finding_counts: { critical: 0, high: 2, medium: 1, low: 0, info: 0 }, created_at: now, updated_at: now,
@@ -45,6 +48,7 @@ describe('Proofline customer workspace', () => {
       id: 'd88aa468-078c-4cd4-b1f1-ecb6dbbb61f7', company_id: '662de77b-077a-44fe-80d0-2ac79a463539',
       case_reference: 'PL-2026-0001', title: 'US buyer July shipment', status: 'action_required',
       payment_arrangement: 'open_account', service_package_id: 'proofline_standard', recommended_decision: 'ACTION_REQUIRED',
+      payment_status: 'paid', amount_paid_cents: 19900, credit_amount_cents: 0, payment_currency: 'USD',
       final_decision: null, currency: 'USD', amount: '125000.00', origin_country: 'BD', destination_country: 'US',
       document_count: 1, finding_counts: { critical: 0, high: 1, medium: 0, low: 0, info: 0 }, created_at: now, updated_at: now,
       transaction_details: {}, parties: [{ id: '98abdf5c-b9c9-49dd-be43-a47e8ddf2ea0', role: 'buyer', name: 'US Buyer Inc', country_code: 'US', identifiers: {} }],

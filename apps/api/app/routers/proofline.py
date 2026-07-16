@@ -64,6 +64,11 @@ from app.services.proofline.remediation import (
     respond_to_action,
     submit_corrections,
 )
+from app.services.proofline.billing import (
+    ProoflineCheckoutError,
+    is_checkout_enabled as is_proofline_checkout_enabled,
+    quote_for_case,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -137,6 +142,10 @@ def _case_response(
         "status": trade_case.status,
         "payment_arrangement": trade_case.payment_arrangement,
         "service_package_id": trade_case.service_package_id,
+        "payment_status": getattr(trade_case, "payment_status", None),
+        "amount_paid_cents": getattr(trade_case, "amount_paid_cents", None),
+        "credit_amount_cents": getattr(trade_case, "credit_amount_cents", 0) or 0,
+        "payment_currency": getattr(trade_case, "payment_currency", None),
         "recommended_decision": trade_case.recommended_decision,
         "final_decision": trade_case.final_decision,
         "currency": trade_case.currency,
@@ -408,18 +417,34 @@ async def submit_trade_case(
         raise HTTPException(status_code=409, detail="Only a draft trade case can be submitted")
     try:
         validate_submission_context(load_case_context(db, trade_case))
-        transition_case(
-            db,
-            trade_case,
-            TradeCaseStatus.SUBMITTED,
-            actor_type="customer",
-            actor_user_id=current_user.id,
-            reason="Customer submitted the trade case for verified review",
-            idempotency_key=f"customer-submit:{trade_case.id}:0",
-        )
+        if is_proofline_checkout_enabled():
+            quote_for_case(db, trade_case)
+            transition_case(
+                db,
+                trade_case,
+                TradeCaseStatus.AWAITING_PAYMENT,
+                actor_type="customer",
+                actor_user_id=current_user.id,
+                reason="Case scope confirmed; payment is required before review starts",
+                idempotency_key=f"customer-awaiting-payment:{trade_case.id}:0",
+            )
+            trade_case.payment_status = "pending"
+        else:
+            transition_case(
+                db,
+                trade_case,
+                TradeCaseStatus.SUBMITTED,
+                actor_type="customer",
+                actor_user_id=current_user.id,
+                reason="Customer submitted the trade case for verified review",
+                idempotency_key=f"customer-submit:{trade_case.id}:0",
+            )
         db.commit()
         db.refresh(trade_case)
     except SubmissionValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ProoflineCheckoutError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc))
     except InvalidTradeCaseTransition as exc:
@@ -432,11 +457,12 @@ async def submit_trade_case(
         )
         raise HTTPException(status_code=500, detail="Failed to submit trade case")
 
-    background_tasks.add_task(
-        process_trade_case_by_id,
-        case_id=trade_case.id,
-        company_id=company_id,
-    )
+    if trade_case.status == TradeCaseStatus.SUBMITTED.value:
+        background_tasks.add_task(
+            process_trade_case_by_id,
+            case_id=trade_case.id,
+            company_id=company_id,
+        )
     _audit_action(
         db=db,
         current_user=current_user,

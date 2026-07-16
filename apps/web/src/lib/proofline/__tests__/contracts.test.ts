@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ProoflineFindingSchema,
+  ProoflineQuoteSchema,
   TradeCaseSummarySchema,
 } from '@shared/types';
 
@@ -12,6 +13,8 @@ const baseCase = {
   title: 'US buyer July shipment',
   status: 'draft',
   service_package_id: 'proofline_standard',
+  payment_status: null,
+  credit_amount_cents: 0,
   recommended_decision: null,
   final_decision: null,
   currency: 'USD',
@@ -61,5 +64,22 @@ describe('Proofline shared contracts', () => {
     expect(result.expected).toContain('approval');
     expect(result.observed).toContain('No approval');
     expect(result.suggested_correction).toContain('upload');
+  });
+
+  it('parses database-backed service pricing and a transparent LCopilot credit', () => {
+    const quote = ProoflineQuoteSchema.parse({
+      package: {
+        id: 'proofline_standard', name: 'Proofline Standard', description: 'Verified review',
+        price_label: '$199 per trade case', currency: 'USD', amount_cents: 19900,
+        included_documents: 12, included_parties: 8, included_correction_rounds: 1,
+        turnaround_class: 'standard', features: ['Human analyst verification'],
+        billing_mode: 'payment', self_service_enabled: true,
+      },
+      currency: 'USD', base_amount_cents: 19900, credit_amount_cents: 5900,
+      amount_due_cents: 14000, checkout_enabled: true,
+    });
+
+    expect(quote.credit_amount_cents).toBe(5900);
+    expect(quote.amount_due_cents).toBe(14000);
   });
 });

@@ -1,11 +1,11 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, FilePlus2, Loader2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { PaymentArrangement } from '@shared/types'
+import type { PaymentArrangement, ProoflineServicePackage } from '@shared/types'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { createTradeCase } from '@/lib/proofline/api'
+import { createTradeCase, listProoflinePackages } from '@/lib/proofline/api'
 
 const paymentArrangements: Array<{
   value: PaymentArrangement
@@ -61,6 +61,9 @@ export default function ProoflineNewCase() {
   const [currency, setCurrency] = useState('USD')
   const [amount, setAmount] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('')
+  const [packages, setPackages] = useState<ProoflineServicePackage[]>([])
+  const [servicePackageId, setServicePackageId] = useState('')
+  const [packagesLoading, setPackagesLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -68,6 +71,23 @@ export default function ProoflineNewCase() {
     () => paymentArrangements.find((item) => item.value === arrangement),
     [arrangement],
   )
+
+  useEffect(() => {
+    let active = true
+    listProoflinePackages()
+      .then((items) => {
+        if (!active) return
+        setPackages(items)
+        setServicePackageId((current) => current || items[0]?.id || '')
+      })
+      .catch(() => {
+        if (active) setError('Service packages could not be loaded. You can still save the draft and return later.')
+      })
+      .finally(() => {
+        if (active) setPackagesLoading(false)
+      })
+    return () => { active = false }
+  }, [])
 
   async function saveDraft(event: FormEvent) {
     event.preventDefault()
@@ -81,6 +101,7 @@ export default function ProoflineNewCase() {
       const tradeCase = await createTradeCase({
         title: title.trim(),
         payment_arrangement: arrangement,
+        service_package_id: servicePackageId || undefined,
         origin_country: originCountry.trim().toUpperCase() || undefined,
         destination_country: destinationCountry.trim().toUpperCase() || undefined,
         currency: currency.trim().toUpperCase() || undefined,
@@ -189,6 +210,27 @@ export default function ProoflineNewCase() {
                   <textarea id="payment-terms" value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} placeholder={`Describe ${selected?.label.toLowerCase()} terms, triggers and tenor if known`} rows={4} className="w-full rounded-md border border-[#EDF5F2]/15 bg-[#00261C]/60 px-3 py-2 text-sm text-white outline-none placeholder:text-[#EDF5F2]/25 focus:border-[#B2F273]/60" />
                 </div>
               </div>
+              <fieldset className="mt-7">
+                <legend className="text-sm font-medium">Service level</legend>
+                <p className="mt-1 text-xs text-[#EDF5F2]/40">Pricing and included correction rounds come from the TRDR Hub service catalog.</p>
+                {packagesLoading ? (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-[#EDF5F2]/45"><Loader2 className="h-4 w-4 animate-spin" /> Loading service levelsâ€¦</div>
+                ) : packages.length ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    {packages.map((item) => (
+                      <label key={item.id} className={`cursor-pointer rounded-xl border p-4 ${servicePackageId === item.id ? 'border-[#B2F273]/70 bg-[#B2F273]/5' : 'border-[#EDF5F2]/10 bg-[#00261C]/30'}`}>
+                        <input type="radio" name="service-package" value={item.id} checked={servicePackageId === item.id} onChange={() => setServicePackageId(item.id)} className="sr-only" />
+                        <span className="block text-sm font-semibold">{item.name}</span>
+                        <span className="mt-1 block text-xs font-medium text-[#B2F273]">{item.price_label}</span>
+                        <span className="mt-2 block text-xs leading-relaxed text-[#EDF5F2]/40">{item.description}</span>
+                        <span className="mt-3 block text-[11px] text-[#EDF5F2]/45">{item.included_correction_rounds} correction {item.included_correction_rounds === 1 ? 'round' : 'rounds'} included</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-amber-200/75">Save the draft now; select a service level when the catalog is available.</p>
+                )}
+              </fieldset>
               {error ? <div role="alert" className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div> : null}
               <div className="mt-7 flex flex-col-reverse justify-between gap-3 sm:flex-row">
                 <Button type="button" onClick={() => setStage(1)} className="border border-[#EDF5F2]/15 bg-transparent text-white hover:bg-[#EDF5F2]/5"><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>

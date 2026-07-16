@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
 from sqlalchemy.orm import Session
 
@@ -513,6 +513,7 @@ async def check_quota(
 @router.post("/webhooks/stripe")
 async def stripe_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     billing_service: BillingService = Depends(get_billing_service),
     db: Session = Depends(get_db)
 ):
@@ -548,10 +549,28 @@ async def stripe_webhook(
         event_type = event_data.get("type", "")
         event_object = (event_data.get("data") or {}).get("object") or {}
         if event_type == "checkout.session.completed":
+            from app.services.proofline.billing import handle_checkout_completed as handle_proofline_checkout
+            proofline_result = handle_proofline_checkout(db, event_object)
+            if proofline_result.handled:
+                if (
+                    proofline_result.should_process
+                    and proofline_result.case_id
+                    and proofline_result.company_id
+                ):
+                    from app.services.proofline.processing import process_trade_case_by_id
+                    background_tasks.add_task(
+                        process_trade_case_by_id,
+                        case_id=proofline_result.case_id,
+                        company_id=proofline_result.company_id,
+                    )
+                return {"status": "success"}
             from app.services.checkout import handle_checkout_completed
             if handle_checkout_completed(db, event_object):
                 return {"status": "success"}
         elif event_type == "charge.refunded":
+            from app.services.proofline.billing import handle_charge_refunded as handle_proofline_refund
+            if handle_proofline_refund(db, event_object).handled:
+                return {"status": "success"}
             from app.services.checkout import handle_charge_refunded
             if handle_charge_refunded(db, event_object):
                 return {"status": "success"}

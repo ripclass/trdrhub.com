@@ -64,6 +64,10 @@ class TradeCaseSummaryResponse(BaseModel):
     status: TradeCaseStatus
     payment_arrangement: PaymentArrangement
     service_package_id: Optional[str] = None
+    payment_status: Optional[str] = None
+    amount_paid_cents: Optional[int] = Field(default=None, ge=0)
+    credit_amount_cents: int = Field(default=0, ge=0)
+    payment_currency: Optional[str] = None
     recommended_decision: Optional[ProoflineDecisionValue] = None
     final_decision: Optional[ProoflineDecisionValue] = None
     currency: Optional[str] = None
@@ -215,6 +219,38 @@ class RemediationResponseRequest(BaseModel):
     correction_document_id: Optional[UUID] = None
 
 
+class ProoflineServicePackageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    description: str
+    price_label: str
+    currency: str
+    amount_cents: Optional[int] = Field(default=None, ge=0)
+    included_documents: Optional[int] = Field(default=None, ge=0)
+    included_parties: Optional[int] = Field(default=None, ge=0)
+    included_correction_rounds: int = Field(ge=0)
+    turnaround_class: Optional[str] = None
+    features: list[str] = Field(default_factory=list)
+    billing_mode: str
+    self_service_enabled: bool
+
+
+class ProoflineQuoteResponse(BaseModel):
+    package: ProoflineServicePackageResponse
+    currency: str
+    base_amount_cents: int = Field(ge=0)
+    credit_amount_cents: int = Field(ge=0)
+    amount_due_cents: int = Field(ge=0)
+    credit_eligible_until: Optional[datetime] = None
+    checkout_enabled: bool
+
+
+class ProoflineCheckoutResponse(BaseModel):
+    checkout_url: str
+
+
 __all__ = [
     "TradeCaseCreate",
     "TradeCaseDetailResponse",
@@ -223,6 +259,9 @@ __all__ = [
     "TradeCaseListResponse",
     "TradeCasePartyCreate",
     "TradeCasePartyResponse",
+    "ProoflineCheckoutResponse",
+    "ProoflineQuoteResponse",
+    "ProoflineServicePackageResponse",
     "RemediationResponseRequest",
     "TradeCaseSummaryResponse",
     "TradeCaseUpdate",

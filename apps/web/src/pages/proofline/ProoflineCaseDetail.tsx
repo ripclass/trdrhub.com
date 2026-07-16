@@ -15,14 +15,14 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
-import type { ProoflineFinding, TradeCaseDetail } from '@shared/types'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import type { ProoflineFinding, ProoflineQuote, TradeCaseDetail } from '@shared/types'
 
 import { Button } from '@/components/ui/button'
 import { ProoflineDocumentUpload } from '@/components/proofline/ProoflineDocumentUpload'
 import { ProoflinePartyForm } from '@/components/proofline/ProoflinePartyForm'
 import { ProoflineRemediationResponse } from '@/components/proofline/ProoflineRemediationResponse'
-import { deleteTradeCaseParty, getTradeCase, resubmitTradeCase, submitTradeCase } from '@/lib/proofline/api'
+import { deleteTradeCaseParty, getProoflineQuote, getTradeCase, resubmitTradeCase, startProoflineCheckout, submitTradeCase } from '@/lib/proofline/api'
 import {
   checkStateLabels,
   checkTone,
@@ -70,6 +70,7 @@ function FindingCard({ finding }: { finding: ProoflineFinding }) {
 
 export default function ProoflineCaseDetail() {
   const { caseId } = useParams<{ caseId: string }>()
+  const [searchParams] = useSearchParams()
   const [tradeCase, setTradeCase] = useState<TradeCaseDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -78,13 +79,21 @@ export default function ProoflineCaseDetail() {
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [resubmitting, setResubmitting] = useState(false)
+  const [quote, setQuote] = useState<ProoflineQuote | null>(null)
+  const [paying, setPaying] = useState(false)
 
   async function load() {
     if (!caseId) return
     setLoading(true)
     setError(null)
     try {
-      setTradeCase(await getTradeCase(caseId))
+      const loaded = await getTradeCase(caseId)
+      setTradeCase(loaded)
+      if (loaded.status === 'awaiting_payment') {
+        setQuote(await getProoflineQuote(caseId))
+      } else {
+        setQuote(null)
+      }
     } catch {
       setError('This trade case is unavailable or you do not have access to it.')
     } finally {
@@ -145,6 +154,23 @@ export default function ProoflineCaseDetail() {
     }
   }
 
+  async function payForReview() {
+    if (!caseId) return
+    setPaying(true)
+    setActionError(null)
+    try {
+      window.location.assign(await startProoflineCheckout(caseId))
+    } catch (caught) {
+      const detail = (caught as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setActionError(detail || 'Secure checkout could not be started. Please try again.')
+      setPaying(false)
+    }
+  }
+
+  const money = (cents: number, currency: string) => new Intl.NumberFormat(undefined, {
+    style: 'currency', currency,
+  }).format(cents / 100)
+
   return (
     <div className="min-h-screen bg-[#00261C] text-white">
       <header className="sticky top-0 z-30 border-b border-[#EDF5F2]/10 bg-[#00261C]/95 backdrop-blur">
@@ -165,6 +191,7 @@ export default function ProoflineCaseDetail() {
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <span className={`rounded-full border px-2.5 py-1 text-xs ${statusTone(tradeCase.status)}`}>{statusLabels[tradeCase.status]}</span>
                   <span className="rounded-full border border-[#EDF5F2]/10 bg-[#00261C]/30 px-2.5 py-1 text-xs text-[#EDF5F2]/55">{paymentArrangementLabels[tradeCase.payment_arrangement]}</span>
+                  {tradeCase.payment_status ? <span className="rounded-full border border-[#EDF5F2]/10 bg-[#00261C]/30 px-2.5 py-1 text-xs capitalize text-[#EDF5F2]/55">Payment {tradeCase.payment_status}</span> : null}
                 </div>
                 <h1 className="font-display text-3xl font-bold">{tradeCase.title}</h1>
                 <p className="mt-3 text-sm text-[#EDF5F2]/45">{tradeCase.origin_country || 'Origin pending'} → {tradeCase.destination_country || 'Destination pending'}{tradeCase.amount && tradeCase.currency ? ` · ${tradeCase.currency} ${Number(tradeCase.amount).toLocaleString()}` : ''}</p>
@@ -180,6 +207,22 @@ export default function ProoflineCaseDetail() {
                     </Button>
                   </div>
                 ) : null}
+                {tradeCase.status === 'awaiting_payment' && quote ? (
+                  <div className="rounded-xl border border-[#B2F273]/30 bg-[#B2F273]/5 p-5">
+                    <p className="text-sm font-semibold">{quote.package.name}</p>
+                    <p className="mt-1 text-xs text-[#EDF5F2]/45">{quote.package.price_label}</p>
+                    <dl className="mt-4 space-y-2 text-xs">
+                      <div className="flex justify-between gap-3"><dt className="text-[#EDF5F2]/45">Case price</dt><dd>{money(quote.base_amount_cents, quote.currency)}</dd></div>
+                      {quote.credit_amount_cents > 0 ? <div className="flex justify-between gap-3 text-[#B2F273]"><dt>LCopilot upgrade credit</dt><dd>âˆ’{money(quote.credit_amount_cents, quote.currency)}</dd></div> : null}
+                      <div className="flex justify-between gap-3 border-t border-[#EDF5F2]/10 pt-2 font-semibold"><dt>Due now</dt><dd>{money(quote.amount_due_cents, quote.currency)}</dd></div>
+                    </dl>
+                    {quote.checkout_enabled && quote.package.self_service_enabled ? (
+                      <Button onClick={() => void payForReview()} disabled={paying} className="mt-4 w-full border-none bg-[#B2F273] font-bold text-[#00261C] hover:bg-[#a3e662]">
+                        {paying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BadgeCheck className="mr-2 h-4 w-4" />}Pay securely and start review
+                      </Button>
+                    ) : <p className="mt-4 text-xs leading-relaxed text-[#EDF5F2]/50">This service level is invoiced manually. Your case is saved; the TRDR Hub team will confirm scope and payment before review begins.</p>}
+                  </div>
+                ) : null}
                 <div className="rounded-xl border border-[#EDF5F2]/10 bg-[#00261C]/35 p-5">
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#EDF5F2]/35">{tradeCase.final_decision ? 'Final decision' : 'Recommended decision'}</p>
                   <p className="mt-2 font-display text-xl font-bold text-[#B2F273]">{decisionLabel(finalOrRecommended)}</p>
@@ -188,6 +231,8 @@ export default function ProoflineCaseDetail() {
               </div>
             </div>
             {actionError ? <div role="alert" className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{actionError}</div> : null}
+            {searchParams.get('checkout') === 'success' && tradeCase.status === 'awaiting_payment' ? <div className="mt-5 flex items-center gap-2 rounded-lg border border-blue-300/30 bg-blue-500/10 p-3 text-sm text-blue-100"><Loader2 className="h-4 w-4 animate-spin" /> Confirming payment with Stripe. Refreshing this case will show when review starts.</div> : null}
+            {searchParams.get('checkout') === 'cancelled' ? <div className="mt-5 rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">Checkout was cancelled. Your trade case and documents are still saved.</div> : null}
           </section>
 
           <div className="grid gap-6 xl:grid-cols-[1fr_320px]">

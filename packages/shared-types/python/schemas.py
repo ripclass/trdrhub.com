@@ -197,6 +197,32 @@ class TradeCaseDecisionRecord(BaseModel):
     report_version: Optional[int] = Field(default=None, gt=0)
 
 
+class ProoflineServicePackage(BaseModel):
+    id: str
+    name: str
+    description: str
+    price_label: str
+    currency: str = Field(min_length=3, max_length=3)
+    amount_cents: Optional[int] = Field(default=None, ge=0)
+    included_documents: Optional[int] = Field(default=None, ge=0)
+    included_parties: Optional[int] = Field(default=None, ge=0)
+    included_correction_rounds: int = Field(ge=0)
+    turnaround_class: Optional[str] = None
+    features: List[str] = Field(default_factory=list)
+    billing_mode: str
+    self_service_enabled: bool
+
+
+class ProoflineQuote(BaseModel):
+    package: ProoflineServicePackage
+    currency: str = Field(min_length=3, max_length=3)
+    base_amount_cents: int = Field(ge=0)
+    credit_amount_cents: int = Field(ge=0)
+    amount_due_cents: int = Field(ge=0)
+    credit_eligible_until: Optional[datetime] = None
+    checkout_enabled: bool
+
+
 class TradeCaseSummary(BaseModel):
     id: UUID
     case_reference: str
@@ -205,6 +231,10 @@ class TradeCaseSummary(BaseModel):
     status: TradeCaseStatus
     payment_arrangement: PaymentArrangement
     service_package_id: Optional[str] = None
+    payment_status: Optional[str] = None
+    amount_paid_cents: Optional[int] = Field(default=None, ge=0)
+    credit_amount_cents: int = Field(default=0, ge=0)
+    payment_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     recommended_decision: Optional[ProoflineDecision] = None
     final_decision: Optional[ProoflineDecision] = None
     currency: Optional[str] = None

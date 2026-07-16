@@ -324,6 +324,45 @@ def test_submit_validates_snapshot_transitions_and_enqueues_processing(monkeypat
     assert len(background.tasks) == 1
 
 
+def test_submit_stops_at_payment_gate_when_proofline_checkout_is_live(monkeypatch):
+    company_id = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
+    db = _Db(_case(company_id))
+    background = BackgroundTasks()
+    monkeypatch.setattr(router_module, "ProoflineRepository", _Repo)
+    monkeypatch.setattr(router_module, "ensure_case_write_access", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(router_module, "_audit_action", lambda **_kwargs: None)
+    monkeypatch.setattr(router_module, "is_proofline_checkout_enabled", lambda: True)
+    monkeypatch.setattr(router_module, "quote_for_case", lambda *_args: (object(), object()))
+    monkeypatch.setattr(
+        router_module,
+        "load_case_context",
+        lambda *_args, **_kwargs: {
+            "parties": [{"name": "Buyer"}, {"name": "Seller"}],
+            "documents": {"commercial_invoice": {"document_id": "doc-1"}},
+            "payment_arrangement": "open_account",
+        },
+    )
+
+    def transition(_db, trade_case, target, **_kwargs):
+        trade_case.status = target.value
+
+    monkeypatch.setattr(router_module, "transition_case", transition)
+
+    response = asyncio.run(
+        router_module.submit_trade_case(
+            db.case.id,
+            background_tasks=background,
+            current_user=user,
+            db=db,
+        )
+    )
+
+    assert response.status.value == "awaiting_payment"
+    assert db.case.payment_status == "pending"
+    assert not background.tasks
+
+
 def test_submit_rejects_incomplete_case_without_enqueuing(monkeypatch):
     company_id = uuid.uuid4()
     user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")

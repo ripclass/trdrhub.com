@@ -188,6 +188,34 @@ export const TradeCaseDecisionRecordSchema = z.object({
 });
 export type TradeCaseDecisionRecord = z.infer<typeof TradeCaseDecisionRecordSchema>;
 
+export const ProoflineServicePackageSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  price_label: z.string(),
+  currency: z.string().length(3),
+  amount_cents: z.number().int().nonnegative().nullable().optional(),
+  included_documents: z.number().int().nonnegative().nullable().optional(),
+  included_parties: z.number().int().nonnegative().nullable().optional(),
+  included_correction_rounds: z.number().int().nonnegative(),
+  turnaround_class: z.string().nullable().optional(),
+  features: z.array(z.string()),
+  billing_mode: z.string(),
+  self_service_enabled: z.boolean(),
+});
+export type ProoflineServicePackage = z.infer<typeof ProoflineServicePackageSchema>;
+
+export const ProoflineQuoteSchema = z.object({
+  package: ProoflineServicePackageSchema,
+  currency: z.string().length(3),
+  base_amount_cents: z.number().int().nonnegative(),
+  credit_amount_cents: z.number().int().nonnegative().default(0),
+  amount_due_cents: z.number().int().nonnegative(),
+  credit_eligible_until: z.string().datetime().nullable().optional(),
+  checkout_enabled: z.boolean(),
+});
+export type ProoflineQuote = z.infer<typeof ProoflineQuoteSchema>;
+
 export const TradeCaseSummarySchema = z.object({
   id: z.string().uuid(),
   case_reference: z.string(),
@@ -196,6 +224,10 @@ export const TradeCaseSummarySchema = z.object({
   status: TradeCaseStatusSchema,
   payment_arrangement: PaymentArrangementSchema,
   service_package_id: z.string().nullable().optional(),
+  payment_status: z.string().nullable().optional(),
+  amount_paid_cents: z.number().int().nonnegative().nullable().optional(),
+  credit_amount_cents: z.number().int().nonnegative(),
+  payment_currency: z.string().length(3).nullable().optional(),
   recommended_decision: ProoflineDecisionSchema.nullable(),
   final_decision: ProoflineDecisionSchema.nullable(),
   currency: z.string().nullable().optional(),
