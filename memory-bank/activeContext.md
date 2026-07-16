@@ -1,4 +1,80 @@
-# Active Context - December 2024
+# Active Context - July 17, 2026
+
+## Current Focus
+
+Proofline — Verified Trade Clearance has been implemented inside the existing
+TRDR Hub monorepo. The implementation is complete locally and committed through
+`2aecf6d0`. It has not been pushed or deployed.
+
+Proofline is a `TradeCase` orchestration layer. It reuses existing TRDR Hub
+authentication, company tenancy, documents/S3/OCR, LCopilot, sanctions, CBAM,
+EUDR, Stripe, notifications, audit, review, and report infrastructure. RulHub
+and EIN remain external service boundaries.
+
+## Proofline Delivered
+
+- Payment-arrangement-first intake with ten supported arrangements.
+- LC cases reuse LCopilot structured results and deterministic validation.
+- Open-account cases evaluate purchase order, contract, invoice approval,
+  shipment, payment terms, risk coverage, deductions, and expected-payment evidence.
+- Tenant-safe case, party, document, check, finding, remediation, decision,
+  event, buyer-requirement, package, and voluntary-outcome models.
+- Immutable document versions and correction rounds; originals are preserved.
+- Applicable-only sanctions, CBAM, EUDR, RulHub, EIN, buyer-policy, document,
+  cross-document, LCopilot, and open-account modules.
+- Fail-closed external integrations: unavailable verification never becomes Clear.
+- Unified Expected/Found/SuggestedFix-compatible findings with provenance.
+- Customer case workspace, staged intake, Tools placement, analyst queue/detail,
+  correction flow, reviewer overrides, and reviewer-approved reports.
+- Database-backed packages, existing Stripe Checkout/webhook reuse, and configurable
+  LCopilot credit period/percentage.
+- Customer milestone notifications, privacy-bounded admin metrics, and optional
+  post-report outcome feedback labelled as unvalidated customer reporting.
+- Backend/frontend feature flags and setup/runbook documentation.
+
+## Verification Record
+
+- Proofline backend: 108 passed across 25 test files.
+- Existing LCopilot/crossdoc/Stripe/sanctions/readiness regressions: 58 passed.
+- Proofline frontend: 18 passed across 11 files.
+- Existing LCopilot results mapper: 24 passed.
+- Production Vite build: passed; 3,260 modules transformed.
+- Python compile/import: passed.
+- Alembic: one head, `20260716_add_proofline_outcomes`.
+- New Proofline outcome revision offline render: passed.
+- Full TypeScript baseline still fails elsewhere with 954 diagnostic lines;
+  changed Proofline files have zero diagnostics.
+- Legacy `ExporterResults.test.tsx` is stale against the current unchanged UI
+  (47/49 failures). `ExporterResults.tsx` and that test were not modified.
+- ESLint cannot start because the repository has no ESLint configuration.
+- Full Alembic offline rendering is blocked by historical seed migration
+  `20250916_170100_seed_default_companies.py`, which is not offline-safe.
+- In-app browser smoke verification was blocked by a local browser-runtime kernel
+  asset error; the temporary Vite server was stopped.
+- `git diff --check` and secret-pattern scan passed.
+
+## Deployment / Operations Next Steps
+
+1. Review `docs/PROOFLINE_SETUP.md` and the repository audit before rollout.
+2. Run `alembic upgrade head` against the target database.
+3. Set `PROOFLINE_ENABLED` and `VITE_PROOFLINE_ENABLED` consistently.
+4. Keep checkout disabled until Stripe keys/webhook and package records are verified.
+5. Enable EIN/RulHub only with real production credentials and verified contracts.
+6. Add a deployed durable worker before unattended high-volume case processing.
+7. Vercel CLI is not installed; install with `npm i -g vercel` before Vercel env,
+   deployment, or log operations.
+
+## Key References
+
+- Setup: `docs/PROOFLINE_SETUP.md`
+- Audit/verification: `docs/audits/2026-07-16-proofline-repository-audit.md`
+- Design: `docs/superpowers/specs/2026-07-16-proofline-design.md`
+- Plan: `docs/superpowers/plans/2026-07-16-proofline-internal-alpha.md`
+- Final local commit: `2aecf6d0`
+
+---
+
+## Historical Context (December 2024)
 
 ## Current Focus
 LCopilot V1 Enhancement - All Phases Complete

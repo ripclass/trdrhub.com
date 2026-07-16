@@ -1,6 +1,52 @@
 # TRDR Hub - Progress
 
-> **Last Updated:** December 9, 2024
+> **Last Updated:** July 17, 2026
+
+## ✅ Proofline — Verified Trade Clearance
+
+Proofline is implemented inside TRDR Hub and committed locally through
+`2aecf6d0`. It is feature-flagged and not yet pushed or deployed.
+
+Completed capabilities:
+
+- TradeCase aggregate, status transitions, final decisions, audit events
+- Payment-method-first LC and open-account workflows
+- Immutable document versions and customer correction rounds
+- Existing LCopilot, sanctions, CBAM, EUDR, document-review reuse
+- External RulHub/EIN adapters with unavailable/manual-review fallback
+- Buyer requirements and unified multi-module findings
+- Customer workspace and internal analyst review queue
+- Reviewer-gated versioned clearance report
+- Database-backed service packages and existing Stripe Checkout/webhook reuse
+- Configurable LCopilot upgrade credit
+- Notifications, metrics, voluntary outcome capture, setup documentation
+
+Verification:
+
+- 108 Proofline backend tests passed
+- 58 existing backend regression tests passed
+- 18 Proofline frontend tests passed
+- 24 LCopilot results-mapper tests passed
+- Production Vite build passed
+- Single Alembic head confirmed
+
+Operational follow-ups:
+
+- [ ] Apply `alembic upgrade head` in the target environment
+- [ ] Configure synchronized backend/frontend feature flags
+- [ ] Verify production Stripe package records and webhook before checkout launch
+- [ ] Configure real RulHub/EIN credentials before enabling those integrations
+- [ ] Deploy a durable worker before unattended high-volume processing
+- [ ] Repair repository-wide TypeScript, ESLint, legacy ExporterResults, and
+      historical offline-migration baselines separately from Proofline
+- [ ] Install Vercel CLI (`npm i -g vercel`) before Vercel deployment operations
+
+Detailed handoff: `docs/PROOFLINE_SETUP.md` and
+`docs/audits/2026-07-16-proofline-repository-audit.md`.
+
+---
+
+## Historical Progress (December 2024)
 
 ## ✅ Completed & Live
 
