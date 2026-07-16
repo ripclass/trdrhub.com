@@ -217,7 +217,14 @@ class TradeCaseSummary(BaseModel):
 
 
 class TradeCaseDetail(TradeCaseSummary):
+    customer_user_id: Optional[UUID] = None
+    owner_user_id: Optional[UUID] = None
+    payment_terms: Optional[str] = None
+    shipment_date: Optional[date] = None
+    expected_payment_date: Optional[date] = None
     transaction_details: Dict[str, Any] = Field(default_factory=dict)
+    source_lcopilot_session_id: Optional[UUID] = None
+    final_report_id: Optional[UUID] = None
     parties: List[TradeCaseParty] = Field(default_factory=list)
     documents: List[TradeCaseDocument] = Field(default_factory=list)
     checks: List[ProoflineCheck] = Field(default_factory=list)

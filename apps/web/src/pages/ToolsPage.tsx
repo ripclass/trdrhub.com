@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  ClipboardCheck,
   FileCheck,
   Leaf,
   MessageCircle,
@@ -18,6 +19,16 @@ import {
 } from "lucide-react";
 
 const liveTools = [
+  {
+    icon: ClipboardCheck,
+    name: "Proofline",
+    tagline: "Verified Trade Clearance",
+    description:
+      "Check whether the parties, order, shipment, documents, credentials and payment evidence are ready to proceed. Applicable TRDRHub checks are combined and an analyst verifies the final paid-case decision.",
+    href: "/proofline",
+    price: "per trade case",
+    cta: "Start a trade case",
+  },
   {
     icon: FileCheck,
     name: "LCopilot",
@@ -72,7 +83,7 @@ const ToolsPage = () => {
               Tools
             </p>
             <h1 className="text-4xl sm:text-5xl font-bold text-white mb-5 font-display">
-              Four things. Done properly.
+              Five things. Done properly.
             </h1>
             <p className="text-[#EDF5F2]/60 text-lg leading-relaxed">
               We ship compliance services that hold up in front of a bank or a buyer.
@@ -147,7 +158,7 @@ const ToolsPage = () => {
 
           {/* Parked note */}
           <p className="text-center text-[#EDF5F2]/30 text-sm max-w-xl mx-auto">
-            Looking for a tool that used to be here? It's parked while we focus on the four
+            Looking for a tool that used to be here? It's parked while we focus on the five
             above.{" "}
             <a
               href="mailto:support@trdrhub.com?subject=Parked%20tool%20request"

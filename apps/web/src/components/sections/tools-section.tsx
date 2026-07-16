@@ -5,10 +5,19 @@
 // pages/ParkedToolPage.tsx. Do not re-add parked tools here without them
 // passing the works-e2e / zero-maintenance / no-dilution bar.
 import { Link } from "react-router-dom";
-import { ArrowRight, FileCheck, Leaf, MessageCircle, ShieldCheck, TreeDeciduous } from "lucide-react";
+import { ArrowRight, ClipboardCheck, FileCheck, Leaf, MessageCircle, ShieldCheck, TreeDeciduous } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const liveTools = [
+  {
+    icon: ClipboardCheck,
+    name: "Proofline",
+    tagline: "Verified Trade Clearance",
+    description:
+      "Check the parties, order, shipment, documents, credentials and payment evidence together, then receive a specialist-reviewed decision and action list.",
+    href: "/proofline",
+    price: "per trade case",
+  },
   {
     icon: FileCheck,
     name: "LCopilot",
@@ -59,7 +68,7 @@ export function ToolsSection() {
             What's live today
           </p>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4 font-display">
-            Four things. Done properly.
+            Five things. Done properly.
           </h2>
           <p className="text-[#EDF5F2]/60 max-w-2xl mx-auto text-lg">
             We ship compliance services that hold up in front of a bank or a buyer —

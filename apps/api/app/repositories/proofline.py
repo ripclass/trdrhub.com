@@ -9,7 +9,16 @@ from typing import Any, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import ProoflineFinding, TradeCase, TradeCaseDocument
+from app.models import (
+    Document,
+    ProoflineFinding,
+    RemediationAction,
+    TradeCase,
+    TradeCaseCheckRun,
+    TradeCaseDecision,
+    TradeCaseDocument,
+    TradeCaseParty,
+)
 
 
 def new_case_reference() -> str:
@@ -109,6 +118,67 @@ class ProoflineRepository:
             counts[str(severity)] = int(count)
         return int(document_count), counts
 
+    def customer_snapshot(self, *, company_id: uuid.UUID, case_id: uuid.UUID) -> dict[str, list]:
+        """Load only customer-visible, tenant-scoped case children."""
+        scope = {"company_id": company_id, "trade_case_id": case_id}
+        parties = (
+            self.db.query(TradeCaseParty)
+            .filter_by(**scope)
+            .order_by(TradeCaseParty.created_at.asc())
+            .all()
+        )
+        documents = (
+            self.db.query(TradeCaseDocument, Document)
+            .join(Document, Document.id == TradeCaseDocument.document_id)
+            .filter(
+                TradeCaseDocument.company_id == company_id,
+                TradeCaseDocument.trade_case_id == case_id,
+            )
+            .order_by(TradeCaseDocument.logical_key.asc(), TradeCaseDocument.version_number.desc())
+            .all()
+        )
+        checks = (
+            self.db.query(TradeCaseCheckRun)
+            .filter_by(**scope)
+            .order_by(TradeCaseCheckRun.created_at.asc())
+            .all()
+        )
+        findings = (
+            self.db.query(ProoflineFinding)
+            .filter(
+                ProoflineFinding.company_id == company_id,
+                ProoflineFinding.trade_case_id == case_id,
+                ProoflineFinding.visibility == "customer",
+            )
+            .order_by(ProoflineFinding.created_at.asc())
+            .all()
+        )
+        actions = (
+            self.db.query(RemediationAction)
+            .join(ProoflineFinding, ProoflineFinding.id == RemediationAction.finding_id)
+            .filter(
+                RemediationAction.company_id == company_id,
+                RemediationAction.trade_case_id == case_id,
+                ProoflineFinding.company_id == company_id,
+                ProoflineFinding.visibility == "customer",
+            )
+            .order_by(RemediationAction.created_at.asc())
+            .all()
+        )
+        decisions = (
+            self.db.query(TradeCaseDecision)
+            .filter_by(**scope)
+            .order_by(TradeCaseDecision.version_number.desc())
+            .all()
+        )
+        return {
+            "parties": parties,
+            "documents": documents,
+            "checks": checks,
+            "findings": findings,
+            "actions": actions,
+            "decisions": decisions,
+        }
+
 
 __all__ = ["ProoflineRepository", "new_case_reference"]
-

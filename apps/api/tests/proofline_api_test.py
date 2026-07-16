@@ -81,6 +81,26 @@ class _Repo:
         assert company_id == self.case.company_id
         return 0, {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
 
+    def customer_snapshot(self, *, company_id, case_id):
+        assert company_id == self.case.company_id
+        assert case_id == self.case.id
+        now = datetime.now(timezone.utc)
+        return {
+            "parties": [SimpleNamespace(
+                id=uuid.uuid4(), role="buyer", name="US Buyer Inc", country_code="US",
+                identifiers={"buyer_code": "B-1"},
+            )],
+            "checks": [SimpleNamespace(
+                id=uuid.uuid4(), module="sanctions", state="clear", applicable=True,
+                applicability_reason="Parties are present", source_record_type="screening",
+                source_record_id="SCR-1", result_summary={"summary": "No matches found"},
+                completed_at=now,
+            )],
+            "findings": [],
+            "actions": [],
+            "decisions": [],
+        }
+
 
 class _Db:
     def __init__(self, case):
@@ -201,3 +221,22 @@ def test_case_payload_does_not_expose_internal_review_fields(monkeypatch):
     assert "internal_notes" not in serialized
     assert "sensitive_screening_payload" not in serialized
 
+
+def test_case_detail_contains_tenant_scoped_customer_snapshot(monkeypatch):
+    company_id = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
+    db = _Db(_case(company_id))
+    monkeypatch.setattr(router_module, "ProoflineRepository", _Repo)
+    monkeypatch.setattr(router_module, "list_case_documents", lambda *_args, **_kwargs: [])
+
+    response = asyncio.run(
+        router_module.get_trade_case(db.case.id, current_user=user, db=db)
+    )
+
+    assert response.parties[0].name == "US Buyer Inc"
+    assert response.checks[0].module == "sanctions"
+    assert response.checks[0].state == "clear"
+    assert response.findings == []
+    assert response.actions == []
+    assert response.decision_history == []
+    assert response.documents == []

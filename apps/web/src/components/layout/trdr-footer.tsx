@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 const navigation = {
   product: [
+    { name: "Proofline", href: "/proofline" },
     { name: "LCopilot", href: "/lcopilot" },
     { name: "Sanctions Screener", href: "/sanctions" },
     { name: "CBAM Check", href: "/tools/cbam-readiness-check" },

@@ -265,9 +265,11 @@ const PUBLIC_PAGE_PATHS = [
   '/sanctions', '/hs-code', '/doc-generator', '/lc-builder',
   '/price-verify',
 ]
+const PUBLIC_EXACT_PAGE_PATHS = ['/proofline']
 
 const isPublicMarketingPath = (path: string): boolean => {
   if (!path) return false
+  if (PUBLIC_EXACT_PAGE_PATHS.includes(path)) return true
   // exact match for '/' (don't let it pass via prefix-match)
   if (path === '/') return true
   return PUBLIC_PAGE_PATHS.some((p) => p !== '/' && (path === p || path.startsWith(`${p}/`)))

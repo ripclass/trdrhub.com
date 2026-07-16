@@ -76,6 +76,74 @@ class TradeCaseSummaryResponse(BaseModel):
     updated_at: datetime
 
 
+class TradeCasePartyResponse(BaseModel):
+    id: UUID
+    role: str
+    name: str
+    country_code: Optional[str] = None
+    identifiers: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProoflineCheckResponse(BaseModel):
+    id: UUID
+    module: str
+    state: str
+    applicable: bool
+    applicability_reason: str
+    source_record_type: Optional[str] = None
+    source_record_id: Optional[str] = None
+    summary: Optional[str] = None
+    completed_at: Optional[datetime] = None
+
+
+class ProoflineFindingResponse(BaseModel):
+    id: UUID
+    source_module: str
+    source_finding_id: Optional[str] = None
+    category: str
+    severity: str
+    title: str
+    explanation: str
+    affected_entity: Optional[str] = None
+    affected_document_id: Optional[UUID] = None
+    affected_field: Optional[str] = None
+    expected: str
+    observed: str
+    suggested_correction: str
+    automated: bool
+    visibility: str
+    status: str
+    reviewer_decision: Optional[str] = None
+    rule_reference: Optional[dict[str, Any]] = None
+    evidence_references: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProoflineRemediationResponse(BaseModel):
+    id: UUID
+    finding_id: UUID
+    requested_action: str
+    responsible_party: Optional[str] = None
+    requested_document_type: Optional[str] = None
+    due_at: Optional[datetime] = None
+    customer_response: Optional[str] = None
+    status: str
+    correction_round: int = Field(gt=0)
+
+
+class ProoflineDecisionResponse(BaseModel):
+    id: UUID
+    version: int = Field(gt=0)
+    decision: ProoflineDecisionValue
+    decision_type: str
+    summary: str
+    reason: str
+    reviewer_id: Optional[UUID] = None
+    decided_at: datetime
+    report_version: Optional[int] = None
+
+
 class TradeCaseDetailResponse(TradeCaseSummaryResponse):
     customer_user_id: Optional[UUID] = None
     owner_user_id: Optional[UUID] = None
@@ -85,6 +153,12 @@ class TradeCaseDetailResponse(TradeCaseSummaryResponse):
     transaction_details: dict[str, Any] = Field(default_factory=dict)
     source_lcopilot_session_id: Optional[UUID] = None
     final_report_id: Optional[UUID] = None
+    parties: list[TradeCasePartyResponse] = Field(default_factory=list)
+    documents: list["TradeCaseDocumentResponse"] = Field(default_factory=list)
+    checks: list[ProoflineCheckResponse] = Field(default_factory=list)
+    findings: list[ProoflineFindingResponse] = Field(default_factory=list)
+    actions: list[ProoflineRemediationResponse] = Field(default_factory=list)
+    decision_history: list[ProoflineDecisionResponse] = Field(default_factory=list)
 
 
 class TradeCaseListResponse(BaseModel):

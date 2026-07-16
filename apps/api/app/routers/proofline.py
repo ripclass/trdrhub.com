@@ -114,6 +114,111 @@ def _case_response(
         "updated_at": trade_case.updated_at,
     }
     if detail:
+        snapshot = repository.customer_snapshot(
+            company_id=trade_case.company_id, case_id=trade_case.id
+        )
+        parties = [
+            {
+                "id": party.id,
+                "role": party.role,
+                "name": party.name,
+                "country_code": party.country_code,
+                "identifiers": party.identifiers or {},
+            }
+            for party in snapshot["parties"]
+        ]
+        documents = []
+        for association, document in snapshot.get("documents", []):
+            extracted = getattr(document, "extracted_fields", None) or {}
+            documents.append(
+                {
+                    "id": association.id,
+                    "document_id": association.document_id,
+                    "logical_key": association.logical_key,
+                    "document_type": association.document_type,
+                    "filename": document.original_filename,
+                    "version": association.version_number,
+                    "supersedes_id": association.supersedes_id,
+                    "correction_round": association.correction_round,
+                    "is_current": association.is_current,
+                    "extraction_status": extracted.get("extraction_status")
+                    if isinstance(extracted, dict)
+                    else None,
+                    "created_at": association.created_at,
+                }
+            )
+        checks = []
+        for check in snapshot["checks"]:
+            result_summary = check.result_summary or {}
+            checks.append(
+                {
+                    "id": check.id,
+                    "module": check.module,
+                    "state": check.state,
+                    "applicable": check.applicable,
+                    "applicability_reason": check.applicability_reason,
+                    "source_record_type": check.source_record_type,
+                    "source_record_id": check.source_record_id,
+                    "summary": result_summary.get("summary")
+                    if isinstance(result_summary, dict)
+                    else None,
+                    "completed_at": check.completed_at,
+                }
+            )
+        findings = [
+            {
+                "id": finding.id,
+                "source_module": finding.source_module,
+                "source_finding_id": finding.source_finding_id,
+                "category": finding.category,
+                "severity": finding.severity,
+                "title": finding.title,
+                "explanation": finding.explanation,
+                "affected_entity": finding.affected_entity,
+                "affected_document_id": finding.affected_document_id,
+                "affected_field": finding.affected_field,
+                "expected": finding.expected,
+                "observed": finding.observed,
+                "suggested_correction": finding.suggested_correction,
+                "automated": finding.is_automated,
+                "visibility": finding.visibility,
+                "status": finding.status,
+                "reviewer_decision": finding.reviewer_decision,
+                "rule_reference": finding.rule_reference,
+                "evidence_references": finding.evidence_references or [],
+                "created_at": finding.created_at,
+                "updated_at": finding.updated_at,
+            }
+            for finding in snapshot["findings"]
+        ]
+        actions = [
+            {
+                "id": action.id,
+                "finding_id": action.finding_id,
+                "requested_action": action.requested_action,
+                "responsible_party": action.responsible_party,
+                "requested_document_type": action.requested_document_type,
+                "due_at": action.due_at,
+                "customer_response": action.customer_response,
+                "status": action.status,
+                "correction_round": action.correction_round,
+            }
+            for action in snapshot["actions"]
+        ]
+        decisions = [
+            {
+                "id": decision.id,
+                "version": decision.version_number,
+                "decision": decision.decision,
+                "decision_type": decision.decision_type,
+                "summary": decision.summary,
+                "reason": decision.reason,
+                "reviewer_id": decision.reviewer_user_id,
+                "decided_at": decision.decided_at,
+                "report_version": decision.report_version,
+            }
+            for decision in snapshot["decisions"]
+        ]
         values.update(
             {
                 "customer_user_id": trade_case.customer_user_id,
@@ -124,6 +229,12 @@ def _case_response(
                 "transaction_details": trade_case.transaction_details or {},
                 "source_lcopilot_session_id": trade_case.source_lcopilot_session_id,
                 "final_report_id": trade_case.final_report_id,
+                "parties": parties,
+                "documents": documents,
+                "checks": checks,
+                "findings": findings,
+                "actions": actions,
+                "decision_history": decisions,
             }
         )
         return TradeCaseDetailResponse.model_validate(values)

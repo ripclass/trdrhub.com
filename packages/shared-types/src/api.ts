@@ -209,7 +209,14 @@ export const TradeCaseSummarySchema = z.object({
 export type TradeCaseSummary = z.infer<typeof TradeCaseSummarySchema>;
 
 export const TradeCaseDetailSchema = TradeCaseSummarySchema.extend({
+  customer_user_id: z.string().uuid().nullable().optional(),
+  owner_user_id: z.string().uuid().nullable().optional(),
+  payment_terms: z.string().nullable().optional(),
+  shipment_date: z.string().date().nullable().optional(),
+  expected_payment_date: z.string().date().nullable().optional(),
   transaction_details: z.record(z.unknown()).default({}),
+  source_lcopilot_session_id: z.string().uuid().nullable().optional(),
+  final_report_id: z.string().uuid().nullable().optional(),
   parties: z.array(TradeCasePartySchema),
   documents: z.array(TradeCaseDocumentSchema),
   checks: z.array(ProoflineCheckSchema),
