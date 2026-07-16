@@ -126,6 +126,26 @@ class _Db:
         return None
 
 
+class _ReportQuery:
+    def __init__(self, report):
+        self.report = report
+
+    def filter(self, *_args):
+        return self
+
+    def first(self):
+        return self.report
+
+
+class _ReportDb(_Db):
+    def __init__(self, case, report):
+        super().__init__(case)
+        self.report = report
+
+    def query(self, _model):
+        return _ReportQuery(self.report)
+
+
 def test_create_list_get_and_update_use_authenticated_company(monkeypatch):
     company_id = uuid.uuid4()
     user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
@@ -248,6 +268,40 @@ def test_case_detail_contains_tenant_scoped_customer_snapshot(monkeypatch):
     assert response.actions == []
     assert response.decision_history == []
     assert response.documents == []
+
+
+def test_report_download_is_scoped_through_tenant_owned_case(monkeypatch):
+    company_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, role="exporter")
+    report = SimpleNamespace(
+        id=report_id,
+        report_version=2,
+        generated_at=datetime.now(timezone.utc),
+        s3_key=f"reports/case/{report_id}.pdf",
+    )
+    db = _ReportDb(
+        _case(company_id, final_report_id=report_id, final_decision="CLEAR"),
+        report,
+    )
+    s3 = SimpleNamespace(generate_presigned_url=lambda *_args, **_kwargs: "https://signed.test/report.pdf")
+    monkeypatch.setattr(router_module, "ProoflineRepository", _Repo)
+    monkeypatch.setattr(router_module, "get_s3_client", lambda: s3)
+    monkeypatch.setattr(router_module, "_audit_action", lambda **_kwargs: None)
+
+    response = asyncio.run(
+        router_module.get_trade_case_report(db.case.id, current_user=user, db=db)
+    )
+
+    assert response.report_id == report_id
+    assert response.report_version == 2
+    assert str(response.download_url) == "https://signed.test/report.pdf"
+    assert response.expires_in_seconds == 3600
+
+    user.company_id = uuid.uuid4()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(router_module.get_trade_case_report(db.case.id, current_user=user, db=db))
+    assert error.value.status_code == 404
 
 
 def test_parties_are_created_and_deleted_inside_authenticated_company(monkeypatch):

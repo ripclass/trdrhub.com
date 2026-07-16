@@ -25,6 +25,7 @@ from app.models import (
     TradeCaseDocument,
     TradeCaseEvent,
     TradeCaseParty,
+    TradeCaseStatus,
     User,
 )
 from app.schemas.proofline_review import (
@@ -44,6 +45,7 @@ from app.services.proofline.review import (
     claim_case,
     request_correction,
 )
+from app.services.proofline.reports import ProoflineReportError, generate_proofline_report
 
 
 logger = logging.getLogger(__name__)
@@ -394,18 +396,49 @@ def decide_proofline_case(
     admin: User = Depends(require_sysadmin),
 ):
     trade_case = _case_or_404(db, case_id)
+    report = None
     try:
         decision = approve_final_decision(
             db, trade_case, reviewer_user_id=admin.id,
             decision=payload.decision, summary=payload.summary, reason=payload.reason,
             override_reason=payload.override_reason, idempotency_key=payload.idempotency_key,
         )
+        if trade_case.status in {
+            TradeCaseStatus.CLEARED.value,
+            TradeCaseStatus.CONDITIONALLY_CLEARED.value,
+            TradeCaseStatus.BLOCKED.value,
+        }:
+            report = generate_proofline_report(
+                db,
+                trade_case=trade_case,
+                decision=decision,
+                reviewer=admin,
+            )
         db.commit()
+    except ProoflineReportError as exc:
+        db.rollback()
+        logger.exception(
+            "Proofline final report generation failed",
+            extra={"trade_case_id": str(case_id)},
+        )
+        raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc))
-    _audit(db, admin, "proofline_final_decision_approved", case_id, {"decision": decision.decision, "version": decision.version_number})
-    return {"id": str(decision.id), "decision": decision.decision, "version": decision.version_number, "status": trade_case.status}
+    _audit(db, admin, "proofline_final_decision_approved", case_id, {
+        "decision": decision.decision,
+        "version": decision.version_number,
+        "report_id": str(report.id) if report else None,
+        "report_version": report.report_version if report else None,
+    })
+    return {
+        "id": str(decision.id),
+        "decision": decision.decision,
+        "version": decision.version_number,
+        "status": trade_case.status,
+        "report_id": str(report.id) if report else None,
+        "report_version": report.report_version if report else None,
+    }
 
 
 __all__ = ["router"]

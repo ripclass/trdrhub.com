@@ -1,6 +1,7 @@
 import type {
   PaymentArrangement,
   ProoflineQuote,
+  ProoflineReportAccess,
   ProoflineServicePackage,
   TradeCaseDetail,
   TradeCaseDocument,
@@ -55,6 +56,11 @@ export async function listProoflinePackages(): Promise<ProoflineServicePackage[]
 
 export async function getProoflineQuote(caseId: string): Promise<ProoflineQuote> {
   const response = await api.get<ProoflineQuote>(`/api/proofline/cases/${caseId}/quote`)
+  return response.data
+}
+
+export async function getProoflineReport(caseId: string): Promise<ProoflineReportAccess> {
+  const response = await api.get<ProoflineReportAccess>(`/api/proofline/cases/${caseId}/report`)
   return response.data
 }
 

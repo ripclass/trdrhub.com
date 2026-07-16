@@ -223,6 +223,16 @@ class ProoflineQuote(BaseModel):
     checkout_enabled: bool
 
 
+class ProoflineReportAccess(BaseModel):
+    report_id: UUID
+    report_version: int = Field(gt=0)
+    final_decision: ProoflineDecision
+    generated_at: datetime
+    download_url: HttpUrl
+    content_type: str
+    expires_in_seconds: int = Field(gt=0)
+
+
 class TradeCaseSummary(BaseModel):
     id: UUID
     case_reference: str

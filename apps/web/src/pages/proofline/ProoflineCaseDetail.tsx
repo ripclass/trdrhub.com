@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { ProoflineDocumentUpload } from '@/components/proofline/ProoflineDocumentUpload'
 import { ProoflinePartyForm } from '@/components/proofline/ProoflinePartyForm'
 import { ProoflineRemediationResponse } from '@/components/proofline/ProoflineRemediationResponse'
-import { deleteTradeCaseParty, getProoflineQuote, getTradeCase, resubmitTradeCase, startProoflineCheckout, submitTradeCase } from '@/lib/proofline/api'
+import { deleteTradeCaseParty, getProoflineQuote, getProoflineReport, getTradeCase, resubmitTradeCase, startProoflineCheckout, submitTradeCase } from '@/lib/proofline/api'
 import {
   checkStateLabels,
   checkTone,
@@ -81,6 +81,7 @@ export default function ProoflineCaseDetail() {
   const [resubmitting, setResubmitting] = useState(false)
   const [quote, setQuote] = useState<ProoflineQuote | null>(null)
   const [paying, setPaying] = useState(false)
+  const [downloadingReport, setDownloadingReport] = useState(false)
 
   async function load() {
     if (!caseId) return
@@ -164,6 +165,20 @@ export default function ProoflineCaseDetail() {
       const detail = (caught as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setActionError(detail || 'Secure checkout could not be started. Please try again.')
       setPaying(false)
+    }
+  }
+
+  async function downloadReport() {
+    if (!caseId) return
+    setDownloadingReport(true)
+    setActionError(null)
+    try {
+      const report = await getProoflineReport(caseId)
+      window.location.assign(report.download_url)
+    } catch (caught) {
+      const detail = (caught as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setActionError(detail || 'The clearance report could not be downloaded. Please try again.')
+      setDownloadingReport(false)
     }
   }
 
@@ -294,7 +309,7 @@ export default function ProoflineCaseDetail() {
 
               <section className="rounded-2xl border border-[#EDF5F2]/10 bg-[#00382E]/40 p-5">
                 <div className="mb-4 flex items-center gap-2"><BadgeCheck className="h-5 w-5 text-[#B2F273]" /><h2 className="font-display font-bold">Clearance report</h2></div>
-                {tradeCase.final_report_id ? <Button className="w-full border-none bg-[#B2F273] font-bold text-[#00261C] hover:bg-[#a3e662]"><Download className="mr-2 h-4 w-4" /> Download report</Button> : <p className="text-sm leading-relaxed text-[#EDF5F2]/40">The report becomes available after final analyst approval.</p>}
+                {tradeCase.final_report_id ? <Button onClick={() => void downloadReport()} disabled={downloadingReport} className="w-full border-none bg-[#B2F273] font-bold text-[#00261C] hover:bg-[#a3e662]">{downloadingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} Download report</Button> : <p className="text-sm leading-relaxed text-[#EDF5F2]/40">The report becomes available after final analyst approval.</p>}
               </section>
             </aside>
           </div>

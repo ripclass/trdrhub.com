@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import {
   createTradeCase,
   getProoflineQuote,
+  getProoflineReport,
   getTradeCase,
   listTradeCases,
   listProoflinePackages,
@@ -28,12 +29,14 @@ describe('Proofline API client', () => {
       .mockResolvedValueOnce({ data: { id: 'case-1' } })
       .mockResolvedValueOnce({ data: [] })
       .mockResolvedValueOnce({ data: { amount_due_cents: 19900 } })
+      .mockResolvedValueOnce({ data: { report_id: 'report-1', download_url: 'https://example.test/report' } })
 
     await createTradeCase({ title: 'Case one', payment_arrangement: 'open_account' })
     await listTradeCases()
     await getTradeCase('case-1')
     await listProoflinePackages()
     await getProoflineQuote('case-1')
+    await getProoflineReport('case-1')
     await submitTradeCase('case-1')
     await startProoflineCheckout('case-1')
     await respondToRemediation('case-1', 'action-1', { response: 'Corrected' })
@@ -49,6 +52,7 @@ describe('Proofline API client', () => {
     expect(api.get).toHaveBeenNthCalledWith(2, '/api/proofline/cases/case-1')
     expect(api.get).toHaveBeenNthCalledWith(3, '/api/proofline/packages')
     expect(api.get).toHaveBeenNthCalledWith(4, '/api/proofline/cases/case-1/quote')
+    expect(api.get).toHaveBeenNthCalledWith(5, '/api/proofline/cases/case-1/report')
     expect(api.post).toHaveBeenCalledWith('/api/proofline/cases/case-1/submit')
     expect(api.post).toHaveBeenCalledWith('/api/proofline/cases/case-1/checkout')
     expect(api.post).toHaveBeenCalledWith('/api/proofline/cases/case-1/actions/action-1/respond', {

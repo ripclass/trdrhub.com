@@ -251,6 +251,16 @@ class ProoflineCheckoutResponse(BaseModel):
     checkout_url: str
 
 
+class ProoflineReportAccessResponse(BaseModel):
+    report_id: UUID
+    report_version: int = Field(gt=0)
+    final_decision: ProoflineDecisionValue
+    generated_at: datetime
+    download_url: str
+    content_type: str
+    expires_in_seconds: int = Field(gt=0)
+
+
 class ProoflineUpgradeResponse(BaseModel):
     case_id: UUID
     case_reference: str
@@ -268,6 +278,7 @@ __all__ = [
     "TradeCasePartyResponse",
     "ProoflineCheckoutResponse",
     "ProoflineQuoteResponse",
+    "ProoflineReportAccessResponse",
     "ProoflineServicePackageResponse",
     "ProoflineUpgradeResponse",
     "RemediationResponseRequest",

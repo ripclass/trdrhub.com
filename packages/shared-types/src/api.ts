@@ -216,6 +216,17 @@ export const ProoflineQuoteSchema = z.object({
 });
 export type ProoflineQuote = z.infer<typeof ProoflineQuoteSchema>;
 
+export const ProoflineReportAccessSchema = z.object({
+  report_id: z.string().uuid(),
+  report_version: z.number().int().positive(),
+  final_decision: ProoflineDecisionSchema,
+  generated_at: z.string().datetime(),
+  download_url: z.string().url(),
+  content_type: z.string(),
+  expires_in_seconds: z.number().int().positive(),
+});
+export type ProoflineReportAccess = z.infer<typeof ProoflineReportAccessSchema>;
+
 export const TradeCaseSummarySchema = z.object({
   id: z.string().uuid(),
   case_reference: z.string(),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 from uuid import UUID
 
@@ -26,6 +27,7 @@ from app.models import (
     Document,
     MemberRole,
     MemberStatus,
+    Report,
     RemediationAction,
     TradeCaseDocument,
     TradeCaseStatus,
@@ -33,6 +35,7 @@ from app.models import (
 )
 from app.repositories.proofline import ProoflineRepository
 from app.schemas.proofline import (
+    ProoflineReportAccessResponse,
     TradeCaseCreate,
     TradeCaseDetailResponse,
     TradeCaseDocumentAssociate,
@@ -69,6 +72,7 @@ from app.services.proofline.billing import (
     is_checkout_enabled as is_proofline_checkout_enabled,
     quote_for_case,
 )
+from app.utils.s3_client import get_s3_client
 
 
 logger = logging.getLogger(__name__)
@@ -360,6 +364,60 @@ async def get_trade_case(
     if trade_case is None:
         raise HTTPException(status_code=404, detail="Trade case not found")
     return _case_response(repository, trade_case, detail=True)
+
+
+@router.get("/{case_id}/report", response_model=ProoflineReportAccessResponse)
+async def get_trade_case_report(
+    case_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProoflineReportAccessResponse:
+    """Return an expiring URL only through the tenant-owned case/report link."""
+    repository = ProoflineRepository(db)
+    trade_case = repository.get_case(company_id=_company_id(current_user), case_id=case_id)
+    if trade_case is None:
+        raise HTTPException(status_code=404, detail="Trade case not found")
+    if trade_case.final_report_id is None or trade_case.final_decision is None:
+        raise HTTPException(status_code=404, detail="Final clearance report not available")
+    report = (
+        db.query(Report)
+        .filter(Report.id == trade_case.final_report_id, Report.deleted_at.is_(None))
+        .first()
+    )
+    if report is None or not report.s3_key:
+        raise HTTPException(status_code=404, detail="Final clearance report file unavailable")
+    expires_in_seconds = 3600
+    try:
+        download_url = get_s3_client().generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": os.getenv("S3_BUCKET_NAME", "lcopilot-documents"),
+                "Key": report.s3_key,
+            },
+            ExpiresIn=expires_in_seconds,
+        )
+    except Exception:
+        logger.exception(
+            "Proofline report presign failed",
+            extra={"trade_case_id": str(case_id), "report_id": str(report.id)},
+        )
+        raise HTTPException(status_code=503, detail="Report download is temporarily unavailable")
+    _audit_action(
+        db=db,
+        current_user=current_user,
+        action="proofline_report_download_requested",
+        trade_case_id=trade_case.id,
+        values={"report_id": str(report.id), "report_version": report.report_version},
+    )
+    return ProoflineReportAccessResponse(
+        report_id=report.id,
+        report_version=report.report_version,
+        final_decision=trade_case.final_decision,
+        generated_at=report.generated_at,
+        download_url=download_url,
+        content_type="application/pdf" if report.s3_key.endswith(".pdf") else "text/html",
+        expires_in_seconds=expires_in_seconds,
+    )
 
 
 @router.patch("/{case_id}", response_model=TradeCaseDetailResponse)
