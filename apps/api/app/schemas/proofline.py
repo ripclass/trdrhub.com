@@ -163,6 +163,20 @@ class ProoflineDecisionResponse(BaseModel):
     report_version: Optional[int] = None
 
 
+class TradeCaseDocumentResponse(BaseModel):
+    id: UUID
+    document_id: UUID
+    logical_key: str
+    document_type: str
+    filename: str
+    version: int = Field(gt=0)
+    supersedes_id: Optional[UUID] = None
+    correction_round: int = Field(ge=0)
+    is_current: bool
+    extraction_status: Optional[str] = None
+    created_at: datetime
+
+
 class TradeCaseDetailResponse(TradeCaseSummaryResponse):
     customer_user_id: Optional[UUID] = None
     owner_user_id: Optional[UUID] = None
@@ -173,7 +187,7 @@ class TradeCaseDetailResponse(TradeCaseSummaryResponse):
     source_lcopilot_session_id: Optional[UUID] = None
     final_report_id: Optional[UUID] = None
     parties: list[TradeCasePartyResponse] = Field(default_factory=list)
-    documents: list["TradeCaseDocumentResponse"] = Field(default_factory=list)
+    documents: list[TradeCaseDocumentResponse] = Field(default_factory=list)
     checks: list[ProoflineCheckResponse] = Field(default_factory=list)
     findings: list[ProoflineFindingResponse] = Field(default_factory=list)
     actions: list[ProoflineRemediationResponse] = Field(default_factory=list)
@@ -196,20 +210,6 @@ class TradeCaseDocumentAssociate(BaseModel):
     content_hash: Optional[str] = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
     supersedes_id: Optional[UUID] = None
     correction_round: int = Field(default=0, ge=0)
-
-
-class TradeCaseDocumentResponse(BaseModel):
-    id: UUID
-    document_id: UUID
-    logical_key: str
-    document_type: str
-    filename: str
-    version: int = Field(gt=0)
-    supersedes_id: Optional[UUID] = None
-    correction_round: int = Field(ge=0)
-    is_current: bool
-    extraction_status: Optional[str] = None
-    created_at: datetime
 
 
 class RemediationResponseRequest(BaseModel):
