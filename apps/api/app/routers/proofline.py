@@ -803,7 +803,7 @@ async def delete_trade_case_party(
     party_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> None:
+):
     ensure_case_write_access(db, current_user)
     company_id = _company_id(current_user)
     repository = ProoflineRepository(db)
